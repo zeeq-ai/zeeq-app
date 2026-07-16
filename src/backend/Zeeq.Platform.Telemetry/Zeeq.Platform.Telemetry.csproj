@@ -1,0 +1,57 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Tools">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Zeeq.Core.Common\Zeeq.Core.Common.csproj" />
+    <ProjectReference Include="..\Zeeq.Core.Common.AspNetCore\Zeeq.Core.Common.AspNetCore.csproj" />
+    <ProjectReference Include="..\Zeeq.Core.Identity\Zeeq.Core.Identity.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Protobuf Include="Otlp\opentelemetry\proto\collector\logs\v1\logs_service.proto">
+      <ProtoRoot>Otlp</ProtoRoot>
+      <Access>Public</Access>
+      <GrpcServices>None</GrpcServices>
+    </Protobuf>
+    <Protobuf Include="Otlp\opentelemetry\proto\collector\trace\v1\trace_service.proto">
+      <ProtoRoot>Otlp</ProtoRoot>
+      <Access>Public</Access>
+      <GrpcServices>None</GrpcServices>
+    </Protobuf>
+    <Protobuf
+      Include="Otlp\opentelemetry\proto\logs\v1\logs.proto"
+      ProtoRoot="Otlp"
+      Access="Public"
+      GrpcServices="None"
+    />
+    <Protobuf
+      Include="Otlp\opentelemetry\proto\trace\v1\trace.proto"
+      ProtoRoot="Otlp"
+      Access="Public"
+      GrpcServices="None"
+    />
+    <Protobuf
+      Include="Otlp\opentelemetry\proto\common\v1\common.proto"
+      ProtoRoot="Otlp"
+      Access="Public"
+      GrpcServices="None"
+    />
+    <Protobuf
+      Include="Otlp\opentelemetry\proto\resource\v1\resource.proto"
+      ProtoRoot="Otlp"
+      Access="Public"
+      GrpcServices="None"
+    />
+  </ItemGroup>
+</Project>

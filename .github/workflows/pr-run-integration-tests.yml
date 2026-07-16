@@ -1,0 +1,143 @@
+# This workflow runs the full test project for pull requests.
+#
+# The integration tests exercise PostgreSQL, pgvector, pg_partman, and pg_cron.
+# The test fixture starts the same GHCR Postgres image through Testcontainers so
+# each test assembly gets an isolated database and migration history.
+
+name: PR Integration Tests
+
+on:
+  # Run the complete test package for every pull request so integration failures
+  # are caught before merging.
+  pull_request:
+    paths:
+      - src/backend/**
+
+permissions:
+  # checkout needs read access to the repository contents.
+  contents: read
+
+  # The Postgres service image lives in GHCR under this repository.
+  packages: read
+
+  # The test report action writes a check run with failure details.
+  checks: write
+
+  # The test report action updates a PR comment with the failed-test summary.
+  pull-requests: write
+
+env:
+  # Keep .NET output compact and consistent in CI logs.
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+  # Keep CI aligned with local Testcontainers and Aspire database behavior.
+  ZEEQ_TEST_POSTGRES_IMAGE: ghcr.io/zeeq-ai/zeeq-postgres:pg18
+
+jobs:
+  integration-tests:
+    name: Run integration tests
+    # Testcontainers can start multiple extension-heavy Postgres containers
+    # across parallel test assemblies, so run on the larger Linux runner pool.
+    runs-on: linux-x64-large-runner
+
+    steps:
+      # Fetch the pull request source under test.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Testcontainers pulls the custom Postgres image with Docker rather than
+      # through a GitHub Actions service container, so Docker needs an explicit
+      # GHCR login when the package is private or repository-scoped.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Install the .NET SDK used by the test project.
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Restore NuGet packages before building/running tests.
+      - name: Restore dependencies
+        run: dotnet restore
+
+      # Build the test projects once so compile failures are reported separately
+      # from runtime integration-test failures.
+      - name: Build tests
+        run: dotnet build --no-restore --nologo
+
+      # Run every TUnit test in the solution. PostgreSQL integration tests use
+      # Testcontainers rather than a shared service database so migrations and
+      # data mutations remain isolated per test assembly.
+      # Microsoft.Testing.Platform uses reporters instead of VSTest loggers, so
+      # --report-trx writes the standard TRX file consumed by reporting actions.
+      - name: Run integration tests
+        id: run-tests
+        continue-on-error: true
+        run: |
+          set +e
+          dotnet test \
+            --solution zeeq.slnx \
+            --disable-logo \
+            --results-directory TestResults \
+            --report-trx
+          test_exit_code=$?
+          echo "exit-code=${test_exit_code}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      # Preserve raw TRX output so failed PRs can be debugged beyond the summary.
+      - name: Upload test result artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: TestResults/**/*.trx
+          if-no-files-found: warn
+
+      # Parse TRX output from all test assemblies and post a single aggregated
+      # report as a PR comment, check run, and job summary.
+      # EnricoMi/publish-unit-test-result-action supports TRX natively and
+      # handles all three publishing destinations without a separate summary step.
+      # See: https://github.com/EnricoMi/publish-unit-test-result-action
+      - name: Publish test report
+        if: ${{ always() }}
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: TestResults/**/*.trx
+
+      # # Parse TRX output and update the pull request with a concise report.
+      # # im-open/process-dotnet-test-results consumes .NET TRX files and turns
+      # # them into a GitHub check plus an updatable PR comment with failure details.
+      # # See: https://github.com/im-open/process-dotnet-test-results
+      # # Failed test details are included directly in the PR comment so reviewers
+      # # do not have to dig through the Actions log to identify broken tests.
+      # - name: Publish test report (old)
+      #   id: test-report
+      #   if: ${{ always() }}
+      #   uses: im-open/process-dotnet-test-results@v4.0.0
+      #   with:
+      #     github-token: ${{ secrets.GITHUB_TOKEN }}
+      #     base-directory: TestResults
+      #     create-status-check: true
+      #     ignore-test-failures: true
+      #     create-pr-comment: true
+      #     update-comment-if-one-exists: true
+      #     comment-identifier: pr-integration-tests
+
+      # # Mirror the generated markdown into the Actions job summary. This keeps
+      # # the same failure details visible from both the PR and workflow run.
+      # # (publish-unit-test-result-action writes the job summary automatically.)
+      # - name: Add test report to job summary
+      #   if: ${{ always() && steps.test-report.outputs.test-results-file-path != '' }}
+      #   run: cat "${{ steps.test-report.outputs.test-results-file-path }}" >> "$GITHUB_STEP_SUMMARY"
+
+      # Keep the test command as the source of truth for job success after the
+      # artifact and PR comment have been produced.
+      - name: Fail workflow when tests fail
+        if: ${{ steps.run-tests.outputs.exit-code != '0' }}
+        run: exit 1

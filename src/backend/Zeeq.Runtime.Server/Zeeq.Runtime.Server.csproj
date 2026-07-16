@@ -1,0 +1,86 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>9008a71b-0511-451e-bab5-ae2a2c842fd2</UserSecretsId>
+    <!-- OpenAPI config -->
+    <OpenApiDocumentsDirectory>..\..\web\src\api</OpenApiDocumentsDirectory>
+    <OpenApiGenerateDocumentsOptions>--file-name zeeq-api</OpenApiGenerateDocumentsOptions>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <!-- Suppress OpenAPI document generation in Release; the target checks this property -->
+    <OpenApiGenerateDocuments>false</OpenApiGenerateDocuments>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.ApiDescription.Server">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Postgres" />
+    <PackageReference Include="Microsoft.OpenApi" />
+    <PackageReference Include="OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.EntityFrameworkCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="Npgsql.OpenTelemetry" />
+    <PackageReference Include="Scalar.AspNetCore" />
+    <PackageReference Include="Scrutor" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Zeeq.Core.Common\Zeeq.Core.Common.csproj" />
+    <ProjectReference Include="..\Zeeq.Core.Common.AspNetCore\Zeeq.Core.Common.AspNetCore.csproj" />
+    <ProjectReference Include="..\Zeeq.Core.Identity\Zeeq.Core.Identity.csproj" />
+    <ProjectReference Include="..\Zeeq.Core.Llm\Zeeq.Core.Llm.csproj" />
+    <!-- Runtime references migrations for now so EF tooling/local startup can resolve the migrations assembly. We may want to decouple this later with a design/deploy-time migration runner. -->
+    <ProjectReference Include="..\Zeeq.Data.Postgres.Migrations\Zeeq.Data.Postgres.Migrations.csproj" />
+    <ProjectReference Include="..\Zeeq.Data.Postgres\Zeeq.Data.Postgres.csproj" />
+    <ProjectReference Include="..\Zeeq.Integrations.GitHub\Zeeq.Integrations.GitHub.csproj" />
+    <ProjectReference Include="..\Zeeq.Mcp.Carts\Zeeq.Mcp.Carts.csproj" />
+    <ProjectReference Include="..\Zeeq.Mcp\Zeeq.Mcp.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Membership\Zeeq.Platform.Membership.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Carts\Zeeq.Platform.Carts.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Dispatch.Process\Zeeq.Platform.Dispatch.Process.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Documents\Zeeq.Platform.Documents.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Ingest\Zeeq.Platform.Ingest.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Llm\Zeeq.Platform.Llm.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Messaging.GcpPubSub\Zeeq.Platform.Messaging.GcpPubSub.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Messaging.Postgres\Zeeq.Platform.Messaging.Postgres.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Messaging\Zeeq.Platform.Messaging.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Storage.Google\Zeeq.Platform.Storage.Google.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Metrics\Zeeq.Platform.Metrics.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Telemetry\Zeeq.Platform.Telemetry.csproj" />
+  </ItemGroup>
+  <!-- This section is a set of post-build commands to generate the schema-->
+  <Target
+    Name="Bindings"
+    AfterTargets="Build"
+    Condition="$(Configuration)=='Gen' Or $(GEN)=='true'"
+  >
+    <Message Text="Generating OpenAPI schema file." Importance="high" />
+    <!-- (2) Generate TS bindings for the web app -->
+    <Exec Command="yarn generate" WorkingDirectory="../../web" />
+  </Target>
+
+  <Target Name="AddOpenApiDependencies" AfterTargets="ResolveReferences">
+    <ItemGroup>
+      <AdditionalFiles
+        Include="@(ReferencePath->'%(RootDir)%(Directory)%(Filename).xml')"
+        Condition="'%(ReferencePath.Filename)' == 'Microsoft.AspNetCore.Http.Abstractions'"
+        KeepMetadata="Identity;HintPath"
+      />
+    </ItemGroup>
+  </Target>
+</Project>

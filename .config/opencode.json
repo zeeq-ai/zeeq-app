@@ -1,0 +1,62 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "experimental": {
+    "mcp_timeout": 300000
+  },
+  "mcp": {
+    "aspire": {
+      "type": "local",
+      "command": [
+        "aspire",
+        "agent",
+        "mcp"
+      ],
+      "enabled": true
+    },
+    "glider": {
+      "type": "local",
+      "command": [
+        "glider",
+        "--default-timeout",
+        "30m"
+      ],
+      "enabled": true
+    },
+    "playwright": {
+      "type": "local",
+      "command": [
+        "npx",
+        "@playwright/mcp@latest",
+        "--extension"
+      ],
+      "enabled": true
+    },
+    "nuxt-ui": {
+      "type": "remote",
+      "url": "https://ui.nuxt.com/mcp",
+      "enabled": true
+    },
+    "zeeq": {
+      "type": "remote",
+      "enabled": true,
+      "url": "https://app.zeeq.ai/mcp"
+    },
+    "local-dev-only-zeeq": {
+      "type": "remote",
+      "enabled": true,
+      "url": "http://zeeq-web.localhost:8095/mcp"
+    }
+  },
+  "lsp": {
+    "csharp": {
+      "command": [
+        "roslyn-language-server",
+        "--stdio",
+        "--autoLoadProjects"
+      ],
+      "extensions": [
+        ".cs"
+      ]
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "servers": {
+    "aspire": {
+      "type": "stdio",
+      "command": "aspire",
+      "args": ["agent", "mcp"]
+    },
+    "glider": {
+      "type": "http",
+      "url": "http://localhost:5051/mcp"
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--extension"]
+    },
+    "nuxt-ui": {
+      "type": "http",
+      "url": "https://ui.nuxt.com/mcp"
+    },
+    "zeeq": {
+      "type": "http",
+      "url": "https://app.zeeq.ai/mcp"
+    },
+    "local-dev-only-zeeq": {
+      "type": "http",
+      "url": "http://zeeq-web.localhost:8095/mcp"
+    }
+  }
+}

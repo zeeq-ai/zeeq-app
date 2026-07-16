@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "isRoot": true,
+  "tools": {
+    "csharpier": {
+      "version": "1.3.0",
+      "commands": [
+        "csharpier"
+      ],
+      "rollForward": false
+    },
+    "dotnet-ef": {
+      "version": "10.0.9",
+      "commands": [
+        "dotnet-ef"
+      ],
+      "rollForward": false
+    },
+    "glider": {
+      "version": "8.0.0",
+      "commands": [
+        "glider"
+      ],
+      "rollForward": false
+    },
+    "roslyn-language-server": {
+      "version": "5.9.0-1.26303.1",
+      "commands": [
+        "roslyn-language-server"
+      ],
+      "rollForward": false
+    },
+    "csharprepl": {
+      "version": "0.9.2",
+      "commands": [
+        "csharprepl"
+      ],
+      "rollForward": false
+    }
+  }
+}

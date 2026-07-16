@@ -1,0 +1,52 @@
+{
+  "cSpell.words": [
+    "Zeeq",
+    "ciphertext",
+    "Iddict",
+    "Scrutor",
+    "traceparent",
+    "tracestate",
+    "upserted"
+  ],
+  "chat.tools.terminal.autoApprove": {
+    "dotnet run": true,
+    "dotnet restore": true
+  },
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.patterns": {
+    "*Endpoints.cs": "${capture}Endpoints.Models.cs, ${capture}Endpoints.Handler.*.cs, ${capture}Endpoints.Mapping.cs, ${capture}Endpoints.Contracts.cs, ${capture}Endpoints.Models.cs",
+    "AppSettings.cs": "AppSettings.*.cs",
+    "appsettings.json": "appsettings.*.json"
+  },
+  "files.associations": {
+    "*.css": "tailwindcss"
+  },
+  "editor.quickSuggestions": {
+    "strings": "on"
+  },
+  "tailwindCSS.classAttributes": ["class", "ui"],
+  "tailwindCSS.classFunctions": ["defineAppConfig"],
+  "[typescript]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[vue]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": null,
+    "editor.formatOnSave": false
+  },
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/.playwright-mcp/**": true,
+    "src/web/src/api/generated/**": true,
+    "src/web/dist/**": true,
+    "docs/.nuxt/**": true,
+    "docs/.output/**": true,
+    "docs/.dist/**": true
+  }
+}

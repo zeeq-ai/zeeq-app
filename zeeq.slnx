@@ -1,0 +1,80 @@
+<Solution>
+  <Folder Name="/host/">
+    <Project Path="host/Zeeq.AspireHost.csproj" />
+  </Folder>
+  <Folder Name="/core/">
+    <Project Path="src/backend/Zeeq.Core.Carts/Zeeq.Core.Carts.csproj" />
+    <Project Path="src/backend/Zeeq.Core.Common.AspNetCore/Zeeq.Core.Common.AspNetCore.csproj" />
+    <Project Path="src/backend/Zeeq.Core.Common/Zeeq.Core.Common.csproj" />
+    <Project Path="src/backend/Zeeq.Core.Documents/Zeeq.Core.Documents.csproj" />
+    <Project Path="src/backend/Zeeq.Core.Identity/Zeeq.Core.Identity.csproj" />
+    <Project Path="src/backend/Zeeq.Core.Llm/Zeeq.Core.Llm.csproj" />
+    <Project Path="src/backend/Zeeq.Core.Models/Zeeq.Core.Models.csproj" />
+  </Folder>
+  <Folder Name="/data/">
+    <Project Path="src/backend/Zeeq.Data.Postgres.Migrations/Zeeq.Data.Postgres.Migrations.csproj" />
+    <Project Path="src/backend/Zeeq.Data.Postgres/Zeeq.Data.Postgres.csproj" />
+    <Project Path="src/backend/Zeeq.Data/Zeeq.Data.csproj" />
+  </Folder>
+  <Folder Name="/integrations/">
+    <Project Path="src/backend/Zeeq.Integrations.GitHub/Zeeq.Integrations.GitHub.csproj" />
+  </Folder>
+  <Folder Name="/mcp/">
+    <Project Path="src/backend/Zeeq.Mcp.Carts/Zeeq.Mcp.Carts.csproj" />
+    <Project Path="src/backend/Zeeq.Mcp.CodeReviews/Zeeq.Mcp.CodeReviews.csproj" />
+    <Project Path="src/backend/Zeeq.Mcp.Documents/Zeeq.Mcp.Documents.csproj" />
+    <Project Path="src/backend/Zeeq.Mcp.Memories/Zeeq.Mcp.Memories.csproj" />
+    <Project Path="src/backend/Zeeq.Mcp/Zeeq.Mcp.csproj" />
+  </Folder>
+  <Folder Name="/platform/">
+    <Project Path="src/backend/Zeeq.Platform.Carts/Zeeq.Platform.Carts.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.CodeReviews/Zeeq.Platform.CodeReviews.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Dispatch.Google/Zeeq.Platform.Dispatch.Google.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Dispatch.Process/Zeeq.Platform.Dispatch.Process.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Documents/Zeeq.Platform.Documents.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Ingest/Zeeq.Platform.Ingest.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Memories/Zeeq.Platform.Memories.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Llm/Zeeq.Platform.Llm.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Messaging.GcpPubSub/Zeeq.Platform.Messaging.GcpPubSub.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Messaging/Zeeq.Platform.Messaging.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Messaging.Postgres/Zeeq.Platform.Messaging.Postgres.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Membership/Zeeq.Platform.Membership.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Storage.Google/Zeeq.Platform.Storage.Google.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Telemetry/Zeeq.Platform.Telemetry.csproj" />
+  </Folder>
+  <Folder Name="/runtime/">
+    <Project Path="src/backend/Zeeq.Runtime.Server/Zeeq.Runtime.Server.csproj" />
+  </Folder>
+  <Folder Name="/src/" />
+  <Folder Name="/src/backend/">
+    <Project Path="src/backend/Zeeq.Core.Documents.Parsing.Tests/Zeeq.Core.Documents.Parsing.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Core.Documents.Parsing/Zeeq.Core.Documents.Parsing.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Metrics.Tests/Zeeq.Platform.Metrics.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Metrics/Zeeq.Platform.Metrics.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Telemetry.Tests/Zeeq.Platform.Telemetry.Tests.csproj" />
+  </Folder>
+  <Folder Name="/testing/">
+    <Project Path="src/backend/Zeeq.Core.Documents.Tests/Zeeq.Core.Documents.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Core.Identity.Tests/Zeeq.Core.Identity.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Core.Llm.Tests/Zeeq.Core.Llm.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Data.Postgres.Tests/Zeeq.Data.Postgres.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Integrations.GitHub.Tests/Zeeq.Integrations.GitHub.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Mcp.Carts.Tests/Zeeq.Mcp.Carts.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Mcp.CodeReviews.Tests/Zeeq.Mcp.CodeReviews.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Carts.Tests/Zeeq.Platform.Carts.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Documents.Tests/Zeeq.Platform.Documents.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Dispatch.Process.Tests/Zeeq.Platform.Dispatch.Process.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Ingest.Tests/Zeeq.Platform.Ingest.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Mcp.DocumentsTests/Zeeq.Mcp.Documents.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.CodeReviews.Tests/Zeeq.Platform.CodeReviews.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Llm.Tests/Zeeq.Platform.Llm.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Messaging.GcpPubSub.Tests/Zeeq.Platform.Messaging.GcpPubSub.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Messaging.GcpPubSub.Tests.Integration/Zeeq.Platform.Messaging.GcpPubSub.Tests.Integration.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Messaging.Postgres.Tests/Zeeq.Platform.Messaging.Postgres.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Messaging.Tests/Zeeq.Platform.Messaging.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Membership.Tests/Zeeq.Platform.Membership.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Storage.Google.Tests/Zeeq.Platform.Storage.Google.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Testing/Zeeq.Testing.csproj" />
+    <Project Path="src/backend/Zeeq.Testing.Tests/Zeeq.Testing.Tests.csproj" />
+  </Folder>
+</Solution>

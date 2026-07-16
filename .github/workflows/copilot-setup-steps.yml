@@ -1,0 +1,47 @@
+# This workflow sets up the environment for GitHub Copilot coding agents. 
+#
+# Preinstalled: https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md
+# See: https://docs.github.com/en/enterprise-cloud@latest/copilot/how-tos/use-copilot-agents/coding-agent/customize-the-agent-environment
+
+name: "Copilot Setup Steps"
+
+on:
+  # This is run when a user interacts with a Copilot Agent.  Secrets for this run
+  # must go into the `copilot` environment in the repository settings.
+  workflow_dispatch:
+
+  # These run in normal CI and ensures that the configuration is valid.  Secrets
+  # for this run must go into the Action secrets for the repository.
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+env:
+  # Use this to detect that the Copilot Agent is running in our code.
+  COPILOT_AGENT_RUNTIME: true
+
+jobs:
+  # The job MUST be called `copilot-setup-steps` or it will not be picked up by Copilot.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # This install process will install mise + all mise tools: https://mise.jdx.dev/continuous-integration.html#github-actions
+      - uses: jdx/mise-action@v3
+        with:
+          install: true # [default: true] run `mise install`
+          cache: true # [default: true] cache mise using GitHub's cache
+
+      # Restore the .NET tools; confirm aspire CLI is present
+      - name: Restore tooling and dependencies
+        run: |
+          dotnet tool restore
+          aspire --version
+
+      # Don't start detached Aspire since this requires pulling images; let the agent start if it needs it

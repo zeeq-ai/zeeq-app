@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=none
+# Unfiltered OpenTelemetry Collector configuration for Aspire telemetry ingestion.
+# This configuration is intended for local development and testing only. It is not
+# suitable for production use since it passes through all telemetry.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  otlp/aspire:
+    endpoint: "${env:OTEL_EXPORTER_OTLP_ENDPOINT}"
+    headers:
+      x-otlp-api-key: "${env:ASPIRE_DASHBOARD_OTLP_API_KEY}"
+    tls:
+      insecure: true
+
+processors:
+  batch:
+    send_batch_max_size: 100
+    send_batch_size: 10
+    timeout: 10s
+
+service:
+  pipelines:
+    # Logs only; forward to Aspire on local development
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/aspire]
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/aspire]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/aspire]

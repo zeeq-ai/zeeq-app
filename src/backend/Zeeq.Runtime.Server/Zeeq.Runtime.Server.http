@@ -1,0 +1,6 @@
+@Zeeq.Runtime.Server_HostAddress = http://localhost:5025
+
+GET {{Zeeq.Runtime.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

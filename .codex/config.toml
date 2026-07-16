@@ -1,0 +1,61 @@
+[mcp_servers.aspire]
+command = "aspire"
+args = ["agent", "mcp", "--non-interactive"]
+
+[mcp_servers.aspire.tools.list_resources]
+approval_mode = "approve"
+
+[mcp_servers.aspire.tools.list_console_logs]
+approval_mode = "approve"
+
+[mcp_servers.aspire.tools.list_structured_logs]
+approval_mode = "approve"
+
+[mcp_servers.aspire.tools.execute_resource_command]
+approval_mode = "approve"
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["@playwright/mcp@latest", "--extension"]
+
+[mcp_servers.glider]
+enabled = true
+url = "http://localhost:5051/mcp"
+
+[mcp_servers.nuxtui]
+enabled = true
+url = "https://ui.nuxt.com/mcp"
+
+[mcp_servers.zeeq]
+enabled = true
+url = "https://app.zeeq.ai/mcp"
+http_headers = { "x-zeeq-enable-beta" = "true" }
+
+[mcp_servers.zeeq.tools.list_kb_documents]
+approval_mode = "approve"
+
+[mcp_servers.zeeq.tools.read_kb_document_by_path]
+approval_mode = "approve"
+
+[mcp_servers.zeeq.tools.read_kb_document_by_keywords]
+approval_mode = "approve"
+
+[mcp_servers.zeeq.tools.store_memory]
+approval_mode = "approve"
+
+[mcp_servers.zeeq.tools.recall_memory]
+approval_mode = "approve"
+
+[mcp_servers.zeeq.tools.reinforce_memory]
+approval_mode = "approve"
+
+[mcp_servers.zeeq.tools.search_kb_sections]
+approval_mode = "approve"
+
+[mcp_servers.zeeq.tools.search_kb_code_samples]
+approval_mode = "approve"
+
+[mcp_servers.local-dev-only-zeeq]
+enabled = true
+url = "http://zeeq-web.localhost:8095/mcp"
+http_headers = { "x-zeeq-enable-beta" = "true" }

@@ -1,0 +1,58 @@
+# Builds and publishes Zeeq's custom PostgreSQL image for local parity and CI.
+#
+# The image starts from `pgvector/pgvector:pg18` and adds the extensions the
+# application expects at migration/test time, including `pg_partman` and
+# `pg_cron`. Aspire builds the same Dockerfile locally via `WithDockerfile`;
+# this workflow publishes the equivalent image to GHCR so CI and Testcontainers
+# can pull a stable prebuilt image instead of rebuilding it in every test run.
+name: Postgres Image
+
+on:
+  # Allows an operator to publish the image before the first PR depends on it,
+  # or republish manually after package/base-image changes.
+  workflow_dispatch:
+
+  # Keep the GHCR image current when the Dockerfile or workflow changes on main.
+  push:
+    branches:
+      - main
+    paths:
+      - build/postgres/**
+      - .github/workflows/postgres-image.yml
+
+permissions:
+  # Required by actions/checkout.
+  contents: read
+
+  # Required to push the image to GitHub Container Registry.
+  packages: write
+
+env:
+  # Keep this tag aligned with PgDatabaseFixture and pr-run-integration-tests.yml.
+  IMAGE_NAME: ghcr.io/zeeq-ai/zeeq-postgres:pg18
+
+jobs:
+  publish:
+    name: Build and publish Postgres image
+    runs-on: ubuntu-latest
+
+    steps:
+      # Fetch the Dockerfile and build context.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Authenticate to GHCR using the workflow token scoped by `packages: write`.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build from the same Dockerfile Aspire uses locally.
+      - name: Build image
+        run: docker build -t "${IMAGE_NAME}" build/postgres
+
+      # Publish the stable tag consumed by CI service containers and Testcontainers.
+      - name: Push image
+        run: docker push "${IMAGE_NAME}"

@@ -1,0 +1,217 @@
+namespace Zeeq.Core.Models;
+
+/// <summary>
+/// One bucketed point in a metric time series, optionally grouped by a single dimension.
+/// </summary>
+/// <param name="Bucket">Fixed-width bucket start (from <c>date_bin</c>).</param>
+/// <param name="SeriesKey">Group value (user, tool, library, …) or null when ungrouped.</param>
+/// <param name="Value">Summed metric value for the bucket/series.</param>
+public sealed record MetricSeriesPoint(DateTimeOffset Bucket, string? SeriesKey, double Value);
+
+/// <summary>One bucket's p50/p95/p99 for a histogram metric (UI-8/UI-9).</summary>
+public sealed record MetricPercentilePoint(
+    DateTimeOffset Bucket,
+    double P50,
+    double P95,
+    double P99
+);
+
+/// <summary>One raw sample for a duration-vs-tokens scatter (UI-8/UI-9).</summary>
+/// <param name="CreatedAtUtc">Sample capture time.</param>
+/// <param name="MetricValue">The measured value (for example elapsed ms).</param>
+/// <param name="Tokens">Token count from the <c>tokens</c> tag, when present.</param>
+public sealed record MetricScatterPoint(
+    DateTimeOffset CreatedAtUtc,
+    double MetricValue,
+    double? Tokens
+);
+
+/// <summary>One ranked leaderboard item (UI-7): a path with its owning library and total.</summary>
+public sealed record MetricLeaderboardItem(string Item, string? Library, double Value);
+
+/// <summary>Bucketed review volume, optionally grouped by repository/author/origin (UI-4/UI-5).</summary>
+public sealed record ReviewVolumePoint(DateTimeOffset Bucket, string? SeriesKey, long Count);
+
+/// <summary>Bucketed finding-severity sums, optionally grouped by repository/author (UI-3).</summary>
+public sealed record ReviewFindingsPoint(
+    DateTimeOffset Bucket,
+    string? SeriesKey,
+    long Critical,
+    long Major,
+    long Minor,
+    long Suggestion,
+    long Comment
+);
+
+/// <summary>Headline stat-card numbers for the overview tab.</summary>
+public sealed record MetricsOverview(
+    double ToolCalls,
+    double KnowledgeReads,
+    long Reviews,
+    long CriticalFindings,
+    long MajorFindings,
+    double P95ReviewDurationMs
+);
+
+/// <summary>One selectable repository option for the review filters (id + display name).</summary>
+/// <remarks>Includes soft-deleted repositories so historical review data stays filterable.</remarks>
+public sealed record MetricsRepositoryOption(string Id, string DisplayName);
+
+/// <summary>Distinct filter values available across the org's metric + review data.</summary>
+public sealed record MetricsFilterOptions(
+    IReadOnlyList<string> Users,
+    IReadOnlyList<string> Tools,
+    IReadOnlyList<MetricsRepositoryOption> Repositories,
+    IReadOnlyList<string> Authors
+);
+
+/// <summary>Optional multi-select filters for a metric series query.</summary>
+public sealed record MetricSeriesFilters(
+    string[]? Users = null,
+    string[]? Tools = null,
+    string[]? Libraries = null
+);
+
+/// <summary>Group dimension for a metric series.</summary>
+public enum MetricSeriesGroup
+{
+    /// <summary>No grouping; a single aggregate series.</summary>
+    None,
+
+    /// <summary>Group by <c>user_email</c>.</summary>
+    User,
+
+    /// <summary>Group by <c>tool_name</c>.</summary>
+    Tool,
+
+    /// <summary>Group by <c>library</c>.</summary>
+    Library,
+
+    /// <summary>Group by the <c>user_agent</c> jsonb tag (UI-2).</summary>
+    UserAgent,
+
+    /// <summary>Group by the <c>model</c> jsonb tag from agent telemetry.</summary>
+    Model,
+}
+
+/// <summary>Group dimension for review-volume series.</summary>
+public enum ReviewVolumeGroup
+{
+    /// <summary>Group by repository.</summary>
+    Repo,
+
+    /// <summary>Group by author login.</summary>
+    Author,
+
+    /// <summary>Group by request origin (agent vs PR).</summary>
+    Origin,
+}
+
+/// <summary>Group dimension for review-findings series.</summary>
+public enum ReviewFindingsGroup
+{
+    /// <summary>Group by repository.</summary>
+    Repo,
+
+    /// <summary>Group by author login.</summary>
+    Author,
+
+    /// <summary>Group by request origin (agent vs PR).</summary>
+    Origin,
+}
+
+/// <summary>
+/// Read store for the metrics dashboard. Every query is single-organization, single-table, and
+/// window-scoped (no JOINs on the metric-events path) so it stays partition-pruned and index-covered.
+/// </summary>
+public interface IMetricsQueryStore
+{
+    /// <summary>Bucketed <c>SUM(metric_value)</c> series, optionally grouped by one dimension.</summary>
+    Task<IReadOnlyList<MetricSeriesPoint>> GetSeriesAsync(
+        string organizationId,
+        string metricType,
+        MetricWindow window,
+        MetricSeriesGroup groupBy,
+        MetricSeriesFilters filters,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Per-bucket p50/p95/p99 for a histogram metric, optionally filtered by repo/facet.</summary>
+    Task<IReadOnlyList<MetricPercentilePoint>> GetPercentileSeriesAsync(
+        string organizationId,
+        string metricType,
+        MetricWindow window,
+        string? repositoryId,
+        string? facet,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Recent raw samples for a duration-vs-tokens scatter.</summary>
+    Task<IReadOnlyList<MetricScatterPoint>> GetScatterSampleAsync(
+        string organizationId,
+        string metricType,
+        MetricWindow window,
+        string? repositoryId,
+        string? facet,
+        int limit,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Top-N ranked items across one or more metric types (UI-7 path leaderboard).</summary>
+    Task<IReadOnlyList<MetricLeaderboardItem>> GetLeaderboardAsync(
+        string organizationId,
+        string[] metricTypes,
+        MetricWindow window,
+        string? library,
+        int top,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Top-N ranked (path, heading) sections/snippets — the same shape as
+    /// <see cref="GetLeaderboardAsync" /> but keyed one level finer than the document path, so two
+    /// different sections in the same document rank separately.
+    /// </summary>
+    Task<IReadOnlyList<MetricLeaderboardItem>> GetSectionLeaderboardAsync(
+        string organizationId,
+        string[] metricTypes,
+        MetricWindow window,
+        string? library,
+        int top,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Bucketed review volume from <c>code_review_records</c>, optionally grouped/filtered.</summary>
+    Task<IReadOnlyList<ReviewVolumePoint>> GetReviewVolumeSeriesAsync(
+        string organizationId,
+        MetricWindow window,
+        string[]? repositoryIds,
+        string[]? authorLogins,
+        CodeReviewRequestOrigin? requestOrigin,
+        ReviewVolumeGroup groupBy,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Bucketed finding-severity sums from <c>code_review_records</c>, optionally grouped/filtered.</summary>
+    Task<IReadOnlyList<ReviewFindingsPoint>> GetReviewFindingsSeriesAsync(
+        string organizationId,
+        MetricWindow window,
+        string[]? repositoryIds,
+        string[]? authorLogins,
+        ReviewFindingsGroup groupBy,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Headline overview numbers for the current window.</summary>
+    Task<MetricsOverview> GetOverviewAsync(
+        string organizationId,
+        MetricWindow window,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Distinct filter values (users, tools, repositories, authors) for the dashboard filters.</summary>
+    Task<MetricsFilterOptions> GetFilterOptionsAsync(
+        string organizationId,
+        CancellationToken cancellationToken
+    );
+}

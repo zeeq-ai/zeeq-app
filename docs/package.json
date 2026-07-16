@@ -1,0 +1,17 @@
+{
+  "name": "docs",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate"
+  },
+  "dependencies": {
+    "@nuxt/eslint": "1.16.0",
+    "@nuxt/fonts": "0.14.0",
+    "@nuxt/icon": "2.2.3",
+    "better-sqlite3": "^12.6.2",
+    "docus": "latest",
+    "eslint": "^9.0.0 || ^10.0.0",
+    "nuxt": "^4.3.1"
+  }
+}

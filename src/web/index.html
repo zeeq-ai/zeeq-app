@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="theme-color" content="#ffffff" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zeeq</title>
+  <style>
+    html {
+      background-color: #ffffff
+    }
+
+    html.dark {
+      background-color: #18181b
+    }
+  </style>
+  <script>
+    (function () {
+      var mode = localStorage.getItem('vueuse-color-scheme') || 'auto'
+      var dark = mode === 'dark' || (mode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+      if (dark) {
+        document.documentElement.classList.add('dark')
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', '#18181b')
+      }
+    })()
+  </script>
+</head>
+
+<body>
+  <div id="app" isolate="true"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+
+</html>

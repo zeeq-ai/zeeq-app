@@ -1,0 +1,182 @@
+using Zeeq.Core.Documents;
+using Zeeq.Core.Models;
+using Zeeq.Data.Postgres.Documents;
+using Zeeq.Testing;
+using Zeeq.Testing.EntityGraphs;
+using Microsoft.EntityFrameworkCore;
+
+namespace Zeeq.Data.Postgres.Tests;
+
+/// <summary>
+/// Integration tests for <see cref="PostgresLibraryDocumentStore"/> delete
+/// path, including the cascade-clean behavior that strips deleted library ids
+/// from <see cref="CodeRepository.LibraryIds"/> arrays.
+///
+/// Run:
+/// dotnet run --project src/backend/Zeeq.Data.Postgres.Tests --output detailed --disable-logo --treenode-filter "/*/*/PostgresLibraryDocumentStoreTests/*"
+/// </summary>
+[Property("integration", "true")]
+[Property("testcontainer", "true")]
+[ClassDataSource<PgDatabaseFixture>(Shared = SharedType.PerTestSession)]
+public sealed class PostgresLibraryDocumentStoreTests : PgTransactionalTestBase
+{
+    public PostgresLibraryDocumentStoreTests(PgDatabaseFixture postgres)
+        : base(postgres) { }
+
+    [Test]
+    public async Task DeleteLibraryAsync_LibraryNotReferencedByAnyRepository_DeletesLibraryOnly()
+    {
+        var (store, organizationId, library) = await CreateStoreWithLibraryAsync();
+        _context.ChangeTracker.Clear();
+
+        await store.DeleteLibraryAsync(organizationId, library.Id, CancellationToken.None);
+
+        var deleted = await store.GetLibraryAsync(
+            organizationId,
+            library.Name,
+            CancellationToken.None
+        );
+        await Assert.That(deleted).IsNull();
+    }
+
+    [Test]
+    public async Task DeleteLibraryAsync_LibraryReferencedByOneRepository_RemovesIdFromLibraryIdsAndDeletesLibrary()
+    {
+        var libraryId = SeedContext.NewId("library");
+        var (seed, repository) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddCodeRepository(proto => proto.LibraryIds = [libraryId])
+            .BuildAsync();
+        var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
+        var library = await CreateLibraryWithIdAsync(
+            store,
+            seed.Organization.Id,
+            "test-lib",
+            libraryId
+        );
+        _context.ChangeTracker.Clear();
+
+        await store.DeleteLibraryAsync(seed.Organization.Id, library.Id, CancellationToken.None);
+
+        var deleted = await store.GetLibraryAsync(
+            seed.Organization.Id,
+            library.Name,
+            CancellationToken.None
+        );
+        await Assert.That(deleted).IsNull();
+
+        var reloadedRepo = await _context
+            .CodeRepositories.AsNoTracking()
+            .SingleAsync(r => r.Id == repository.Id);
+        await Assert.That(reloadedRepo.LibraryIds).DoesNotContain(library.Id);
+    }
+
+    [Test]
+    public async Task DeleteLibraryAsync_LibraryReferencedByMultipleRepositories_CleansAllOfThem()
+    {
+        var libraryId = SeedContext.NewId("library");
+        var unrelatedLibraryId = SeedContext.NewId("library");
+        var (seed, repo1, repo2) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddCodeRepository(proto => proto.LibraryIds = [libraryId, unrelatedLibraryId])
+            .AddCodeRepository(proto => proto.LibraryIds = [libraryId])
+            .BuildAsync();
+        var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
+        var library = await CreateLibraryWithIdAsync(
+            store,
+            seed.Organization.Id,
+            "test-lib",
+            libraryId
+        );
+        _context.ChangeTracker.Clear();
+
+        await store.DeleteLibraryAsync(seed.Organization.Id, library.Id, CancellationToken.None);
+
+        var reloadedRepo1 = await _context
+            .CodeRepositories.AsNoTracking()
+            .SingleAsync(r => r.Id == repo1.Id);
+        var reloadedRepo2 = await _context
+            .CodeRepositories.AsNoTracking()
+            .SingleAsync(r => r.Id == repo2.Id);
+
+        // The deleted library id is stripped from both repositories.
+        await Assert.That(reloadedRepo1.LibraryIds).DoesNotContain(library.Id);
+        await Assert.That(reloadedRepo2.LibraryIds).DoesNotContain(library.Id);
+
+        // Unrelated library ids are preserved.
+        await Assert.That(reloadedRepo1.LibraryIds).Contains(unrelatedLibraryId);
+    }
+
+    [Test]
+    public async Task DeleteLibraryAsync_RepositoryInDifferentOrganization_IsNotTouched()
+    {
+        var (store, organizationId, library) = await CreateStoreWithLibraryAsync();
+
+        // Create a repository in a different organization with the same library id string.
+        var otherSeed = SeedContext.Generate();
+        var otherRepo = await EntityGraph
+            .SeedWith(otherSeed, _context)
+            .AddCodeRepository(proto => proto.LibraryIds = [library.Id])
+            .BuildAsync();
+        _context.ChangeTracker.Clear();
+
+        await store.DeleteLibraryAsync(organizationId, library.Id, CancellationToken.None);
+
+        // The repository in the other organization is untouched.
+        var reloadedOtherRepo = await _context
+            .CodeRepositories.AsNoTracking()
+            .SingleAsync(r => r.Id == otherRepo.Id);
+        await Assert.That(reloadedOtherRepo.LibraryIds).Contains(library.Id);
+    }
+
+    [Test]
+    public async Task DeleteLibraryAsync_LibraryDoesNotExist_NoOp()
+    {
+        var (store, organizationId, _) = await CreateStoreWithLibraryAsync();
+        var nonExistentId = SeedContext.NewId("library");
+        _context.ChangeTracker.Clear();
+
+        // Should not throw.
+        await store.DeleteLibraryAsync(organizationId, nonExistentId, CancellationToken.None);
+    }
+
+    private async Task<(
+        PostgresLibraryDocumentStore Store,
+        string OrganizationId,
+        Library Library
+    )> CreateStoreWithLibraryAsync()
+    {
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
+        var library = await CreateLibraryAsync(store, seed.Organization.Id, "test-lib");
+
+        return (store, seed.Organization.Id, library);
+    }
+
+    private static Task<Library> CreateLibraryAsync(
+        PostgresLibraryDocumentStore store,
+        string organizationId,
+        string name
+    ) => CreateLibraryWithIdAsync(store, organizationId, name, SeedContext.NewId("library"));
+
+    private static Task<Library> CreateLibraryWithIdAsync(
+        PostgresLibraryDocumentStore store,
+        string organizationId,
+        string name,
+        string libraryId
+    )
+    {
+        var now = DateTimeOffset.UtcNow;
+        return store.CreateLibraryAsync(
+            new Library
+            {
+                Id = libraryId,
+                OrganizationId = organizationId,
+                Name = name,
+                CreatedAt = now,
+                UpdatedAt = now,
+            },
+            default
+        );
+    }
+}

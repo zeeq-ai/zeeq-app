@@ -1,0 +1,152 @@
+# yaml-language-server: $schema=none
+# Filtering collector configuration that simulates upstream for local development
+# - Uses OIDC extension to check inbound Bearer JWTs against Zeeq's OpenIddict issuer
+# - Uses Headers Setter extension to forward the original caller's Authorization header
+# - Uses Filter processor to drop non-agent-session telemetry (logs and traces)
+# - Forwards to both Aspire dashboard and Zeeq's OTLP endpoint for full-telemetry visibility
+
+extensions:
+  # Validates the caller's Bearer JWT against Zeeq's OpenIddict issuer via
+  # standard OIDC discovery (/.well-known/openid-configuration + JWKS).
+  # This is a cheap outer gate that keeps unauthenticated noise off Zeeq.
+  oidc:
+    issuer_url: "${env:ZEEQ_ISSUER_URL}" # e.g. https://app.zeeq.ai/auth
+    # No dedicated telemetry OpenIddict resource/scope exists yet, so this
+    # points at the same resource already registered for MCP user tokens
+    # (AppSettings:Auth:Resource) - any existing Zeeq user token satisfies
+    # this check without new server-side provisioning. Revisit once a
+    # dedicated zeeq-telemetry resource/audience is registered.
+    audience: "${env:ZEEQ_TELEMETRY_AUDIENCE}"
+    username_claim: sub
+
+  # Forwards the original caller's Authorization header from the inbound request
+  # onto the exporter request, so Zeeq sees the end user's token, not a
+  # collector service identity. Requires include_metadata: true on the receiver
+  # and metadata_keys on the batch processor (§3.1 of the telemetry design).
+  headers_setter:
+    headers:
+      - action: upsert
+        key: authorization
+        from_context: authorization
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: oidc
+        include_metadata: true # required for from_context in headers_setter
+      http:
+        endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: oidc
+        include_metadata: true
+    # Receiver-level OIDC validation: rejects invalid/missing tokens at the edge.
+    # Note: Aspire health checks (172.18.0.1) will log "Authentication failed:
+    # missing or empty header" warnings - these are expected and benign. Use
+    # separate otlp/health receivers (ports 4319/4320) if cleaner logs needed.
+
+  # Health-check receiver (identical to otlp, kept for future explicit
+  # monitoring configuration if needed).
+  otlp/health:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4319
+      http:
+        endpoint: 0.0.0.0:4320
+
+exporters:
+  # Forward to Zeeq with per-user JWT pass-through via headers_setter.
+  # The Authorization header from the inbound request is forwarded; if no
+  # user token is present, the collector can fall back to a service-level
+  # client_credentials identity via additional_auth on headers_setter.
+  # otlphttp, not otlp (gRPC): Kestrel is Http1AndHttp2 locally, and a plain
+  # HTTP exporter/receiver pair avoids h2c-only-client problems entirely
+  # (previously required gRPC here specifically to work around an h2c-only
+  # Kestrel endpoint - see appsettings.json and Diagnostics/OtlpMockEndpoints.cs
+  # in Zeeq.Runtime.Server). otlphttp auto-appends /v1/logs and /v1/traces to
+  # this base endpoint per signal.
+  otlphttp/zeeq:
+    endpoint: "${env:ZEEQ_OTLP_HTTP_ENDPOINT}"
+    auth:
+      authenticator: headers_setter
+    sending_queue:
+      enabled: true
+    tls:
+      insecure: true # Local
+
+  # Fan-out to Aspire dashboard for full-telemetry visibility.
+  otlp/aspire:
+    endpoint: "${env:OTEL_EXPORTER_OTLP_ENDPOINT}"
+    headers:
+      x-otlp-api-key: "${env:ASPIRE_DASHBOARD_OTLP_API_KEY}"
+    tls:
+      insecure: true
+
+processors:
+  # ---- LOGS: keep only Claude Code + Codex session events (drop-if-true) ----
+  filter/agent_session_logs:
+    error_mode: ignore
+    logs:
+      log_record:
+        - |
+          not (
+            resource.attributes["service.name"] == "claude-code" and
+            (log.body == "claude_code.user_prompt" or
+             log.body == "claude_code.tool_result" or
+             log.body == "claude_code.api_request" or
+             log.body == "claude_code.tool_decision")
+          ) and not (
+            IsMatch(resource.attributes["service.name"], ".*codex.*") and
+            (log.attributes["prompt_length"] != nil or
+             (log.attributes["tool_name"] != nil and log.attributes["call_id"] != nil) or
+             log.attributes["event.kind"] == "response.completed" or
+             (log.attributes["mcp_servers"] != nil and log.attributes["approval_policy"] != nil))
+          )
+
+  # ---- TRACES: keep only Copilot Chat business spans (drop-if-true) ----
+  filter/agent_session_traces:
+    error_mode: ignore
+    traces:
+      span:
+        - |
+          not (
+            resource.attributes["service.name"] == "copilot-chat" and
+            span.attributes["copilot_chat.chat_session_id"] != nil and
+            (span.attributes["gen_ai.operation.name"] == "invoke_agent" or
+             span.attributes["gen_ai.operation.name"] == "chat" or
+             span.attributes["gen_ai.operation.name"] == "execute_tool")
+          )
+
+  batch:
+    send_batch_size: 128
+    send_batch_max_size: 512
+    timeout: 5s
+    # One batcher per distinct caller token: preserves per-user Authorization
+    # forwarding correctness. Without this, records from two users could land
+    # in one exported batch carrying a single Authorization header.
+    metadata_keys: [authorization]
+    metadata_cardinality_limit: 1000
+
+service:
+  extensions: [oidc, headers_setter]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [filter/agent_session_traces, batch]
+      exporters: [otlp/aspire, otlphttp/zeeq]
+    logs:
+      receivers: [otlp]
+      processors: [filter/agent_session_logs, batch]
+      exporters: [otlp/aspire, otlphttp/zeeq]
+    # Health-check pipelines (unauthenticated, Aspire visibility only).
+    # These let monitoring systems check the collector without bearer tokens.
+    traces/health:
+      receivers: [otlp/health]
+      processors: [batch]
+      exporters: [otlp/aspire]
+    logs/health:
+      receivers: [otlp/health]
+      processors: [batch]
+      exporters: [otlp/aspire]

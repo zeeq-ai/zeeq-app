@@ -1,0 +1,47 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/dotnet
+// For .NET containers: https://github.com/devcontainers/images/tree/main/src/dotnet
+{
+  "name": "C# .NET",
+  // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+  "image": "mcr.microsoft.com/devcontainers/dotnet",
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "16gb",
+    "storage": "32gb"
+  },
+  // Features to add to the dev container. More info: https://containers.dev/features.
+  "features": {
+    "ghcr.io/devcontainers-extra/features/mise:1": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:4.0.0": {},
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:2.1.0": {},
+    "ghcr.io/devcontainers-community/npm-features/typescript:1": {},
+    "ghcr.io/dotnet/aspire-devcontainer-feature/dotnetaspire:latest": {},
+    "ghcr.io/nikiforovall/devcontainer-features/dotnet-csharpier:1": {}
+  },
+  "runArgs": ["--network=host"],
+
+  // Configure tool-specific properties.
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-dotnettools.csdevkit",
+        "ms-dotnettools.csharp",
+        "microsoft-aspire.aspire-vscode",
+        "k--kato.docomment",
+        "aaron-bond.better-comments",
+        "eamodio.gitlens",
+        "csharpier.csharpier-vscode",
+        "jeremycaron.csharp-organize-usings"
+      ]
+    }
+  },
+
+  // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+  "remoteUser": "vscode",
+
+  // Cannot access the published Postgres image otherwise.
+  "postStartCommand": "echo $GITHUB_TOKEN | docker login ghcr.io -u $(gh api user -q .login) --password-stdin"
+}

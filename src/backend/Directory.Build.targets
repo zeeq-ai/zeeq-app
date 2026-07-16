@@ -1,0 +1,27 @@
+<Project>
+  <Target Name="GetGitVersionInfo" BeforeTargets="BeforeCompile;CoreCompile">
+    <PropertyGroup>
+      <_GitSha>$(GIT_SHA)</_GitSha>
+    </PropertyGroup>
+
+    <Exec
+      Command="git rev-parse HEAD"
+      ConsoleToMSBuild="true"
+      StandardOutputImportance="low"
+      IgnoreExitCode="true"
+      Condition="'$(_GitSha)' == ''"
+    >
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GitSha" />
+    </Exec>
+
+    <PropertyGroup>
+      <_GitSha Condition="'$(_GitSha)' != ''">$(_GitSha.Trim())</_GitSha>
+      <_BuildTimeUtc>$([System.DateTime]::UtcNow.ToString("o"))</_BuildTimeUtc>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <AssemblyMetadata Include="BuildTimeUtc" Value="$(_BuildTimeUtc)" />
+      <AssemblyMetadata Include="GitSha" Value="$(_GitSha)" Condition="'$(_GitSha)' != ''" />
+    </ItemGroup>
+  </Target>
+</Project>
