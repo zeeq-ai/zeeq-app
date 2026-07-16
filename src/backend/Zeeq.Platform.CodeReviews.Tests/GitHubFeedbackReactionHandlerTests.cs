@@ -104,9 +104,7 @@ public sealed class GitHubFeedbackReactionHandlerTests
     }
 
     [Test]
-    [Arguments("/bb")]
     [Arguments("/zeeq please review this")]
-    [Arguments("+bb")]
     [Arguments("   +zeeq")]
     public async Task FeedbackCommandPolicy_WithSupportedCommandToken_ReturnsTrue(
         string commentBody
@@ -118,7 +116,7 @@ public sealed class GitHubFeedbackReactionHandlerTests
     }
 
     [Test]
-    [Arguments("please +bb")]
+    [Arguments("please +zeeq")]
     [Arguments("`+zeeq`")]
     [Arguments("Can you review this?")]
     [Arguments("")]

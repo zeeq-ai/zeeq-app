@@ -9,11 +9,11 @@ namespace Zeeq.Platform.CodeReviews;
 /// only enqueue feedback work for explicit command comments so normal review
 /// discussion does not create immediate reactions or later review work. The
 /// command must be the first non-whitespace token in the comment body. This keeps
-/// casual mentions such as "please run +bb later" from being treated as commands.
+/// casual mentions such as "please run +zeeq later" from being treated as commands.
 /// </remarks>
 public static class GitHubFeedbackCommandPolicy
 {
-    private static readonly string[] SupportedCommandTokens = ["/bb", "/zeeq", "+bb", "+zeeq"];
+    private static readonly string[] SupportedCommandTokens = ["/zeeq", "+zeeq"];
 
     /// <summary>
     /// Returns true when the comment body starts with a supported Zeeq command token.
@@ -30,10 +30,7 @@ public static class GitHubFeedbackCommandPolicy
     /// <param name="commentBody">Raw GitHub comment body.</param>
     /// <param name="command">The parsed command kind when the comment is a supported command.</param>
     /// <returns>True when the comment body is a recognized Zeeq feedback command.</returns>
-    public static bool TryParseCommand(
-        string? commentBody,
-        out GitHubFeedbackCommand command
-    )
+    public static bool TryParseCommand(string? commentBody, out GitHubFeedbackCommand command)
     {
         command = default;
 
