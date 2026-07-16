@@ -8,7 +8,7 @@ set -euo pipefail
 #   - Passwords exported as environment variables:
 #       ZEEQ_OPENIDDICT_SIGNING_PASSWORD
 #       ZEEQ_OPENIDDICT_ENCRYPTION_PASSWORD
-#   - gcloud authenticated with zeeq-mcp-prod project access
+#   - gcloud authenticated with zeeq-ai-prod project access
 #
 # Usage:
 #   export ZEEQ_OPENIDDICT_SIGNING_PASSWORD='...'

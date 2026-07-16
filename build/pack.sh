@@ -1,6 +1,6 @@
 set -e
 
-PROJECT_ID="${GCP_PROJECT_ID:-zeeq-mcp-prod}"
+PROJECT_ID="${GCP_PROJECT_ID:-zeeq-ai-prod}"
 REGION="${GCP_REGION:-us-central1}"
 
 # Run from the root; local build-ship for now
