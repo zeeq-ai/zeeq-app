@@ -3,10 +3,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <UserSecretsId>9008a71b-0511-451e-bab5-ae2a2c842fd2</UserSecretsId>
     <!-- OpenAPI config -->
     <OpenApiDocumentsDirectory>..\..\web\src\api</OpenApiDocumentsDirectory>
     <OpenApiGenerateDocumentsOptions>--file-name zeeq-api</OpenApiGenerateDocumentsOptions>
+    <UserSecretsId>4e2232dd-81d4-4251-9966-b2a61b1d499c</UserSecretsId>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <!-- Suppress OpenAPI document generation in Release; the target checks this property -->
@@ -64,11 +64,7 @@
     <ProjectReference Include="..\Zeeq.Platform.Telemetry\Zeeq.Platform.Telemetry.csproj" />
   </ItemGroup>
   <!-- This section is a set of post-build commands to generate the schema-->
-  <Target
-    Name="Bindings"
-    AfterTargets="Build"
-    Condition="$(Configuration)=='Gen' Or $(GEN)=='true'"
-  >
+  <Target Name="Bindings" AfterTargets="Build" Condition="$(Configuration)=='Gen' Or $(GEN)=='true'">
     <Message Text="Generating OpenAPI schema file." Importance="high" />
     <!-- (2) Generate TS bindings for the web app -->
     <Exec Command="yarn generate" WorkingDirectory="../../web" />
@@ -76,11 +72,7 @@
 
   <Target Name="AddOpenApiDependencies" AfterTargets="ResolveReferences">
     <ItemGroup>
-      <AdditionalFiles
-        Include="@(ReferencePath->'%(RootDir)%(Directory)%(Filename).xml')"
-        Condition="'%(ReferencePath.Filename)' == 'Microsoft.AspNetCore.Http.Abstractions'"
-        KeepMetadata="Identity;HintPath"
-      />
+      <AdditionalFiles Include="@(ReferencePath-&gt;'%(RootDir)%(Directory)%(Filename).xml')" Condition="'%(ReferencePath.Filename)' == 'Microsoft.AspNetCore.Http.Abstractions'" KeepMetadata="Identity;HintPath" />
     </ItemGroup>
   </Target>
 </Project>

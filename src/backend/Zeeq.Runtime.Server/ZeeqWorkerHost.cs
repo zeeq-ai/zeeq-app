@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Zeeq.Core.Llm;
 using Zeeq.Integrations.GitHub;
 using Zeeq.Platform.CodeReviews;
@@ -7,7 +8,7 @@ using Zeeq.Platform.Ingest;
 using Zeeq.Platform.Llm;
 using Zeeq.Platform.Metrics;
 using Zeeq.Platform.Storage.Google;
-using Microsoft.Extensions.Options;
+using Zeeq.Platform.Telemetry.Setup;
 
 namespace Zeeq.Runtime.Server;
 
@@ -78,6 +79,7 @@ internal static class ZeeqWorkerHost
                 .AddGoogleKmsDataEncryption(workerAppSettings.Llm)
                 .AddZeeqCodeReviews(workerAppSettings.CodeReview)
                 .AddZeeqIngest(workerAppSettings)
+                .AddTelemetryIngest(workerAppSettings.Telemetry)
                 .AddZeeqIngestScheduler()
                 .AddZeeqDispatchProcess();
 

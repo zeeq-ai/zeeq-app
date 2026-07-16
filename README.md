@@ -48,6 +48,48 @@ The connection string is read from `AppSettings:Database:ConnectionString`. Set 
 
 ## Local Testing
 
+### Secrets Setup
+
+The runtime secrets are loaded using ASP.NET user secrets.
+
+```shell
+cd src/backend/Zeeq.Runtime.Server
+
+# Non-secret settings are in  appsettings.Development.json
+
+# Initialize the secrets store
+dotnet user-secrets init
+
+# Add secrets to the store (see: src/backend/Zeeq.Runtime.Server/appsettings.Development.json)
+
+# The account identifiers prefixed with the provider that designate system level admins
+# The user will need to have an account first locally (or you already know the subject ID)
+dotnet user-secrets set AppSettings:Platform:SystemAdminSubjects:0 secret-value
+
+# The API key to use with the default "fast" LLM tier model.
+# Not needed if using in-app configured self-managed services.
+dotnet user-secrets set AppSettings:Llm:Models:Fast:ApiKey secret-value
+
+# The API key to use for generating embeddings (always needed since there is no UI for this)
+dotnet user-secrets set AppSettings:Llm:Embeddings:ApiKey secret-value
+
+# The DEV GitHub app webhook secret (other configuration directly in file)
+# This is needed to test GitHub webhook flows locally since the GH app only has one webhook URL
+# Alternate: configure custom webhooks: https://github.com/zeeq-ai/zeeq-app/settings/hooks
+dotnet user-secrets set AppSettings:GitHub:WebhookSecret secret-value
+
+# The DEV GitHub app private key PEM for local testing
+dotnet user-secrets set AppSettings:GitHub:PrivateKeyPem secret-value
+
+# The client secrets for OAuth providers (e.g. GitHub, Google, etc.) used for user login
+# Order matches appsettings.Development.json
+dotnet user-secrets set AppSettings:Auth:Providers:0:ClientSecret secret-value # Google
+dotnet user-secrets set AppSettings:Auth:Providers:1:ClientSecret secret-value # GitHub
+
+```
+
+### Aspire and YARP
+
 The Aspire app host in `host/AppHost.cs` uses a YARP reverse proxy to set up the routes.
 
 - <http://zeeq-web.localhost:8095> is the main local entry point

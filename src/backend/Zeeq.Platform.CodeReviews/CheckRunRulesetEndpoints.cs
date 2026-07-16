@@ -1,8 +1,6 @@
-using System.Text;
 using System.Text.Json;
-using Zeeq.Core.Common;
-using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.Extensions.Options;
+using Zeeq.Core.Common;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -42,10 +40,7 @@ public sealed class CheckRunRulesetEndpoints : IEndpoint
     {
         if (!int.TryParse(appSettingsOptions.Value.GitHub.AppId, out var appId))
         {
-            return TypedResults.Problem(
-                "The GitHub App id is not configured.",
-                statusCode: 500
-            );
+            return TypedResults.Problem("The GitHub App ID is not configured.", statusCode: 500);
         }
 
         // NOTE: The required_status_checks rule shape (parameters.required_status_checks[] with
@@ -88,10 +83,6 @@ public sealed class CheckRunRulesetEndpoints : IEndpoint
 
         var bytes = JsonSerializer.SerializeToUtf8Bytes(ruleset);
 
-        return TypedResults.File(
-            bytes,
-            "application/json",
-            "zeeq-code-review-ruleset.json"
-        );
+        return TypedResults.File(bytes, "application/json", "zeeq-code-review-ruleset.json");
     }
 }

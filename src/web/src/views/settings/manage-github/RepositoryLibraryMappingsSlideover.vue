@@ -96,7 +96,8 @@
                     color="neutral"
                     variant="ghost"
                     size="xs"
-                    to="/api/v1/assets/zeeq-code-review-ruleset.json"
+                    :href="rulesetDownloadUrl"
+                    external
                     target="_blank"
                   />
                   <UButton
@@ -199,6 +200,15 @@ const removing = ref(false);
 const selectedLibraryIds = ref<string[]>([]);
 const checkRunCritical = ref(false);
 const checkRunMajor = ref(false);
+
+const rulesetDownloadPath = "/api/v1/assets/zeeq-code-review-ruleset.json";
+const rulesetDownloadUrl = computed(
+  () =>
+    new URL(
+      rulesetDownloadPath,
+      globalThis.location?.origin ?? "http://localhost",
+    ).href,
+);
 
 const accordionItems = [
   { label: "Libraries", value: "libraries", icon: "i-hugeicons-book-01" },

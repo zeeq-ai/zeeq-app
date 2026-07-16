@@ -1,12 +1,13 @@
 {
   "cSpell.words": [
-    "Zeeq",
+    "Antiforgery",
     "ciphertext",
     "Iddict",
     "Scrutor",
     "traceparent",
     "tracestate",
-    "upserted"
+    "upserted",
+    "Zeeq"
   ],
   "chat.tools.terminal.autoApprove": {
     "dotnet run": true,
