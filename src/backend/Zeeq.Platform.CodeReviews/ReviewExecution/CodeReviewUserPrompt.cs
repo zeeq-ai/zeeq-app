@@ -46,7 +46,7 @@ public sealed record CodeReviewUserPrompt(string SharedPullRequestPromptBody)
             ? "(No description.)"
             : input.Body.Trim();
 
-        // Comments extracted from the GitHub PR targeted to +bb, /bb, +zeeq, or /zeeq.
+        // Comments extracted from the GitHub PR targeted to +zeeq, or /zeeq.
         var developerFeedback = RenderDeveloperFeedback(input.DeveloperFeedbackComments);
 
         // Files in this PR but out of scope (filtered out); shown so the agent knows what else changed.

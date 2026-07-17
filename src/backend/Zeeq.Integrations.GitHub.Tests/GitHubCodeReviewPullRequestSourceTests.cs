@@ -54,7 +54,7 @@ public sealed class GitHubCodeReviewPullRequestSourceTests
     }
 
     [Test]
-    public async Task GetPullRequestAsync_FiltersZeeqOwnedAndCommandFeedbackAndCapsLatest()
+    public async Task GetPullRequestAsync_WithDeveloperFeedback_FiltersNoiseAndCapsLatest()
     {
         var issueComments = Enumerable
             .Range(0, 25)
@@ -73,7 +73,7 @@ public sealed class GitHubCodeReviewPullRequestSourceTests
                 ),
                 new(
                     "octocat",
-                    "/bb please review",
+                    "/zeeq please review",
                     DateTimeOffset.Parse("2026-06-25T13:01:00Z"),
                     null
                 ),
@@ -125,7 +125,7 @@ public sealed class GitHubCodeReviewPullRequestSourceTests
             .DoesNotContain("Zeeq generated status.");
         await Assert
             .That(snapshot.DeveloperFeedbackComments.Select(comment => comment.Body))
-            .DoesNotContain("/bb please review");
+            .DoesNotContain("/zeeq please review");
         await Assert
             .That(snapshot.DeveloperFeedbackComments.Select(comment => comment.Body))
             .DoesNotContain("Automated noise.");
