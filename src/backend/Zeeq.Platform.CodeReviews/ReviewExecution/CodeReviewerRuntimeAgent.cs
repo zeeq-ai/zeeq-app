@@ -56,7 +56,7 @@ public sealed record CodeReviewerRuntimeAgent(
     /// Identical for every reviewer in a run.
     /// </param>
     /// <param name="previousReviewsSection">
-    /// Pre-rendered <c>&lt;previous_reviews&gt;</c> XML for this reviewer's facet, or empty when none.
+    /// Pre-rendered <c>&lt;previous_reviews&gt;</c> XML for prior findings, or empty when none.
     /// Produced by <see cref="CodeReviewAgentExecutor.BuildPreviousReviewsSection"/>.
     /// </param>
     public string ComposeUserPrompt(

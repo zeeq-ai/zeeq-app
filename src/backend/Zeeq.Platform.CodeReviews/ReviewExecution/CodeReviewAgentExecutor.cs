@@ -1,15 +1,15 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Xml.Linq;
-using Zeeq.Core.Common;
-using Zeeq.Core.Documents;
-using Zeeq.Core.Llm;
-using Zeeq.Mcp.Documents;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Zeeq.Core.Common;
+using Zeeq.Core.Documents;
+using Zeeq.Core.Llm;
+using Zeeq.Mcp.Documents;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -113,7 +113,7 @@ public sealed partial class CodeReviewAgentExecutor(
             // Here, we convert each of the active reviewers into an Agent Framework
             // AIAgent that can be executed in the workflow. Each reviewer is resolved to a
             // chat client based on its configured model tier, and the agent instructions
-            // are built to include the reviewer prompt and any previous reviews for that facet.
+            // are built to include the reviewer prompt and previous review context.
             foreach (var reviewer in activeReviewers)
             {
                 var reviewerScope = services.CreateAsyncScope();
@@ -126,7 +126,7 @@ public sealed partial class CodeReviewAgentExecutor(
                     cancellationToken
                 );
 
-                var previousReviewsSection = BuildPreviousReviewsSection(reviewer, previousReviews);
+                var previousReviewsSection = BuildPreviousReviewsSection(previousReviews);
 
                 workflowReviewers.Add(
                     new(
@@ -550,7 +550,6 @@ public sealed partial class CodeReviewAgentExecutor(
     }
 
     internal static string BuildPreviousReviewsSection(
-        CodeReviewerRuntimeAgent reviewer,
         IReadOnlyList<CodeReviewPreviousReview> previousReviews
     )
     {
@@ -558,24 +557,21 @@ public sealed partial class CodeReviewAgentExecutor(
           Example output:
 
           <previous_reviews>
-            <review>
+            <review facet="Security">
               <summary>Previous security review</summary>
               <findings>
-                <finding level="CRITICAL" file="src/db.cs">
+                <previous_finding level="CRITICAL" file="src/db.cs">
                   <summary>SQL injection risk</summary>
-                  <details>The query concatenates user input.</details>
-                </finding>
-                <finding level="MINOR" file="src/utils.cs">
+                </previous_finding>
+                <previous_finding level="MINOR" file="src/utils.cs">
                   <summary>Missing null check</summary>
-                  <details>Consider adding a null guard.</details>
-                </finding>
+                </previous_finding>
               </findings>
             </review>
             <use_of_previous_reviews>
-              - Previous reviews are context from the same review facet only.
+              - Previous reviews are context from prior reviewer facets.
               - Re-check CRITICAL and MAJOR findings against the current diff and re-raise only if they still exist.
               - Treat MINOR, SUGGESTION, and COMMENT findings as prior context; do not repeat them unless the current diff reintroduces or materially worsens the issue.
-              - Details may be truncated for brevity.
             </use_of_previous_reviews>
           </previous_reviews>
         */
@@ -584,19 +580,20 @@ public sealed partial class CodeReviewAgentExecutor(
             return string.Empty;
         }
 
-        var matching = previousReviews
-            .Where(r => IsSameFacet(r, reviewer) && r.Findings.Count > 0)
+        var reviewsWithFindings = previousReviews
+            .Where(review => review.Findings.Count > 0)
             .ToArray();
 
-        if (matching.Length == 0)
+        if (reviewsWithFindings.Length == 0)
         {
             return string.Empty;
         }
 
         var doc = new XElement(
             "previous_reviews",
-            matching.Select(review => new XElement(
+            reviewsWithFindings.Select(review => new XElement(
                 "review",
+                new XAttribute("facet", review.Facet),
                 new XElement("summary", review.Summary),
                 new XElement("findings", review.Findings.Select(BuildFindingElement))
             )),
@@ -609,7 +606,6 @@ public sealed partial class CodeReviewAgentExecutor(
     private static XElement BuildFindingElement(CodeReviewPreviousFinding finding)
     {
         var level = finding.Level.ToString().ToUpperInvariant();
-        // var details = TruncateBodyByLevel(finding.Details, finding.Level);
 
         return new XElement(
             "previous_finding",
@@ -621,84 +617,14 @@ public sealed partial class CodeReviewAgentExecutor(
     }
 
     private const string PreviousReviewsUsageGuidance = """
-        - The previous_reviews contain earlier rounds of findings
+        - The previous_reviews contain earlier rounds of findings from all reviewer facets
+        - The facet attribute on each review identifies the reviewer facet that produced that group of findings
         - In the *current* pr_diff, pay attention to `NOTE` comments (e.g. // NOTE: ...,  -- NOTE: ..., /* NOTE: ...*/, idiomatic language comments) that address these previous findings; if present, *consider the finding resolved*
         - CRITICAL and MAJOR findings **without a nearby NOTE** are considered *unresolved*; re-check the pr_diff for these and re-raise if they still exist
         - For MINOR, SUGGESTION, and COMMENT findings, if the pr_diff does not materially worsen the issue or increase the risk, *consider the finding resolved*
         - Do not repeat resolved findings in your current review unless the pr_diff **materially increases risk, errors, or regressions without a NOTE** clearly explaining the reasoning
         - These are **NOT** current cycle findings!!  **ONLY FOR CONTEXT OF PREVIOUS REVIEWS**
         """;
-
-    /// <summary>
-    /// Truncate the finding body based on the finding level. Critical and Major
-    /// findings are not truncated, while Minor, Suggestion, and Comment findings
-    /// are truncated to 1000 characters.
-    /// </summary>
-    /// <param name="details">Finding details text</param>
-    /// <param name="level">The finding level</param>
-    /// <returns>Truncated finding details text</returns>
-    private static string TruncateBodyByLevel(string details, CodeReviewFindingLevel level)
-    {
-        if (level is CodeReviewFindingLevel.Critical or CodeReviewFindingLevel.Major)
-        {
-            return details;
-        }
-
-        const int maxLength = 1000;
-
-        return details.Length <= maxLength ? details : details[..maxLength];
-    }
-
-    /// <summary>
-    /// Determines whether a previous review output belongs to the current reviewer facet.
-    /// </summary>
-    /// <remarks>
-    /// Matching is intentionally tolerant to cover cases of name name and facet changes as
-    /// these are use editable.  It is not a deal breaker if the user edits these and we
-    /// lose previous reviews; this is best effort match.
-    /// </remarks>
-    private static bool IsSameFacet(
-        CodeReviewPreviousReview review,
-        CodeReviewerRuntimeAgent reviewer
-    )
-    {
-        // Lowercase and trim all facet-related strings for tolerant matching
-        var reviewFacet = NormalizeFacet(review.Facet);
-        var reviewerFacet = NormalizeFacet(reviewer.ReviewFacet);
-        var reviewerName = NormalizeFacet(reviewer.DisplayName);
-
-        if (string.IsNullOrWhiteSpace(reviewFacet))
-        {
-            // Without a facet there is no safe way to attach the old finding to
-            // a specific reviewer prompt.
-            return false;
-        }
-
-        return reviewFacet == reviewerFacet // Same facet match
-            || reviewFacet == reviewerName // Facet and reviewer have same name
-            || reviewerName.Contains(reviewFacet, StringComparison.OrdinalIgnoreCase) // reviewer name contains facet as substring
-            || reviewFacet.Contains(reviewerFacet, StringComparison.OrdinalIgnoreCase) // review facet containers reviewer facet as substring
-            || reviewerFacet.Contains(reviewFacet, StringComparison.OrdinalIgnoreCase); // reviewer facet contains review facet as substring
-    }
-
-    /// <summary>
-    /// Normalizes reviewer facet labels for tolerant matching across older review XML.
-    /// </summary>
-    /// <remarks>
-    /// Trim, lowercase, and remove any non-alphanumeric characters to allow for tolerant
-    /// matching of facet names.
-    /// </remarks>
-    private static string NormalizeFacet(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return string.Empty;
-        }
-
-        var chars = value.Trim().ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray();
-
-        return chars.Length > 0 ? new string(chars) : string.Empty;
-    }
 
     [LoggerMessage(
         EventId = 3230,

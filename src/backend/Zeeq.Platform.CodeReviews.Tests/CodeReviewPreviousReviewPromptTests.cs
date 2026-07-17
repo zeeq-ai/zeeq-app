@@ -1,28 +1,15 @@
-using Zeeq.Core.Models;
+using System.Xml.Linq;
 
 namespace Zeeq.Platform.CodeReviews.Tests;
 
 /// <summary>
 /// Tests for CodeReviewAgentExecutor prompt-building helpers:
-/// BuildPreviousReviewsSection, IsSameFacet, and NormalizeFacet.
+/// BuildPreviousReviewsSection.
 ///
 /// dotnet run --project src/backend/Zeeq.Platform.CodeReviews.Tests --output detailed --disable-logo --treenode-filter "/*/*/CodeReviewPreviousReviewPromptTests/*"
 /// </summary>
 public sealed class CodeReviewPreviousReviewPromptTests
 {
-    private static CodeReviewerRuntimeAgent Reviewer(
-        string displayName = "Security Reviewer",
-        string facet = "Security"
-    ) =>
-        new(
-            Id: "agent_1",
-            DisplayName: displayName,
-            ReviewFacet: facet,
-            ModelTier: CodeReviewModelTier.High,
-            Prompt: "Review for security issues.",
-            ActivationConfiguration: CodeReviewerActivationConfiguration.Empty
-        );
-
     private static CodeReviewPreviousReview PreviousReview(
         string facet = "Security",
         string summary = "Previous security review",
@@ -41,27 +28,15 @@ public sealed class CodeReviewPreviousReviewPromptTests
     [Test]
     public async Task BuildPreviousReviewsSection_EmptyList_ReturnsEmpty()
     {
-        var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection(Reviewer(), []);
+        var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection([]);
 
         await Assert.That(section).IsEqualTo(string.Empty);
     }
 
     [Test]
-    public async Task BuildPreviousReviewsSection_NoFacetMatch_ReturnsEmpty()
+    public async Task BuildPreviousReviewsSection_ReviewWithZeroFindings_ReturnsEmpty()
     {
         var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection(
-            Reviewer(facet: "Security"),
-            [PreviousReview(facet: "Performance", findings: Finding(CodeReviewFindingLevel.Major))]
-        );
-
-        await Assert.That(section).IsEqualTo(string.Empty);
-    }
-
-    [Test]
-    public async Task BuildPreviousReviewsSection_MatchButZeroFindings_ReturnsEmpty()
-    {
-        var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection(
-            Reviewer(facet: "Security"),
             [PreviousReview(facet: "Security", findings: [])]
         );
 
@@ -69,10 +44,9 @@ public sealed class CodeReviewPreviousReviewPromptTests
     }
 
     [Test]
-    public async Task BuildPreviousReviewsSection_MultipleMatchingReviews_AggregatesXml()
+    public async Task BuildPreviousReviewsSection_MultipleReviews_AggregatesXmlWithFacets()
     {
         var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection(
-            Reviewer(facet: "Security"),
             [
                 PreviousReview(
                     facet: "Security",
@@ -87,92 +61,41 @@ public sealed class CodeReviewPreviousReviewPromptTests
             ]
         );
 
-        await Assert.That(section).Contains("Review 1");
-        await Assert.That(section).Contains("Review 2");
+        var doc = XElement.Parse(section);
+        var reviews = doc.Elements("review").ToArray();
+
+        await Assert.That(reviews).Count().IsEqualTo(2);
+        await Assert.That(reviews[0].Attribute("facet")!.Value).IsEqualTo("Security");
+        await Assert.That(reviews[0].Element("summary")!.Value).IsEqualTo("Review 1");
+        await Assert.That(reviews[1].Attribute("facet")!.Value).IsEqualTo("Security");
+        await Assert.That(reviews[1].Element("summary")!.Value).IsEqualTo("Review 2");
     }
 
     [Test]
-    public async Task BuildPreviousReviewsSection_OnlyMatchingFacetIncluded()
+    public async Task BuildPreviousReviewsSection_IncludesFindingsFromAllFacets()
     {
         var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection(
-            Reviewer(facet: "Security"),
             [
                 PreviousReview(
                     facet: "Performance",
                     summary: "Perf review",
-                    findings: [Finding(CodeReviewFindingLevel.Major)]
+                    findings: [Finding(CodeReviewFindingLevel.Major, summary: "Perf issue")]
                 ),
                 PreviousReview(
                     facet: "Security",
                     summary: "Security review",
-                    findings: [Finding(CodeReviewFindingLevel.Critical)]
+                    findings: [Finding(CodeReviewFindingLevel.Critical, summary: "Security issue")]
                 ),
             ]
         );
 
-        await Assert.That(section).Contains("Security review");
-        await Assert.That(section).DoesNotContain("Perf review");
-    }
+        var doc = XElement.Parse(section);
+        var reviews = doc.Elements("review").ToArray();
+        var findings = reviews.SelectMany(review => review.Element("findings")!.Elements()).ToArray();
 
-    // IsSameFacet tests
-
-    [Test]
-    public async Task BuildPreviousReviewsSection_FacetCasingDifferent_Matches()
-    {
-        var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection(
-            Reviewer(facet: "security"),
-            [PreviousReview(facet: "Security", findings: [Finding(CodeReviewFindingLevel.Major)])]
-        );
-
-        await Assert.That(section).IsNotEqualTo(string.Empty);
-    }
-
-    [Test]
-    public async Task BuildPreviousReviewsSection_FacetWithSpaces_Matches()
-    {
-        var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection(
-            Reviewer(facet: "CodeQuality"),
-            [
-                PreviousReview(
-                    facet: "Code Quality",
-                    findings: [Finding(CodeReviewFindingLevel.Major)]
-                ),
-            ]
-        );
-
-        await Assert.That(section).IsNotEqualTo(string.Empty);
-    }
-
-    [Test]
-    public async Task BuildPreviousReviewsSection_ReviewerNameMatchesFacet_Matches()
-    {
-        var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection(
-            Reviewer(displayName: "General Reviewer", facet: "General"),
-            [
-                PreviousReview(
-                    facet: "General",
-                    summary: "General feedback",
-                    findings: [Finding(CodeReviewFindingLevel.Comment)]
-                ),
-            ]
-        );
-
-        await Assert.That(section).IsNotEqualTo(string.Empty);
-    }
-
-    [Test]
-    public async Task BuildPreviousReviewsSection_CompletelyDifferentFacet_NoMatch()
-    {
-        var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection(
-            Reviewer(facet: "Performance", displayName: "Performance Reviewer"),
-            [
-                PreviousReview(
-                    facet: "Security",
-                    findings: [Finding(CodeReviewFindingLevel.Critical)]
-                ),
-            ]
-        );
-
-        await Assert.That(section).IsEqualTo(string.Empty);
+        await Assert.That(reviews.Select(review => review.Attribute("facet")!.Value))
+            .IsEquivalentTo(["Performance", "Security"]);
+        await Assert.That(findings.Select(finding => finding.Element("summary")!.Value))
+            .IsEquivalentTo(["Perf issue", "Security issue"]);
     }
 }
