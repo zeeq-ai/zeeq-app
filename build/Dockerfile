@@ -2,14 +2,13 @@
 
 # Multi-stage Dockerfile for Zeeq Server
 #*----------------------------------------------------------------------------------
-# Stage 1: Shared Yarn workspace install (used by web-build and docs-build)
+# Stage 1: Shared Yarn workspace install (used by web-build)
 #*----------------------------------------------------------------------------------
 FROM node:24 AS node-deps
 WORKDIR /srcroot
 
 # Copy only Yarn workspace manifests first to maximize install layer caching.
 COPY ./package.json ./yarn.lock ./.yarnrc.yml ./
-COPY ./docs/package.json ./docs/package.json
 COPY ./src/web/package.json ./src/web/package.json
 
 RUN corepack enable && yarn install --immutable
@@ -22,15 +21,6 @@ FROM node-deps AS web-build
 COPY ./src/web ./src/web
 RUN yarn --cwd ./src/web generate
 RUN VITE_BASE=/web/ yarn --cwd ./src/web build
-
-#*----------------------------------------------------------------------------------
-# Stage 3: Build the Docus Docs Site (Nuxt hangs in container; we build outside)
-#*----------------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM node-deps AS docs-build
-
-COPY ./docs ./docs
-# ! HANGS; we just build externally and copy into container
-# RUN yarn --cwd ./docs generate
 
 #*----------------------------------------------------------------------------------
 # Stage 3: Build the .NET Server
@@ -55,11 +45,6 @@ COPY ./src/backend ./src/backend
 
 # Copy the Vue SPA build output into the server's wwwroot
 COPY --from=web-build /srcroot/src/web/dist ./src/backend/Zeeq.Runtime.Server/wwwroot/web
-
-# Copy the Docus Docs build output into the server's wwwroot
-# Currently build is broken so we cheat and pre-build and copy into the image.
-# COPY --from=docs-build /srcroot/docs/.output/public ./src/backend/Zeeq.Runtime.Server/wwwroot/docs
-COPY ./docs/.output/public ./src/backend/Zeeq.Runtime.Server/wwwroot/docs
 
 # Build the application without restore (already restored above)
 RUN dotnet publish ./src/backend/Zeeq.Runtime.Server/Zeeq.Runtime.Server.csproj \

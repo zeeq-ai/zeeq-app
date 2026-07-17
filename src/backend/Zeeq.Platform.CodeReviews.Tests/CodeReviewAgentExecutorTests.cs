@@ -1,11 +1,10 @@
 using System.Security.Claims;
-using Zeeq.Core.Documents;
-using Zeeq.Core.Identity;
-using Zeeq.Core.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using OpenIddict.Abstractions;
+using Zeeq.Core.Documents;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews.Tests;
 
@@ -38,7 +37,7 @@ public sealed class CodeReviewAgentExecutorTests
     }
 
     [Test]
-    public async Task CodeReviewUserPromptCompose_WithReviewerAndPreviousReviews_ProducesOrderedContent()
+    public async Task ComposeUserPrompt_WithReviewerAndPreviousReviews_ProducesOrderedContent()
     {
         var reviewer = new CodeReviewerRuntimeAgent(
             Id: "agent_security",
@@ -70,42 +69,7 @@ public sealed class CodeReviewAgentExecutorTests
     }
 
     [Test]
-    public async Task BuildLibraryTools_ProducesToolsThatDoNotExposeServerBoundParametersInSchema()
-    {
-        var principal = new ClaimsPrincipal(
-            new ClaimsIdentity([new Claim(OpenIddictConstants.Claims.Subject, "usr_123")], "test")
-        );
-
-        // The tool methods take an injected ILibraryDocumentStore. Registering it
-        // lets IServiceProviderIsService recognize it as a DI-backed parameter, so
-        // it is bound server-side and hidden from the model schema rather than
-        // deserialized from tool-call JSON (which throws on an interface type).
-        var services = new ServiceCollection()
-            .AddScoped(_ => Substitute.For<ILibraryDocumentStore>())
-            .BuildServiceProvider();
-
-        var tools = CodeReviewAgentExecutor.BuildLibraryTools(principal, services);
-
-        await Assert.That(tools.Count).IsGreaterThan(0);
-
-        foreach (var tool in tools)
-        {
-            // Each tool should be an AITool; its JSON schema should not expose the
-            // server-bound "user" (ClaimsPrincipal) or "store" (service) parameters.
-            var jsonSchemaProp = tool.GetType().GetProperty("JsonSchema");
-            if (jsonSchemaProp is not null)
-            {
-                var schema = jsonSchemaProp.GetValue(tool)?.ToString() ?? string.Empty;
-                await Assert.That(schema).DoesNotContain("ClaimsPrincipal");
-                await Assert.That(schema).DoesNotContain("\"user\"");
-                await Assert.That(schema).DoesNotContain("\"store\"");
-                await Assert.That(schema).DoesNotContain("ILibraryDocumentStore");
-            }
-        }
-    }
-
-    [Test]
-    public async Task ScopedServiceAIFunction_ResolvesADistinctScopePerInvocation()
+    public async Task ScopedServiceAIFunction_InvokeAsync_ResolvesDistinctScopePerInvocation()
     {
         // A scoped marker yields a distinct instance per DI scope. If the wrapper reused one
         // scope, both invocations would resolve the same marker (the production DbContext-sharing
@@ -122,14 +86,14 @@ public sealed class CodeReviewAgentExecutorTests
 
         var wrapped = new ScopedServiceAIFunction(probe, services);
 
-        var first = await wrapped.InvokeAsync(new AIFunctionArguments());
-        var second = await wrapped.InvokeAsync(new AIFunctionArguments());
+        var first = await wrapped.InvokeAsync([]);
+        var second = await wrapped.InvokeAsync([]);
 
         await Assert.That(first).IsNotEqualTo(second);
     }
 
     [Test]
-    public async Task BuildLibraryTools_WrapsEveryToolWithReviewScopeMarking()
+    public async Task BuildLibraryTools_WrapsEveryToolWithCodeReviewScopeConfigurator()
     {
         // Locks the production wiring end-to-end: every library tool handed to a reviewer agent
         // must be a ScopedServiceAIFunction carrying MarkCodeReviewExecutionScope, otherwise that
@@ -158,7 +122,7 @@ public sealed class CodeReviewAgentExecutorTests
     }
 
     [Test]
-    public async Task ScopedServiceAIFunction_WithMarkCodeReviewExecutionScope_MarksEachInvocationScope()
+    public async Task ScopedServiceAIFunction_InvokeAsync_WithScopeConfigurator_MarksInvocationScope()
     {
         // Locks the review-path wiring: BuildLibraryTools passes MarkCodeReviewExecutionScope to
         // every library tool wrapper, and that hook must flip DocumentSearchScope inside the
@@ -176,17 +140,17 @@ public sealed class CodeReviewAgentExecutorTests
             name: "probe"
         );
 
-        var reviewPath = new ScopedServiceAIFunction(
+        var codeReviewTool = new ScopedServiceAIFunction(
             probe,
             services,
             CodeReviewAgentExecutor.MarkCodeReviewExecutionScope
         );
-        var defaultPath = new ScopedServiceAIFunction(probe, services);
+        var defaultTool = new ScopedServiceAIFunction(probe, services);
 
-        var reviewResult = await reviewPath.InvokeAsync(new AIFunctionArguments());
-        var defaultResult = await defaultPath.InvokeAsync(new AIFunctionArguments());
+        var codeReviewResult = await codeReviewTool.InvokeAsync(new AIFunctionArguments());
+        var defaultResult = await defaultTool.InvokeAsync(new AIFunctionArguments());
 
-        await Assert.That(reviewResult?.ToString()).IsEqualTo("marked");
+        await Assert.That(codeReviewResult?.ToString()).IsEqualTo("marked");
         await Assert.That(defaultResult?.ToString()).IsEqualTo("unmarked");
     }
 

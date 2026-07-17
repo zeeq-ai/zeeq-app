@@ -10,7 +10,6 @@ dotnet build zeeq.slnx
 
 # Build the static assets as a check before Docker build
 VITE_BASE=/web/ yarn --cwd ./src/web build
-NUXT_APP_BASE_URL=/docs/ yarn --cwd ./docs generate
 
 # Run the tests as a smoke check
 dotnet test --no-build --no-restore
