@@ -48,9 +48,11 @@ internal static class CodeReviewOutputPrompt
         2. Use available tools to gather context when canonical, *expert* guidance is needed to support a review decision
         3. The tools can tell you about the expected behavior, patterns, and best practices
         4. Focus your queries on what the PR is trying to achieve and the *semantic* intent of the code; examine the intent and purpose of the code, pay attention to important class names, attributes, patterns.
-        5. Identify keywords like entities, file names, class names model names that can be used to find relevant docs
-        6. Query for insight and practical guidance on system-level topics like logging, telemetry, error handling, messaging, DTOs, validation, rate limiting, database entities, and so on.
-        7. Cite the source documents when the tool result provides relevant guidance and grounding
+        5. Examine what the code is trying to do and identify key patterns and practices to seek guidance and best practices for:
+            a. The platform (logging, telemetry, DI, web APIs, error handling, documentation, commenting, types/classes/OOP, functional programming, etc.),
+            b. The runtime and ecosystem (libraries, frameworks, etc.),
+            c. The specific capability being implemented (e.g., authentication, authorization, caching, messaging, rate limiting, domain behaviors, etc.)
+        6. Cite the source documents when the tool result provides relevant guidance and grounding
             <tool_guidance>
             1. `list_documents` index of the available documents in the library
             2. `search_sections` is efficient and points to compact, relevant text sections of documents (semantic match)

@@ -28,7 +28,7 @@ public static class SetupStaticFilesExtension
     extension(WebApplication app)
     {
         /// <summary>
-        /// Configures the static SPA hosting for /web (Vue) and /docs (VitePress).
+        /// Configures the static SPA hosting for /web (Vue).
         /// </summary>
         /// <remarks>
         /// The static SPA hosting is moved into here for ease of packaging and
@@ -44,8 +44,6 @@ public static class SetupStaticFilesExtension
             }
 
             var appFileProvider = new PhysicalFileProvider(Path.Combine(env.WebRootPath, "web"));
-            var docsFileProvider = new PhysicalFileProvider(Path.Combine(env.WebRootPath, "docs"));
-
             // Vue SPA at /web
             app.UseDefaultFiles(
                 new DefaultFilesOptions { RequestPath = "/web", FileProvider = appFileProvider }
@@ -58,24 +56,10 @@ public static class SetupStaticFilesExtension
                     OnPrepareResponse = ConfigureStaticFileCaching,
                 }
             );
-
-            // VitePress docs at /docs
-            app.UseDefaultFiles(
-                new DefaultFilesOptions { RequestPath = "/docs", FileProvider = docsFileProvider }
-            );
-            app.UseStaticFiles(
-                new StaticFileOptions
-                {
-                    RequestPath = "/docs",
-                    FileProvider = docsFileProvider,
-                    OnPrepareResponse = ConfigureStaticFileCaching,
-                }
-            );
         }
 
         /// <summary>
-        /// Maps the static SPA fallbacks for /web and /docs so client-side routing
-        /// works correctly.
+        /// Maps the static SPA fallback for /web so client-side routing works correctly.
         /// </summary>
         /// <param name="env">The web host environment.</param>
         public void MapSpaFallbacks(IWebHostEnvironment env)
@@ -89,7 +73,6 @@ public static class SetupStaticFilesExtension
             // The :nonfile constraint skips requests that look like static assets (have a file extension)
             // so .js, .css, images, etc. return 404 rather than silently serving index.html.
             app.MapFallbackToFile("/web/{**path:nonfile}", "web/index.html");
-            app.MapFallbackToFile("/docs/{**path:nonfile}", "docs/index.html");
         }
     }
 }

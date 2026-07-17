@@ -3,9 +3,3 @@
 **/**.Tests/
 src/web/node_modules/
 src/web/dist/
-docs/.data/
-docs/.nuxt/
-# Need to build this outside until figure out what's going on.
-# docs/.output/
-docs/dist/
-docs/node_modules/

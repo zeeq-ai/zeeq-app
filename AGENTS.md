@@ -79,5 +79,3 @@ Important workflow notes:
 
 - Read Zeeq MCP: `zeeq://workflow/feature-planning-coding-process.md`
 - Use CSharpRepl to evaluate C# code inside the running local `zeeq-server` process, debug, test hypotheses, inspect DI state, invoke code while bypassing auth, write dynamic wrappers (logging, etc.).  Access via `zeeq-dotnet-repl` skill.  See the full reference guide as needed.
-- A feature is not complete without docs; `docs/content` is the root for the Nuxt UI Docus document set.
-- Create root level folders and files as necessary in `docs/content` to organize your docs.

@@ -1,6 +1,36 @@
-﻿using Aspire.Hosting.Yarp;
+﻿using Aspire.Hosting.ApplicationModel;
+using Aspire.Hosting.Yarp;
 
 var builder = DistributedApplication.CreateBuilder(args);
+
+const string docsRootInputName = "DocsRoot";
+const string docsRootParameterName = "docs-root";
+
+var defaultDocsRoot = Path.GetFullPath(
+    Path.Combine(builder.AppHostDirectory, "..", "..", "zeeq-landing")
+);
+
+#pragma warning disable ASPIREINTERACTION001
+// Aspire's parameter input customization APIs are still marked experimental in
+// 13.4. Keeping this close to the parameter declaration makes the prompt shape
+// clear while still using the standard Aspire external-parameter flow.
+var docsRootParameter = builder
+    .AddParameter(docsRootParameterName, defaultDocsRoot)
+    .WithDescription("Absolute path to the local zeeq-landing repository root.")
+    .WithCustomInput(parameter =>
+        new()
+        {
+            Name = docsRootInputName,
+            Label = "Docs repository root",
+            Description =
+                "Absolute path to the zeeq-landing repository root, for example /Users/user_name/code/zeeq/zeeq-landing.",
+            InputType = InputType.Text,
+            Required = true,
+            Placeholder = "/Users/user_name/code/zeeq/zeeq-landing",
+            Value = defaultDocsRoot,
+        }
+    );
+#pragma warning restore ASPIREINTERACTION001
 
 // OpenIddict issuer/resource for local dev (AppSettings:Auth:Issuer/Resource).
 // Reused as the telemetry audience so an existing MCP user token authenticates
@@ -156,18 +186,36 @@ var frontend = builder
         }
     );
 
-// Nuxt Docus (docus.dev) site for documentation
-var docusDocs = builder
-    .AddViteApp(name: "zeeq-docs", appDirectory: "../docs")
-    .WithYarn()
-    .WithUrlForEndpoint(
-        "http",
-        url =>
-        {
-            url.DisplayText = "Zeeq Docs";
-            url.Url = "http://zeeq-docs.localhost:8095";
-        }
-    );
+var docs = builder
+    .AddExecutable(
+        "zeeq-docs",
+        "sh",
+        builder.AppHostDirectory,
+        [
+            "-c",
+            """
+            set -eu
+            if [ ! -f "$DOCS_ROOT/pnpm-workspace.yaml" ] || [ ! -f "$DOCS_ROOT/web/package.json" ]; then
+              echo "docs-root must be the zeeq-landing repository root: $DOCS_ROOT" >&2
+              exit 1
+            fi
+            cd "$DOCS_ROOT/web"
+            pnpm install --config.confirmModulesPurge=false
+            exec pnpm run dev --host 0.0.0.0 --port 3000
+            """,
+        ]
+    )
+    .WithEnvironment("DOCS_ROOT", docsRootParameter)
+    .WithHttpEndpoint(targetPort: 3000, name: "http");
+
+docs.WithUrlForEndpoint(
+    "http",
+    url =>
+    {
+        url.DisplayText = "Zeeq Docs";
+        url.Url = "http://zeeq-docs.localhost:8095/";
+    }
+);
 
 // Add devtunnel proxy to the web app
 var tunnel = builder
@@ -240,7 +288,8 @@ var proxy = builder
         yarp.AddRoute(frontend).WithMatchHosts("zeeq-web.localhost");
 
         // Proxy route to the documentation site as: http://zeeq-docs.localhost:8095
-        yarp.AddRoute(docusDocs).WithMatchHosts("zeeq-docs.localhost");
+        var docsCluster = yarp.AddCluster(docs.GetEndpoint("http"));
+        yarp.AddRoute(docsCluster).WithMatchHosts("zeeq-docs.localhost");
 
         // Proxy route to the MCP inspector as: http://zeeq-inspector.localhost:8095
         yarp.AddRoute(inspector.GetEndpoint("http")).WithMatchHosts("zeeq-inspector.localhost");

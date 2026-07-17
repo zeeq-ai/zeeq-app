@@ -30,6 +30,40 @@ It is designed to be self hostable, relatively consolidated (can run entirely on
 gcloud auth login
 ```
 
+The docs root defaults to the sibling `../zeeq-landing` checkout:
+
+```text
+code/zeeq/
+├── zeeq-app/
+└── zeeq-landing/
+```
+
+Override it when your local path differs:
+
+```shell
+dotnet user-secrets set "Parameters:docs-root" "/Users/YOUR_USER/PATH/TO/zeeq-landing" --project host/Zeeq.AspireHost.csproj
+```
+
+The AppHost reads `docs-root` when the Aspire model is built, so overrides made
+through user secrets or the Aspire UI are picked up after restarting Aspire.
+
+## General Operations
+
+The following commands are for general operation of the stack:
+
+```shell
+# Start the stack in non-interactive mode (detached)
+aspire run --detach --non-interactive
+
+# Rebuild the backend
+aspire resource zeeq-server rebuild
+
+# Stop the stack
+aspire stop
+```
+
+For full operations, you will need to set runtime secrets (see below).
+
 ## Database Migrations
 
 Migrations are managed via the EF Core CLI using the `Zeeq.Data.Postgres.Migrations` project, which is the only project that references both the Postgres data layer and feature libraries (e.g. OpenIddict) needed to produce the full schema.
@@ -96,8 +130,25 @@ dotnet user-secrets set AppSettings:Auth:Providers:1:ClientSecret secret-value #
 The Aspire app host in `host/AppHost.cs` uses a YARP reverse proxy to set up the routes.
 
 - <http://zeeq-web.localhost:8095> is the main local entry point
-- <http://zeeq-docs.localhost:8095> is the local Nuxt UI Docus docs
+- <http://zeeq-docs.localhost:8095/docs> is the local docs app backed by the `docs-root` Aspire parameter
 - <http://zeeq-api.localhost:8095/scalar> is the local Scalar UI for the API
+
+The docs app is launched from a separate repository root. It defaults to the
+sibling `../zeeq-landing` checkout. To use a different path, set the Aspire
+external parameter in user secrets, then restart Aspire so the AppHost rebuilds
+the resource model:
+
+```shell
+dotnet user-secrets set "Parameters:docs-root" "/Users/cchen/code/zeeq/zeeq-landing" --project host/Zeeq.AspireHost.csproj
+```
+
+For CI or remote environments, set the same Aspire external parameter through
+configuration using the environment variable form. This is also read when the
+AppHost model is built:
+
+```shell
+Parameters__docs-root=/path/to/zeeq-landing
+```
 
 Note that for local testing of the full flow, the following must be true:
 

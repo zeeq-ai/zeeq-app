@@ -1,6 +1,6 @@
 using System.Security.Claims;
-using Zeeq.Core.Identity;
 using OpenIddict.Abstractions;
+using Zeeq.Core.Identity;
 
 namespace Zeeq.Platform.CodeReviews.Tests;
 
