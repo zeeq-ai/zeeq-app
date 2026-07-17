@@ -1,6 +1,6 @@
+using Microsoft.Extensions.DependencyInjection;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents.Snippets;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Zeeq.Platform.Documents;
 
@@ -29,6 +29,7 @@ public static class SetupZeeqDocuments
         /// <param name="appSettings">The runtime application settings.</param>
         public IServiceCollection AddZeeqDocuments(AppSettings appSettings)
         {
+            services.AddSingleton(appSettings.Documents);
             services.AddSingleton(appSettings.SnippetIndexing);
 
             // Registered here (not left to AddZeeqLlm alone) so SnippetIndexingHostedService and
@@ -38,6 +39,12 @@ public static class SetupZeeqDocuments
 
             // Scoped: depends on the scoped ISnippetStore<T>/ILibraryDocumentStore stores.
             services.AddScoped<SnippetSearchService>();
+            services.AddSingleton<LibraryExportPackageProtector>();
+            services.AddSingleton<LibraryExportPackageService>();
+            services.AddSingleton<LibraryImportPackageReader>();
+            services.AddTransient<ExportLibraryHandler>();
+            services.AddTransient<PreviewLibraryImportHandler>();
+            services.AddTransient<ImportLibraryHandler>();
 
             return services;
         }

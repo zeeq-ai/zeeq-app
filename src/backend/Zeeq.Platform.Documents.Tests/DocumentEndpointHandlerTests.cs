@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
@@ -647,6 +649,250 @@ public sealed class DocumentEndpointHandlerTests
         await Assert.That(result.Result is BadRequest<DocumentError>).IsTrue();
     }
 
+    // ── Library import/export handler tests ─────────────────────────────
+
+    [Test]
+    public async Task ExportLibrary_Zeeq_IncludesOnlyLocalDocumentsAndUsesNormalizedFileName()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary(name: "Team Docs_v2!"));
+        store.Documents.Add(TestDocument(path: "/local.md", content: "# Local"));
+        store.Documents.Add(
+            TestDocument(path: "/synced.md", content: "# Synced", syncRunId: "run_123")
+        );
+        store.Documents.Add(
+            TestDocument(
+                path: "/remote.md",
+                content: "# Remote",
+                sourceOrigin: new LibraryDocumentSourceOrigin("GitHub", "owner/repo")
+            )
+        );
+        var packageService = new LibraryExportPackageService();
+        var handler = new ExportLibraryHandler(store, packageService, TestPackageProtector());
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            "Team Docs_v2!",
+            "zeeq",
+            CancellationToken.None
+        );
+
+        var file = result as FileContentHttpResult;
+        await Assert.That(file).IsNotNull();
+        await Assert.That(file!.FileDownloadName).StartsWith("team-docs-v2-");
+        await Assert
+            .That(
+                Regex.IsMatch(
+                    file.FileDownloadName!,
+                    "^team-docs-v2-\\d{4}-\\d{2}-\\d{2}-[a-z0-9]{6}\\.zeeq-export$"
+                )
+            )
+            .IsTrue();
+        await Assert.That(file.FileDownloadName).EndsWith(".zeeq-export");
+        await Assert
+            .That(TestPackageProtector().TryUnprotect(file.FileContents.Span, out _, out var zip))
+            .IsTrue();
+        var package = packageService.ParseZipPayload(zip);
+        await Assert.That(package.Documents).HasSingleItem();
+        await Assert.That(package.Documents[0].Path).IsEqualTo("local.md");
+    }
+
+    [Test]
+    public async Task ExportLibrary_Zip_ReturnsStandardZipWithoutWrapper()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(TestDocument(path: "/local.md", content: "# Local"));
+        var handler = new ExportLibraryHandler(
+            store,
+            new LibraryExportPackageService(),
+            TestPackageProtector()
+        );
+
+        var result = await handler.HandleAsync("org_123", "kb", "zip", CancellationToken.None);
+
+        var file = result as FileContentHttpResult;
+        await Assert.That(file).IsNotNull();
+        await Assert.That(file!.ContentType).IsEqualTo("application/zip");
+        await Assert
+            .That(
+                Regex.IsMatch(file.FileDownloadName!, "^kb-\\d{4}-\\d{2}-\\d{2}-[a-z0-9]{6}\\.zip$")
+            )
+            .IsTrue();
+        await Assert.That(file.FileDownloadName).EndsWith(".zip");
+        await Assert
+            .That(TestPackageProtector().TryUnprotect(file.FileContents.Span, out _, out _))
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task ExportLibrary_NoLocalDocuments_ReturnsBadRequest()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(
+            TestDocument(path: "/synced.md", content: "# Synced", syncRunId: "run_123")
+        );
+        var handler = new ExportLibraryHandler(
+            store,
+            new LibraryExportPackageService(),
+            TestPackageProtector()
+        );
+
+        var result = await handler.HandleAsync("org_123", "kb", "zeeq", CancellationToken.None);
+
+        await Assert.That(result).IsTypeOf<BadRequest<LibraryError>>();
+    }
+
+    [Test]
+    public async Task ExportLibrary_ZeeqOverSizeLimit_ReturnsProblem413()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        for (var i = 0; i < 8; i++)
+        {
+            store.Documents.Add(
+                TestDocument(path: $"/large-{i}.md", content: CreateRandomMarkdown(90_000))
+            );
+        }
+        var handler = new ExportLibraryHandler(
+            store,
+            new LibraryExportPackageService(),
+            TestPackageProtector()
+        );
+
+        var result = await handler.HandleAsync("org_123", "kb", "zeeq", CancellationToken.None);
+
+        var problem = result as ProblemHttpResult;
+        await Assert.That(problem).IsNotNull();
+        await Assert.That(problem!.StatusCode).IsEqualTo(StatusCodes.Status413PayloadTooLarge);
+    }
+
+    [Test]
+    public async Task PreviewLibraryImport_ReturnsNewDuplicateAndBlockedPaths()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(TestDocument(path: "/duplicate.md", content: "# Existing"));
+        store.Documents.Add(
+            TestDocument(path: "/blocked.md", content: "# Synced", syncRunId: "run_123")
+        );
+        var formFile = CreateSignedImportFile([
+            TestDocument(path: "/new.md", content: "# New"),
+            TestDocument(path: "/duplicate.md", content: "# Replacement"),
+            TestDocument(path: "/blocked.md", content: "# Blocked"),
+        ]);
+        var handler = new PreviewLibraryImportHandler(store, TestPackageReader());
+
+        var result = await handler.HandleAsync("org_123", "kb", formFile, CancellationToken.None);
+
+        var ok = result.Result as Ok<LibraryImportPreviewResponse>;
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(ok!.Value!.DocumentCount).IsEqualTo(3);
+        await Assert.That(ok.Value.NewPaths).IsEquivalentTo(["/new.md"]);
+        await Assert.That(ok.Value.DuplicateLocalPaths).IsEquivalentTo(["/duplicate.md"]);
+        await Assert.That(ok.Value.BlockedRemotePaths).IsEquivalentTo(["/blocked.md"]);
+    }
+
+    [Test]
+    public async Task PreviewLibraryImport_NonZeeqExport_ReturnsBadRequest()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        var handler = new PreviewLibraryImportHandler(store, TestPackageReader());
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            CreateFormFile("archive.zip", [1, 2, 3]),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result).IsTypeOf<BadRequest<LibraryError>>();
+    }
+
+    [Test]
+    public async Task ImportLibrary_DuplicateWithoutOverwrite_ReturnsConflict()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(TestDocument(path: "/duplicate.md", content: "# Existing"));
+        var handler = new ImportLibraryHandler(
+            store,
+            TestPackageReader(),
+            new LibraryDocumentWriteService(store)
+        );
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            CreateSignedImportFile([TestDocument(path: "/duplicate.md", content: "# Replacement")]),
+            overwriteDuplicates: false,
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var conflict = result.Result as Conflict<LibraryImportConflictResponse>;
+        await Assert.That(conflict).IsNotNull();
+        await Assert.That(conflict!.Value!.DuplicateLocalPaths).IsEquivalentTo(["/duplicate.md"]);
+    }
+
+    [Test]
+    public async Task ImportLibrary_DuplicateWithOverwrite_UpdatesExistingDocument()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(TestDocument(path: "/duplicate.md", content: "# Existing"));
+        var handler = new ImportLibraryHandler(
+            store,
+            TestPackageReader(),
+            new LibraryDocumentWriteService(store)
+        );
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            CreateSignedImportFile([TestDocument(path: "/duplicate.md", content: "# Replacement")]),
+            overwriteDuplicates: true,
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<LibraryImportResponse>;
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(ok!.Value!.CreatedCount).IsEqualTo(0);
+        await Assert.That(ok.Value.UpdatedCount).IsEqualTo(1);
+        await Assert.That(store.Documents.Single().Content).IsEqualTo("# Replacement");
+    }
+
+    [Test]
+    public async Task ImportLibrary_RemoteCollision_ReturnsConflict()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(
+            TestDocument(path: "/remote.md", content: "# Remote", syncRunId: "run_123")
+        );
+        var handler = new ImportLibraryHandler(
+            store,
+            TestPackageReader(),
+            new LibraryDocumentWriteService(store)
+        );
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            CreateSignedImportFile([TestDocument(path: "/remote.md", content: "# Replacement")]),
+            overwriteDuplicates: true,
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var conflict = result.Result as Conflict<LibraryImportConflictResponse>;
+        await Assert.That(conflict).IsNotNull();
+        await Assert.That(conflict!.Value!.BlockedRemotePaths).IsEquivalentTo(["/remote.md"]);
+    }
+
     // ── RenameDocumentHandler tests ─────────────────────────────────────
 
     [Test]
@@ -831,37 +1077,74 @@ public sealed class DocumentEndpointHandlerTests
         return new(new ClaimsIdentity(claims, authenticationType: "test"));
     }
 
-    private static Library TestLibrary(string description = "Knowledge base") =>
+    private static Library TestLibrary(string description = "Knowledge base", string name = "kb") =>
         new()
         {
             Id = "lib_123",
             OrganizationId = "org_123",
             TeamId = "team_123",
-            Name = "kb",
+            Name = name,
             Description = description,
             CreatedAt = DateTimeOffset.UnixEpoch,
             UpdatedAt = DateTimeOffset.UnixEpoch,
         };
 
-    private static LibraryDocument TestDocument() =>
+    private static LibraryDocument TestDocument(
+        string path = "/docs/guide.md",
+        string content = "# Guide",
+        string? syncRunId = null,
+        LibraryDocumentSourceOrigin? sourceOrigin = null
+    ) =>
         new()
         {
             Id = "doc_123",
             OrganizationId = "org_123",
             TeamId = "team_123",
             LibraryId = "lib_123",
-            Path = "/docs/guide.md",
+            Path = path,
             Title = "Guide",
             TitleNormalized = "guide",
             Keywords = ["docs"],
             Headings = ["Guide"],
-            Content = "# Guide",
+            Content = content,
             ProcessingStatus = DocumentProcessingStatus.Pending,
             TokenCount = 2,
             ContentHash = "hash",
+            SourceOrigin = sourceOrigin,
+            SyncRunId = syncRunId,
             CreatedAt = DateTimeOffset.UnixEpoch,
             UpdatedAt = DateTimeOffset.UnixEpoch,
         };
+
+    private static LibraryExportPackageProtector TestPackageProtector() =>
+        new(new DocumentSettings { LibraryExportSigningKey = "test-secret" });
+
+    private static LibraryImportPackageReader TestPackageReader()
+    {
+        var service = new LibraryExportPackageService();
+        return new(TestPackageProtector(), service);
+    }
+
+    private static IFormFile CreateSignedImportFile(IReadOnlyCollection<LibraryDocument> documents)
+    {
+        var service = new LibraryExportPackageService();
+        var zip = service.CreateZipPayload(documents);
+        var envelope = TestPackageProtector().Protect(zip, DateTimeOffset.UtcNow, documents.Count);
+        return CreateFormFile("library.zeeq-export", envelope);
+    }
+
+    private static IFormFile CreateFormFile(string fileName, byte[] bytes)
+    {
+        var stream = new MemoryStream(bytes);
+        return new FormFile(stream, 0, bytes.Length, "file", fileName);
+    }
+
+    private static string CreateRandomMarkdown(int length)
+    {
+        var bytes = new byte[length];
+        Random.Shared.NextBytes(bytes);
+        return Convert.ToBase64String(bytes)[..length];
+    }
 
     // NOTE: A near-duplicate TestLibraryDocumentStore exists in Zeeq.Mcp.Documents.Tests.
     // The two differ in GetByPathAsync semantics (exact+alias vs. suffix-only) and in which spy

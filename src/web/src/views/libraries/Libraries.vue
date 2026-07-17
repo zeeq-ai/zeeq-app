@@ -71,6 +71,7 @@
       :submit-handler="onSubmitLibrary"
       @sync-now="onSyncNow"
       @load-more-runs="onLoadMoreRuns"
+      @imported="onLibraryImportComplete"
       @delete="onDeleteLibrary"
     />
 
@@ -303,6 +304,19 @@ async function onLoadMoreRuns() {
     };
   } finally {
     loadingIngestRuns.value = false;
+  }
+}
+
+async function onLibraryImportComplete() {
+  try {
+    await store.loadDocuments();
+    selectedFolderPath.value = "/";
+  } catch (err: any) {
+    toast.add({
+      title: "Error refreshing documents",
+      description: err?.message ?? "Failed to refresh imported documents",
+      color: "error",
+    });
   }
 }
 

@@ -22,7 +22,7 @@
       <template #default="{ collapsed }">
         <UNavigationMenu
           :collapsed="collapsed"
-          :items="links[0]"
+          :items="navigationLinks[0]"
           orientation="vertical"
           tooltip
           popover
@@ -30,7 +30,7 @@
 
         <UNavigationMenu
           :collapsed="collapsed"
-          :items="links[1]"
+          :items="navigationLinks[1]"
           orientation="vertical"
           tooltip
           class="mt-auto"
@@ -44,14 +44,26 @@
     </UDashboardSidebar>
 
     <RouterView />
+
+    <!-- Global app navigation palette. Mounted only in the authenticated app shell. -->
+    <UDashboardSearch
+      :groups="commandGroups"
+      :color-mode="false"
+      placeholder="Search navigation..."
+      title="Command palette"
+      description="Navigate through Zeeq"
+    />
   </UDashboardGroup>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import type { NavigationMenuItem } from "@nuxt/ui";
 import { useStorage } from "@vueuse/core";
 import { useAppStore } from "@/stores/app-store";
+import {
+  buildAppCommandGroups,
+  buildAppNavigationLinks,
+} from "@/layouts/app-navigation";
 
 type DashboardSidebarStorage = {
   size: number;
@@ -87,146 +99,14 @@ const sidebarCollapsed = computed({
   },
 });
 
-const links = computed<NavigationMenuItem[][]>(() => {
-  const primaryLinks: NavigationMenuItem[] = [
-    {
-      label: "Home",
-      icon: "i-hugeicons-home-01",
-      to: "/",
-      exact: true,
-      onSelect: () => {
-        sidebarOpen.value = false;
-      },
-    },
-    {
-      label: "Libraries",
-      icon: "i-hugeicons-hierarchy-files",
-      to: "/libraries",
-      onSelect: () => {
-        sidebarOpen.value = false;
-      },
-    },
-    /*
-    {
-      label: "Memories",
-      icon: "i-hugeicons-chart-relationship",
-      to: "/memories",
-      onSelect: () => {
-        sidebarOpen.value = false;
-      },
-    },
-    */
-    {
-      label: "Code Reviews",
-      icon: "i-hugeicons-message-programming",
-      defaultOpen: true,
-      type: "trigger",
-      children: [
-        {
-          label: "PR Code Reviews",
-          to: "/code-reviews/pull-requests",
-          onSelect: () => {
-            sidebarOpen.value = false;
-          },
-        },
-        {
-          label: "Manage Agents",
-          to: "/code-reviews/manage-agents",
-          onSelect: () => {
-            sidebarOpen.value = false;
-          },
-        },
-      ],
-    },
-    /*
-    {
-      label: "Telemetry",
-      icon: "i-hugeicons-chat-spark-01",
-      defaultOpen: true,
-      type: "trigger",
-      children: [
-        {
-          label: "My Conversations",
-          to: "/telemetry/my-conversations",
-          onSelect: () => {
-            sidebarOpen.value = false;
-          },
-        },
-      ],
-    },
-    */
-  ];
+const navigationLinks = computed(() =>
+  buildAppNavigationLinks(appStore.isSystemAdmin, closeSidebar),
+);
+const commandGroups = computed(() =>
+  buildAppCommandGroups(appStore.isSystemAdmin),
+);
 
-  primaryLinks.push({
-    label: "Settings",
-    icon: "i-hugeicons-settings-01",
-    defaultOpen: false,
-    type: "trigger",
-    children: [
-      {
-        label: "Organization",
-        to: "/settings/organization",
-        onSelect: () => {
-          sidebarOpen.value = false;
-        },
-      },
-      {
-        label: "Members",
-        to: "/settings/members",
-        onSelect: () => {
-          sidebarOpen.value = false;
-        },
-      },
-      {
-        label: "My Memberships",
-        to: "/settings/memberships",
-        onSelect: () => {
-          sidebarOpen.value = false;
-        },
-      },
-      {
-        label: "Credentials",
-        to: "/settings/credentials",
-        onSelect: () => {
-          sidebarOpen.value = false;
-        },
-      },
-      {
-        label: "GitHub",
-        to: "/settings/github",
-        onSelect: () => {
-          sidebarOpen.value = false;
-        },
-      },
-      {
-        label: "LLM Configuration",
-        to: "/settings/llm-config",
-        onSelect: () => {
-          sidebarOpen.value = false;
-        },
-      },
-    ],
-  });
-
-  if (appStore.isSystemAdmin) {
-    primaryLinks.push({
-      label: "System",
-      icon: "i-hugeicons-shield-01",
-      defaultOpen: false,
-      type: "trigger",
-      children: [
-        {
-          label: "Diagnostics",
-          icon: "i-hugeicons-activity-02",
-          to: "/system/diagnostics",
-          onSelect: () => {
-            sidebarOpen.value = false;
-          },
-        },
-      ],
-    });
-  }
-
-  return [primaryLinks, []];
-});
+function closeSidebar() {
+  sidebarOpen.value = false;
+}
 </script>

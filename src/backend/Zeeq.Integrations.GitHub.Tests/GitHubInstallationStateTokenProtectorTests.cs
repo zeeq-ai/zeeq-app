@@ -1,3 +1,4 @@
+using Microsoft.IdentityModel.Tokens;
 using Zeeq.Core.Common;
 using Zeeq.Integrations.GitHub;
 
@@ -37,10 +38,9 @@ public sealed class GitHubInstallationStateTokenProtectorTests
         );
 
         var token = protector.Protect(payload);
-        // Change a middle character where all bits are real data bits
-        // (last base64url character can have ignored padding bits when byte count % 3 == 1)
-        var pos = token.Length / 2;
-        var tampered = token[..pos] + 'X' + token[(pos + 1)..];
+        var tokenBytes = Base64UrlEncoder.DecodeBytes(token);
+        tokenBytes[^1] ^= 0x01;
+        var tampered = Base64UrlEncoder.Encode(tokenBytes);
         var valid = protector.TryUnprotect(tampered, out var restored);
 
         await Assert.That(valid).IsFalse();

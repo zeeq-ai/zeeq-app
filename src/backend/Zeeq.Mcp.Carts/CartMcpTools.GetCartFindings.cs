@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
+using ModelContextProtocol.Server;
 using Zeeq.Core.Carts;
 using Zeeq.Core.Identity;
 using Zeeq.Platform.Carts;
-using ModelContextProtocol.Server;
 
 namespace Zeeq.Mcp.Carts;
 
@@ -55,6 +55,7 @@ public sealed partial class CartMcpTools
         }
 
         var organizationId = user?.AsZeeqMinimalIdentity().OrganizationId;
+
         if (string.IsNullOrWhiteSpace(organizationId))
         {
             return RecordToolCall(

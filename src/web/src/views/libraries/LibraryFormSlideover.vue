@@ -42,6 +42,13 @@
           />
         </template>
 
+        <template #import-export>
+          <LibraryImportExportTab
+            :library-name="props.library!.name"
+            @imported="emits('imported')"
+          />
+        </template>
+
         <template #delete>
           <LibraryDeleteTab
             :library-name="props.library!.name"
@@ -94,6 +101,7 @@ import LibraryFormFields, {
 } from "./LibraryFormFields.vue";
 import LibrarySyncStatusTab from "./LibrarySyncStatusTab.vue";
 import LibraryDeleteTab from "./LibraryDeleteTab.vue";
+import LibraryImportExportTab from "./LibraryImportExportTab.vue";
 
 /** Payload emitted on submit — union of the create and edit shapes. */
 export type LibraryFormSubmitPayload = {
@@ -127,6 +135,7 @@ const props = defineProps<{
 const emits = defineEmits<{
   "sync-now": [];
   "load-more-runs": [];
+  imported: [];
   delete: [name: string];
 }>();
 
@@ -138,7 +147,7 @@ const NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 const GITHUB_URL_PATTERN = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/?$/;
 
 const submitting = ref(false);
-const activeTab = ref<"library" | "status" | "delete">("library");
+const activeTab = ref<"library" | "status" | "import-export" | "delete">("library");
 
 const form = reactive<LibraryFormState>({
   name: "",
@@ -160,6 +169,7 @@ const tabItems = computed(() => [
   ...(isSourceBacked.value
     ? [{ label: "Sync status", value: "status", slot: "status" as const }]
     : []),
+  { label: "Import / Export", value: "import-export", slot: "import-export" as const },
   { label: "Delete", value: "delete", slot: "delete" as const },
 ]);
 

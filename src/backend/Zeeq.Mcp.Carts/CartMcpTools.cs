@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Diagnostics.Metrics;
 using System.Security.Claims;
+using ModelContextProtocol.Server;
 using Zeeq.Core.Carts;
 using Zeeq.Core.Common;
 using Zeeq.Core.Identity;
-using ModelContextProtocol.Server;
 
 namespace Zeeq.Mcp.Carts;
 
