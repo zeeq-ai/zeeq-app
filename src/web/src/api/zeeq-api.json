@@ -2780,6 +2780,221 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/libraries/{name}/export": {
+      "get": {
+        "tags": [
+          "Libraries"
+        ],
+        "summary": "Export local library documents.",
+        "description": "Exports hand-authored local documents from the library. `format=zeeq` returns a\nsigned `.zeeq-export` wrapper that Zeeq can import. `format=zip` returns a\nstandard zip archive for external use and is not importable by Zeeq.",
+        "operationId": "ExportLibrary",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/libraries/{name}/import-preview": {
+      "post": {
+        "tags": [
+          "Libraries"
+        ],
+        "summary": "Preview a signed library import.",
+        "description": "Verifies a `.zeeq-export` file before opening its internal package, then returns\nthe new, duplicate, and blocked paths without writing any documents.",
+        "operationId": "PreviewLibraryImport",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryImportUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryImportPreviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/libraries/{name}/import": {
+      "post": {
+        "tags": [
+          "Libraries"
+        ],
+        "summary": "Import signed library documents.",
+        "description": "Imports verified `.zeeq-export` documents into the target library. Duplicate local\npaths require `overwriteDuplicates=true`; synced/remote path collisions are blocked.",
+        "operationId": "ImportLibrary",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "required": [
+                  "overwriteDuplicates"
+                ],
+                "type": "object",
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/LibraryImportUploadRequest"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "overwriteDuplicates": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryImportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryImportConflictResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/libraries/{name}/repositories": {
       "put": {
         "tags": [
@@ -7527,6 +7742,13 @@
         },
         "description": "A ProblemDetails for validation errors."
       },
+      "IFormFile": {
+        "type": [
+          "null",
+          "string"
+        ],
+        "format": "binary"
+      },
       "ImportedAgentEvent": {
         "required": [
           "kind"
@@ -7891,6 +8113,133 @@
           }
         },
         "description": "Error response for library endpoint validation failures."
+      },
+      "LibraryImportConflictResponse": {
+        "required": [
+          "duplicateLocalPaths",
+          "blockedRemotePaths",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "duplicateLocalPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Local paths that require overwrite confirmation."
+          },
+          "blockedRemotePaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Synced/remote paths that cannot be overwritten by import."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable conflict reason."
+          }
+        },
+        "description": "Conflict response for import attempts that require explicit user action."
+      },
+      "LibraryImportPreviewResponse": {
+        "required": [
+          "documentCount",
+          "newPaths",
+          "duplicateLocalPaths",
+          "blockedRemotePaths"
+        ],
+        "type": "object",
+        "properties": {
+          "documentCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Number of package documents that would be imported.",
+            "format": "int32"
+          },
+          "newPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Paths that do not currently exist in the target library."
+          },
+          "duplicateLocalPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Existing local paths that would be overwritten."
+          },
+          "blockedRemotePaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Existing synced/remote paths that block import."
+          }
+        },
+        "description": "Preview response for importing a signed Zeeq library export package."
+      },
+      "LibraryImportResponse": {
+        "required": [
+          "createdCount",
+          "updatedCount",
+          "updatedPaths"
+        ],
+        "type": "object",
+        "properties": {
+          "createdCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Number of local documents created.",
+            "format": "int32"
+          },
+          "updatedCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Number of local documents overwritten.",
+            "format": "int32"
+          },
+          "updatedPaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Existing local paths overwritten by the import."
+          }
+        },
+        "description": "Import result for a signed Zeeq library export package."
+      },
+      "LibraryImportUploadRequest": {
+        "required": [
+          "file"
+        ],
+        "type": "object",
+        "properties": {
+          "file": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "Signed Zeeq export package. Plain zip files are intentionally not importable.",
+                "$ref": "#/components/schemas/IFormFile"
+              }
+            ]
+          }
+        },
+        "description": "Multipart form request for importing a signed Zeeq library export package."
       },
       "LibraryRepositoryMappingsResponse": {
         "required": [
@@ -8777,6 +9126,50 @@
             "format": "date-time"
           }
         }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "A URI reference [RFC3986] that identifies the problem type. This specification encourages that, when\ndereferenced, it provide human-readable documentation for the problem type\n(e.g., using HTML [W3C.REC-html5-20141028]). When this member is not present, its value is assumed to be\n\"about:blank\"."
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "A short, human-readable summary of the problem type. It SHOULD NOT change from occurrence to occurrence\nof the problem, except for purposes of localization(e.g., using proactive content negotiation;\nsee[RFC7231], Section 3.4)."
+          },
+          "status": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "description": "The HTTP status code([RFC7231], Section 6) generated by the origin server for this occurrence of the problem.",
+            "format": "int32"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "A human-readable explanation specific to this occurrence of the problem."
+          },
+          "instance": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "A URI reference that identifies the specific occurrence of the problem. It may or may not yield further information if dereferenced."
+          }
+        },
+        "description": "A machine-readable format for specifying errors in HTTP API responses based on <see href=\"https://tools.ietf.org/html/rfc7807\" />."
       },
       "PullRequestClaimStatus": {
         "enum": [

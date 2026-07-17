@@ -1,5 +1,5 @@
-using Zeeq.Core.Identity;
 using Microsoft.AspNetCore.Authorization;
+using Zeeq.Core.Identity;
 
 namespace Zeeq.Platform.Documents;
 
@@ -8,6 +8,11 @@ namespace Zeeq.Platform.Documents;
 /// </summary>
 public sealed class LibraryEndpoints : IEndpoint
 {
+    // Keep the coarse HTTP cap above the 500 KB package limit so multipart framing,
+    // envelope metadata, and the HMAC tag do not bypass the reader's user-facing validation.
+    private const int MaxImportRequestBytes =
+        LibraryExportPackageProtector.MaxPackageBytes + 128 * 1024;
+
     /// <inheritdoc />
     public void MapEndpoints(IEndpointRouteBuilder app, IEndpointRouteBuilder rootApp)
     {
@@ -100,6 +105,92 @@ public sealed class LibraryEndpoints : IEndpoint
                 Returns the library identified by `name` in the caller's active organization.
                 """
             )
+            .RequireActiveOrganization();
+
+        // GET /api/v1/orgs/{orgId}/libraries/{name}/export?format=zeeq|zip
+        group
+            .MapGet(
+                "/{name}/export",
+                static (
+                    string orgId,
+                    string name,
+                    [FromQuery] string? format,
+                    [FromServices] ExportLibraryHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, name, format, ct)
+            )
+            .WithName("ExportLibrary")
+            .Produces(StatusCodes.Status200OK, contentType: "application/octet-stream")
+            .Produces<LibraryError>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
+            .WithSummary("Export local library documents.")
+            .WithDescription(
+                """
+                Exports hand-authored local documents from the library. `format=zeeq` returns a
+                signed `.zeeq-export` wrapper that Zeeq can import. `format=zip` returns a
+                standard zip archive for external use and is not importable by Zeeq.
+                """
+            )
+            .RequireActiveOrganization();
+
+        // POST /api/v1/orgs/{orgId}/libraries/{name}/import-preview
+        group
+            .MapPost(
+                "/{name}/import-preview",
+                static (
+                    string orgId,
+                    string name,
+                    [FromForm] LibraryImportUploadRequest request,
+                    [FromServices] PreviewLibraryImportHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, name, request.File, ct)
+            )
+            .WithName("PreviewLibraryImport")
+            .Accepts<LibraryImportUploadRequest>("multipart/form-data")
+            .WithMetadata(new RequestSizeLimitAttribute(MaxImportRequestBytes))
+            .Produces<LibraryImportPreviewResponse>()
+            .Produces<LibraryError>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("Preview a signed library import.")
+            .WithDescription(
+                """
+                Verifies a `.zeeq-export` file before opening its internal package, then returns
+                the new, duplicate, and blocked paths without writing any documents.
+                """
+            )
+            .DisableAntiforgery()
+            .RequireActiveOrganization();
+
+        // POST /api/v1/orgs/{orgId}/libraries/{name}/import
+        group
+            .MapPost(
+                "/{name}/import",
+                static (
+                    string orgId,
+                    string name,
+                    [FromForm] LibraryImportUploadRequest request,
+                    [FromForm] bool overwriteDuplicates,
+                    ClaimsPrincipal user,
+                    [FromServices] ImportLibraryHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, name, request.File, overwriteDuplicates, user, ct)
+            )
+            .WithName("ImportLibrary")
+            .Accepts<LibraryImportUploadRequest>("multipart/form-data")
+            .WithMetadata(new RequestSizeLimitAttribute(MaxImportRequestBytes))
+            .Produces<LibraryImportResponse>()
+            .Produces<LibraryError>(StatusCodes.Status400BadRequest)
+            .Produces<LibraryImportConflictResponse>(StatusCodes.Status409Conflict)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("Import signed library documents.")
+            .WithDescription(
+                """
+                Imports verified `.zeeq-export` documents into the target library. Duplicate local
+                paths require `overwriteDuplicates=true`; synced/remote path collisions are blocked.
+                """
+            )
+            .DisableAntiforgery()
             .RequireActiveOrganization();
 
         // PUT /api/v1/orgs/{orgId}/libraries/{name}

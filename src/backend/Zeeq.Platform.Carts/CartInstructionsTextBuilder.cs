@@ -44,20 +44,18 @@ public static class CartInstructionsTextBuilder
                 <instruction_for_agents>
                     The following XML is the raw output from expert code reviewers analyzing the PR.
                     <review_steps>
-                    - Review each finding from expert reviewers
-                    - If needed, use Zeeq `list_documents` to refresh knowledge of relevant topics for these findings
-                    - Determine veracity and validity of each finding considering the broader context of the codebase, feature, and work
-                    - For expected behaviors, suggest leaving a comment in the code to explain the rationale to future travelers (agents)
-                        - "NOTE: (Reason to defer or ignore a finding goes here)" to document any rationale for deferring or ignoring a finding
+                    1. Review each finding from expert reviewers
+                    2. Evaluate veracity and validity of each finding against the broader context of the codebase, feature, and work
+                    3. For expected behaviors, suggest leaving a comment in the code to explain the rationale to future travelers (agents)
+                        a. "NOTE: (Reason to defer or ignore a finding goes here)" to document any rationale for deferring or ignoring a finding
                     </review_steps>
                     <process>
-                    - Findings and feedback are high level; plan out specific code changes needed finding-by-finding; ground in actual code
-                    - Clear, terse explanation of tradeoffs or shortcomings in the proposed changes if any (especially with grounding and broader context of the codebase)
-                    - Present the concrete and specific changes needed; user decides which to proceed with; **do not make changes without confirmation**
-                    - Present multiple options for resolving the finding with a reasonable default and explanation
-                    - ALWAYS ensure there is enough clarity to make the best fix if there is ambiguity or insufficient feedback to confidently implement the change
-                    - ALWAYS get confirmation and acceptance of the proposed fix for each finding before making changes
-                    - Iterate through the findings, one-by-one with an assessment, a reasonable set of options to choose from, and present a sensible default choice
+                    1. Findings and feedback are high level; plan out specific code changes needed finding-by-finding; ground in actual code
+                    2. Clear explanation of the identified finding and explain tradeoffs, shortcomings, different angles in the reviewers findings if any (especially with grounding and broader context of the codebase)
+                    3. Present the concrete and specific changes needed; user decides which to proceed with; **do not make changes without confirmation**
+                    4. For verified findings, present multiple options for resolution as a pick list with a reasonable recommended default and explanation why
+                    5. ALWAYS ensure there is enough clarity to make the best fix if there is ambiguity or insufficient feedback to confidently implement the change
+                    6. ALWAYS get confirmation and acceptance of the proposed fix for each finding before making changes
                     </process>
                     <important>
                     The user_annotation (when present) is a DIRECT NOTE from the reviewer on how to handle the finding; give weight to this instruction when present

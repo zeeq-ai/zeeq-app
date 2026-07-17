@@ -14,7 +14,7 @@
         -->
         <UFieldGroup v-if="route.name === 'ManageAgents'" class="shrink-0">
           <UButton
-            label="File filters"
+            label="Global file filters"
             icon="i-hugeicons-filter"
             color="neutral"
             size="sm"
@@ -47,7 +47,11 @@
             size="sm"
             variant="outline"
             :disabled="!selectedRepositoryId"
-            @click="sharedPromptFragmentOpen = true"
+            @click="
+              () => {
+                sharedPromptFragmentOpen = true;
+              }
+            "
           />
         </UFieldGroup>
 

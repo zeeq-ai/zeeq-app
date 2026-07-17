@@ -115,6 +115,24 @@ public sealed record UpsertDocumentRequest
 }
 
 /// <summary>
+/// Multipart form request for importing a signed Zeeq library export package.
+/// </summary>
+/// <remarks>
+/// Endpoint-level annotations keep OpenAPI and model binding explicit. The import reader still
+/// repeats extension, size, signature, and package validation because client-provided file names
+/// and multipart metadata are not a trust boundary.
+/// </remarks>
+public sealed record LibraryImportUploadRequest
+{
+    /// <summary>
+    /// Signed Zeeq export package. Plain zip files are intentionally not importable.
+    /// </summary>
+    [Required]
+    [FileExtensions(Extensions = "zeeq-export")]
+    public IFormFile? File { get; init; }
+}
+
+/// <summary>
 /// API response for a document library.
 /// </summary>
 /// <param name="Id">Stable library identifier.</param>
@@ -294,6 +312,44 @@ public sealed record UpdateLibraryRepositoryMappingsRequest
 /// <param name="LibraryId">The stable library ID whose mappings were updated.</param>
 /// <param name="RepositoryIds">The repository IDs currently mapped to the library.</param>
 public sealed record LibraryRepositoryMappingsResponse(string LibraryId, string[] RepositoryIds);
+
+/// <summary>
+/// Preview response for importing a signed Zeeq library export package.
+/// </summary>
+/// <param name="DocumentCount">Number of package documents that would be imported.</param>
+/// <param name="NewPaths">Paths that do not currently exist in the target library.</param>
+/// <param name="DuplicateLocalPaths">Existing local paths that would be overwritten.</param>
+/// <param name="BlockedRemotePaths">Existing synced/remote paths that block import.</param>
+public sealed record LibraryImportPreviewResponse(
+    int DocumentCount,
+    string[] NewPaths,
+    string[] DuplicateLocalPaths,
+    string[] BlockedRemotePaths
+);
+
+/// <summary>
+/// Import result for a signed Zeeq library export package.
+/// </summary>
+/// <param name="CreatedCount">Number of local documents created.</param>
+/// <param name="UpdatedCount">Number of local documents overwritten.</param>
+/// <param name="UpdatedPaths">Existing local paths overwritten by the import.</param>
+public sealed record LibraryImportResponse(
+    int CreatedCount,
+    int UpdatedCount,
+    string[] UpdatedPaths
+);
+
+/// <summary>
+/// Conflict response for import attempts that require explicit user action.
+/// </summary>
+/// <param name="DuplicateLocalPaths">Local paths that require overwrite confirmation.</param>
+/// <param name="BlockedRemotePaths">Synced/remote paths that cannot be overwritten by import.</param>
+/// <param name="Message">Human-readable conflict reason.</param>
+public sealed record LibraryImportConflictResponse(
+    string[] DuplicateLocalPaths,
+    string[] BlockedRemotePaths,
+    string Message
+);
 
 /// <summary>
 /// One section or code snippet the indexing pipeline would compose from a document's current

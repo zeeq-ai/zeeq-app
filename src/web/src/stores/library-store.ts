@@ -6,6 +6,7 @@ import {
   LibrarySnippets,
   Ingest,
 } from "@/api/generated";
+import { ZeeqApiError } from "@/api/zeeq-api-client";
 import { useAppStore } from "@/stores/app-store";
 import type { LibraryResponse } from "@/api/generated/types/LibraryResponse";
 import type { DocumentResponse } from "@/api/generated/types/DocumentResponse";
@@ -13,6 +14,8 @@ import type { DocumentContentResponse } from "@/api/generated/types/DocumentCont
 import type { DocumentSearchResultResponse } from "@/api/generated/types/DocumentSearchResultResponse";
 import type { SnippetSearchResultResponse } from "@/api/generated/types/SnippetSearchResultResponse";
 import type { DocumentParsePreviewResponse } from "@/api/generated/types/DocumentParsePreviewResponse";
+import type { LibraryImportPreviewResponse } from "@/api/generated/types/LibraryImportPreviewResponse";
+import type { LibraryImportResponse } from "@/api/generated/types/LibraryImportResponse";
 import type { CreateLibraryRequest } from "@/api/generated/types/CreateLibraryRequest";
 import type { CreateLibrarySourceRequest } from "@/api/generated/types/CreateLibrarySourceRequest";
 import type { UpdateLibraryRequest } from "@/api/generated/types/UpdateLibraryRequest";
@@ -271,6 +274,65 @@ export const useLibraryStore = defineStore("library", () => {
     );
   }
 
+  /** Downloads local library documents as either a signed Zeeq export or a standard zip. */
+  async function exportLibrary(libraryName: string, format: "zeeq" | "zip") {
+    const url = new URL(
+      `/api/v1/orgs/${encodeURIComponent(orgId.value)}/libraries/${encodeURIComponent(libraryName)}/export`,
+      window.location.origin,
+    );
+    url.searchParams.set("format", format);
+
+    const response = await fetch(url, { credentials: "same-origin" });
+    if (!response.ok) {
+      throw new ZeeqApiError(
+        response.status,
+        response.statusText,
+        await readExportError(response),
+      );
+    }
+
+    const blob = await response.blob();
+    const filename =
+      parseContentDispositionFilename(response.headers.get("Content-Disposition")) ??
+      `${libraryName}.${format === "zeeq" ? "zeeq-export" : "zip"}`;
+
+    downloadBlob(blob, filename);
+  }
+
+  /** Verifies a Zeeq export package and returns the import impact without writing. */
+  async function previewLibraryImport(
+    libraryName: string,
+    file: File,
+  ): Promise<LibraryImportPreviewResponse> {
+    return (await Libraries.previewLibraryImport(orgId.value, libraryName, {
+      file,
+    })) as LibraryImportPreviewResponse;
+  }
+
+  /** Imports a verified Zeeq export package into the selected library. */
+  async function importLibraryDocuments(
+    libraryName: string,
+    file: File,
+    overwriteDuplicates: boolean,
+  ): Promise<LibraryImportResponse> {
+    const result = (await Libraries.importLibrary(orgId.value, libraryName, {
+      file,
+      overwriteDuplicates,
+    })) as LibraryImportResponse;
+
+    await loadDocuments();
+    if (loadedDocument.value) {
+      const stillExists = documents.value.some(
+        (document) => document.path === loadedDocument.value?.path,
+      );
+      if (stillExists) {
+        await openDocument(loadedDocument.value.path);
+      }
+    }
+
+    return result;
+  }
+
   /** Selects a library and loads its documents. */
   async function selectLibrary(name: string) {
     activeLibraryName.value = name;
@@ -523,6 +585,9 @@ export const useLibraryStore = defineStore("library", () => {
     triggerIngest,
     listIngestRuns,
     updateLibraryRepositories,
+    exportLibrary,
+    previewLibraryImport,
+    importLibraryDocuments,
     selectLibrary,
     loadDocuments,
     openDocument,
@@ -537,6 +602,44 @@ export const useLibraryStore = defineStore("library", () => {
     clearParsePreview,
   };
 });
+
+async function readExportError(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return { message: text };
+  }
+}
+
+function parseContentDispositionFilename(header: string | null): string | null {
+  if (!header) {
+    return null;
+  }
+
+  const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1].trim());
+  }
+
+  const asciiMatch = /filename="?([^";]+)"?/i.exec(header);
+  return asciiMatch?.[1]?.trim() || null;
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
 
 // Enable HMR for the store during development.
 if (import.meta.hot) {

@@ -73,6 +73,9 @@ dotnet user-secrets set AppSettings:Llm:Models:Fast:ApiKey secret-value
 # The API key to use for generating embeddings (always needed since there is no UI for this)
 dotnet user-secrets set AppSettings:Llm:Embeddings:ApiKey secret-value
 
+# The signing key used for importable Zeeq library export packages
+dotnet user-secrets set AppSettings:Documents:LibraryExportSigningKey "$(openssl rand -base64 48 | tr -d '\n')"
+
 # The DEV GitHub app webhook secret (other configuration directly in file)
 # This is needed to test GitHub webhook flows locally since the GH app only has one webhook URL
 # Alternate: configure custom webhooks: https://github.com/zeeq-ai/zeeq-app/settings/hooks

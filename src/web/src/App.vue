@@ -20,8 +20,14 @@ useHead({
   meta: [{ name: "theme-color", content: themeColor }],
 });
 
+if (import.meta.env.DEV) {
+  useTitle("zeeq (local-dev)");
+}
+
 const needRefresh = inject<Ref<boolean>>("pwaNeedRefresh");
-const updateServiceWorker = inject<() => Promise<void>>("pwaUpdateServiceWorker");
+const updateServiceWorker = inject<() => Promise<void>>(
+  "pwaUpdateServiceWorker",
+);
 
 if (needRefresh && updateServiceWorker) {
   const toast = useToast();
