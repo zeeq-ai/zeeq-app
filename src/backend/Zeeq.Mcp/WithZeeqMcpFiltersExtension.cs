@@ -1,12 +1,13 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Security.Claims;
-using Zeeq.Core.Common;
-using Zeeq.Core.Identity;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using Zeeq.Core.Common;
+using Zeeq.Core.Identity;
 
 namespace Zeeq.Mcp;
 
@@ -19,8 +20,9 @@ internal static class SetupMcpFiltersExtensions
     private static readonly Counter<int> UserAgentCounter =
         ZeeqTelemetry.Metrics.CreateCounter<int>("zeeq_user_agent_counter");
 
-    private static readonly Counter<int> ToolCallCounter =
-        ZeeqTelemetry.Metrics.CreateCounter<int>("zeeq_tool_call_counter");
+    private static readonly Counter<int> ToolCallCounter = ZeeqTelemetry.Metrics.CreateCounter<int>(
+        "zeeq_tool_call_counter"
+    );
 
     private static readonly Counter<int> AgentClientCounter =
         ZeeqTelemetry.Metrics.CreateCounter<int>("zeeq_agent_client_counter");
@@ -96,10 +98,12 @@ internal static class SetupMcpFiltersExtensions
                         }
 
                         var toolName = string.Empty;
+                        var requestLooksLikeCodex = false;
 
                         if (context.JsonRpcMessage is JsonRpcRequest request)
                         {
-                            toolName = request.Params?["name"]?.GetValue<string>();
+                            toolName = request.Params?["name"]?.GetValue<string>() ?? string.Empty;
+                            requestLooksLikeCodex = request.LooksLikeCodex();
                         }
 
                         var userAgent = "unspecified";
@@ -114,9 +118,12 @@ internal static class SetupMcpFiltersExtensions
                         {
                             // Set attributes from the HTTP context and emit telemetry
                             // If this is a domain tool call (vs base MCP protocol message).
+                            var headerUserAgent =
+                                httpContext.Request.Headers.UserAgent.FirstOrDefault();
                             userAgent =
-                                httpContext.Request.Headers.UserAgent.FirstOrDefault()
-                                ?? "unspecified";
+                                !string.IsNullOrWhiteSpace(headerUserAgent) ? headerUserAgent
+                                : requestLooksLikeCodex ? "codex"
+                                : "unspecified";
 
                             ZeeqTelemetry.SetTags([
                                 ("http.user_agent", userAgent),
@@ -282,6 +289,23 @@ internal static class SetupMcpFiltersExtensions
 
 file static class Extensions
 {
+    private const string CodexTurnMetadataKey = "x-codex-turn-metadata";
+
+    extension(JsonRpcRequest request)
+    {
+        /// <summary>
+        /// Determines whether an MCP request carries Codex CLI turn metadata.
+        /// </summary>
+        /// <remarks>
+        /// Codex CLI currently omits the HTTP user agent, but it sends
+        /// <c>params._meta.x-codex-turn-metadata</c> on tool calls. The marker
+        /// key is enough for telemetry labeling; the payload is not parsed here.
+        /// </remarks>
+        public bool LooksLikeCodex() =>
+            request.Params?["_meta"] is JsonObject metadataObject
+            && metadataObject.ContainsKey(CodexTurnMetadataKey);
+    }
+
     extension(McpServerPrimitiveCollection<McpServerTool> tools)
     {
         /// <summary>

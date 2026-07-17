@@ -1,9 +1,9 @@
 using System.Reflection;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Zeeq.Mcp.Carts;
 using Zeeq.Mcp.CodeReviews;
 using Zeeq.Mcp.Documents;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Zeeq.Mcp;
 
