@@ -32,6 +32,22 @@ public static class SetupMcpExtensions
                     Description =
                         "Zeeq model context protocol (MCP) server for canonical docs, code reviews, and telemetry",
                     Version = "1.0.0", // TODO: Make this driven by release process.
+                    Icons =
+                    [
+                        new()
+                        {
+                            Source = "https://zeeq.ai/android-chrome-192x192.png",
+                            MimeType = "image/png",
+                            Sizes = ["192x192"],
+                        },
+                        new()
+                        {
+                            Source = "https://zeeq.ai/favicon.svg",
+                            MimeType = "image/svg+xml",
+                            Sizes = ["any"],
+                        },
+                    ],
+                    WebsiteUrl = "https://zeeq.ai",
                 };
 
                 options.ServerInstructions = """
