@@ -34,8 +34,18 @@ public static class DynamicClientRegistrationValidator
             return InvalidClientMetadata("At least one redirect_uri is required.");
         }
 
+        // Claude Desktop/claude.ai register through the hosted claude.ai callback rather
+        // than a loopback redirect, and its registration request reflects that hosted-web
+        // shape: token_endpoint_auth_method "client_secret_post" and application_type "web".
+        // We still always create a public/native OpenIddict application (see
+        // DynamicClientRegistrationEndpoints) and require PKCE regardless, so honoring
+        // those requested values is just not rejecting a legitimate client shape - it does
+        // not loosen validation for the loopback/native clients this PoC was built around.
+        var isClaudeHostedClient = IsClaudeHostedRedirectUris(request.RedirectUris, settings);
+
         if (
-            request.TokenEndpointAuthMethod is not null
+            !isClaudeHostedClient
+            && request.TokenEndpointAuthMethod is not null
             && request.TokenEndpointAuthMethod != "none"
         )
         {
@@ -44,7 +54,11 @@ public static class DynamicClientRegistrationValidator
             );
         }
 
-        if (request.ApplicationType is not null && request.ApplicationType != "native")
+        if (
+            !isClaudeHostedClient
+            && request.ApplicationType is not null
+            && request.ApplicationType != "native"
+        )
         {
             return InvalidClientMetadata(
                 "Only application_type 'native' is supported by this PoC."
@@ -135,6 +149,23 @@ public static class DynamicClientRegistrationValidator
                 && settings.AllowedLoopbackHosts.Contains(uri.Host, StringComparer.Ordinal)
             );
     }
+
+    /// <summary>
+    /// Whether every requested redirect URI is one of the known claude.ai hosted callbacks.
+    /// </summary>
+    /// <remarks>
+    /// Used to scope the token_endpoint_auth_method/application_type exception to Claude
+    /// specifically rather than relaxing it for every HTTPS-callback client.
+    /// </remarks>
+    private static bool IsClaudeHostedRedirectUris(
+        IReadOnlyList<string> redirectUris,
+        DynamicClientRegistrationSettings settings
+    ) =>
+        redirectUris.All(value =>
+            Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            && uri.Host == "claude.ai"
+            && IsAllowedStaticRedirectUri(uri, settings)
+        );
 
     private static bool IsAllowedStaticRedirectUri(
         Uri uri,

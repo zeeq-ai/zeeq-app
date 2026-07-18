@@ -260,7 +260,11 @@ public sealed record DynamicClientRegistrationSettings
     /// Matching ignores the query string, consistent with the loopback check.
     /// </remarks>
     public string[] AllowedStaticRedirectUris { get; set; } =
-    ["cursor://anysphere.cursor-mcp/oauth/callback"];
+    [
+        "cursor://anysphere.cursor-mcp/oauth/callback",
+        "https://claude.ai/api/mcp/auth_callback",
+        "https://claude.ai/api/auth/callback",
+    ];
 }
 
 /// <summary>

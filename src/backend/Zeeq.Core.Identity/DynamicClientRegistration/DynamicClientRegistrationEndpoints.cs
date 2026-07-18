@@ -1,7 +1,9 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 using OpenIddict.Abstractions;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
@@ -41,6 +43,7 @@ public static class DynamicClientRegistrationEndpoints
                     IOpenIddictApplicationManager manager,
                     DcrClientSetupService setupService,
                     AuthSettings settings,
+                    ILoggerFactory loggerFactory,
                     CancellationToken cancellationToken
                 ) =>
                 {
@@ -48,8 +51,23 @@ public static class DynamicClientRegistrationEndpoints
                         request,
                         settings.DynamicClientRegistration
                     );
+
                     if (validation is not null)
                     {
+                        // Logging for the DCR request failure
+                        var logger = loggerFactory.CreateLogger("DynamicClientRegistration");
+
+                        logger.LogWarning(
+                            "Received failed DCR request: {Request}",
+                            JsonSerializer.Serialize(request)
+                        );
+
+                        logger.LogWarning(
+                            "DCR request rejected: {Error} - {Description}",
+                            validation.Error,
+                            validation.ErrorDescription
+                        );
+
                         return TypedResults.BadRequest(validation);
                     }
 
