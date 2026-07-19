@@ -37,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import { useColorMode } from "@vueuse/core";
 import { useAppStore } from "@/stores/app-store";
@@ -52,7 +52,7 @@ const colorMode = useColorMode();
 const appConfig = useAppConfig();
 const store = useAppStore();
 const router = useRouter();
-const { user: me } = storeToRefs(store);
+const { backendVersion, user: me } = storeToRefs(store);
 
 const colors = [
   "red",
@@ -89,6 +89,13 @@ const displayUser = computed(() => ({
         }
       : undefined,
 }));
+const backendVersionLabel = computed(() => {
+  if (!backendVersion.value) {
+    return "Version unavailable";
+  }
+
+  return `${backendVersion.value.displayVersion} · ${shortSha(backendVersion.value.sha)}`;
+});
 
 const items = computed<DropdownMenuItem[][]>(() => [
   [
@@ -215,6 +222,13 @@ const items = computed<DropdownMenuItem[][]>(() => [
   */
   [
     {
+      label: backendVersionLabel.value,
+      icon: "i-hugeicons-code-circle",
+      disabled: true,
+    },
+  ],
+  [
+    {
       label: "Log out",
       icon: "i-hugeicons-logout-01",
       onSelect: async () => {
@@ -224,4 +238,12 @@ const items = computed<DropdownMenuItem[][]>(() => [
     },
   ],
 ]);
+
+onMounted(() => {
+  void store.fetchBackendVersion();
+});
+
+function shortSha(sha?: string | null) {
+  return sha?.slice(0, 8) ?? "unknown";
+}
 </script>

@@ -32,7 +32,8 @@ internal static class ZeeqWorkerHost
         builder.AddZeeqLogging();
 
         Log.Information(
-            "zeeq-runtime {Sha} built {BuildTimeUtc} UTC ({BuildTimeEst})",
+            "zeeq-runtime {Version} ({Sha}) built {BuildTimeUtc} UTC ({BuildTimeEst})",
+            GitVersionInfo.DisplayVersion,
             GitVersionInfo.Sha ?? "unknown",
             GitVersionInfo.BuildTimeUtc?.ToString("o"),
             GitVersionInfo.BuildTimeEst ?? "unknown"

@@ -124,6 +124,8 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": backendProxy(),
+      "/health": backendProxy(),
+      "/healthcheck": backendProxy(),
       "/auth/providers": backendProxy(),
       "/auth/login/": backendProxy(),
       "/auth/callback/": backendProxy(),

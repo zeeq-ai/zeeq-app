@@ -8,12 +8,24 @@ import {
 } from "@/api/generated";
 import { ZeeqApiError } from "@/api/zeeq-api-client";
 
+type BackendVersionInfo = {
+  status: string;
+  checkedAtUtc: string;
+  sha?: string | null;
+  buildTimeEst?: string | null;
+  version?: string | null;
+  versionTag?: string | null;
+  displayVersion: string;
+};
+
 /**
  * Global app store.  Auth state via the generated GET /api/v1/me client.
  * The HttpOnly zeeq_identity_session cookie is never read directly; a 401 means unauthenticated.
  */
 export const useAppStore = defineStore("app-store", () => {
   const user = ref<MeResponse | null>(null);
+  const backendVersion = ref<BackendVersionInfo | null>(null);
+  const backendVersionError = ref<string | null>(null);
   const isAuthenticated = ref(false);
   const authLoading = ref(true);
   const authError = ref<string | null>(null);
@@ -36,7 +48,9 @@ export const useAppStore = defineStore("app-store", () => {
   });
 
   let fetchUserPromise: Promise<void> | null = null;
+  let fetchBackendVersionPromise: Promise<void> | null = null;
   let fetchUserRequestId = 0;
+  let fetchBackendVersionRequestId = 0;
 
   /**
    * Calls GET /api/v1/me to determine auth state.
@@ -88,6 +102,59 @@ export const useAppStore = defineStore("app-store", () => {
     })();
 
     fetchUserPromise = promise;
+    return promise;
+  }
+
+  /**
+   * Loads backend build provenance from /health. This route is intentionally
+   * outside the generated OpenAPI client today because health is also used by
+   * platform probes before authentication.
+   */
+  async function fetchBackendVersion(options: { force?: boolean } = {}) {
+    if (fetchBackendVersionPromise && !options.force) {
+      return fetchBackendVersionPromise;
+    }
+
+    const requestId = ++fetchBackendVersionRequestId;
+    const promise = (async () => {
+      if (requestId === fetchBackendVersionRequestId) {
+        backendVersionError.value = null;
+      }
+
+      try {
+        // NOTE: /health is intentionally excluded from the generated API client
+        // because platform probes and pre-auth diagnostics use it too.
+        const response = await fetch("/health", {
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+        });
+
+        if (!response.ok) {
+          throw new Error(`Health check failed with ${response.status}`);
+        }
+
+        const payload: unknown = await response.json();
+
+        if (!isBackendVersionInfo(payload)) {
+          throw new Error("Invalid backend health response.");
+        }
+
+        if (requestId === fetchBackendVersionRequestId) {
+          backendVersion.value = payload;
+        }
+      } catch (err: unknown) {
+        if (requestId === fetchBackendVersionRequestId) {
+          backendVersionError.value =
+            err instanceof Error ? err.message : "Could not load backend version.";
+        }
+      } finally {
+        if (requestId === fetchBackendVersionRequestId) {
+          fetchBackendVersionPromise = null;
+        }
+      }
+    })();
+
+    fetchBackendVersionPromise = promise;
     return promise;
   }
 
@@ -165,6 +232,8 @@ export const useAppStore = defineStore("app-store", () => {
 
   return {
     user,
+    backendVersion,
+    backendVersionError,
     isAuthenticated,
     authLoading,
     authError,
@@ -173,12 +242,37 @@ export const useAppStore = defineStore("app-store", () => {
     isSystemAdmin,
     currentOrganization,
     fetchUser,
+    fetchBackendVersion,
     switchOrganization,
     acceptInvitation,
     declineInvitation,
     logout,
   };
 });
+
+function isBackendVersionInfo(value: unknown): value is BackendVersionInfo {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.status === "string" &&
+    typeof value.checkedAtUtc === "string" &&
+    typeof value.displayVersion === "string" &&
+    isOptionalString(value.sha) &&
+    isOptionalString(value.buildTimeEst) &&
+    isOptionalString(value.version) &&
+    isOptionalString(value.versionTag)
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isOptionalString(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === "string";
+}
 
 if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useAppStore, import.meta.hot));

@@ -1,12 +1,12 @@
 using System.Data;
 using System.Diagnostics;
-using Zeeq.Core.Common;
-using Zeeq.Core.Llm;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using Zeeq.Core.Common;
+using Zeeq.Core.Llm;
 
 namespace Zeeq.Runtime.Server.Setup;
 
@@ -20,7 +20,7 @@ internal static class SetupTelemetryExtension
         new Dictionary<string, object>
         {
             ["service"] = "zeeq",
-            ["service.version"] = GitVersionInfo.Sha ?? "unknown",
+            ["service.version"] = GitVersionInfo.TelemetryVersion,
         };
 
     extension(IServiceCollection services)

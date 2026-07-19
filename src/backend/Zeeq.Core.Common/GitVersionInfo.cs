@@ -3,7 +3,7 @@ using System.Reflection;
 namespace Zeeq.Core.Common;
 
 /// <summary>
-/// Exposes the Git SHA and build timestamp captured at build time via
+/// Exposes release version, Git SHA, and build timestamp captured at build time via
 /// <c>AssemblyMetadataAttribute</c>, set by the MSBuild target in
 /// <c>Directory.Build.targets</c>.
 /// </summary>
@@ -18,10 +18,32 @@ public static class GitVersionInfo
     public static string? Sha { get; }
 
     /// <summary>
+    /// The SemVer release version, or <c>null</c> for builds that did not provide
+    /// <c>ZEEQ_VERSION</c>.
+    /// </summary>
+    public static string? Version { get; }
+
+    /// <summary>
+    /// The release tag, including the leading <c>v</c>, or <c>null</c> for
+    /// builds that did not provide <c>ZEEQ_VERSION_TAG</c>.
+    /// </summary>
+    public static string? VersionTag { get; }
+
+    /// <summary>
     /// The first 8 characters of <see cref="Sha"/>, or <c>"unknown"</c> when
     /// no commit SHA is available.
     /// </summary>
     public static string ShortSha => Sha?[..Math.Min(Sha.Length, 8)] ?? "unknown";
+
+    /// <summary>
+    /// User-facing version text, preferring the SemVer tag when available.
+    /// </summary>
+    public static string DisplayVersion => VersionTag ?? Version ?? $"dev-{ShortSha}";
+
+    /// <summary>
+    /// Version value used by OpenTelemetry resource attributes.
+    /// </summary>
+    public static string TelemetryVersion => Version ?? Sha ?? "unknown";
 
     /// <summary>
     /// The UTC build timestamp captured by MSBuild, or <c>null</c> when no
@@ -66,6 +88,14 @@ public static class GitVersionInfo
                     {
                         BuildTimeUtc = parsed;
                     }
+
+                    break;
+                case "Version":
+                    Version = string.IsNullOrWhiteSpace(attr.Value) ? null : attr.Value;
+
+                    break;
+                case "VersionTag":
+                    VersionTag = string.IsNullOrWhiteSpace(attr.Value) ? null : attr.Value;
 
                     break;
             }

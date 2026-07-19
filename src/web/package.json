@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
+    "build": "yarn generate && vite build && vue-tsc -b",
     "preview": "vite preview",
     "generate": "kubb generate",
     "generate:watch": "kubb --watch"
