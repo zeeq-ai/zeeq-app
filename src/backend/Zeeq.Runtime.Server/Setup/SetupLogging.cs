@@ -1,7 +1,7 @@
-using Zeeq.Core.Common;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
+using Zeeq.Core.Common;
 
 namespace Zeeq.Runtime.Server.Setup;
 
@@ -56,7 +56,7 @@ internal static class SetupLoggingExtension
                     options.ResourceAttributes = new Dictionary<string, object>
                     {
                         ["service.name"] = "zeeq",
-                        ["service.version"] = GitVersionInfo.Sha ?? "unknown",
+                        ["service.version"] = GitVersionInfo.TelemetryVersion,
                     };
                 })
                 .MinimumLevel.Debug();
@@ -65,6 +65,7 @@ internal static class SetupLoggingExtension
         {
             logConfiguration
                 .Enrich.WithProperty("GitSha", GitVersionInfo.ShortSha)
+                .Enrich.WithProperty("Version", GitVersionInfo.DisplayVersion)
                 //.WriteTo.Console(new CompactJsonFormatter())
                 .WriteTo.Console(outputTemplate: LoggingConstants.ProductionTemplate)
                 .WriteTo.OpenTelemetry(options =>
@@ -72,7 +73,7 @@ internal static class SetupLoggingExtension
                     options.ResourceAttributes = new Dictionary<string, object>
                     {
                         ["service.name"] = "zeeq",
-                        ["service.version"] = GitVersionInfo.Sha ?? "unknown",
+                        ["service.version"] = GitVersionInfo.TelemetryVersion,
                     };
                 })
                 .MinimumLevel.Debug();
@@ -113,5 +114,5 @@ public static class LoggingConstants
     /// </summary>
     /// <returns>An expression statement used for logging in production environments.</returns>
     public static readonly string ProductionTemplate =
-        "[{Level:u3} {GitSha}] {Message:lj} ({Here}){NewLine}{Exception}";
+        "[{Level:u3} {Version} {GitSha}] {Message:lj} ({Here}){NewLine}{Exception}";
 }

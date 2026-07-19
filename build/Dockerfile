@@ -19,7 +19,6 @@ RUN corepack enable && yarn install --immutable
 FROM node-deps AS web-build
 
 COPY ./src/web ./src/web
-RUN yarn --cwd ./src/web generate
 RUN VITE_BASE=/web/ yarn --cwd ./src/web build
 
 #*----------------------------------------------------------------------------------
@@ -31,6 +30,11 @@ WORKDIR /srcroot
 # See: https://docs.docker.com/engine/reference/builder/#automatic-platform-args-in-the-global-scope
 ARG TARGETARCH
 ARG GIT_SHA
+ARG ZEEQ_VERSION
+ARG ZEEQ_VERSION_TAG
+
+# NOTE: Release builds must pass ZEEQ_VERSION and ZEEQ_VERSION_TAG. The args
+# remain optional here so local/dev image builds can still report dev-* from SHA.
 
 # Copy only the files needed for restore first (to leverage Docker layer caching)
 # The .dockerignore file excludes bin/, obj/, tests, and other non-essential files.
@@ -52,13 +56,24 @@ RUN dotnet publish ./src/backend/Zeeq.Runtime.Server/Zeeq.Runtime.Server.csproj 
   --no-restore \
   --output /app/publish \
   -a $TARGETARCH \
-  -p:GIT_SHA=$GIT_SHA
+  -p:GIT_SHA=$GIT_SHA \
+  -p:ZEEQ_VERSION=$ZEEQ_VERSION \
+  -p:ZEEQ_VERSION_TAG=$ZEEQ_VERSION_TAG
 
 #*----------------------------------------------------------------------------------
 # Stage 4: Build the .NET Runtime Image
 #*----------------------------------------------------------------------------------
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
+
+ARG GIT_SHA
+ARG ZEEQ_VERSION
+ARG ZEEQ_VERSION_TAG
+
+LABEL org.opencontainers.image.source="https://github.com/zeeq-ai/zeeq-app"
+LABEL org.opencontainers.image.revision="${GIT_SHA}"
+LABEL org.opencontainers.image.version="${ZEEQ_VERSION}"
+LABEL ai.zeeq.version-tag="${ZEEQ_VERSION_TAG}"
 
 # Install git and GitHub CLI
 RUN apt-get update && \

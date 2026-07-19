@@ -1,7 +1,14 @@
 <Project>
+  <PropertyGroup>
+    <Version Condition="'$(ZEEQ_VERSION)' != ''">$(ZEEQ_VERSION)</Version>
+    <InformationalVersion Condition="'$(ZEEQ_VERSION)' != ''">$(ZEEQ_VERSION)</InformationalVersion>
+  </PropertyGroup>
+
   <Target Name="GetGitVersionInfo" BeforeTargets="BeforeCompile;CoreCompile">
     <PropertyGroup>
       <_GitSha>$(GIT_SHA)</_GitSha>
+      <_ZeeqVersion>$(ZEEQ_VERSION)</_ZeeqVersion>
+      <_ZeeqVersionTag>$(ZEEQ_VERSION_TAG)</_ZeeqVersionTag>
     </PropertyGroup>
 
     <Exec
@@ -16,12 +23,25 @@
 
     <PropertyGroup>
       <_GitSha Condition="'$(_GitSha)' != ''">$(_GitSha.Trim())</_GitSha>
+      <_ZeeqVersion Condition="'$(_ZeeqVersion)' != ''">$(_ZeeqVersion.Trim())</_ZeeqVersion>
+      <_ZeeqVersionTag Condition="'$(_ZeeqVersionTag)' != ''"
+        >$(_ZeeqVersionTag.Trim())</_ZeeqVersionTag>
       <_BuildTimeUtc>$([System.DateTime]::UtcNow.ToString("o"))</_BuildTimeUtc>
     </PropertyGroup>
 
     <ItemGroup>
       <AssemblyMetadata Include="BuildTimeUtc" Value="$(_BuildTimeUtc)" />
       <AssemblyMetadata Include="GitSha" Value="$(_GitSha)" Condition="'$(_GitSha)' != ''" />
+      <AssemblyMetadata
+        Include="Version"
+        Value="$(_ZeeqVersion)"
+        Condition="'$(_ZeeqVersion)' != ''"
+      />
+      <AssemblyMetadata
+        Include="VersionTag"
+        Value="$(_ZeeqVersionTag)"
+        Condition="'$(_ZeeqVersionTag)' != ''"
+      />
     </ItemGroup>
   </Target>
 </Project>

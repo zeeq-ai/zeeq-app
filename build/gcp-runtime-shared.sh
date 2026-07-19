@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034
 
 # Shared Cloud Run deployment settings for the web service and worker pool.
 # Callers can override the defaults by setting GCP_PROJECT_ID or GCP_REGION.
@@ -7,7 +8,7 @@ REGION="${GCP_REGION:-us-central1}"
 
 # The web service and worker pool run the same published container image and
 # attach to the same Cloud SQL instance.
-ZEEQ_RUNTIME_IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/zeeq/zeeq-runtime:latest"
+ZEEQ_RUNTIME_IMAGE="${ZEEQ_RUNTIME_IMAGE:-${REGION}-docker.pkg.dev/${PROJECT_ID}/zeeq/zeeq-runtime:latest}"
 ZEEQ_CLOUDSQL_INSTANCE="${PROJECT_ID}:${REGION}:zeeq-pg-prod"
 
 # GCS bucket mounted as the worker's ingest workspace root (provisioned by

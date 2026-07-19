@@ -1,0 +1,102 @@
+name: Release Workflow Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  validate-release-path:
+    name: Validate release workflow path
+    runs-on: ubuntu-latest
+
+    steps:
+      # Full history and tags are required to test the same version calculation
+      # behavior used by the real release workflow.
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # Same semantic-version action as production release. This verifies that
+      # repository tags and commit history remain readable by the calculator.
+      - name: Determine base semantic version
+        id: semver
+        uses: paulhatch/semantic-version@v6.0.2
+        with:
+          tag_prefix: "v"
+          version_format: "${major}.${minor}.${patch}"
+          major_pattern: "/!:|BREAKING CHANGE:/"
+          minor_pattern: "/^feat(\\(.+\\))?:/"
+
+      # Use a synthetic prerelease value for validation so this workflow never
+      # attempts to reserve or publish a real release tag.
+      - name: Resolve test version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.semver.outputs.version }}-workflow-test.${GITHUB_RUN_NUMBER}"
+          tag="v${version}"
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-workflow-test\.[0-9]+$ ]]; then
+            echo "Invalid synthetic version: $version" >&2
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "short_sha=${GITHUB_SHA::8}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore dependencies
+        run: dotnet restore zeeq.slnx
+
+      - name: Build backend with release metadata
+        run: |
+          dotnet build zeeq.slnx \
+            --configuration Release \
+            --no-restore \
+            -p:GIT_SHA="${GITHUB_SHA}" \
+            -p:ZEEQ_VERSION="${{ steps.version.outputs.version }}" \
+            -p:ZEEQ_VERSION_TAG="${{ steps.version.outputs.tag }}"
+
+      - name: Build web
+        run: |
+          corepack enable
+          yarn install --immutable
+          VITE_BASE=/web/ yarn --cwd ./src/web build
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Build only. Do not authenticate to Google Cloud and do not push.
+      - name: Build runtime image without pushing
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: build/Dockerfile
+          platforms: linux/amd64
+          push: false
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            ZEEQ_VERSION=${{ steps.version.outputs.version }}
+            ZEEQ_VERSION_TAG=${{ steps.version.outputs.tag }}
+          tags: |
+            zeeq-runtime:${{ steps.version.outputs.tag }}

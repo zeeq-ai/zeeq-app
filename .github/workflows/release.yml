@@ -1,0 +1,337 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        options:
+          - stable
+          - rc
+        required: true
+      version_override:
+        description: Optional SemVer override, without leading v
+        required: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: zeeq-ai-prod
+  REGION: us-central1
+  REPOSITORY: zeeq
+  IMAGE_NAME: zeeq-runtime
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  ZEEQ_TEST_POSTGRES_IMAGE: ghcr.io/zeeq-ai/zeeq-postgres:pg18
+
+jobs:
+  plan:
+    name: Plan release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      short_sha: ${{ steps.version.outputs.short_sha }}
+      image_uri: ${{ steps.version.outputs.image_uri }}
+
+    steps:
+      # The release workflow is intended to ship main only, even when an
+      # operator manually dispatches it from the GitHub UI.
+      - name: Validate release branch
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Releases must run from main. Current ref: $GITHUB_REF" >&2
+            exit 1
+          fi
+
+      # Full history and tags are required for semantic-version to calculate
+      # the next release from commits since the previous v* tag.
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Resolve the base SemVer from commit history. This does not tag or
+      # publish anything; it only calculates version outputs.
+      - name: Determine base semantic version
+        id: semver
+        uses: paulhatch/semantic-version@v6.0.2
+        with:
+          tag_prefix: "v"
+          version_format: "${major}.${minor}.${patch}"
+          major_pattern: "/!:|BREAKING CHANGE:/"
+          minor_pattern: "/^feat(\\(.+\\))?:/"
+
+      # Convert the base version into the final release version. Stable uses the
+      # calculated base directly. RC computes the next vX.Y.Z-rc.N tag by
+      # looking at existing tags for this base version. version_override bypasses
+      # calculation but must still validate and must not already exist.
+      - name: Resolve final version
+        id: version
+        shell: bash
+        env:
+          RELEASE_CHANNEL: ${{ inputs.channel }}
+          RELEASE_VERSION_OVERRIDE: ${{ inputs.version_override }}
+          BASE_VERSION: ${{ steps.semver.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          channel="$RELEASE_CHANNEL"
+          override="$RELEASE_VERSION_OVERRIDE"
+          base_version="$BASE_VERSION"
+
+          if [[ -n "$override" ]]; then
+            version="$override"
+          elif [[ "$channel" == "stable" ]]; then
+            version="$base_version"
+          else
+            last_rc="$(
+              git tag --list "v${base_version}-rc.*" |
+                sed -E "s/^v${base_version}-rc\\.([0-9]+)$/\\1/" |
+                sort -n |
+                tail -n 1
+            )"
+            next_rc=$(( ${last_rc:-0} + 1 ))
+            version="${base_version}-rc.${next_rc}"
+          fi
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            echo "Invalid SemVer: $version" >&2
+            exit 1
+          fi
+
+          tag="v${version}"
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "Git tag already exists: $tag" >&2
+            exit 1
+          fi
+
+          image_uri="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE_NAME}"
+
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "short_sha=${GITHUB_SHA::8}"
+            echo "image_uri=$image_uri"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Release Plan"
+            echo ""
+            echo "- Channel: ${channel}"
+            echo "- Version: ${version}"
+            echo "- Tag: ${tag}"
+            echo "- Image: ${image_uri}:${tag}"
+            echo "- Commit: ${GITHUB_SHA}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  validate:
+    name: Validate build
+    runs-on: ubuntu-latest
+    needs: plan
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Restore dependencies
+        run: dotnet restore zeeq.slnx
+
+      - name: Build backend with release metadata
+        run: |
+          dotnet build zeeq.slnx \
+            --configuration Release \
+            --no-restore \
+            -p:GIT_SHA="${GITHUB_SHA}" \
+            -p:ZEEQ_VERSION="${{ needs.plan.outputs.version }}" \
+            -p:ZEEQ_VERSION_TAG="${{ needs.plan.outputs.tag }}"
+
+      # Build the Vue app as a standalone validation step. Docker builds it too,
+      # but this fails earlier and produces clearer logs when frontend build
+      # issues are unrelated to Docker.
+      - name: Build web
+        run: |
+          corepack enable
+          yarn install --immutable
+          VITE_BASE=/web/ yarn --cwd ./src/web build
+
+      # Testcontainers pulls the repository-scoped Postgres image with Docker,
+      # so Docker needs GHCR credentials before the .NET test run starts.
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run tests
+        run: dotnet test --solution zeeq.slnx --configuration Release --no-build --no-restore --disable-logo
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Build only. The production job below performs the authoritative push
+      # after environment approval.
+      - name: Build runtime image without pushing
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: build/Dockerfile
+          platforms: linux/amd64
+          push: false
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            ZEEQ_VERSION=${{ needs.plan.outputs.version }}
+            ZEEQ_VERSION_TAG=${{ needs.plan.outputs.tag }}
+          tags: |
+            zeeq-runtime:${{ needs.plan.outputs.tag }}
+
+  ship:
+    name: Push image and deploy
+    runs-on: ubuntu-latest
+    needs:
+      - plan
+      - validate
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # Authenticate keylessly to Google Cloud through Workload Identity
+      # Federation. token_format=access_token exposes a short-lived OAuth
+      # token that docker/login-action can use for Artifact Registry.
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          token_format: access_token
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_RELEASE_SERVICE_ACCOUNT }}
+
+      # GitHub-hosted Ubuntu runners normally include Google Cloud CLI. This
+      # action configures auth/project state and only downloads gcloud if the
+      # runner-supplied version does not satisfy the required constraint.
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          version: ">= 416.0.0"
+
+      # Fail before building if the immutable SemVer tag already exists in
+      # Artifact Registry. Do not overwrite release images.
+      - name: Check image tag does not already exist
+        run: |
+          set -euo pipefail
+
+          if gcloud artifacts docker images describe "${{ needs.plan.outputs.image_uri }}:${{ needs.plan.outputs.tag }}" \
+            --project "${PROJECT_ID}" >/dev/null 2>&1; then
+            echo "Artifact Registry image tag already exists: ${{ needs.plan.outputs.image_uri }}:${{ needs.plan.outputs.tag }}" >&2
+            exit 1
+          fi
+
+      - name: Log in to Artifact Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Build the same Dockerfile used by local deploys, but push immutable
+      # version and SHA tags. Build args embed release metadata in the .NET app.
+      - name: Build and push runtime image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: build/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            ZEEQ_VERSION=${{ needs.plan.outputs.version }}
+            ZEEQ_VERSION_TAG=${{ needs.plan.outputs.tag }}
+          tags: |
+            ${{ needs.plan.outputs.image_uri }}:${{ needs.plan.outputs.tag }}
+            ${{ needs.plan.outputs.image_uri }}:sha-${{ needs.plan.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/zeeq-ai/zeeq-app
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.plan.outputs.version }}
+            ai.zeeq.version-tag=${{ needs.plan.outputs.tag }}
+
+      # Deploy the HTTP web runtime by exact SemVer image tag.
+      - name: Deploy web service
+        env:
+          GCP_PROJECT_ID: ${{ env.PROJECT_ID }}
+          GCP_REGION: ${{ env.REGION }}
+          ZEEQ_RUNTIME_IMAGE: ${{ needs.plan.outputs.image_uri }}:${{ needs.plan.outputs.tag }}
+        run: ./build/ship.sh
+
+      # Deploy the Cloud Run worker pool by the same exact image tag.
+      - name: Deploy worker pool
+        env:
+          GCP_PROJECT_ID: ${{ env.PROJECT_ID }}
+          GCP_REGION: ${{ env.REGION }}
+          ZEEQ_RUNTIME_IMAGE: ${{ needs.plan.outputs.image_uri }}:${{ needs.plan.outputs.tag }}
+        run: ./build/ship-worker.sh
+
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - plan
+      - ship
+    permissions:
+      contents: write
+
+    steps:
+      # Create the GitHub Release only after the version is actually deployed.
+      # RCs are marked prerelease; stable releases are normal releases.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_TAG: ${{ needs.plan.outputs.tag }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          set -euo pipefail
+
+          args=(
+            "$VERSION_TAG"
+            --target "$GITHUB_SHA"
+            --title "$VERSION_TAG"
+            --generate-notes
+          )
+
+          if [[ "$CHANNEL" == "rc" ]]; then
+            args+=(--prerelease)
+          else
+            args+=(--fail-on-no-commits)
+          fi
+
+          gh release create "${args[@]}"

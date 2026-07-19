@@ -1,7 +1,7 @@
-using Zeeq.Core.Common;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Scalar.AspNetCore;
+using Zeeq.Core.Common;
 
 namespace Zeeq.Core.Common.AspNetCore.Endpoints;
 
@@ -27,7 +27,10 @@ public static class HealthEndpoints
                             "Healthy",
                             DateTimeOffset.UtcNow,
                             GitVersionInfo.Sha,
-                            GitVersionInfo.BuildTimeEst
+                            GitVersionInfo.BuildTimeEst,
+                            GitVersionInfo.Version,
+                            GitVersionInfo.VersionTag,
+                            GitVersionInfo.DisplayVersion
                         )
                     )
             )
@@ -44,7 +47,10 @@ public static class HealthEndpoints
                             "Healthy",
                             DateTimeOffset.UtcNow,
                             GitVersionInfo.Sha,
-                            GitVersionInfo.BuildTimeEst
+                            GitVersionInfo.BuildTimeEst,
+                            GitVersionInfo.Version,
+                            GitVersionInfo.VersionTag,
+                            GitVersionInfo.DisplayVersion
                         )
                     )
             )
@@ -64,9 +70,15 @@ public static class HealthEndpoints
 /// <param name="CheckedAtUtc">The time the health check was performed in UTC.</param>
 /// <param name="Sha">The Git commit SHA of the running build.</param>
 /// <param name="BuildTimeEst">The build timestamp in America/New_York.</param>
+/// <param name="Version">The SemVer release version of the running build.</param>
+/// <param name="VersionTag">The Git release tag for the running build.</param>
+/// <param name="DisplayVersion">The user-facing version label.</param>
 public record struct HealthResponse(
     string Status,
     DateTimeOffset CheckedAtUtc,
     string? Sha,
-    string? BuildTimeEst
+    string? BuildTimeEst,
+    string? Version,
+    string? VersionTag,
+    string DisplayVersion
 );
