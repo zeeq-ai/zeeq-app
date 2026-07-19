@@ -234,12 +234,15 @@ jobs:
 
       # GitHub-hosted Ubuntu runners normally include Google Cloud CLI. This
       # action configures auth/project state and only downloads gcloud if the
-      # runner-supplied version does not satisfy the required constraint.
+      # runner-supplied version does not satisfy the required constraint. Worker
+      # pools are still a beta gcloud surface, so install that component up
+      # front instead of letting `gcloud beta ...` prompt during deploy.
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v3
         with:
           project_id: ${{ env.PROJECT_ID }}
           version: ">= 416.0.0"
+          install_components: beta
 
       # Fail before building if the immutable SemVer tag already exists in
       # Artifact Registry. Do not overwrite release images.

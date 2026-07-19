@@ -33,6 +33,23 @@
         />
       </div>
     </template>
+
+    <template #version>
+      <div class="flex min-w-0 items-start gap-2">
+        <UIcon
+          name="i-hugeicons-code-circle"
+          class="mt-0.5 size-4 shrink-0 text-dimmed"
+        />
+        <div class="min-w-0">
+          <div class="truncate text-sm text-highlighted">
+            {{ backendVersionLabel }}
+          </div>
+          <div class="truncate text-xs text-muted">
+            {{ backendVersionDateLabel }}
+          </div>
+        </div>
+      </div>
+    </template>
   </UDropdownMenu>
 </template>
 
@@ -95,6 +112,15 @@ const backendVersionLabel = computed(() => {
   }
 
   return `${backendVersion.value.displayVersion} · ${shortSha(backendVersion.value.sha)}`;
+});
+const backendVersionDateLabel = computed(() => {
+  if (!backendVersion.value) {
+    return "Build date unavailable";
+  }
+
+  return backendVersion.value.buildTimeEst
+    ? `Built ${backendVersion.value.buildTimeEst}`
+    : `Checked ${backendVersion.value.checkedAtUtc}`;
 });
 
 const items = computed<DropdownMenuItem[][]>(() => [
@@ -224,7 +250,10 @@ const items = computed<DropdownMenuItem[][]>(() => [
     {
       label: backendVersionLabel.value,
       icon: "i-hugeicons-code-circle",
-      disabled: true,
+      slot: "version",
+      onSelect(e: Event) {
+        e.preventDefault();
+      },
     },
   ],
   [
