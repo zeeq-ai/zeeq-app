@@ -30,7 +30,7 @@ env:
 jobs:
   plan:
     name: Plan release
-    runs-on: ubuntu-latest
+    runs-on: linux-x64-large-runner
     permissions:
       contents: read
     outputs:
@@ -55,6 +55,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       # Resolve the base SemVer from commit history. This does not tag or
@@ -314,6 +315,12 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
       # Create the GitHub Release only after the version is actually deployed.
       # RCs are marked prerelease; stable releases are normal releases.
       - name: Create GitHub Release
