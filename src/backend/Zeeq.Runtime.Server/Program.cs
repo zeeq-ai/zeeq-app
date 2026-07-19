@@ -1,4 +1,5 @@
 using System.Reflection;
+using Scalar.AspNetCore;
 using Zeeq.Core.Common.AspNetCore;
 using Zeeq.Core.Common.AspNetCore.Endpoints;
 using Zeeq.Core.Llm;
@@ -9,10 +10,9 @@ using Zeeq.Platform.Documents;
 using Zeeq.Platform.Ingest;
 using Zeeq.Platform.Llm;
 using Zeeq.Platform.Metrics;
-using Zeeq.Platform.Telemetry.Setup;
 using Zeeq.Platform.Storage.Google;
+using Zeeq.Platform.Telemetry.Setup;
 using Zeeq.Runtime.Server;
-using Scalar.AspNetCore;
 
 // If the entry point is the OpenAPI generation, we can skip everything else.
 HandleSchemaGenerationAndExit();
@@ -127,6 +127,7 @@ app.UseMembershipEnrichment();
 app.UseAuthorization();
 
 app.MapStaticSpas(app.Environment);
+app.MapWebRootRedirect(app.Environment);
 app.MapSpaFallbacks(app.Environment);
 
 app.MapZeeqHealthEndpoints();
