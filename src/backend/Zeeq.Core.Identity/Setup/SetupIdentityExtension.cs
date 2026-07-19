@@ -130,7 +130,7 @@ public static class SetupIdentityExtension
                 {
                     options.Cookie.Name = "zeeq_identity_session";
                     options.Cookie.SameSite = SameSiteMode.Lax;
-                    options.Cookie.SecurePolicy = CookieSecurePolicy.None;
+                    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
                     options.LoginPath = "/auth/login";
                     options.SlidingExpiration = true;
                     options.ExpireTimeSpan = TimeSpan.FromHours(8);

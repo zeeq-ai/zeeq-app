@@ -59,6 +59,20 @@ public static class SetupStaticFilesExtension
         }
 
         /// <summary>
+        /// Redirects the bare application root to the Vue SPA base path.
+        /// </summary>
+        /// <param name="env">The web host environment.</param>
+        public void MapWebRootRedirect(IWebHostEnvironment env)
+        {
+            if (env.IsDevelopment())
+            {
+                return; // No need on local
+            }
+
+            app.MapGet("/", () => Results.Redirect("/web", permanent: false));
+        }
+
+        /// <summary>
         /// Maps the static SPA fallback for /web so client-side routing works correctly.
         /// </summary>
         /// <param name="env">The web host environment.</param>
