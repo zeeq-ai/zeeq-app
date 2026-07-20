@@ -96,36 +96,41 @@ export const useLibraryStore = defineStore("library", () => {
 
   // ── Actions ────────────────────────────────────────────────────────────
 
+  /** Loads all libraries in the active organization without changing selection. */
+  async function loadLibraryList() {
+    loadingLibraries.value = true;
+    try {
+      libraries.value = await Libraries.listLibraries(orgId.value);
+    } finally {
+      loadingLibraries.value = false;
+    }
+  }
+
   /**
    * Loads all libraries in the active organization and picks the active one.
    * Falls back to the first library when the persisted name is gone.
    */
   async function loadLibraries() {
-    loadingLibraries.value = true;
-    try {
-      libraries.value = await Libraries.listLibraries(orgId.value);
+    await loadLibraryList();
 
-      if (activeLibraryName.value && !activeLibrary.value) {
-        // Persisted name is stale (its library was deleted/renamed elsewhere,
-        // e.g. by deleteLibrary) — fall back to first library and reload its
-        // documents; otherwise the tree keeps showing the old library's
-        // (now-irrelevant) document list.
-        activeLibraryName.value = libraries.value[0]?.name ?? null;
-        loadedDocument.value = null;
-        searchResults.value = [];
-        snippetSearchResultsByKind.section = [];
-        snippetSearchResultsByKind.code = [];
-        await loadDocuments();
-      }
+    if (activeLibraryName.value && !activeLibrary.value) {
+      // Persisted name is stale (its library was deleted/renamed elsewhere,
+      // e.g. by deleteLibrary) — fall back to first library and reload its
+      // documents; otherwise the tree keeps showing the old library's
+      // (now-irrelevant) document list.
+      activeLibraryName.value = libraries.value[0]?.name ?? null;
+      loadedDocument.value = null;
+      searchResults.value = [];
+      snippetSearchResultsByKind.section = [];
+      snippetSearchResultsByKind.code = [];
+      await loadDocuments();
+    }
 
-      if (!activeLibraryName.value && libraries.value.length > 0) {
-        // Initial mount, no persisted name yet — the caller (Libraries.vue's
-        // onMounted) already loads documents for this case itself, so this
-        // branch only needs to pick the name.
-        activeLibraryName.value = libraries.value[0].name;
-      }
-    } finally {
-      loadingLibraries.value = false;
+    if (!activeLibraryName.value && libraries.value.length > 0) {
+      // Initial mount, no persisted name yet — the caller (Libraries.vue's
+      // onMounted) already loads documents for this case itself, so this
+      // branch only needs to pick the name.
+      activeLibraryName.value = libraries.value[0].name;
     }
   }
 
@@ -306,8 +311,9 @@ export const useLibraryStore = defineStore("library", () => {
 
     const blob = await response.blob();
     const filename =
-      parseContentDispositionFilename(response.headers.get("Content-Disposition")) ??
-      `${libraryName}.${format === "zeeq" ? "zeeq-export" : "zip"}`;
+      parseContentDispositionFilename(
+        response.headers.get("Content-Disposition"),
+      ) ?? `${libraryName}.${format === "zeeq" ? "zeeq-export" : "zip"}`;
 
     downloadBlob(blob, filename);
   }
@@ -354,6 +360,16 @@ export const useLibraryStore = defineStore("library", () => {
     snippetSearchResultsByKind.section = [];
     snippetSearchResultsByKind.code = [];
     await loadDocuments();
+  }
+
+  /** Clears active library state when no selectable library is available. */
+  function clearLibrarySelection() {
+    activeLibraryName.value = null;
+    documents.value = [];
+    loadedDocument.value = null;
+    searchResults.value = [];
+    snippetSearchResultsByKind.section = [];
+    snippetSearchResultsByKind.code = [];
   }
 
   /** Loads document summaries for the active library. */
@@ -590,6 +606,7 @@ export const useLibraryStore = defineStore("library", () => {
     activeLibrary,
     documentPaths,
     // Actions
+    loadLibraryList,
     loadLibraries,
     refreshLibrary,
     createLibrary,
@@ -603,6 +620,7 @@ export const useLibraryStore = defineStore("library", () => {
     previewLibraryImport,
     importLibraryDocuments,
     selectLibrary,
+    clearLibrarySelection,
     loadDocuments,
     openDocument,
     newDocument,
