@@ -411,7 +411,7 @@ function onAuthorsChange(value: string[]) {
 
 // Load the filter option lists once; failures are non-fatal (dropdowns stay empty).
 onMounted(() => {
-  void libraryStore.loadLibraries().catch(() => {});
+  void libraryStore.loadLibraryList().catch(() => {});
   void metricsStore.loadFilterOptions().catch(() => {});
 });
 

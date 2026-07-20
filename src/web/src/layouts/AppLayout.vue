@@ -145,6 +145,6 @@ function loadShellLibraries() {
     return;
   }
 
-  void libraryStore.loadLibraries().catch(() => undefined);
+  void libraryStore.loadLibraryList().catch(() => undefined);
 }
 </script>

@@ -686,28 +686,20 @@ watch(parsePreviewOpen, (isOpen) => {
 // ── Init ────────────────────────────────────────────────────────────────
 
 onMounted(async () => {
-  try {
-    await store.loadLibraries();
-    await applyLibraryRouteSelection();
-  } catch (err: any) {
-    toast.add({
-      title: "Error loading libraries",
-      description: err?.message ?? "Failed to load",
-      color: "error",
-    });
-  }
-
   // Load configured repositories in the background so the library form can
   // pre-select existing mappings. Errors are non-blocking since the form still
   // works without them (the checkbox group is simply hidden when empty).
   githubStore.loadRepositories().catch(() => undefined);
 });
 
+let libraryRouteSelectionRequestId = 0;
+
 watch(
   () => route.params.libraryName,
   () => {
-    void applyLibraryRouteSelection();
+    void loadLibraryRouteSelection();
   },
+  { immediate: true },
 );
 
 /**
@@ -725,29 +717,61 @@ function selectRootOnFirstLoad() {
   }
 }
 
-async function applyLibraryRouteSelection() {
+async function applyLibraryRouteSelection(requestId: number) {
+  await store.loadLibraryList();
+  if (requestId !== libraryRouteSelectionRequestId) {
+    return;
+  }
+
   const requestedName = routeLibraryName();
   const routeLibraryExists =
     requestedName !== null &&
     libraries.value.some((library) => library.name === requestedName);
+  const activeLibraryStillExists =
+    activeLibraryName.value !== null &&
+    libraries.value.some((library) => library.name === activeLibraryName.value);
   const nextName = routeLibraryExists
     ? requestedName
-    : (activeLibraryName.value ?? libraries.value[0]?.name ?? null);
+    : activeLibraryStillExists
+      ? activeLibraryName.value
+      : (libraries.value[0]?.name ?? null);
 
   if (!nextName) {
     if (route.fullPath !== "/libraries") {
       await router.replace("/libraries");
     }
+    if (requestId !== libraryRouteSelectionRequestId) {
+      return;
+    }
 
-    await store.loadDocuments();
+    store.clearLibrarySelection();
     return;
   }
 
   if (requestedName !== nextName) {
     await router.replace(libraryRoute(nextName));
+    return;
   }
 
   await selectLibraryAndRoot(nextName);
+}
+
+async function loadLibraryRouteSelection() {
+  const requestId = ++libraryRouteSelectionRequestId;
+
+  try {
+    await applyLibraryRouteSelection(requestId);
+  } catch (err: any) {
+    if (requestId !== libraryRouteSelectionRequestId) {
+      return;
+    }
+
+    toast.add({
+      title: "Error loading libraries",
+      description: err?.message ?? "Failed to load",
+      color: "error",
+    });
+  }
 }
 
 async function selectLibraryAndRoot(name: string) {

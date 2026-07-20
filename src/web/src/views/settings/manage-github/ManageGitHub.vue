@@ -169,7 +169,7 @@ async function onSubmitRepositorySettings(
 onMounted(async () => {
   await loadRepositories();
   // Load libraries in the background so the mapping slideover has data.
-  libraryStore.loadLibraries().catch(() => undefined);
+  libraryStore.loadLibraryList().catch(() => undefined);
 
   if (installationLinked.value) {
     toast.add({
