@@ -41,6 +41,32 @@ public sealed class Organization : MutableDomainEntityBase
     public string? IconUrl { get; set; }
 
     /// <summary>
+    /// Enables automatic pending invitations for first-login users whose email
+    /// domain matches <see cref="AutoInviteSameDomain" />.
+    /// </summary>
+    public bool AutoInviteSameDomainEnabled { get; set; }
+
+    /// <summary>
+    /// Normalized private registrable email domain used for same-domain
+    /// onboarding, such as <c>example.com</c>.
+    /// </summary>
+    /// <remarks>
+    /// This value is derived from the organization creator/owner-at-creation
+    /// email when the setting is enabled. It is cleared when the setting is
+    /// disabled so another organization can claim the domain.
+    /// </remarks>
+    public string? AutoInviteSameDomain { get; set; }
+
+    /// <summary>
+    /// Role assigned to same-domain auto-created invitations.
+    /// </summary>
+    /// <remarks>
+    /// Only <c>member</c> and <c>admin</c> should be accepted by API handlers.
+    /// Defaults to <c>member</c>.
+    /// </remarks>
+    public string AutoInviteDefaultRole { get; set; } = "member";
+
+    /// <summary>
     /// UTC timestamp when the organization became active.
     /// </summary>
     /// <remarks>

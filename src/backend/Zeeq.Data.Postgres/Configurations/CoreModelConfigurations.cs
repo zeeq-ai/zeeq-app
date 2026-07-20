@@ -32,6 +32,22 @@ internal sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organ
         entity.Property(organization => organization.Slug).HasMaxLength(128);
         entity.HasIndex(organization => organization.Slug).IsUnique();
         entity.Property(organization => organization.IconUrl).HasMaxLength(87380);
+        entity
+            .Property(organization => organization.AutoInviteSameDomainEnabled)
+            .IsRequired()
+            .HasDefaultValue(false);
+        entity.Property(organization => organization.AutoInviteSameDomain).HasMaxLength(253);
+        entity
+            .Property(organization => organization.AutoInviteDefaultRole)
+            .IsRequired()
+            .HasMaxLength(64)
+            .HasDefaultValue("member");
+        entity
+            .HasIndex(organization => organization.AutoInviteSameDomain)
+            .IsUnique()
+            .HasFilter(
+                "auto_invite_same_domain_enabled = true AND auto_invite_same_domain IS NOT NULL"
+            );
         entity.Property(organization => organization.ActivatedAtUtc);
         entity
             .Property(organization => organization.Tier)
