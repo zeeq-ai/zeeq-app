@@ -15,10 +15,9 @@ namespace Zeeq.Platform.Dispatch.Process;
 /// Implements spec §5.2 (deterministic path scheme) and §5.3 (clone-or-pull,
 /// partial clone, shallow depth, sparse checkout, bounded retry, token
 /// injection). This is the v1 default workspace provider — the local-disk
-/// counterpart to the future <c>MountedVolumeWorkspaceProvider</c> (spec
-/// §11.2/Phase 3), which will reuse the same path scheme and git orchestration
-/// against a GCS-mounted root instead of <see cref="AppSettings.Ingest"/>'s
-/// default OS temp directory.
+/// counterpart to production's mounted ephemeral-disk root, which reuses the
+/// same path scheme and git orchestration instead of
+/// <see cref="AppSettings.Ingest"/>'s default OS temp directory.
 /// <para>
 /// <b>Sparse-checkout scope, a deliberate simplification:</b> the git-level
 /// sparse-checkout pattern set is always just the three Markdown extensions
@@ -78,8 +77,8 @@ internal sealed partial class LocalTempWorkspaceProvider(
     /// <b>Why this is needed at all:</b> git 2.35+ refuses any operation
     /// inside a directory whose owner uid doesn't match the running
     /// process's uid ("detected dubious ownership") — a defense against a
-    /// different local user planting a malicious repo. On the mounted-GCS
-    /// production deployment (Cloud Storage FUSE volume, see
+    /// different local user planting a malicious repo. On mounted-volume
+    /// production deployments (see
     /// <c>docs/content/5.configuration/1-gcp-runtime.md</c>), Google's own
     /// docs state volumes are root-owned by default; our container image
     /// also has no <c>USER</c> directive (confirmed via
@@ -87,7 +86,7 @@ internal sealed partial class LocalTempWorkspaceProvider(
     /// published base image — empty, i.e. root), so ownership likely already
     /// matches today. This is configured defensively anyway rather than
     /// relying on that alignment holding forever — a future base-image
-    /// change to a non-root default, or a GCS FUSE mount option change,
+    /// change to a non-root default, or a mount ownership change,
     /// would otherwise silently break every ingest run in production with no
     /// local-dev signal (local temp disk is always already owned by the
     /// current user, so this path is never exercised outside a mounted
@@ -167,14 +166,10 @@ internal sealed partial class LocalTempWorkspaceProvider(
     /// plain-text nested directory segments.
     /// </summary>
     /// <remarks>
-    /// This exists for the mounted-GCS-bucket production deployment (see
-    /// <c>docs/content/5.configuration/1-gcp-runtime.md</c>): that bucket is
-    /// a single namespace shared across every organization's private clones,
-    /// and GCS IAM has no native per-prefix authorization — anyone who can
-    /// `list` the bucket (already narrowed to a custom role, but `list`
-    /// itself can't be dropped without breaking GCS FUSE's directory
-    /// enumeration) previously saw a plain-text organization id as a
-    /// top-level folder name, letting them group entries by org — e.g. "org X
+    /// This exists for mounted-volume production deployments (see
+    /// <c>docs/content/5.configuration/1-gcp-runtime.md</c>): a plain-text
+    /// organization id as a top-level folder name would let readers group
+    /// entries by org — e.g. "org X
     /// has N libraries with active clones" — without reading a single file.
     /// Collapsing all three inputs into one hash removes that grouping
     /// signal: every workspace looks like an unrelated flat leaf, and finding
@@ -314,16 +309,9 @@ internal sealed partial class LocalTempWorkspaceProvider(
                 "--no-checkout",
                 // Explicit empty template dir: without this, git tries to
                 // populate .git/hooks/*.sample from its built-in template
-                // directory via a hard link as a fast path (falling back to
-                // a plain copy only on failure). On a Cloud Storage FUSE
-                // mount, link() isn't supported at all ("function not
-                // implemented") — harmless since git treats a failed
-                // template copy as non-fatal and the clone still succeeds,
-                // but it spams the FUSE driver's own error log with
-                // CreateLinkOp failures for files this pipeline never uses
-                // (no git hooks are ever invoked here). Skipping template
-                // population entirely avoids the hard-link attempts at the
-                // source instead of just tolerating the resulting noise.
+                // directory via a hard link as a fast path. Keep templates
+                // disabled: ingest never invokes git hooks, and the empty
+                // template avoids unnecessary filesystem work during clones.
                 "--template=",
                 repoUrl,
                 ".",

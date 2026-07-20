@@ -11,11 +11,10 @@ REGION="${GCP_REGION:-us-central1}"
 ZEEQ_RUNTIME_IMAGE="${ZEEQ_RUNTIME_IMAGE:-${REGION}-docker.pkg.dev/${PROJECT_ID}/zeeq/zeeq-runtime:latest}"
 ZEEQ_CLOUDSQL_INSTANCE="${PROJECT_ID}:${REGION}:zeeq-pg-prod"
 
-# GCS bucket mounted as the worker's ingest workspace root (provisioned by
-# build/init/gcp-storage.sh). Only the worker pool mounts this — the web
-# service never runs the ingest pipeline.
-ZEEQ_INGEST_BUCKET="${PROJECT_ID}-ingest"
+# Worker-only ingest workspace volume. Cloud Run ephemeral disk currently has
+# a 10Gi minimum, so keep the default explicit instead of implying 2.5Gi works.
 ZEEQ_INGEST_MOUNT_PATH="/mnt/ingest"
+ZEEQ_INGEST_EPHEMERAL_DISK_SIZE="${ZEEQ_INGEST_EPHEMERAL_DISK_SIZE:-10Gi}"
 
 # OpenIddict only runs in the HTTP web runtime. These are file paths inside the
 # web container after Cloud Run mounts the Secret Manager certificate payloads.
