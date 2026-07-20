@@ -45,9 +45,11 @@
       <DocumentEditorPanel
         class="min-w-0 flex-1"
         :document="loadedDocument"
+        :loading="editorLoading"
         :paths="documentPaths"
         :selected-folder-path="selectedFolderPath"
         :initial-folder-path="pendingNewDocumentFolder"
+        :repo-url="activeLibraryRepoUrl"
         @create-library="openLibraryForm(null)"
         @delete="onDeleteDocument"
         @select-document="onOpenDocument"
@@ -145,6 +147,7 @@ const {
   parsePreview,
   loadingLibraries,
   loadingDocuments,
+  loadingDocument,
   searching,
   snippetSearching,
   loadingParsePreview,
@@ -153,6 +156,15 @@ const {
 
 const { configuredRepositories, librarySourceRepositories } =
   storeToRefs(githubStore);
+
+const librarySelectionLoading = ref(false);
+const editorLoading = computed(
+  () =>
+    librarySelectionLoading.value ||
+    loadingLibraries.value ||
+    loadingDocuments.value ||
+    loadingDocument.value,
+);
 
 // ── Library form state ──────────────────────────────────────────────────
 
@@ -176,6 +188,13 @@ const libraryFormMappedRepoIds = computed(() => {
     .filter((r) => r.libraryIds.includes(libraryId))
     .map((r) => r.id);
 });
+
+/** Origin repo clone URL for the active library, if repository-driven. */
+const activeLibraryRepoUrl = computed(
+  () =>
+    libraries.value.find((library) => library.name === activeLibraryName.value)
+      ?.source?.repoUrl ?? null,
+);
 
 /** Opens the library create/edit slideover. Pass null for create mode. */
 function openLibraryForm(library: LibraryResponse | null) {
@@ -758,6 +777,7 @@ async function applyLibraryRouteSelection(requestId: number) {
 
 async function loadLibraryRouteSelection() {
   const requestId = ++libraryRouteSelectionRequestId;
+  librarySelectionLoading.value = true;
 
   try {
     await applyLibraryRouteSelection(requestId);
@@ -771,6 +791,10 @@ async function loadLibraryRouteSelection() {
       description: err?.message ?? "Failed to load",
       color: "error",
     });
+  } finally {
+    if (requestId === libraryRouteSelectionRequestId) {
+      librarySelectionLoading.value = false;
+    }
   }
 }
 

@@ -30,11 +30,29 @@
     </div>
 
     <UFieldGroup>
+      <UTooltip
+        v-if="activeLibrary?.source"
+        text="View origin repository"
+        :content="{ side: 'bottom' }"
+        :delay-duration="0"
+      >
+        <UButton
+          icon="i-hugeicons-github"
+          size="md"
+          color="neutral"
+          variant="outline"
+          class="shrink-0"
+          aria-label="View origin repository"
+          :to="toGitHubWebUrl(activeLibrary.source.repoUrl)"
+          target="_blank"
+        />
+      </UTooltip>
+
       <UButton
         v-if="showTest"
         label="Test"
         icon="i-hugeicons-search-01"
-        size="sm"
+        size="md"
         color="neutral"
         variant="outline"
         class="shrink-0"
@@ -45,7 +63,7 @@
         v-if="activeLibrary"
         label="Manage"
         icon="i-hugeicons-edit-02"
-        size="sm"
+        size="md"
         color="neutral"
         variant="outline"
         class="shrink-0"
@@ -55,30 +73,32 @@
       <UButton
         label="New"
         icon="i-hugeicons-plus-sign"
-        size="sm"
+        size="md"
         color="neutral"
         variant="outline"
         class="shrink-0"
         @click="emits('add')"
       />
-
-      <USelect
-        :model-value="activeLibraryName ?? undefined"
-        :items="selectItems"
-        :loading="loading"
-        :disabled="loading"
-        placeholder="Select a library..."
-        color="neutral"
-        size="sm"
-        :class="['w-72 shrink-0', activeLibrary ? '' : 'ml-auto']"
-        @update:model-value="onSelect"
-      />
     </UFieldGroup>
+
+    <USelect
+      :model-value="activeLibraryName ?? undefined"
+      :items="selectItems"
+      :loading="loading"
+      :disabled="loading"
+      placeholder="Select a library..."
+      color="neutral"
+      size="lg"
+      variant="ghost"
+      :class="['shrink-0', activeLibrary ? '' : 'ml-auto', 'font-bold']"
+      @update:model-value="onSelect"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { LibraryResponse } from "@/api/generated/types/LibraryResponse";
+import { toGitHubWebUrl } from "@/utils/githubUrl";
 
 const props = defineProps<{
   libraries: LibraryResponse[];

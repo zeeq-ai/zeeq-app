@@ -6,7 +6,19 @@
   Completions (D-5): raw path insertion from the document path list.
   Save is always reviewed: emits `review(original, next, path)`.
   -->
-  <div class="flex flex-col h-full">
+  <div class="relative flex h-full flex-col" :aria-busy="loading">
+    <Transition name="editor-loading-overlay">
+      <div
+        v-if="loading"
+        class="absolute inset-0 z-10 grid place-items-center bg-default/90 backdrop-blur-lg"
+      >
+        <div class="flex items-center gap-2 text-sm text-muted">
+          <UIcon name="i-hugeicons-loading-03" class="size-5 animate-spin" />
+          <span>Loading...</span>
+        </div>
+      </div>
+    </Transition>
+
     <!-- Empty state: no library selected, no document loaded, not creating new -->
     <div
       v-if="!activeLibraryName"
@@ -122,6 +134,23 @@
             variant="ghost"
             aria-label="Copy Zeeq path"
             @click="copy(zeeqPath)"
+          />
+        </UTooltip>
+
+        <UTooltip
+          v-if="repoFileUrl"
+          text="View on GitHub"
+          :content="{ side: 'bottom' }"
+          :delay-duration="0"
+        >
+          <UButton
+            icon="i-hugeicons-github"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            aria-label="View on GitHub"
+            :to="repoFileUrl"
+            target="_blank"
           />
         </UTooltip>
 
@@ -267,16 +296,21 @@ import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 import { useMarkdownEditorTheme } from "@/composables/useMarkdownEditorTheme";
 import { useLibraryStore } from "@/stores/library-store";
 import { storeToRefs } from "pinia";
+import { toGitHubWebUrl } from "@/utils/githubUrl";
 
 const props = defineProps<{
   /** Null means new-document mode. */
   document: DocumentContentResponse | null;
+  /** True while library document lists or document content are being loaded. */
+  loading: boolean;
   /** All document paths for completions and folder selection. */
   paths: string[];
   /** Selected tree folder path, if the folder browser should be shown. */
   selectedFolderPath: string | null;
   /** Preferred folder when entering new-document mode from the tree. */
   initialFolderPath: string;
+  /** Origin repo clone URL for the active library, if repository-driven. */
+  repoUrl: string | null;
 }>();
 
 const emits = defineEmits<{
@@ -301,6 +335,18 @@ const { copied, copy } = useClipboard({ copiedDuring: 1500, legacy: true });
 const zeeqPath = computed(() => {
   if (!props.document?.path) return "";
   return `zeeq://${props.document.path.replace(/^\//, "")}`;
+});
+
+/** GitHub blob URL for the loaded document, if its library is repository-driven. */
+const repoFileUrl = computed(() => {
+  if (!props.repoUrl || !props.document?.path) return null;
+
+  const encodedPath = props.document.path
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+
+  return `${toGitHubWebUrl(props.repoUrl)}/blob/HEAD${encodedPath}`;
 });
 
 // ── Editor text ─────────────────────────────────────────────────────────
@@ -559,6 +605,19 @@ Labeled code blocks like \`labeled_code_block\` will be indexed individually.
 </script>
 
 <style scoped>
+.editor-loading-overlay-enter-active,
+.editor-loading-overlay-leave-active {
+  transition:
+    opacity 160ms ease,
+    backdrop-filter 160ms ease;
+}
+
+.editor-loading-overlay-enter-from,
+.editor-loading-overlay-leave-to {
+  opacity: 0;
+  backdrop-filter: blur(0);
+}
+
 :deep(.library-md-editor.md-editor) {
   border-top: 0;
   border-left: 0;
