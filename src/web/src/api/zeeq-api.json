@@ -441,7 +441,7 @@
           "GitHub"
         ],
         "summary": "List configured repositories.",
-        "description": "Returns the GitHub repositories already registered for Zeeq code review in\nthe route organization, along with their local settings. These mappings are\nwhat lets incoming webhooks resolve a repository to this org; an unmapped\nrepository's PR and comment webhooks are acknowledged as a no-op.\n\nRequires the `owner` or `admin` role.",
+        "description": "Returns the GitHub repositories already registered in Zeeq for the route\norganization, along with their local settings. `Enabled` controls whether\nincoming PR and comment webhooks create code-review work. Library-source\nvisibility is tracked separately and does not change GitHub App access.\n\nRequires the `owner` or `admin` role.",
         "operationId": "ListConfiguredGitHubRepositories",
         "parameters": [
           {
@@ -466,7 +466,7 @@
           "GitHub"
         ],
         "summary": "List installable repositories.",
-        "description": "Returns every repository the linked GitHub App installation can see, each\nannotated with whether it is already configured in Zeeq. This powers the\nsettings picker, which shows available and already-configured repositories in\na single list.\n\nRequires a connected GitHub App installation and the `owner` or `admin` role.",
+        "description": "Returns every repository the linked GitHub App installation can see, each\nannotated with whether it already has a Zeeq repository row and whether it\nshould appear as a private library source. This list reflects GitHub App\ninstallation access; it is broader than webhook-enabled repositories.\n\nRequires a connected GitHub App installation and the `owner` or `admin` role.",
         "operationId": "ListAvailableGitHubRepositories",
         "parameters": [
           {
@@ -491,7 +491,7 @@
           "GitHub"
         ],
         "summary": "Register a repository.",
-        "description": "Maps an installation-visible GitHub repository into the route organization so\nits pull-request and comment webhooks are routed to Zeeq code review instead\nof being dropped as a no-op.\n\nRequires the `owner` or `admin` role.",
+        "description": "Maps an installation-visible GitHub repository into the route organization so\nits pull-request and comment webhooks are routed to Zeeq code review instead\nof being dropped as a no-op when `Enabled` is true. This does not install the\nGitHub App or change GitHub-side repository access.\n\nRequires the `owner` or `admin` role.",
         "operationId": "CreateGitHubRepositoryMapping",
         "parameters": [
           {
@@ -520,13 +520,48 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/integrations/github/repositories/visibility": {
+      "put": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Update repository library visibility.",
+        "description": "Updates whether an installation-visible GitHub repository appears as a\nprivate source option when creating a library. This is independent from\n`Enabled`: hiding a repository does not pause webhook-triggered code-review\nwork, and showing a repository does not enable webhook processing.\n\nRequires the `owner` or `admin` role.",
+        "operationId": "UpdateGitHubRepositoryVisibility",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubUpdateRepositoryVisibilityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/integrations/github/repositories/{repositoryId}": {
       "put": {
         "tags": [
           "GitHub"
         ],
         "summary": "Update repository settings.",
-        "description": "Updates the Zeeq-local settings for an already-configured repository mapping,\nidentified by `repositoryId`. This changes how Zeeq handles the repository;\nit does not alter anything on GitHub.\n\nRequires the `owner` or `admin` role.",
+        "description": "Updates the Zeeq-local settings for an already-configured repository mapping,\nidentified by `repositoryId`. `Enabled` controls webhook-triggered\ncode-review work; it does not control GitHub App installation access or\nlibrary-source visibility.\n\nRequires the `owner` or `admin` role.",
         "operationId": "UpdateGitHubRepositoryMapping",
         "parameters": [
           {
@@ -7639,6 +7674,10 @@
             "type": "boolean",
             "default": true
           },
+          "visibleInLibraryPicker": {
+            "type": "boolean",
+            "default": true
+          },
           "libraryIds": {
             "type": [
               "null",
@@ -7676,6 +7715,12 @@
             "type": "boolean",
             "default": true
           },
+          "visibleInLibraryPicker": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
           "libraryIds": {
             "type": [
               "null",
@@ -7687,6 +7732,23 @@
           }
         },
         "description": "Request to update local management fields on an existing repository mapping."
+      },
+      "GitHubUpdateRepositoryVisibilityRequest": {
+        "required": [
+          "ownerQualifiedName",
+          "visibleInLibraryPicker"
+        ],
+        "type": "object",
+        "properties": {
+          "ownerQualifiedName": {
+            "maxLength": 512,
+            "type": "string"
+          },
+          "visibleInLibraryPicker": {
+            "type": "boolean"
+          }
+        },
+        "description": "Request to control whether an installation-visible repository appears as a library source."
       },
       "HttpValidationProblemDetails": {
         "type": "object",

@@ -68,7 +68,7 @@
                 class="pt-2"
               >
                 <USelectMenu
-                  v-model="privateRepositoryId"
+                  v-model="privateRepositoryOwnerQualifiedName"
                   :items="privateRepositoryItems"
                   value-key="value"
                   placeholder="Select a repository..."
@@ -76,10 +76,11 @@
                   class="w-full"
                 />
                 <p
-                  v-if="repositories.length === 0"
+                  v-if="sourceRepositories.length === 0"
                   class="mt-1 text-xs opacity-75"
                 >
-                  No repositories configured. Add one under GitHub settings first.
+                  No repositories are visible as library sources. Change
+                  repository visibility under GitHub settings.
                 </p>
               </UFormField>
             </template>
@@ -93,7 +94,9 @@
       label="Source"
       description="The repository URL cannot be changed. Delete and re-create this library to import a different repository."
     >
-      <div class="flex items-center gap-2 rounded-md border border-default p-2 text-sm">
+      <div
+        class="flex items-center gap-2 rounded-md border border-default p-2 text-sm"
+      >
         <UBadge
           :label="source.kind"
           size="sm"
@@ -167,7 +170,10 @@
 
 <script setup lang="ts">
 import { useRouter } from "vue-router";
-import type { GitHubConfiguredRepository } from "@/stores/github-settings-store";
+import type {
+  GitHubConfiguredRepository,
+  GitHubRepositoryMappingRow,
+} from "@/stores/github-settings-store";
 import type { LibrarySourceResponse } from "@/api/generated/types/LibrarySourceResponse";
 
 /** Reactive form state shared with the parent slideover. */
@@ -178,7 +184,7 @@ export type LibraryFormState = {
   importFromGitHub: boolean;
   sourceTab: "public" | "private";
   publicRepoUrl: string;
-  privateRepositoryId: string | undefined;
+  privateRepositoryOwnerQualifiedName: string | undefined;
   includeFiltersText: string;
   excludeFiltersText: string;
 };
@@ -188,6 +194,7 @@ const props = defineProps<{
   submitting: boolean;
   isEdit: boolean;
   repositories: GitHubConfiguredRepository[];
+  sourceRepositories: GitHubRepositoryMappingRow[];
   nameError: string | null;
   /** The library's current source, for the read-only summary in edit mode. */
   source: LibrarySourceResponse | null;
@@ -201,7 +208,11 @@ const MANAGE_REPOSITORIES_VALUE = "__manage-repositories__";
 
 const sourceTabItems = [
   { label: "Public repository", value: "public", slot: "public" as const },
-  { label: "Organization repository", value: "private", slot: "private" as const },
+  {
+    label: "Organization repository",
+    value: "private",
+    slot: "private" as const,
+  },
 ];
 
 /** Checkbox items for the code-review repository picker. */
@@ -213,12 +224,14 @@ const repositoryItems = computed(() =>
 
 /**
  * Options for the private-source repository combobox. Unlike the reviewer
- * repositoryItems list, paused repositories are included — `enabled` only
- * gates webhook processing, not GitHub API read access, so a paused repo can
- * still be a valid one-time/scheduled content sync source.
+ * repositoryItems list, unenabled and paused repositories are included because
+ * `enabled` only gates webhook processing, not GitHub API read access.
  */
 const privateRepositoryItems = computed(() => [
-  ...props.repositories.map((r) => ({ value: r.id, label: r.displayName })),
+  ...props.sourceRepositories.map((r) => ({
+    value: r.ownerQualifiedName,
+    label: r.configuredMapping?.displayName ?? r.ownerQualifiedName,
+  })),
   {
     value: MANAGE_REPOSITORIES_VALUE,
     label: "Manage repositories...",
@@ -231,19 +244,19 @@ function goToManageRepositories() {
 }
 
 /**
- * Two-way binding onto `form.privateRepositoryId`. Selecting the synthetic
+ * Two-way binding onto `form.privateRepositoryOwnerQualifiedName`. Selecting the synthetic
  * "Manage repositories" entry navigates to the GitHub settings page instead
  * of assigning it as the source repository, and never writes back to the form.
  */
-const privateRepositoryId = computed<string | undefined>({
-  get: () => props.form.privateRepositoryId,
+const privateRepositoryOwnerQualifiedName = computed<string | undefined>({
+  get: () => props.form.privateRepositoryOwnerQualifiedName,
   set: (value) => {
     if (value === MANAGE_REPOSITORIES_VALUE) {
       goToManageRepositories();
       return;
     }
 
-    props.form.privateRepositoryId = value;
+    props.form.privateRepositoryOwnerQualifiedName = value;
   },
 });
 </script>

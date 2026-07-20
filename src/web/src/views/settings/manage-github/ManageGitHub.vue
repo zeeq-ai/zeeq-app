@@ -40,6 +40,7 @@
       @enable="enableRepository"
       @pause="pauseRepository"
       @resume="resumeRepository"
+      @toggle-visibility="setRepositoryLibraryPickerVisible"
       @manage-libraries="openLibraryMappings"
     />
 
@@ -253,6 +254,34 @@ async function resumeRepository(repositoryId: string) {
   }
 
   await setRepositoryEnabled(repository, true, "Repository resumed");
+}
+
+/** Shows or hides a repository from private library source selection. */
+async function setRepositoryLibraryPickerVisible(
+  ownerQualifiedName: string,
+  visibleInLibraryPicker: boolean,
+) {
+  if (!canManageOrganization.value) {
+    showPermissionToast();
+    return;
+  }
+
+  try {
+    await githubSettingsStore.setRepositoryLibraryPickerVisible(
+      ownerQualifiedName,
+      visibleInLibraryPicker,
+    );
+    toast.add({
+      title: visibleInLibraryPicker
+        ? "Repository shown in library sources"
+        : "Repository hidden from library sources",
+      description: ownerQualifiedName,
+      color: "success",
+      icon: "i-hugeicons-tick-02",
+    });
+  } catch (err: unknown) {
+    showRepositoryError("Could not update repository visibility", err);
+  }
 }
 
 /** Removes the active mapping from the repository config slideover. */

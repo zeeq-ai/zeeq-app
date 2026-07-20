@@ -1,6 +1,6 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Platform.CodeReviews;
-using Microsoft.EntityFrameworkCore;
 
 namespace Zeeq.Data.Postgres.CodeReviews;
 
@@ -142,6 +142,7 @@ internal sealed class PostgresCodeRepositoryStore(PostgresDbContext db) : ICodeR
         existing.TeamId = repository.TeamId;
         existing.DisplayName = repository.DisplayName;
         existing.Enabled = repository.Enabled;
+        existing.VisibleInLibraryPicker = repository.VisibleInLibraryPicker;
         existing.LibraryIds = repository.LibraryIds;
         existing.ReviewConfiguration = repository.ReviewConfiguration;
         existing.UpdatedAtUtc = repository.UpdatedAtUtc;

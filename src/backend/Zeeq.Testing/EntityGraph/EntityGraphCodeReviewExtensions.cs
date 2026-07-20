@@ -29,6 +29,11 @@ public sealed class CodeRepositoryPrototype
     public bool Enabled { get; set; } = true;
 
     /// <summary>
+    /// Whether the repository appears as a selectable private library source.
+    /// </summary>
+    public bool VisibleInLibraryPicker { get; set; } = true;
+
+    /// <summary>
     /// Optional Zeeq team owner. Defaults to no team-level owner.
     /// </summary>
     public string? TeamId { get; set; }
@@ -444,6 +449,7 @@ public static class EntityGraphCodeReviewExtensions
             OwnerQualifiedName = ownerQualifiedName,
             DisplayName = prototype.DisplayName ?? ownerQualifiedName,
             Enabled = prototype.Enabled,
+            VisibleInLibraryPicker = prototype.VisibleInLibraryPicker,
             LibraryIds = prototype.LibraryIds,
             // Clone to avoid sharing the singleton CodeRepositoryReviewConfiguration.Empty
             // instance across multiple repos in the same EntityGraph chain, which

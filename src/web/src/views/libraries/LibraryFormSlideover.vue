@@ -26,6 +26,7 @@
             :submitting="submitting"
             :is-edit="isEdit"
             :repositories="repositories"
+            :source-repositories="sourceRepositories"
             :name-error="nameError"
             :source="props.library?.source ?? null"
           />
@@ -65,6 +66,7 @@
         :submitting="submitting"
         :is-edit="isEdit"
         :repositories="repositories"
+        :source-repositories="sourceRepositories"
         :name-error="nameError"
         :source="props.library?.source ?? null"
       />
@@ -95,7 +97,10 @@
 <script setup lang="ts">
 import type { LibraryResponse } from "@/api/generated/types/LibraryResponse";
 import type { IngestRunPageResponse } from "@/api/generated/types/IngestRunPageResponse";
-import type { GitHubConfiguredRepository } from "@/stores/github-settings-store";
+import type {
+  GitHubConfiguredRepository,
+  GitHubRepositoryMappingRow,
+} from "@/stores/github-settings-store";
 import LibraryFormFields, {
   type LibraryFormState,
 } from "./LibraryFormFields.vue";
@@ -113,6 +118,7 @@ export type LibraryFormSubmitPayload = {
     kind: "Public" | "Private";
     repoUrl?: string;
     repositoryId?: string;
+    ownerQualifiedName?: string;
     includeFilters: string[];
     excludeFilters: string[];
   };
@@ -124,6 +130,7 @@ export type LibraryFormSubmitPayload = {
 const props = defineProps<{
   library: LibraryResponse | null;
   repositories: GitHubConfiguredRepository[];
+  sourceRepositories: GitHubRepositoryMappingRow[];
   mappedRepositoryIds: string[];
   ingestRuns: IngestRunPageResponse | null;
   loadingIngestRuns: boolean;
@@ -147,7 +154,9 @@ const NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 const GITHUB_URL_PATTERN = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/?$/;
 
 const submitting = ref(false);
-const activeTab = ref<"library" | "status" | "import-export" | "delete">("library");
+const activeTab = ref<"library" | "status" | "import-export" | "delete">(
+  "library",
+);
 
 const form = reactive<LibraryFormState>({
   name: "",
@@ -156,7 +165,7 @@ const form = reactive<LibraryFormState>({
   importFromGitHub: false,
   sourceTab: "public",
   publicRepoUrl: "",
-  privateRepositoryId: undefined,
+  privateRepositoryOwnerQualifiedName: undefined,
   includeFiltersText: "",
   excludeFiltersText: "",
 });
@@ -169,7 +178,11 @@ const tabItems = computed(() => [
   ...(isSourceBacked.value
     ? [{ label: "Sync status", value: "status", slot: "status" as const }]
     : []),
-  { label: "Import / Export", value: "import-export", slot: "import-export" as const },
+  {
+    label: "Import / Export",
+    value: "import-export",
+    slot: "import-export" as const,
+  },
   { label: "Delete", value: "delete", slot: "delete" as const },
 ]);
 
@@ -194,7 +207,9 @@ const sourceError = computed(() => {
     return null;
   }
 
-  return form.privateRepositoryId ? null : "Select a repository.";
+  return form.privateRepositoryOwnerQualifiedName
+    ? null
+    : "Select a repository.";
 });
 
 const canSubmit = computed(
@@ -224,8 +239,9 @@ watch(
     form.selectedRepositoryIds = [...mapped];
     form.importFromGitHub = !!lib?.source;
     form.sourceTab = lib?.source?.kind === "Private" ? "private" : "public";
-    form.publicRepoUrl = lib?.source?.kind === "Public" ? lib.source.repoUrl : "";
-    form.privateRepositoryId = undefined;
+    form.publicRepoUrl =
+      lib?.source?.kind === "Public" ? lib.source.repoUrl : "";
+    form.privateRepositoryOwnerQualifiedName = undefined;
     form.includeFiltersText = (lib?.source?.includeFilters ?? []).join("\n");
     form.excludeFiltersText = (lib?.source?.excludeFilters ?? []).join("\n");
   },
@@ -272,7 +288,7 @@ async function onSubmit() {
             }
           : {
               kind: "Private",
-              repositoryId: form.privateRepositoryId,
+              ownerQualifiedName: form.privateRepositoryOwnerQualifiedName,
               includeFilters: parseFilterLines(form.includeFiltersText),
               excludeFilters: parseFilterLines(form.excludeFiltersText),
             };
