@@ -1,10 +1,10 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Zeeq.Core.Common.AspNetCore.Contracts;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
 using Zeeq.Platform.CodeReviews;
-using Microsoft.AspNetCore.Http;
 
 namespace Zeeq.Integrations.GitHub;
 
@@ -99,7 +99,8 @@ public sealed class ListAvailableGitHubRepositoriesHandler(
                     repository.DefaultBranch,
                     repository.HtmlUrl,
                     configured is not null,
-                    configured?.Id
+                    configured?.Id,
+                    configured?.VisibleInLibraryPicker ?? true
                 );
             }),
         ]);
@@ -209,6 +210,7 @@ public sealed class CreateGitHubRepositoryMappingHandler(
                 gitHubRepository.OwnerQualifiedName
             ),
             Enabled = request.Enabled,
+            VisibleInLibraryPicker = request.VisibleInLibraryPicker,
             LibraryIds = libraryIds,
             ReviewConfiguration = GitHubRepositoryEndpointSupport.ToReviewConfiguration(),
             CreatedAtUtc = now,
@@ -285,12 +287,133 @@ public sealed class UpdateGitHubRepositoryMappingHandler(
             existing.DisplayName
         );
         existing.Enabled = request.Enabled;
+        existing.VisibleInLibraryPicker =
+            request.VisibleInLibraryPicker ?? existing.VisibleInLibraryPicker;
         existing.LibraryIds = effectiveLibraryIds;
         existing.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
         var saved = await repositories.UpsertAsync(existing, cancellationToken);
 
         return Results.Ok(GitHubRepositoryEndpointSupport.ToResponse(saved));
+    }
+}
+
+/// <summary>
+/// Updates whether a GitHub repository appears as a private library source.
+/// </summary>
+/// <remarks>
+/// Visibility is independent from webhook/code-review enablement. This handler
+/// can create a local repository row with <c>Enabled = false</c> so a repository
+/// can be hidden before it is enabled for webhook-triggered review work.
+/// </remarks>
+public sealed class UpdateGitHubRepositoryVisibilityHandler(
+    ICodeRepositoryStore repositories,
+    IGitHubRepositoryProvider provider
+) : IEndpointHandler
+{
+    /// <summary>
+    /// Updates picker visibility for an installation-visible GitHub repository.
+    /// </summary>
+    public async Task<IResult> HandleAsync(
+        GitHubUpdateRepositoryVisibilityRequest request,
+        ClaimsPrincipal user,
+        CancellationToken cancellationToken
+    )
+    {
+        var organizationId = user.AsZeeqMinimalIdentity().OrganizationId;
+        if (string.IsNullOrWhiteSpace(organizationId))
+        {
+            return Results.Unauthorized();
+        }
+
+        if (
+            !GitHubRepositoryEndpointSupport.TryNormalizeOwnerQualifiedName(
+                request.OwnerQualifiedName,
+                out var requestedName
+            )
+        )
+        {
+            return Results.BadRequest(
+                new GitHubRepositoryManagementError(
+                    "OwnerQualifiedName must use the GitHub owner/repository format."
+                )
+            );
+        }
+
+        IReadOnlyList<GitHubAvailableRepository> available;
+        try
+        {
+            available = await provider.ListAvailableAsync(organizationId, cancellationToken);
+        }
+        catch (GitHubInstallationUnavailableException)
+        {
+            return Results.NotFound(
+                new GitHubRepositoryManagementError(
+                    "No active GitHub App installation is linked to this organization."
+                )
+            );
+        }
+
+        var gitHubRepository = available.FirstOrDefault(repository =>
+            string.Equals(
+                repository.OwnerQualifiedName,
+                requestedName,
+                StringComparison.OrdinalIgnoreCase
+            )
+        );
+
+        if (gitHubRepository is null)
+        {
+            return Results.NotFound(
+                new GitHubRepositoryManagementError(
+                    "The linked GitHub App installation cannot access that repository."
+                )
+            );
+        }
+
+        var existing = (
+            await repositories.ListConfiguredForOrganizationAsync(organizationId, cancellationToken)
+        ).FirstOrDefault(repository =>
+            string.Equals(
+                repository.OwnerQualifiedName,
+                gitHubRepository.OwnerQualifiedName,
+                StringComparison.OrdinalIgnoreCase
+            )
+        );
+
+        var now = DateTimeOffset.UtcNow;
+        if (existing is not null)
+        {
+            existing.VisibleInLibraryPicker = request.VisibleInLibraryPicker;
+            existing.UpdatedAtUtc = now;
+
+            var updated = await repositories.UpsertAsync(existing, cancellationToken);
+
+            return Results.Ok(GitHubRepositoryEndpointSupport.ToResponse(updated));
+        }
+
+        // NOTE: Library-picker visibility is independent from webhook enablement.
+        // A repository can be hidden or shown as a library source before it is
+        // enabled for webhook-triggered code-review work.
+        var repository = new CodeRepository
+        {
+            Id = "repo_" + Guid.CreateVersion7().ToString("N"),
+            OrganizationId = organizationId,
+            TeamId = null,
+            Provider = GitHubRepositoryEndpointSupport.Provider,
+            OwnerQualifiedName = gitHubRepository.OwnerQualifiedName,
+            DisplayName = gitHubRepository.OwnerQualifiedName,
+            Enabled = false,
+            VisibleInLibraryPicker = request.VisibleInLibraryPicker,
+            LibraryIds = [],
+            ReviewConfiguration = GitHubRepositoryEndpointSupport.ToReviewConfiguration(),
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now,
+        };
+
+        var created = await repositories.UpsertAsync(repository, cancellationToken);
+
+        return Results.Ok(GitHubRepositoryEndpointSupport.ToResponse(created));
     }
 }
 
@@ -363,6 +486,7 @@ file static class GitHubRepositoryEndpointSupport
             repository.OwnerQualifiedName,
             repository.DisplayName,
             repository.Enabled,
+            repository.VisibleInLibraryPicker,
             repository.LibraryIds,
             repository.CreatedAtUtc,
             repository.UpdatedAtUtc

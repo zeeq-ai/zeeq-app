@@ -10,6 +10,7 @@
 .data/
 
 .agents/plans/
+.agents/wip/
 scratch/
 !scratch/README.md
 

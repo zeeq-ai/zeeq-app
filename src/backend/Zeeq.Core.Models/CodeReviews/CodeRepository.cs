@@ -40,6 +40,12 @@ public sealed class CodeRepository : MutableDomainEntityBase, IOrganizationScope
     public bool Enabled { get; set; }
 
     /// <summary>
+    /// True when this repository should appear as a selectable private source
+    /// for document libraries.
+    /// </summary>
+    public bool VisibleInLibraryPicker { get; set; } = true;
+
+    /// <summary>
     /// Library ids from this organization that reviewer agents may query when
     /// reviewing pull requests on this repository. Empty means no libraries are
     /// scoped to this repository (reviewers get no library-tool context).

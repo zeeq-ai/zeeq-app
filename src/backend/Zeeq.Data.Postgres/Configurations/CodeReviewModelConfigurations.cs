@@ -1,7 +1,7 @@
-using Zeeq.Core.Models;
-using Zeeq.Data.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zeeq.Core.Models;
+using Zeeq.Data.Postgres;
 
 namespace Zeeq.Data.Postgres.Configurations;
 
@@ -86,6 +86,7 @@ internal sealed class CodeRepositoryConfiguration : IEntityTypeConfiguration<Cod
         entity.Property(repository => repository.Provider).IsRequired().HasMaxLength(64);
         entity.Property(repository => repository.OwnerQualifiedName).IsRequired().HasMaxLength(512);
         entity.Property(repository => repository.DisplayName).IsRequired().HasMaxLength(256);
+        entity.Property(repository => repository.VisibleInLibraryPicker).HasDefaultValue(true);
         entity.Property(repository => repository.LibraryIds).HasColumnType("text[]");
         entity.OwnsOne(
             repository => repository.ReviewConfiguration,

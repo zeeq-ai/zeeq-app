@@ -63,6 +63,7 @@
       v-model:open="libraryFormOpen"
       :library="libraryFormTarget"
       :repositories="configuredRepositories"
+      :source-repositories="librarySourceRepositories"
       :mapped-repository-ids="libraryFormMappedRepoIds"
       :ingest-runs="ingestRunsPage"
       :loading-ingest-runs="loadingIngestRuns"
@@ -146,7 +147,8 @@ const {
   documentPaths,
 } = storeToRefs(store);
 
-const { configuredRepositories } = storeToRefs(githubStore);
+const { configuredRepositories, librarySourceRepositories } =
+  storeToRefs(githubStore);
 
 // ── Library form state ──────────────────────────────────────────────────
 
@@ -192,6 +194,7 @@ async function onSubmitLibrary(data: {
     kind: "Public" | "Private";
     repoUrl?: string;
     repositoryId?: string;
+    ownerQualifiedName?: string;
     includeFilters: string[];
     excludeFilters: string[];
   };
@@ -210,10 +213,11 @@ async function onSubmitLibrary(data: {
       libraryFormTarget.value = updated;
       toast.add({ title: "Library updated", color: "success" });
     } else {
+      const source = await resolveCreateSource(data.source);
       const created = await store.createLibrary(
         data.name,
         data.description,
-        data.source,
+        source,
       );
       await store.updateLibraryRepositories(created.name, data.repositoryIds);
       libraryFormTarget.value = created;
@@ -242,6 +246,38 @@ async function onSubmitLibrary(data: {
       color: "error",
     });
   }
+}
+
+type CreateLibrarySourceInput = {
+  kind: "Public" | "Private";
+  repoUrl?: string;
+  repositoryId?: string;
+  ownerQualifiedName?: string;
+  includeFilters: string[];
+  excludeFilters: string[];
+};
+
+async function resolveCreateSource(
+  dataSource: CreateLibrarySourceInput | undefined,
+) {
+  if (dataSource?.kind !== "Private" || dataSource.repositoryId) {
+    return dataSource;
+  }
+
+  if (!dataSource.ownerQualifiedName) {
+    return dataSource;
+  }
+
+  const repository = await githubStore.ensureRepositoryForLibrarySource(
+    dataSource.ownerQualifiedName,
+  );
+
+  return {
+    kind: "Private" as const,
+    repositoryId: repository.id,
+    includeFilters: dataSource.includeFilters,
+    excludeFilters: dataSource.excludeFilters,
+  };
 }
 
 // ── Sync status tab: trigger + run history + polling ────────────────────

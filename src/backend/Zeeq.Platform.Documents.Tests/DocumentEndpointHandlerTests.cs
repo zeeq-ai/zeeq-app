@@ -204,6 +204,90 @@ public sealed class DocumentEndpointHandlerTests
     }
 
     [Test]
+    public async Task CreateLibrary_PrivateSource_WithPausedRepository_CreatesLibrary()
+    {
+        var libraries = new TestLibraryDocumentStore();
+        var repositories = new TestCodeRepositoryStore();
+        repositories.Repositories.Add(
+            new CodeRepository
+            {
+                Id = "repo_1",
+                OrganizationId = "org_123",
+                Provider = "github",
+                OwnerQualifiedName = "zeeq-ai/paused",
+                DisplayName = "paused",
+                Enabled = false,
+            }
+        );
+        var handler = new CreateLibraryHandler(
+            libraries,
+            new NotSupportedPublicSourceStore(),
+            repositories
+        );
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            new CreateLibraryRequest
+            {
+                Name = "paused-docs",
+                Source = new CreateLibrarySourceRequest
+                {
+                    Kind = LibrarySourceKindRequest.Private,
+                    RepositoryId = "repo_1",
+                },
+            },
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var created = result.Result as Created<LibraryResponse>;
+        await Assert.That(created).IsNotNull();
+        await Assert
+            .That(created!.Value!.Source!.RepoUrl)
+            .IsEqualTo("https://github.com/zeeq-ai/paused.git");
+    }
+
+    [Test]
+    public async Task CreateLibrary_PrivateSource_WithSoftDeletedRepository_ReturnsBadRequest()
+    {
+        var repositories = new TestCodeRepositoryStore();
+        repositories.Repositories.Add(
+            new CodeRepository
+            {
+                Id = "repo_1",
+                OrganizationId = "org_123",
+                Provider = "github",
+                OwnerQualifiedName = "zeeq-ai/deleted",
+                DisplayName = "deleted",
+                Enabled = false,
+                DisabledAtUtc = DateTimeOffset.UtcNow,
+            }
+        );
+        var handler = new CreateLibraryHandler(
+            new TestLibraryDocumentStore(),
+            new NotSupportedPublicSourceStore(),
+            repositories
+        );
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            new CreateLibraryRequest
+            {
+                Name = "deleted-docs",
+                Source = new CreateLibrarySourceRequest
+                {
+                    Kind = LibrarySourceKindRequest.Private,
+                    RepositoryId = "repo_1",
+                },
+            },
+            TestUser(),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result).IsTypeOf<BadRequest<LibraryError>>();
+    }
+
+    [Test]
     public async Task CreateLibrary_PrivateSource_UnknownRepositoryId_ReturnsBadRequest()
     {
         var handler = new CreateLibraryHandler(
@@ -1563,7 +1647,9 @@ public sealed class DocumentEndpointHandlerTests
         ) =>
             Task.FromResult(
                 Repositories.SingleOrDefault(r =>
-                    r.OrganizationId == organizationId && r.Id == repositoryId
+                    r.OrganizationId == organizationId
+                    && r.Id == repositoryId
+                    && r.DisabledAtUtc is null
                 )
             );
 

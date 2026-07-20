@@ -19,6 +19,7 @@ export type GitHubAvailableRepository = {
   htmlUrl: string;
   configured: boolean;
   configuredRepositoryId: string | null;
+  visibleInLibraryPicker: boolean;
 };
 
 /**
@@ -30,6 +31,7 @@ export type GitHubConfiguredRepository = {
   ownerQualifiedName: string;
   displayName: string;
   enabled: boolean;
+  visibleInLibraryPicker: boolean;
   libraryIds: string[];
   createdAtUtc: string;
   updatedAtUtc: string;
@@ -48,6 +50,7 @@ export type GitHubRepositoryMappingRow = {
   htmlUrl: string;
   configured: boolean;
   configuredRepositoryId: string | null;
+  visibleInLibraryPicker: boolean;
   configuredMapping: GitHubConfiguredRepository | null;
 };
 
@@ -97,9 +100,18 @@ export const useGitHubSettingsStore = defineStore(
 
         return {
           ...repository,
+          visibleInLibraryPicker:
+            configuredMapping?.visibleInLibraryPicker ??
+            repository.visibleInLibraryPicker,
           configuredMapping,
         };
       }),
+    );
+
+    const librarySourceRepositories = computed(() =>
+      repositoryRows.value.filter(
+        (repository) => repository.visibleInLibraryPicker,
+      ),
     );
 
     /**
@@ -147,6 +159,7 @@ export const useGitHubSettingsStore = defineStore(
           teamId: null,
           displayName: null,
           enabled: true,
+          visibleInLibraryPicker: true,
         });
         await loadRepositories();
       } catch (err: unknown) {
@@ -238,10 +251,76 @@ export const useGitHubSettingsStore = defineStore(
             teamId: repository.teamId,
             displayName: repository.displayName,
             enabled: repository.enabled,
+            visibleInLibraryPicker: repository.visibleInLibraryPicker,
             libraryIds,
           },
         );
         await loadRepositories();
+      } catch (err: unknown) {
+        error.value = toErrorMessage(err);
+        throw err;
+      } finally {
+        savingRepositoryId.value = null;
+      }
+    }
+
+    async function setRepositoryLibraryPickerVisible(
+      ownerQualifiedName: string,
+      visibleInLibraryPicker: boolean,
+    ) {
+      savingRepositoryId.value = ownerQualifiedName;
+      error.value = null;
+
+      try {
+        await GitHub.updateGitHubRepositoryVisibility(requireOrganizationId(), {
+          ownerQualifiedName,
+          visibleInLibraryPicker,
+        });
+        await loadRepositories();
+      } catch (err: unknown) {
+        error.value = toErrorMessage(err);
+        throw err;
+      } finally {
+        savingRepositoryId.value = null;
+      }
+    }
+
+    async function ensureRepositoryForLibrarySource(
+      ownerQualifiedName: string,
+    ): Promise<GitHubConfiguredRepository> {
+      const existing = configuredRepositories.value.find(
+        (repository) =>
+          repository.ownerQualifiedName.toLowerCase() ===
+          ownerQualifiedName.toLowerCase(),
+      );
+
+      if (existing) {
+        return existing;
+      }
+
+      savingRepositoryId.value = ownerQualifiedName;
+      error.value = null;
+
+      try {
+        const created = await GitHub.createGitHubRepositoryMapping(
+          requireOrganizationId(),
+          {
+            ownerQualifiedName,
+            teamId: null,
+            displayName: null,
+            enabled: false,
+            visibleInLibraryPicker: true,
+          },
+        );
+        const repository = normalizeConfiguredRepository(created);
+        if (!repository) {
+          throw new Error(
+            "GitHub repository response was missing repository details.",
+          );
+        }
+
+        await loadRepositories();
+        return repository;
       } catch (err: unknown) {
         error.value = toErrorMessage(err);
         throw err;
@@ -268,9 +347,12 @@ export const useGitHubSettingsStore = defineStore(
       savingRepositoryId,
       error,
       repositoryRows,
+      librarySourceRepositories,
       loadRepositories,
       enableRepository,
       setRepositoryEnabled,
+      setRepositoryLibraryPickerVisible,
+      ensureRepositoryForLibrarySource,
       removeRepository,
       updateRepositoryLibraries,
     };
@@ -343,6 +425,7 @@ function normalizeAvailableRepository(
     htmlUrl: readString(value.htmlUrl),
     configured: readBoolean(value.configured),
     configuredRepositoryId: readNullableString(value.configuredRepositoryId),
+    visibleInLibraryPicker: readBoolean(value.visibleInLibraryPicker, true),
   };
 }
 
@@ -368,6 +451,7 @@ function normalizeConfiguredRepository(
     ownerQualifiedName,
     displayName,
     enabled: readBoolean(value.enabled),
+    visibleInLibraryPicker: readBoolean(value.visibleInLibraryPicker, true),
     libraryIds: readStringArray(value.libraryIds),
     createdAtUtc: readString(value.createdAtUtc),
     updatedAtUtc: readString(value.updatedAtUtc),
@@ -389,9 +473,9 @@ function readNullableString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-/** Reads boolean fields with false as the stable fallback. */
-function readBoolean(value: unknown): boolean {
-  return typeof value === "boolean" ? value : false;
+/** Reads boolean fields with a caller-selected fallback. */
+function readBoolean(value: unknown, fallback = false): boolean {
+  return typeof value === "boolean" ? value : fallback;
 }
 
 /** Reads numeric identifiers that may arrive as either JSON numbers or strings. */

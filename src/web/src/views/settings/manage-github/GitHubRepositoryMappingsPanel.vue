@@ -10,7 +10,8 @@
         <div>
           <h2 class="text-base font-semibold text-highlighted">Repositories</h2>
           <p class="mt-1 text-sm text-muted">
-            Choose which installed repositories can create Zeeq review work.
+            Enable repositories for webhook-triggered code reviews, and choose
+            which repositories appear as library sources.
           </p>
         </div>
 
@@ -60,84 +61,129 @@
         class="divide-y divide-muted overflow-hidden rounded-md border border-muted"
       >
         <div
-          v-for="row in rows"
-          :key="row.ownerQualifiedName"
+          v-for="repository in repositoryRowsViewModel"
+          :key="repository.key"
           class="flex flex-col gap-3 bg-default p-4 sm:flex-row sm:items-center sm:justify-between"
         >
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
               <a
-                :href="row.htmlUrl"
+                :href="repository.htmlUrl"
                 target="_blank"
                 rel="noreferrer"
                 class="truncate text-sm font-medium text-highlighted hover:underline"
               >
-                {{ row.ownerQualifiedName }}
+                {{ repository.ownerQualifiedName }}
               </a>
 
               <UBadge
-                :label="row.private ? 'Private' : 'Public'"
+                :label="repository.visibilityLabel"
                 color="neutral"
                 variant="outline"
                 class="rounded-full"
               />
 
               <UBadge
-                :label="statusLabel(row)"
-                :icon="statusIcon(row)"
-                :color="statusColor(row)"
+                :label="repository.status.label"
+                :icon="repository.status.icon"
+                :color="repository.status.color"
                 variant="subtle"
                 class="rounded-full"
               />
             </div>
 
             <p class="mt-1 text-xs text-muted">
-              Default branch: {{ row.defaultBranch || "unknown" }}
+              Default branch: {{ repository.defaultBranchLabel }}
             </p>
           </div>
 
+          <!-- Right side buttons on each row -->
           <div class="flex flex-wrap items-center justify-end gap-2">
+            <!-- Config is visible only after Zeeq has a local repository mapping. -->
             <UButton
-              v-if="!row.configuredMapping"
-              label="Enable"
-              icon="i-hugeicons-link-04"
-              color="neutral"
-              :loading="savingRepositoryId === row.ownerQualifiedName"
-              :disabled="!canManage || saving"
-              @click="emits('enable', row.ownerQualifiedName)"
-            />
-
-            <UButton
-              v-if="row.configuredMapping"
+              v-if="repository.showConfig"
               label="Config"
               icon="i-hugeicons-settings-05"
               color="neutral"
               variant="ghost"
               :disabled="!canManage || saving"
-              @click="emits('manage-libraries', row.configuredMapping.id)"
+              @click="
+                emits('manage-libraries', repository.configuredRepositoryId)
+              "
             />
 
-            <UButton
-              v-if="row.configuredMapping?.enabled"
-              label="Pause"
-              icon="i-hugeicons-pause"
-              color="neutral"
-              variant="soft"
-              :loading="savingRepositoryId === row.configuredMapping.id"
-              :disabled="!canManage || saving"
-              @click="emits('pause', row.configuredMapping.id)"
-            />
+            <!-- Library visibility is visible for every GitHub App-accessible repository. -->
+            <UTooltip :text="repository.libraryVisibility.tooltip">
+              <UButton
+                :icon="repository.libraryVisibility.icon"
+                :aria-label="repository.libraryVisibility.label"
+                color="neutral"
+                variant="ghost"
+                :loading="savingRepositoryId === repository.ownerQualifiedName"
+                :disabled="!canManage || saving"
+                @click="
+                  emits(
+                    'toggle-visibility',
+                    repository.ownerQualifiedName,
+                    repository.libraryVisibility.nextVisible,
+                  )
+                "
+              />
+            </UTooltip>
 
-            <UButton
-              v-else-if="row.configuredMapping"
-              label="Resume"
-              icon="i-hugeicons-play"
-              color="success"
-              variant="soft"
-              :loading="savingRepositoryId === row.configuredMapping.id"
-              :disabled="!canManage || saving"
-              @click="emits('resume', row.configuredMapping.id)"
-            />
+            <!-- Enable is visible when the repository is not enabled for webhooks. -->
+            <UTooltip
+              v-if="repository.showEnable"
+              text="Enable GitHub webhook processing and code-review work for this repository."
+            >
+              <UButton
+                label="Enable"
+                icon="i-hugeicons-webhook"
+                color="neutral"
+                class="w-24"
+                :loading="savingRepositoryId === repository.ownerQualifiedName"
+                :disabled="!canManage || saving"
+                @click="emits('enable', repository.ownerQualifiedName)"
+              />
+            </UTooltip>
+
+            <!-- Pause is visible when webhook-triggered code reviews are enabled. -->
+            <UTooltip
+              v-if="repository.showPause"
+              text="Pause webhook-triggered code-review work. The repository can still be used as a library source."
+            >
+              <UButton
+                label="Pause"
+                icon="i-hugeicons-pause"
+                color="neutral"
+                variant="soft"
+                class="w-24"
+                :loading="
+                  savingRepositoryId === repository.configuredRepositoryId
+                "
+                :disabled="!canManage || saving"
+                @click="emits('pause', repository.configuredRepositoryId)"
+              />
+            </UTooltip>
+
+            <!-- Resume is visible when webhook-triggered code reviews are paused. -->
+            <UTooltip
+              v-else-if="repository.showResume"
+              text="Resume webhook-triggered code-review work for this repository."
+            >
+              <UButton
+                label="Resume"
+                icon="i-hugeicons-play"
+                color="success"
+                variant="soft"
+                class="w-24"
+                :loading="
+                  savingRepositoryId === repository.configuredRepositoryId
+                "
+                :disabled="!canManage || saving"
+                @click="emits('resume', repository.configuredRepositoryId)"
+              />
+            </UTooltip>
           </div>
         </div>
       </div>
@@ -147,6 +193,34 @@
 
 <script setup lang="ts">
 import type { GitHubRepositoryMappingRow } from "@/stores/github-settings-store";
+
+type RepositoryStatusViewModel = {
+  label: string;
+  icon: string;
+  color: "success" | "warning" | "neutral";
+};
+
+type RepositoryLibraryVisibilityViewModel = {
+  icon: string;
+  label: string;
+  tooltip: string;
+  nextVisible: boolean;
+};
+
+type RepositoryRowViewModel = {
+  key: string;
+  ownerQualifiedName: string;
+  htmlUrl: string;
+  visibilityLabel: "Private" | "Public";
+  defaultBranchLabel: string;
+  status: RepositoryStatusViewModel;
+  libraryVisibility: RepositoryLibraryVisibilityViewModel;
+  configuredRepositoryId: string;
+  showEnable: boolean;
+  showPause: boolean;
+  showResume: boolean;
+  showConfig: boolean;
+};
 
 const props = defineProps<{
   rows: GitHubRepositoryMappingRow[];
@@ -161,40 +235,82 @@ const emits = defineEmits<{
   enable: [ownerQualifiedName: string];
   pause: [repositoryId: string];
   resume: [repositoryId: string];
+  "toggle-visibility": [
+    ownerQualifiedName: string,
+    visibleInLibraryPicker: boolean,
+  ];
   "manage-libraries": [repositoryId: string];
 }>();
 
 /** Indicates whether any row-level mutation is currently in flight. */
 const saving = computed(() => Boolean(props.savingRepositoryId));
 
-/** Chooses user-facing status text from the Zeeq mapping state. */
-function statusLabel(row: GitHubRepositoryMappingRow): string {
-  if (!row.configuredMapping) {
-    return "Not enabled";
-  }
+/**
+ * Projects API/store rows into the exact state the template renders. Keeping
+ * this cached view model avoids method calls inside the repository `v-for`.
+ */
+const repositoryRowsViewModel = computed<RepositoryRowViewModel[]>(() =>
+  props.rows.map(toRepositoryRowViewModel),
+);
 
-  return row.configuredMapping.enabled ? "Enabled" : "Paused";
-}
-
-/** Matches status icons to the mapping state without requiring explanatory text. */
-function statusIcon(row: GitHubRepositoryMappingRow): string {
-  if (!row.configuredMapping) {
-    return "i-hugeicons-link-04";
-  }
-
-  return row.configuredMapping.enabled
-    ? "i-hugeicons-tick-02"
-    : "i-hugeicons-pause";
-}
-
-/** Uses semantic badge colors to keep enabled and paused states scannable. */
-function statusColor(
+function toRepositoryRowViewModel(
   row: GitHubRepositoryMappingRow,
-): "success" | "warning" | "neutral" {
-  if (!row.configuredMapping) {
-    return "neutral";
+): RepositoryRowViewModel {
+  const configuredRepositoryId = row.configuredMapping?.id ?? "";
+  const isConfigured = Boolean(row.configuredMapping);
+  const isEnabled = row.configuredMapping?.enabled === true;
+
+  return {
+    key: row.ownerQualifiedName,
+    ownerQualifiedName: row.ownerQualifiedName,
+    htmlUrl: row.htmlUrl,
+    visibilityLabel: row.private ? "Private" : "Public",
+    defaultBranchLabel: row.defaultBranch || "unknown",
+    status: createStatusViewModel(isConfigured, isEnabled),
+    libraryVisibility: createLibraryVisibilityViewModel(
+      row.visibleInLibraryPicker,
+    ),
+    configuredRepositoryId,
+    showEnable: !isConfigured,
+    showPause: isEnabled,
+    showResume: isConfigured && !isEnabled,
+    showConfig: isConfigured,
+  };
+}
+
+function createStatusViewModel(
+  isConfigured: boolean,
+  isEnabled: boolean,
+): RepositoryStatusViewModel {
+  if (!isConfigured) {
+    return {
+      label: "Not enabled",
+      icon: "i-hugeicons-link-04",
+      color: "neutral",
+    };
   }
 
-  return row.configuredMapping.enabled ? "success" : "warning";
+  return isEnabled
+    ? { label: "Enabled", icon: "i-hugeicons-tick-02", color: "success" }
+    : { label: "Paused", icon: "i-hugeicons-pause", color: "warning" };
+}
+
+function createLibraryVisibilityViewModel(
+  visibleInLibraryPicker: boolean,
+): RepositoryLibraryVisibilityViewModel {
+  return visibleInLibraryPicker
+    ? {
+        icon: "i-hugeicons-view",
+        label: "Hide from library source selection",
+        tooltip: "Shown as an organization repository source for libraries.",
+        nextVisible: false,
+      }
+    : {
+        icon: "i-hugeicons-view-off-slash",
+        label: "Show in library source selection",
+        tooltip:
+          "Hidden from library source selection. GitHub access and webhook settings are unchanged.",
+        nextVisible: true,
+      };
 }
 </script>

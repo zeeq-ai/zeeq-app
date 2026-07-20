@@ -20,7 +20,8 @@
     "appsettings.json": "appsettings.*.json"
   },
   "files.associations": {
-    "*.css": "tailwindcss"
+    "*.css": "tailwindcss",
+    "appsettings*.json": "jsonc"
   },
   "editor.quickSuggestions": {
     "strings": "on"

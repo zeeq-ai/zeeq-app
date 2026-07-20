@@ -147,6 +147,33 @@ public sealed class GitHubRepositoryManagementHandlerTests
 
         await Assert.That(response.Configured).IsTrue();
         await Assert.That(response.ConfiguredRepositoryId).IsEqualTo(configured.Id);
+        await Assert.That(response.VisibleInLibraryPicker).IsTrue();
+    }
+
+    [Test]
+    public async Task ListAvailable_WithUnconfiguredRepository_DefaultsVisibleInLibraryPicker()
+    {
+        var store = new TestCodeRepositoryStore();
+        var provider = new TestGitHubRepositoryProvider([
+            new(
+                GitHubRepositoryId: 123,
+                NodeId: "repo_node",
+                Name: "zeeq",
+                OwnerQualifiedName: "zeeq-ai/zeeq",
+                Private: false,
+                DefaultBranch: "main",
+                HtmlUrl: "https://github.com/zeeq-ai/zeeq"
+            ),
+        ]);
+        var handler = new ListAvailableGitHubRepositoriesHandler(store, provider);
+
+        var result = await handler.HandleAsync(User(), CancellationToken.None);
+
+        var ok = (Ok<IReadOnlyList<GitHubAvailableRepositoryResponse>>)result;
+        var response = ok.Value!.Single();
+
+        await Assert.That(response.Configured).IsFalse();
+        await Assert.That(response.VisibleInLibraryPicker).IsTrue();
     }
 
     [Test]
@@ -204,6 +231,7 @@ public sealed class GitHubRepositoryManagementHandlerTests
 
         await Assert.That(response.Configured).IsFalse();
         await Assert.That(response.ConfiguredRepositoryId).IsNull();
+        await Assert.That(response.VisibleInLibraryPicker).IsTrue();
     }
 
     [Test]
@@ -266,6 +294,88 @@ public sealed class GitHubRepositoryManagementHandlerTests
         await Assert.That(ok.Value!.DisplayName).IsEqualTo("Primary repo");
         await Assert.That(saved.OwnerQualifiedName).IsEqualTo("zeeq-ai/zeeq");
         await Assert.That(saved.Enabled).IsFalse();
+        await Assert.That(saved.VisibleInLibraryPicker).IsTrue();
+    }
+
+    [Test]
+    public async Task UpdateVisibility_WithUnconfiguredRepository_CreatesDisabledVisibilityRow()
+    {
+        var store = new TestCodeRepositoryStore();
+        var provider = new TestGitHubRepositoryProvider([
+            new(
+                GitHubRepositoryId: 123,
+                NodeId: "repo_node",
+                Name: "zeeq",
+                OwnerQualifiedName: "zeeq-ai/zeeq",
+                Private: true,
+                DefaultBranch: "main",
+                HtmlUrl: "https://github.com/zeeq-ai/zeeq"
+            ),
+        ]);
+        var handler = new UpdateGitHubRepositoryVisibilityHandler(store, provider);
+
+        var result = await handler.HandleAsync(
+            new("zeeq-ai/zeeq", VisibleInLibraryPicker: false),
+            User(),
+            CancellationToken.None
+        );
+
+        var ok = (Ok<GitHubConfiguredRepositoryResponse>)result;
+        var saved = store.Repositories.Single();
+
+        await Assert.That(ok.Value!.VisibleInLibraryPicker).IsFalse();
+        await Assert.That(saved.Enabled).IsFalse();
+        await Assert.That(saved.VisibleInLibraryPicker).IsFalse();
+    }
+
+    [Test]
+    public async Task UpdateVisibility_WithEnabledRepository_DoesNotChangeEnabled()
+    {
+        var existing = Repository("repo_configured", "zeeq-ai/zeeq");
+        existing.Enabled = true;
+        var store = new TestCodeRepositoryStore([existing]);
+        var provider = new TestGitHubRepositoryProvider([
+            new(
+                GitHubRepositoryId: 123,
+                NodeId: "repo_node",
+                Name: "zeeq",
+                OwnerQualifiedName: "zeeq-ai/zeeq",
+                Private: true,
+                DefaultBranch: "main",
+                HtmlUrl: "https://github.com/zeeq-ai/zeeq"
+            ),
+        ]);
+        var handler = new UpdateGitHubRepositoryVisibilityHandler(store, provider);
+
+        await handler.HandleAsync(
+            new("zeeq-ai/zeeq", VisibleInLibraryPicker: false),
+            User(),
+            CancellationToken.None
+        );
+
+        var saved = store.Repositories.Single();
+
+        await Assert.That(saved.Enabled).IsTrue();
+        await Assert.That(saved.VisibleInLibraryPicker).IsFalse();
+    }
+
+    [Test]
+    public async Task UpdateVisibility_WithRepositoryOutsideInstallation_DoesNotUpsert()
+    {
+        var store = new TestCodeRepositoryStore();
+        var handler = new UpdateGitHubRepositoryVisibilityHandler(
+            store,
+            new TestGitHubRepositoryProvider([])
+        );
+
+        var result = await handler.HandleAsync(
+            new("zeeq-ai/zeeq", VisibleInLibraryPicker: false),
+            User(),
+            CancellationToken.None
+        );
+
+        await Assert.That(result).IsTypeOf<NotFound<GitHubRepositoryManagementError>>();
+        await Assert.That(store.Repositories).IsEmpty();
     }
 
     [Test]
@@ -442,6 +552,7 @@ public sealed class GitHubRepositoryManagementHandlerTests
 
         var ok = (Ok<GitHubConfiguredRepositoryResponse[]>)result;
         await Assert.That(ok.Value!.Single().LibraryIds).Contains("lib_1");
+        await Assert.That(ok.Value!.Single().VisibleInLibraryPicker).IsTrue();
     }
 
     private static ClaimsPrincipal User() =>
@@ -581,6 +692,7 @@ public sealed class GitHubRepositoryManagementHandlerTests
             existing.TeamId = repository.TeamId;
             existing.DisplayName = repository.DisplayName;
             existing.Enabled = repository.Enabled;
+            existing.VisibleInLibraryPicker = repository.VisibleInLibraryPicker;
             existing.LibraryIds = repository.LibraryIds;
             existing.ReviewConfiguration = repository.ReviewConfiguration;
             existing.UpdatedAtUtc = repository.UpdatedAtUtc;

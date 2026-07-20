@@ -30,6 +30,7 @@ public sealed record GitHubConfiguredRepositoryResponse(
     string OwnerQualifiedName,
     string DisplayName,
     bool Enabled,
+    bool VisibleInLibraryPicker,
     string[] LibraryIds,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc
@@ -47,7 +48,8 @@ public sealed record GitHubAvailableRepositoryResponse(
     string DefaultBranch,
     string HtmlUrl,
     bool Configured,
-    string? ConfiguredRepositoryId
+    string? ConfiguredRepositoryId,
+    bool VisibleInLibraryPicker
 );
 
 /// <summary>
@@ -63,6 +65,7 @@ public sealed record GitHubCreateRepositoryMappingRequest(
     [property: MaxLength(128)] string? TeamId,
     [property: MaxLength(256)] string? DisplayName,
     bool Enabled = true,
+    bool VisibleInLibraryPicker = true,
     string[]? LibraryIds = null
 );
 
@@ -83,7 +86,16 @@ public sealed record GitHubUpdateRepositoryMappingRequest(
     [property: MaxLength(128)] string? TeamId,
     [property: MaxLength(256)] string? DisplayName,
     bool Enabled = true,
+    bool? VisibleInLibraryPicker = null,
     string[]? LibraryIds = null
+);
+
+/// <summary>
+/// Request to control whether an installation-visible repository appears as a library source.
+/// </summary>
+public sealed record GitHubUpdateRepositoryVisibilityRequest(
+    [property: Required, MaxLength(512)] string OwnerQualifiedName,
+    bool VisibleInLibraryPicker
 );
 
 /// <summary>

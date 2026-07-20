@@ -1,11 +1,11 @@
+using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 using Zeeq.Core.Common.Storage;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.CodeReviews;
 using Zeeq.Platform.CodeReviews;
 using Zeeq.Testing;
 using Zeeq.Testing.EntityGraphs;
-using Microsoft.Extensions.Logging.Abstractions;
-using Npgsql;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -559,6 +559,77 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         await Assert
             .That(found.ReviewConfiguration.FileFilter.ExcludedFiles.Single().MatchType)
             .IsEqualTo(CodeReviewFileNameMatchType.Glob);
+    }
+
+    [Test]
+    public async Task CodeRepositoryStore_UpsertAsync_PersistsLibraryPickerVisibility()
+    {
+        var (seed, repository) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddCodeRepository()
+            .BuildAsync();
+        var store = new PostgresCodeRepositoryStore(_context);
+
+        repository.VisibleInLibraryPicker = false;
+        repository.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        await store.UpsertAsync(repository, CancellationToken.None);
+
+        _context.ChangeTracker.Clear();
+        var found = await store.FindActiveForOrganizationAsync(
+            seed.Organization.Id,
+            repository.Id,
+            CancellationToken.None
+        );
+
+        await Assert.That(found).IsNotNull();
+        await Assert.That(found!.VisibleInLibraryPicker).IsFalse();
+    }
+
+    [Test]
+    public async Task CodeRepositoryStore_FindActiveAsync_ExcludesPausedRepositories()
+    {
+        var (seed, repository) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddCodeRepository(repository =>
+            {
+                repository.OwnerQualifiedName = "zeeq-ai/paused";
+                repository.Enabled = false;
+            })
+            .BuildAsync();
+        var store = new PostgresCodeRepositoryStore(_context);
+
+        _context.ChangeTracker.Clear();
+        var found = await store.FindActiveAsync(
+            repository.Provider,
+            repository.OwnerQualifiedName,
+            CancellationToken.None
+        );
+
+        await Assert.That(found).IsNull();
+    }
+
+    [Test]
+    public async Task CodeRepositoryStore_FindActiveForOrganizationAsync_IncludesPausedRepositories()
+    {
+        var (seed, repository) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddCodeRepository(repository =>
+            {
+                repository.OwnerQualifiedName = "zeeq-ai/paused";
+                repository.Enabled = false;
+            })
+            .BuildAsync();
+        var store = new PostgresCodeRepositoryStore(_context);
+
+        _context.ChangeTracker.Clear();
+        var found = await store.FindActiveForOrganizationAsync(
+            seed.Organization.Id,
+            repository.Id,
+            CancellationToken.None
+        );
+
+        await Assert.That(found).IsNotNull();
+        await Assert.That(found!.Enabled).IsFalse();
     }
 
     [Test]

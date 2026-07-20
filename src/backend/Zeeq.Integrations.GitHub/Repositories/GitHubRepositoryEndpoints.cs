@@ -1,11 +1,11 @@
 using System.Security.Claims;
-using Zeeq.Core.Common.AspNetCore.Contracts;
-using Zeeq.Core.Identity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Zeeq.Core.Common.AspNetCore.Contracts;
+using Zeeq.Core.Identity;
 
 namespace Zeeq.Integrations.GitHub;
 
@@ -49,10 +49,10 @@ public sealed class GitHubRepositoryEndpoints : IEndpoint
             .WithSummary("List configured repositories.")
             .WithDescription(
                 """
-                Returns the GitHub repositories already registered for Zeeq code review in
-                the route organization, along with their local settings. These mappings are
-                what lets incoming webhooks resolve a repository to this org; an unmapped
-                repository's PR and comment webhooks are acknowledged as a no-op.
+                Returns the GitHub repositories already registered in Zeeq for the route
+                organization, along with their local settings. `Enabled` controls whether
+                incoming PR and comment webhooks create code-review work. Library-source
+                visibility is tracked separately and does not change GitHub App access.
 
                 Requires the `owner` or `admin` role.
                 """
@@ -74,9 +74,9 @@ public sealed class GitHubRepositoryEndpoints : IEndpoint
             .WithDescription(
                 """
                 Returns every repository the linked GitHub App installation can see, each
-                annotated with whether it is already configured in Zeeq. This powers the
-                settings picker, which shows available and already-configured repositories in
-                a single list.
+                annotated with whether it already has a Zeeq repository row and whether it
+                should appear as a private library source. This list reflects GitHub App
+                installation access; it is broader than webhook-enabled repositories.
 
                 Requires a connected GitHub App installation and the `owner` or `admin` role.
                 """
@@ -101,7 +101,34 @@ public sealed class GitHubRepositoryEndpoints : IEndpoint
                 """
                 Maps an installation-visible GitHub repository into the route organization so
                 its pull-request and comment webhooks are routed to Zeeq code review instead
-                of being dropped as a no-op.
+                of being dropped as a no-op when `Enabled` is true. This does not install the
+                GitHub App or change GitHub-side repository access.
+
+                Requires the `owner` or `admin` role.
+                """
+            );
+
+        // PUT /api/v1/orgs/{orgId}/integrations/github/repositories/visibility
+        group
+            .MapPut(
+                "/visibility",
+                static (
+                    string orgId,
+                    GitHubUpdateRepositoryVisibilityRequest request,
+                    ClaimsPrincipal user,
+                    [FromServices] UpdateGitHubRepositoryVisibilityHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(request, user, ct)
+            )
+            .RequireActiveOrganization()
+            .WithName("UpdateGitHubRepositoryVisibility")
+            .WithSummary("Update repository library visibility.")
+            .WithDescription(
+                """
+                Updates whether an installation-visible GitHub repository appears as a
+                private source option when creating a library. This is independent from
+                `Enabled`: hiding a repository does not pause webhook-triggered code-review
+                work, and showing a repository does not enable webhook processing.
 
                 Requires the `owner` or `admin` role.
                 """
@@ -126,8 +153,9 @@ public sealed class GitHubRepositoryEndpoints : IEndpoint
             .WithDescription(
                 """
                 Updates the Zeeq-local settings for an already-configured repository mapping,
-                identified by `repositoryId`. This changes how Zeeq handles the repository;
-                it does not alter anything on GitHub.
+                identified by `repositoryId`. `Enabled` controls webhook-triggered
+                code-review work; it does not control GitHub App installation access or
+                library-source visibility.
 
                 Requires the `owner` or `admin` role.
                 """
