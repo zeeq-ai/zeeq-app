@@ -1,8 +1,8 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Snippets;
 using Zeeq.Core.Models;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Zeeq.Data.Postgres.Configurations;
 
@@ -391,10 +391,10 @@ internal sealed class LibraryDocumentSnippetConfiguration
             .IsRequired()
             .HasMaxLength(16)
             .HasConversion<string>();
-        entity.Property(snippet => snippet.Header).IsRequired().HasMaxLength(1024);
-        entity.Property(snippet => snippet.HeadingPath).IsRequired().HasMaxLength(2048);
-        entity.Property(snippet => snippet.Language).HasMaxLength(64);
-        entity.Property(snippet => snippet.Tag).HasMaxLength(256);
+        entity.Property(snippet => snippet.Header).IsRequired();
+        entity.Property(snippet => snippet.HeadingPath).IsRequired();
+        entity.Property(snippet => snippet.Language);
+        entity.Property(snippet => snippet.Tag);
         entity.Property(snippet => snippet.PrecedingText);
         entity.Property(snippet => snippet.Content).IsRequired();
         entity.Property(snippet => snippet.EmbeddingPayload).IsRequired();
@@ -498,10 +498,10 @@ internal sealed class PublicDocumentSnippetConfiguration
             .IsRequired()
             .HasMaxLength(16)
             .HasConversion<string>();
-        entity.Property(snippet => snippet.Header).IsRequired().HasMaxLength(1024);
-        entity.Property(snippet => snippet.HeadingPath).IsRequired().HasMaxLength(2048);
-        entity.Property(snippet => snippet.Language).HasMaxLength(64);
-        entity.Property(snippet => snippet.Tag).HasMaxLength(256);
+        entity.Property(snippet => snippet.Header).IsRequired();
+        entity.Property(snippet => snippet.HeadingPath).IsRequired();
+        entity.Property(snippet => snippet.Language);
+        entity.Property(snippet => snippet.Tag);
         entity.Property(snippet => snippet.PrecedingText);
         entity.Property(snippet => snippet.Content).IsRequired();
         entity.Property(snippet => snippet.EmbeddingPayload).IsRequired();

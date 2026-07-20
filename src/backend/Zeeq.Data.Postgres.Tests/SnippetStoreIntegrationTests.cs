@@ -1,10 +1,10 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Snippets;
 using Zeeq.Data.Postgres.Documents;
 using Zeeq.Testing;
 using Zeeq.Testing.EntityGraphs;
-using Microsoft.EntityFrameworkCore;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -37,6 +37,33 @@ public sealed class SnippetStoreIntegrationTests : PgTransactionalTestBase
         var rows = await LoadSnippetsAsync(document);
         await Assert.That(rows).Count().IsEqualTo(2);
         await Assert.That(rows.All(r => r.Embedding is null)).IsTrue();
+    }
+
+    [Test]
+    public async Task Replace_InsertsSnippets_WithLongMarkdownMetadata()
+    {
+        var (snippetStore, document) = await SeedDocumentAsync();
+        var composed = Compose(
+            SnippetKind.Code,
+            "DoThing();",
+            ordinal: 0,
+            language: new string('l', 96),
+            tag: new string('t', 320),
+            preceding: "Example:"
+        ) with
+        {
+            Header = new string('h', 1200),
+            HeadingPath = new string('p', 2400),
+        };
+
+        await snippetStore.ReplaceForDocumentAsync(document, [composed], default);
+        _context.ChangeTracker.Clear();
+
+        var row = (await LoadSnippetsAsync(document)).Single();
+        await Assert.That(row.Language).IsEqualTo(composed.Language);
+        await Assert.That(row.Tag).IsEqualTo(composed.Tag);
+        await Assert.That(row.Header).IsEqualTo(composed.Header);
+        await Assert.That(row.HeadingPath).IsEqualTo(composed.HeadingPath);
     }
 
     [Test]
