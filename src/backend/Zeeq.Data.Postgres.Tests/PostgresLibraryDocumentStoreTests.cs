@@ -176,6 +176,124 @@ public sealed class PostgresLibraryDocumentStoreTests : PgTransactionalTestBase
         await store.DeleteLibraryAsync(organizationId, nonExistentId, CancellationToken.None);
     }
 
+    [Test]
+    public async Task ResetLibrarySyncStateAsync_ActivePrivateLibrary_ClearsLeaseAndPreservesManualHistory()
+    {
+        var (store, organizationId, library) = await CreateStoreWithPrivateLibraryAsync();
+        var triggerAt = DateTimeOffset.UtcNow.AddMinutes(-5).TruncateToPostgresPrecision();
+        var runCreatedAt = DateTimeOffset.UtcNow.AddMinutes(-2).TruncateToPostgresPrecision();
+        await store.UpdateSyncLeaseAsync(
+            organizationId,
+            library.Id,
+            syncStatus: "running",
+            nextSyncAt: DateTimeOffset.UtcNow.AddHours(1),
+            manualTriggerHistory: [triggerAt],
+            sourceSyncedAt: library.SourceSyncedAt,
+            activeSyncRunId: "run_stalled",
+            activeSyncRunCreatedAtUtc: runCreatedAt,
+            syncQueuedAtUtc: runCreatedAt,
+            syncStartedAtUtc: runCreatedAt,
+            ct: CancellationToken.None
+        );
+        _context.DocsIngestRuns.Add(
+            new DocsIngestRun
+            {
+                Id = "run_stalled",
+                CreatedAtUtc = runCreatedAt,
+                SourceKind = RepositorySourceKind.Private,
+                RepoUrl = library.SourceRepoUrl!,
+                OrganizationId = organizationId,
+                LibraryId = library.Id,
+                Trigger = IngestTriggerReason.Manual,
+                Status = IngestRunStatus.Running,
+                StartedAtUtc = runCreatedAt,
+                UpdatedAtUtc = runCreatedAt,
+            }
+        );
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var now = DateTimeOffset.UtcNow;
+        var reset = await store.ResetLibrarySyncStateAsync(
+            organizationId,
+            library.Id,
+            now,
+            CancellationToken.None
+        );
+
+        await Assert.That(reset).IsNotNull();
+        await Assert.That(reset!.ClearedSync.RunId).IsEqualTo("run_stalled");
+        await Assert.That(reset.Library.SyncStatus).IsEqualTo("idle");
+        await Assert.That(reset.Library.NextSyncAt).IsEqualTo(now.TruncateToPostgresPrecision());
+        await Assert.That(reset.Library.ManualTriggerHistory).Contains(triggerAt);
+        await Assert.That(reset.Library.ActiveSyncRunId).IsNull();
+        await Assert.That(reset.Library.SyncQueuedAtUtc).IsNull();
+        await Assert.That(reset.Library.SyncStartedAtUtc).IsNull();
+        var run = await _context.DocsIngestRuns.SingleAsync(row => row.Id == "run_stalled");
+        await Assert.That(run.Status).IsEqualTo(IngestRunStatus.Stalled);
+    }
+
+    [Test]
+    public async Task ResetLibrarySyncStateAsync_MissingActiveRun_LeavesLeaseIntact()
+    {
+        var (store, organizationId, library) = await CreateStoreWithPrivateLibraryAsync();
+        var runCreatedAt = DateTimeOffset.UtcNow.AddHours(-3);
+        await store.UpdateSyncLeaseAsync(
+            organizationId,
+            library.Id,
+            syncStatus: "running",
+            nextSyncAt: DateTimeOffset.UtcNow.AddHours(1),
+            manualTriggerHistory: [],
+            sourceSyncedAt: library.SourceSyncedAt,
+            activeSyncRunId: "run_missing",
+            activeSyncRunCreatedAtUtc: runCreatedAt,
+            syncQueuedAtUtc: runCreatedAt,
+            syncStartedAtUtc: runCreatedAt,
+            ct: CancellationToken.None
+        );
+        _context.ChangeTracker.Clear();
+
+        var reset = await store.ResetLibrarySyncStateAsync(
+            organizationId,
+            library.Id,
+            DateTimeOffset.UtcNow,
+            CancellationToken.None
+        );
+
+        await Assert.That(reset).IsNull();
+
+        _context.ChangeTracker.Clear();
+        var reloaded = await store.GetLibraryByIdAsync(
+            organizationId,
+            library.Id,
+            CancellationToken.None
+        );
+        await Assert.That(reloaded!.SyncStatus).IsEqualTo("running");
+        await Assert.That(reloaded.ActiveSyncRunId).IsEqualTo("run_missing");
+    }
+
+    [Test]
+    public async Task ClaimDueForSyncAsync_DuePrivateLibrary_UsesPostgresPrecisionRunTimestamp()
+    {
+        var (store, organizationId, library) = await CreateStoreWithPrivateLibraryAsync();
+        library.SyncStatus = "idle";
+        library.NextSyncAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var claimed = await store.ClaimDueForSyncAsync(10, CancellationToken.None);
+
+        var claimedLibrary = claimed.Single(row =>
+            row.OrganizationId == organizationId && row.Id == library.Id
+        );
+        await Assert.That(claimedLibrary.ActiveSyncRunCreatedAtUtc).IsNotNull();
+        await AssertPostgresMicrosecondPrecisionAsync(
+            claimedLibrary.ActiveSyncRunCreatedAtUtc.Value
+        );
+        await Assert.That(claimedLibrary.SyncQueuedAtUtc).IsNotNull();
+        await AssertPostgresMicrosecondPrecisionAsync(claimedLibrary.SyncQueuedAtUtc.Value);
+    }
+
     private async Task<(
         PostgresLibraryDocumentStore Store,
         string OrganizationId,
@@ -185,6 +303,34 @@ public sealed class PostgresLibraryDocumentStoreTests : PgTransactionalTestBase
         var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
         var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
         var library = await CreateLibraryAsync(store, seed.Organization.Id, "test-lib");
+
+        return (store, seed.Organization.Id, library);
+    }
+
+    private async Task<(
+        PostgresLibraryDocumentStore Store,
+        string OrganizationId,
+        Library Library
+    )> CreateStoreWithPrivateLibraryAsync()
+    {
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
+        var now = DateTimeOffset.UtcNow;
+        var library = await store.CreateLibraryAsync(
+            new Library
+            {
+                Id = SeedContext.NewId("library"),
+                OrganizationId = seed.Organization.Id,
+                Name = "private-lib",
+                SourceKind = "GitHub",
+                SourceRepoUrl = "https://github.com/acme/private-lib",
+                SyncStatus = "idle",
+                NextSyncAt = now,
+                CreatedAt = now,
+                UpdatedAt = now,
+            },
+            CancellationToken.None
+        );
 
         return (store, seed.Organization.Id, library);
     }
@@ -215,4 +361,7 @@ public sealed class PostgresLibraryDocumentStoreTests : PgTransactionalTestBase
             default
         );
     }
+
+    private static async Task AssertPostgresMicrosecondPrecisionAsync(DateTimeOffset value) =>
+        await Assert.That(value.Ticks % TimeSpan.TicksPerMicrosecond).IsEqualTo(0);
 }

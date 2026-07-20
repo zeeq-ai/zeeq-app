@@ -26,6 +26,21 @@ public interface IDocsIngestRunStore
         CancellationToken ct
     );
 
+    /// <summary>
+    /// Marks the exact running run as <see cref="IngestRunStatus.Stalled"/>.
+    /// Missing rows and rows that are already terminal are ignored.
+    /// </summary>
+    Task<bool> MarkStalledAsync(
+        string id,
+        DateTimeOffset createdAtUtc,
+        DateTimeOffset completedAtUtc,
+        string failureMessage,
+        CancellationToken ct
+    )
+    {
+        throw new NotSupportedException();
+    }
+
     /// <summary>Lists the most recent runs for one organization's private sources, newest first.</summary>
     Task<IReadOnlyList<DocsIngestRun>> ListByOrganizationAsync(
         string organizationId,

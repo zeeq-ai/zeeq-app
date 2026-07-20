@@ -19,6 +19,13 @@ public sealed record TriggerIngestRunResponse(
     string ViewToken
 );
 
+/// <summary>Response returned after clearing a private library's active ingest state.</summary>
+public sealed record ResetLibraryIngestRunStateResponse(
+    string SyncStatus,
+    DateTimeOffset? NextSyncAt,
+    bool RunMarkedStalled
+);
+
 /// <summary>Error payload for ingest trigger endpoints.</summary>
 public sealed record IngestError(string Message);
 

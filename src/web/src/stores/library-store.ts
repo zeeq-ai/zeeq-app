@@ -25,6 +25,7 @@ import type { RenameDocumentRequest } from "@/api/generated/types/RenameDocument
 import type { SetDocumentReviewExclusionRequest } from "@/api/generated/types/SetDocumentReviewExclusionRequest";
 import type { TriggerIngestRunResponse } from "@/api/generated/types/TriggerIngestRunResponse";
 import type { IngestRunPageResponse } from "@/api/generated/types/IngestRunPageResponse";
+import type { ResetLibraryIngestRunStateResponse } from "@/api/generated/types/ResetLibraryIngestRunStateResponse";
 
 /**
  * Library management store: libraries (CRUD), the documents in the active library,
@@ -254,6 +255,18 @@ export const useLibraryStore = defineStore("library", () => {
       cursor,
       limit,
     })) as IngestRunPageResponse;
+  }
+
+  /**
+   * Clears a stuck queued/running sync for a private-source library.
+   */
+  async function resetIngestRunState(
+    libraryName: string,
+  ): Promise<ResetLibraryIngestRunStateResponse> {
+    return (await Ingest.resetLibraryIngestRunState(
+      orgId.value,
+      libraryName,
+    )) as ResetLibraryIngestRunStateResponse;
   }
 
   /**
@@ -583,6 +596,7 @@ export const useLibraryStore = defineStore("library", () => {
     updateLibrary,
     deleteLibrary,
     triggerIngest,
+    resetIngestRunState,
     listIngestRuns,
     updateLibraryRepositories,
     exportLibrary,

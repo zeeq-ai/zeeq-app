@@ -110,6 +110,83 @@ internal sealed class CachedLibraryDocumentStore(ILibraryDocumentStore inner, Hy
         );
 
     /// <inheritdoc />
+    public Task<Library> UpdateSyncLeaseAsync(
+        string organizationId,
+        string libraryId,
+        string? syncStatus,
+        DateTimeOffset? nextSyncAt,
+        DateTimeOffset[] manualTriggerHistory,
+        DateTimeOffset? sourceSyncedAt,
+        string? activeSyncRunId,
+        DateTimeOffset? activeSyncRunCreatedAtUtc,
+        DateTimeOffset? syncQueuedAtUtc,
+        DateTimeOffset? syncStartedAtUtc,
+        CancellationToken ct
+    ) =>
+        inner.UpdateSyncLeaseAsync(
+            organizationId,
+            libraryId,
+            syncStatus,
+            nextSyncAt,
+            manualTriggerHistory,
+            sourceSyncedAt,
+            activeSyncRunId,
+            activeSyncRunCreatedAtUtc,
+            syncQueuedAtUtc,
+            syncStartedAtUtc,
+            ct
+        );
+
+    /// <inheritdoc />
+    public Task<bool> TryUpdateCurrentSyncLeaseAsync(
+        string organizationId,
+        string libraryId,
+        string expectedRunId,
+        DateTimeOffset expectedRunCreatedAtUtc,
+        string? syncStatus,
+        DateTimeOffset? nextSyncAt,
+        DateTimeOffset[] manualTriggerHistory,
+        DateTimeOffset? sourceSyncedAt,
+        string? activeSyncRunId,
+        DateTimeOffset? activeSyncRunCreatedAtUtc,
+        DateTimeOffset? syncQueuedAtUtc,
+        DateTimeOffset? syncStartedAtUtc,
+        CancellationToken ct
+    ) =>
+        inner.TryUpdateCurrentSyncLeaseAsync(
+            organizationId,
+            libraryId,
+            expectedRunId,
+            expectedRunCreatedAtUtc,
+            syncStatus,
+            nextSyncAt,
+            manualTriggerHistory,
+            sourceSyncedAt,
+            activeSyncRunId,
+            activeSyncRunCreatedAtUtc,
+            syncQueuedAtUtc,
+            syncStartedAtUtc,
+            ct
+        );
+
+    /// <inheritdoc />
+    public Task<LibrarySyncStateReset?> ResetLibrarySyncStateAsync(
+        string organizationId,
+        string libraryId,
+        DateTimeOffset now,
+        CancellationToken ct
+    ) => inner.ResetLibrarySyncStateAsync(organizationId, libraryId, now, ct);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<StalledSyncReset>> ResetStalledSyncsAsync(
+        DateTimeOffset now,
+        TimeSpan queuedStaleAfter,
+        TimeSpan runningStaleAfter,
+        int limit,
+        CancellationToken ct
+    ) => inner.ResetStalledSyncsAsync(now, queuedStaleAfter, runningStaleAfter, limit, ct);
+
+    /// <inheritdoc />
     public async Task<LibraryDocument> UpsertDocumentAsync(
         LibraryDocument document,
         CancellationToken ct

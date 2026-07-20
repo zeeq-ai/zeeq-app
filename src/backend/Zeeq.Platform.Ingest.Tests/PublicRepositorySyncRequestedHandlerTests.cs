@@ -35,16 +35,23 @@ public sealed class PublicRepositorySyncRequestedHandlerTests
             UpdatedAt = DateTimeOffset.UtcNow,
         };
 
-    private static PublicRepositorySyncRequested Message(DocsPublicSource source) =>
-        new()
+    private static PublicRepositorySyncRequested Message(DocsPublicSource source)
+    {
+        var runCreatedAtUtc = DateTimeOffset.UtcNow;
+        source.ActiveSyncRunId = "run_1";
+        source.ActiveSyncRunCreatedAtUtc = runCreatedAtUtc;
+        source.SyncQueuedAtUtc = runCreatedAtUtc;
+
+        return new()
         {
             RunId = "run_1",
-            RunCreatedAtUtc = DateTimeOffset.UtcNow,
+            RunCreatedAtUtc = runCreatedAtUtc,
             PublicSourceId = source.Id,
             RepoUrl = source.RepoUrl,
             Trigger = IngestTriggerReason.Manual,
             TraceContext = ZeeqTelemetry.CaptureCurrentTraceContext(),
         };
+    }
 
     private static PublicRepositorySyncRequestedHandler Handler(
         FakeDocsPublicSourceStore sources,
@@ -84,6 +91,24 @@ public sealed class PublicRepositorySyncRequestedHandlerTests
         await dispatcher
             .DidNotReceive()
             .RunAsync(Arg.Any<RepositoryIngestJob>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task HandleAsync_StaleMessage_NoOps()
+    {
+        var source = Source(syncStatus: "queued");
+        var sources = new FakeDocsPublicSourceStore { Sources = { source } };
+        var dispatcher = Substitute.For<IRepositoryIngestDispatcher>();
+        var handler = Handler(sources, dispatcher);
+        var message = Message(source);
+        source.ActiveSyncRunId = "run_newer";
+
+        await handler.HandleAsync(message, CancellationToken.None);
+
+        await dispatcher
+            .DidNotReceive()
+            .RunAsync(Arg.Any<RepositoryIngestJob>(), Arg.Any<CancellationToken>());
+        await Assert.That(source.SyncStatus).IsEqualTo("queued");
     }
 
     [Test]
@@ -316,6 +341,30 @@ public sealed class PublicRepositorySyncRequestedHandlerTests
         await Assert.That(source.SyncStatus).IsEqualTo("idle");
         await Assert.That(source.NextSyncAt).IsNotNull();
         await Assert.That(source.NextSyncAt!.Value).IsGreaterThan(before);
+    }
+
+    [Test]
+    public async Task HandleAsync_CompletionAfterNewerRunClaimed_DoesNotClearNewerLease()
+    {
+        var source = Source(syncStatus: "queued");
+        var sources = new FakeDocsPublicSourceStore { Sources = { source } };
+        var dispatcher = Substitute.For<IRepositoryIngestDispatcher>();
+        var handler = Handler(sources, dispatcher);
+        var message = Message(source);
+        dispatcher
+            .RunAsync(Arg.Any<RepositoryIngestJob>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                source.ActiveSyncRunId = "run_newer";
+                source.ActiveSyncRunCreatedAtUtc = DateTimeOffset.UtcNow;
+                source.SyncStatus = "queued";
+                return new DispatchOutcome(DispatchOutcomeKind.Completed);
+            });
+
+        await handler.HandleAsync(message, CancellationToken.None);
+
+        await Assert.That(source.SyncStatus).IsEqualTo("queued");
+        await Assert.That(source.ActiveSyncRunId).IsEqualTo("run_newer");
     }
 
     [Test]

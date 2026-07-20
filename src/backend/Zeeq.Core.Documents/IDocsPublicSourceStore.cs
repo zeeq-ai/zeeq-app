@@ -38,4 +38,40 @@ public interface IDocsPublicSourceStore
     /// same source.
     /// </summary>
     Task<IReadOnlyList<DocsPublicSource>> ClaimDueForSyncAsync(int limit, CancellationToken ct);
+
+    /// <summary>
+    /// Updates sync fields only if the source is still owned by the expected active run.
+    /// </summary>
+    Task<bool> TryUpdateCurrentSyncLeaseAsync(
+        string sourceId,
+        string expectedRunId,
+        DateTimeOffset expectedRunCreatedAtUtc,
+        string syncStatus,
+        DateTimeOffset? nextSyncAt,
+        DateTimeOffset? syncedAt,
+        string status,
+        string? activeSyncRunId,
+        DateTimeOffset? activeSyncRunCreatedAtUtc,
+        DateTimeOffset? syncQueuedAtUtc,
+        DateTimeOffset? syncStartedAtUtc,
+        DateTimeOffset updatedAt,
+        CancellationToken ct
+    )
+    {
+        throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// Clears stale queued/running public-source syncs.
+    /// </summary>
+    Task<IReadOnlyList<StalledSyncReset>> ResetStalledSyncsAsync(
+        DateTimeOffset now,
+        TimeSpan queuedStaleAfter,
+        TimeSpan runningStaleAfter,
+        int limit,
+        CancellationToken ct
+    )
+    {
+        throw new NotSupportedException();
+    }
 }

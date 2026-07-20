@@ -43,7 +43,7 @@
 
       <UButton
         v-if="activeLibrary"
-        label="Edit"
+        label="Manage"
         icon="i-hugeicons-edit-02"
         size="sm"
         color="neutral"

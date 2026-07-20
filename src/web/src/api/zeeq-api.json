@@ -3261,6 +3261,61 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/libraries/{name}/ingest-run/reset": {
+      "post": {
+        "tags": [
+          "Ingest"
+        ],
+        "summary": "Clear a stuck private library repository sync.",
+        "description": "Clears a private repository library's queued/running sync state and makes it\neligible to sync again immediately. If the active run row exists and is still\nrunning, it is marked `Stalled`. Public-source-backed libraries are not reset\nthrough this organization-scoped endpoint.",
+        "operationId": "ResetLibraryIngestRunState",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetLibraryIngestRunStateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/libraries/{name}/ingest-runs": {
       "get": {
         "tags": [
@@ -9283,6 +9338,30 @@
           }
         },
         "description": "Request body for renaming an existing tenant-owned LLM API key."
+      },
+      "ResetLibraryIngestRunStateResponse": {
+        "required": [
+          "syncStatus",
+          "nextSyncAt",
+          "runMarkedStalled"
+        ],
+        "type": "object",
+        "properties": {
+          "syncStatus": {
+            "type": "string"
+          },
+          "nextSyncAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "runMarkedStalled": {
+            "type": "boolean"
+          }
+        },
+        "description": "Response returned after clearing a private library's active ingest state."
       },
       "ReviewFindingsGroup": {
         "enum": [

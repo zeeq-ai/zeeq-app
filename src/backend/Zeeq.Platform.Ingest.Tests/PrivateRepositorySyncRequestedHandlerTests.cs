@@ -35,17 +35,24 @@ public sealed class PrivateRepositorySyncRequestedHandlerTests
             UpdatedAt = DateTimeOffset.UtcNow,
         };
 
-    private static PrivateRepositorySyncRequested Message(Library library) =>
-        new()
+    private static PrivateRepositorySyncRequested Message(Library library)
+    {
+        var runCreatedAtUtc = DateTimeOffset.UtcNow;
+        library.ActiveSyncRunId = "run_1";
+        library.ActiveSyncRunCreatedAtUtc = runCreatedAtUtc;
+        library.SyncQueuedAtUtc = runCreatedAtUtc;
+
+        return new()
         {
             RunId = "run_1",
-            RunCreatedAtUtc = DateTimeOffset.UtcNow,
+            RunCreatedAtUtc = runCreatedAtUtc,
             OrganizationId = library.OrganizationId,
             LibraryId = library.Id,
             RepoUrl = library.SourceRepoUrl!,
             Trigger = IngestTriggerReason.Manual,
             TraceContext = ZeeqTelemetry.CaptureCurrentTraceContext(),
         };
+    }
 
     private static PrivateRepositorySyncRequestedHandler Handler(
         FakeLibraryDocumentStore libraries,
@@ -77,6 +84,24 @@ public sealed class PrivateRepositorySyncRequestedHandlerTests
     }
 
     [Test]
+    public async Task HandleAsync_StaleMessage_NoOps()
+    {
+        var library = Library(syncStatus: "queued");
+        var libraries = new FakeLibraryDocumentStore { Libraries = { library } };
+        var dispatcher = Substitute.For<IRepositoryIngestDispatcher>();
+        var handler = Handler(libraries, dispatcher);
+        var message = Message(library);
+        library.ActiveSyncRunId = "run_newer";
+
+        await handler.HandleAsync(message, CancellationToken.None);
+
+        await dispatcher
+            .DidNotReceive()
+            .RunAsync(Arg.Any<RepositoryIngestJob>(), Arg.Any<CancellationToken>());
+        await Assert.That(library.SyncStatus).IsEqualTo("queued");
+    }
+
+    [Test]
     public async Task HandleAsync_Completed_SetsSourceSyncedAtAndSchedulesNextSync()
     {
         var library = Library(syncStatus: "queued");
@@ -95,6 +120,30 @@ public sealed class PrivateRepositorySyncRequestedHandlerTests
         await Assert.That(library.SourceSyncedAt!.Value).IsGreaterThanOrEqualTo(before);
         await Assert.That(library.NextSyncAt).IsNotNull();
         await Assert.That(library.NextSyncAt!.Value).IsGreaterThan(before);
+    }
+
+    [Test]
+    public async Task HandleAsync_CompletionAfterNewerRunClaimed_DoesNotClearNewerLease()
+    {
+        var library = Library(syncStatus: "queued");
+        var libraries = new FakeLibraryDocumentStore { Libraries = { library } };
+        var dispatcher = Substitute.For<IRepositoryIngestDispatcher>();
+        var handler = Handler(libraries, dispatcher);
+        var message = Message(library);
+        dispatcher
+            .RunAsync(Arg.Any<RepositoryIngestJob>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                library.ActiveSyncRunId = "run_newer";
+                library.ActiveSyncRunCreatedAtUtc = DateTimeOffset.UtcNow;
+                library.SyncStatus = "queued";
+                return new DispatchOutcome(DispatchOutcomeKind.Completed);
+            });
+
+        await handler.HandleAsync(message, CancellationToken.None);
+
+        await Assert.That(library.SyncStatus).IsEqualTo("queued");
+        await Assert.That(library.ActiveSyncRunId).IsEqualTo("run_newer");
     }
 
     [Test]

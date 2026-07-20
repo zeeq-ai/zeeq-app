@@ -46,6 +46,31 @@ internal sealed class FakeDocsIngestRunStore : IDocsIngestRunStore
         return Task.CompletedTask;
     }
 
+    public Task<bool> MarkStalledAsync(
+        string id,
+        DateTimeOffset createdAtUtc,
+        DateTimeOffset completedAtUtc,
+        string failureMessage,
+        CancellationToken ct
+    )
+    {
+        if (!_runs.TryGetValue((id, createdAtUtc), out var run))
+        {
+            return Task.FromResult(false);
+        }
+
+        if (run.Status != IngestRunStatus.Running)
+        {
+            return Task.FromResult(false);
+        }
+
+        run.Status = IngestRunStatus.Stalled;
+        run.CompletedAtUtc = completedAtUtc;
+        run.UpdatedAtUtc = completedAtUtc;
+        run.FailureMessage = failureMessage;
+        return Task.FromResult(true);
+    }
+
     public Task<IReadOnlyList<DocsIngestRun>> ListByOrganizationAsync(
         string organizationId,
         int limit,

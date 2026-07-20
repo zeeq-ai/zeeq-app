@@ -61,6 +61,26 @@ public class DocsPublicSource
     public DateTimeOffset? NextSyncAt { get; set; }
 
     /// <summary>
+    /// Run id for the sync currently queued or running for this public source.
+    /// </summary>
+    public string? ActiveSyncRunId { get; set; }
+
+    /// <summary>
+    /// Partition key paired with <see cref="ActiveSyncRunId"/> for the current sync run.
+    /// </summary>
+    public DateTimeOffset? ActiveSyncRunCreatedAtUtc { get; set; }
+
+    /// <summary>
+    /// Time this source most recently entered the queued sync state.
+    /// </summary>
+    public DateTimeOffset? SyncQueuedAtUtc { get; set; }
+
+    /// <summary>
+    /// Time this source most recently entered the running sync state.
+    /// </summary>
+    public DateTimeOffset? SyncStartedAtUtc { get; set; }
+
+    /// <summary>
     /// Visibility status: <c>active</c> (served to orgs), <c>quarantined</c> (upstream went private).
     /// Quarantined sources are frozen — documents remain but are not served.
     /// </summary>

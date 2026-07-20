@@ -14,24 +14,32 @@ public sealed class IngestSchedulerHostedServiceTests
 {
     private static readonly IngestSettings Settings = new() { SchedulerBatchSize = 10 };
 
-    private static DocsPublicSource Source(string id, string syncStatus = "queued") =>
-        new()
+    private static DocsPublicSource Source(string id, string syncStatus = "queued")
+    {
+        var runCreatedAtUtc = DateTimeOffset.UtcNow;
+        return new()
         {
             Id = id,
             Kind = RepositorySourceKind.Public,
             RepoUrl = $"https://github.com/example/{id}",
             Name = id,
             SyncStatus = syncStatus,
+            ActiveSyncRunId = $"run_{id}",
+            ActiveSyncRunCreatedAtUtc = runCreatedAtUtc,
+            SyncQueuedAtUtc = runCreatedAtUtc,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
         };
+    }
 
     private static Library PrivateLibrary(
         string id,
         string organizationId = "org_1",
         string syncStatus = "queued"
-    ) =>
-        new()
+    )
+    {
+        var runCreatedAtUtc = DateTimeOffset.UtcNow;
+        return new()
         {
             Id = id,
             OrganizationId = organizationId,
@@ -39,9 +47,13 @@ public sealed class IngestSchedulerHostedServiceTests
             SourceKind = "GitHub",
             SourceRepoUrl = $"https://github.com/example/{id}",
             SyncStatus = syncStatus,
+            ActiveSyncRunId = $"run_{id}",
+            ActiveSyncRunCreatedAtUtc = runCreatedAtUtc,
+            SyncQueuedAtUtc = runCreatedAtUtc,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
         };
+    }
 
     private static (
         IngestSchedulerHostedService Service,

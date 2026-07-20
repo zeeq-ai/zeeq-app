@@ -101,6 +101,26 @@ public class Library
     public DateTimeOffset? NextSyncAt { get; set; }
 
     /// <summary>
+    /// Run id for the sync currently queued or running for this private-source library.
+    /// </summary>
+    public string? ActiveSyncRunId { get; set; }
+
+    /// <summary>
+    /// Partition key paired with <see cref="ActiveSyncRunId"/> for the current sync run.
+    /// </summary>
+    public DateTimeOffset? ActiveSyncRunCreatedAtUtc { get; set; }
+
+    /// <summary>
+    /// Time this library most recently entered the queued sync state.
+    /// </summary>
+    public DateTimeOffset? SyncQueuedAtUtc { get; set; }
+
+    /// <summary>
+    /// Time this library most recently entered the running sync state.
+    /// </summary>
+    public DateTimeOffset? SyncStartedAtUtc { get; set; }
+
+    /// <summary>
     /// Last 5 manual trigger timestamps used for rate limiting.
     /// </summary>
     public DateTimeOffset[] ManualTriggerHistory { get; set; } = [];

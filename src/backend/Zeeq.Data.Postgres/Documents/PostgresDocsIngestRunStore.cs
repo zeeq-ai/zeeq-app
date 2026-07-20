@@ -1,5 +1,5 @@
-using Zeeq.Core.Documents;
 using Microsoft.EntityFrameworkCore;
+using Zeeq.Core.Documents;
 
 namespace Zeeq.Data.Postgres.Documents;
 
@@ -52,6 +52,39 @@ internal sealed class PostgresDocsIngestRunStore(PostgresDbContext db) : IDocsIn
         run.UpdatedAtUtc = finalization.CompletedAtUtc;
 
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> MarkStalledAsync(
+        string id,
+        DateTimeOffset createdAtUtc,
+        DateTimeOffset completedAtUtc,
+        string failureMessage,
+        CancellationToken ct
+    )
+    {
+        // NOTE: Repository sources/libraries have a "queued" lease state, but
+        // DocsIngestRun rows are created only when dispatch begins, at which
+        // point they start as Running. There is intentionally no Queued run
+        // status to mark here.
+        var updated = await db
+            .DocsIngestRuns.TagWithOperationCallSite("docs_ingest_run.mark_stalled")
+            .Where(run =>
+                run.Id == id
+                && run.CreatedAtUtc == createdAtUtc
+                && run.Status == IngestRunStatus.Running
+            )
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(run => run.Status, IngestRunStatus.Stalled)
+                        .SetProperty(run => run.FailureMessage, failureMessage)
+                        .SetProperty(run => run.CompletedAtUtc, completedAtUtc)
+                        .SetProperty(run => run.UpdatedAtUtc, completedAtUtc),
+                ct
+            );
+
+        return updated > 0;
     }
 
     /// <inheritdoc />

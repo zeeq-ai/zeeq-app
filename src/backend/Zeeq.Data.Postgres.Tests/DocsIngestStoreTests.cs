@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Documents;
 using Zeeq.Data.Postgres.Documents;
 using Zeeq.Testing;
@@ -142,6 +143,10 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
         _context.ChangeTracker.Clear();
         var reloaded = await store.GetByIdAsync(due.Id, CancellationToken.None);
         await Assert.That(reloaded!.SyncStatus).IsEqualTo("queued");
+        await Assert.That(reloaded.ActiveSyncRunCreatedAtUtc).IsNotNull();
+        await AssertPostgresMicrosecondPrecisionAsync(reloaded.ActiveSyncRunCreatedAtUtc.Value);
+        await Assert.That(reloaded.SyncQueuedAtUtc).IsNotNull();
+        await AssertPostgresMicrosecondPrecisionAsync(reloaded.SyncQueuedAtUtc.Value);
     }
 
     [Test]
@@ -167,6 +172,107 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
         var claimed = await store.ClaimDueForSyncAsync(2, CancellationToken.None);
 
         await Assert.That(claimed.Count).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task Source_ResetStalledSyncs_StaleAndFreshSources_ClearsOnlyStaleSources()
+    {
+        var store = new PostgresDocsPublicSourceStore(_context);
+        var now = DateTimeOffset.UtcNow;
+
+        var (_, staleQueued) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddDocsPublicSource()
+            .BuildAsync();
+        staleQueued.SyncStatus = "queued";
+        staleQueued.NextSyncAt = now.AddHours(1);
+        staleQueued.ActiveSyncRunId = "run_stale_queued";
+        staleQueued.ActiveSyncRunCreatedAtUtc = now.AddHours(-1);
+        staleQueued.SyncQueuedAtUtc = now.AddHours(-1);
+        _context.DocsIngestRuns.Add(
+            new DocsIngestRun
+            {
+                Id = staleQueued.ActiveSyncRunId,
+                CreatedAtUtc = staleQueued.ActiveSyncRunCreatedAtUtc.Value,
+                SourceKind = RepositorySourceKind.Public,
+                RepoUrl = staleQueued.RepoUrl,
+                PublicSourceId = staleQueued.Id,
+                Trigger = IngestTriggerReason.Scheduled,
+                Status = IngestRunStatus.Running,
+                UpdatedAtUtc = staleQueued.ActiveSyncRunCreatedAtUtc.Value,
+            }
+        );
+
+        var (_, freshRunning) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddDocsPublicSource()
+            .BuildAsync();
+        freshRunning.SyncStatus = "running";
+        freshRunning.ActiveSyncRunId = "run_fresh_running";
+        freshRunning.ActiveSyncRunCreatedAtUtc = now;
+        freshRunning.SyncStartedAtUtc = now.AddMinutes(-10);
+
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var resets = await store.ResetStalledSyncsAsync(
+            now,
+            queuedStaleAfter: TimeSpan.FromMinutes(30),
+            runningStaleAfter: TimeSpan.FromHours(2),
+            limit: 10,
+            CancellationToken.None
+        );
+
+        await Assert.That(resets.Select(reset => reset.RunId)).Contains("run_stale_queued");
+        await Assert.That(resets.Select(reset => reset.RunId)).DoesNotContain("run_fresh_running");
+
+        _context.ChangeTracker.Clear();
+        var reloadedStale = await store.GetByIdAsync(staleQueued.Id, CancellationToken.None);
+        var reloadedFresh = await store.GetByIdAsync(freshRunning.Id, CancellationToken.None);
+        var reloadedRun = await _context.DocsIngestRuns.SingleAsync(run =>
+            run.Id == "run_stale_queued"
+        );
+        await Assert.That(reloadedStale!.SyncStatus).IsEqualTo("idle");
+        await Assert.That(reloadedStale.ActiveSyncRunId).IsNull();
+        await Assert.That(reloadedStale.NextSyncAt).IsEqualTo(now.TruncateToPostgresPrecision());
+        await Assert.That(reloadedRun.Status).IsEqualTo(IngestRunStatus.Stalled);
+        await Assert.That(reloadedFresh!.SyncStatus).IsEqualTo("running");
+        await Assert.That(reloadedFresh.ActiveSyncRunId).IsEqualTo("run_fresh_running");
+    }
+
+    [Test]
+    public async Task Source_ResetStalledSyncs_MissingActiveRun_LeavesLeaseIntact()
+    {
+        var store = new PostgresDocsPublicSourceStore(_context);
+        var now = DateTimeOffset.UtcNow;
+
+        var (_, source) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddDocsPublicSource()
+            .BuildAsync();
+        source.SyncStatus = "queued";
+        source.NextSyncAt = now.AddHours(1);
+        source.ActiveSyncRunId = "run_missing";
+        source.ActiveSyncRunCreatedAtUtc = now.AddHours(-1);
+        source.SyncQueuedAtUtc = now.AddHours(-1);
+
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var resets = await store.ResetStalledSyncsAsync(
+            now,
+            queuedStaleAfter: TimeSpan.FromMinutes(30),
+            runningStaleAfter: TimeSpan.FromHours(2),
+            limit: 10,
+            CancellationToken.None
+        );
+
+        await Assert.That(resets).IsEmpty();
+
+        _context.ChangeTracker.Clear();
+        var reloaded = await store.GetByIdAsync(source.Id, CancellationToken.None);
+        await Assert.That(reloaded!.SyncStatus).IsEqualTo("queued");
+        await Assert.That(reloaded.ActiveSyncRunId).IsEqualTo("run_missing");
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -579,6 +685,65 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
     }
 
     [Test]
+    public async Task Run_MarkStalled_OnlyUpdatesRunningRun()
+    {
+        var store = new PostgresDocsIngestRunStore(_context);
+        var (_, runs) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddDocsIngestRuns(
+                p =>
+                {
+                    p.Id = "run_running";
+                    p.Status = IngestRunStatus.Running;
+                },
+                p =>
+                {
+                    p.Id = "run_finished";
+                    p.Status = IngestRunStatus.Succeeded;
+                }
+            )
+            .BuildAsync();
+        var running = runs.Single(run => run.Id == "run_running");
+        var finished = runs.Single(run => run.Id == "run_finished");
+        _context.ChangeTracker.Clear();
+
+        var completedAt = DateTimeOffset.UtcNow;
+        var runningUpdated = await store.MarkStalledAsync(
+            running.Id,
+            running.CreatedAtUtc,
+            completedAt,
+            "stalled",
+            CancellationToken.None
+        );
+        var finishedUpdated = await store.MarkStalledAsync(
+            finished.Id,
+            finished.CreatedAtUtc,
+            completedAt,
+            "stalled",
+            CancellationToken.None
+        );
+
+        await Assert.That(runningUpdated).IsTrue();
+        await Assert.That(finishedUpdated).IsFalse();
+
+        var reloadedRunning = await store.GetAsync(
+            running.Id,
+            running.CreatedAtUtc,
+            CancellationToken.None
+        );
+        var reloadedFinished = await store.GetAsync(
+            finished.Id,
+            finished.CreatedAtUtc,
+            CancellationToken.None
+        );
+        await Assert.That(reloadedRunning!.Status).IsEqualTo(IngestRunStatus.Stalled);
+        await Assert
+            .That(reloadedRunning.CompletedAtUtc)
+            .IsEqualTo(completedAt.TruncateToPostgresPrecision());
+        await Assert.That(reloadedFinished!.Status).IsEqualTo(IngestRunStatus.Succeeded);
+    }
+
+    [Test]
     public async Task Run_ListByOrganization_ReturnsNewestFirstScopedToOrg()
     {
         var store = new PostgresDocsIngestRunStore(_context);
@@ -675,8 +840,13 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
         var oldest = secondPage[0];
 
         // All three ids distinct across pages — no duplicate, no gap.
-        await Assert.That(new[] { newest.Id, middle.Id, oldest.Id }.Distinct().Count()).IsEqualTo(3);
+        await Assert
+            .That(new[] { newest.Id, middle.Id, oldest.Id }.Distinct().Count())
+            .IsEqualTo(3);
         await Assert.That(oldest.CreatedAtUtc).IsLessThan(middle.CreatedAtUtc);
         await Assert.That(middle.CreatedAtUtc).IsLessThan(newest.CreatedAtUtc);
     }
+
+    private static async Task AssertPostgresMicrosecondPrecisionAsync(DateTimeOffset value) =>
+        await Assert.That(value.Ticks % TimeSpan.TicksPerMicrosecond).IsEqualTo(0);
 }
