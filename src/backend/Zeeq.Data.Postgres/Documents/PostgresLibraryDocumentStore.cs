@@ -1,6 +1,6 @@
-using Zeeq.Core.Documents;
 using Microsoft.EntityFrameworkCore;
 using NpgsqlTypes;
+using Zeeq.Core.Documents;
 
 namespace Zeeq.Data.Postgres.Documents;
 
@@ -226,6 +226,10 @@ internal sealed class PostgresLibraryDocumentStore(
 
         existing.Name = library.Name;
         existing.Description = library.Description;
+        db.Entry(existing).Property(row => row.IncludeFilters).CurrentValue =
+            library.IncludeFilters;
+        db.Entry(existing).Property(row => row.ExcludeFilters).CurrentValue =
+            library.ExcludeFilters;
         existing.UpdatedAt = library.UpdatedAt;
 
         await db.SaveChangesAsync(ct);

@@ -130,6 +130,8 @@ import DocumentRenameSlideover from "./DocumentRenameSlideover.vue";
 const toast = useToast();
 const store = useLibraryStore();
 const githubStore = useGitHubSettingsStore();
+const route = useRoute();
+const router = useRouter();
 
 const {
   libraries,
@@ -211,6 +213,7 @@ async function onSubmitLibrary(data: {
       });
       await store.updateLibraryRepositories(updated.name, data.repositoryIds);
       libraryFormTarget.value = updated;
+      await router.replace(libraryRoute(updated.name));
       toast.add({ title: "Library updated", color: "success" });
     } else {
       const source = await resolveCreateSource(data.source);
@@ -222,6 +225,7 @@ async function onSubmitLibrary(data: {
       await store.updateLibraryRepositories(created.name, data.repositoryIds);
       libraryFormTarget.value = created;
       libraryJustCreated.value = true;
+      await router.push(libraryRoute(created.name));
       toast.add({ title: "Library created", color: "success" });
 
       if (created.source) {
@@ -394,6 +398,7 @@ async function onDeleteLibrary(name: string) {
   deletingLibrary.value = true;
   try {
     await store.deleteLibrary(name);
+    await replaceRouteWithActiveLibrary();
     toast.add({ title: "Library deleted", color: "success" });
     pausePolling();
     libraryFormOpen.value = false;
@@ -428,8 +433,12 @@ watch(libraryFormOpen, (isOpen) => {
 // ── Library selection ───────────────────────────────────────────────────
 
 async function onSelectLibrary(name: string) {
-  await store.selectLibrary(name);
-  selectRootOnFirstLoad();
+  if (routeLibraryName() === name) {
+    await selectLibraryAndRoot(name);
+    return;
+  }
+
+  await router.push(libraryRoute(name));
 }
 
 // ── Document tree actions ───────────────────────────────────────────────
@@ -653,11 +662,7 @@ watch(parsePreviewOpen, (isOpen) => {
 onMounted(async () => {
   try {
     await store.loadLibraries();
-
-    if (activeLibraryName.value) {
-      await store.loadDocuments();
-      selectRootOnFirstLoad();
-    }
+    await applyLibraryRouteSelection();
   } catch (err: any) {
     toast.add({
       title: "Error loading libraries",
@@ -672,6 +677,13 @@ onMounted(async () => {
   githubStore.loadRepositories().catch(() => undefined);
 });
 
+watch(
+  () => route.params.libraryName,
+  () => {
+    void applyLibraryRouteSelection();
+  },
+);
+
 /**
  * After initial document load, select the root folder so the tree shows
  * it as selected and the editor panel displays top-level items.
@@ -685,5 +697,63 @@ function selectRootOnFirstLoad() {
     // Empty library → show new document form
     store.newDocument();
   }
+}
+
+async function applyLibraryRouteSelection() {
+  const requestedName = routeLibraryName();
+  const routeLibraryExists =
+    requestedName !== null &&
+    libraries.value.some((library) => library.name === requestedName);
+  const nextName = routeLibraryExists
+    ? requestedName
+    : (activeLibraryName.value ?? libraries.value[0]?.name ?? null);
+
+  if (!nextName) {
+    if (route.fullPath !== "/libraries") {
+      await router.replace("/libraries");
+    }
+
+    await store.loadDocuments();
+    return;
+  }
+
+  if (requestedName !== nextName) {
+    await router.replace(libraryRoute(nextName));
+  }
+
+  await selectLibraryAndRoot(nextName);
+}
+
+async function selectLibraryAndRoot(name: string) {
+  if (activeLibraryName.value === name) {
+    await store.loadDocuments();
+  } else {
+    await store.selectLibrary(name);
+  }
+
+  selectRootOnFirstLoad();
+}
+
+async function replaceRouteWithActiveLibrary() {
+  const nextRoute = activeLibraryName.value
+    ? libraryRoute(activeLibraryName.value)
+    : "/libraries";
+
+  if (route.fullPath !== nextRoute) {
+    await router.replace(nextRoute);
+  }
+}
+
+function routeLibraryName() {
+  const value = route.params.libraryName;
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function libraryRoute(name: string) {
+  return `/libraries/${encodeURIComponent(name)}`;
 }
 </script>

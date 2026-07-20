@@ -338,6 +338,37 @@ public sealed class DocumentEndpointHandlerTests
     }
 
     [Test]
+    public async Task UpdateLibrary_WithSourceFilters_UpdatesIncludeAndExcludeFilters()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestPrivateSourceLibrary());
+        var handler = new UpdateLibraryHandler(store, new NotSupportedPublicSourceStore());
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            new UpdateLibraryRequest
+            {
+                Name = "kb",
+                IncludeFilters = ["docs/**/*.md"],
+                ExcludeFilters = ["docs/archive/**"],
+            },
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<LibraryResponse>;
+        var source = ok?.Value?.Source;
+
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(source).IsNotNull();
+        await Assert.That(source!.IncludeFilters).Contains("docs/**/*.md");
+        await Assert.That(source.ExcludeFilters).Contains("docs/archive/**");
+        await Assert.That(store.UpdatedLibrary!.IncludeFilters).Contains("docs/**/*.md");
+        await Assert.That(store.UpdatedLibrary.ExcludeFilters).Contains("docs/archive/**");
+    }
+
+    [Test]
     public async Task ListDocuments_WithLibrary_ReturnsDocuments()
     {
         var store = new TestLibraryDocumentStore();
@@ -1169,6 +1200,23 @@ public sealed class DocumentEndpointHandlerTests
             TeamId = "team_123",
             Name = name,
             Description = description,
+            CreatedAt = DateTimeOffset.UnixEpoch,
+            UpdatedAt = DateTimeOffset.UnixEpoch,
+        };
+
+    private static Library TestPrivateSourceLibrary(
+        string description = "Knowledge base",
+        string name = "kb"
+    ) =>
+        new()
+        {
+            Id = "lib_123",
+            OrganizationId = "org_123",
+            TeamId = "team_123",
+            Name = name,
+            Description = description,
+            SourceKind = "GitHub",
+            SourceRepoUrl = "https://github.com/zeeq-ai/zeeq",
             CreatedAt = DateTimeOffset.UnixEpoch,
             UpdatedAt = DateTimeOffset.UnixEpoch,
         };

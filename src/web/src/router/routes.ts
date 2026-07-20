@@ -23,7 +23,7 @@ export const routes: Array<RouteRecordRaw> = [
         redirect: "/libraries",
       },
       {
-        path: "libraries",
+        path: "libraries/:libraryName?",
         name: "Libraries",
         component: () => import("@/views/libraries/Libraries.vue"),
         meta: { title: "Libraries" },
