@@ -8,6 +8,9 @@ type AppNavigationItem = {
   label: string;
   icon?: string;
   to: string;
+  defaultOpen?: boolean;
+  onSelect?: () => void;
+  children?: NavigationMenuItem[];
 };
 
 type AppNavigationSection = {
@@ -16,6 +19,11 @@ type AppNavigationSection = {
   icon?: string;
   defaultOpen?: boolean;
   items: AppNavigationItem[];
+};
+
+export type AppNavigationLibrary = {
+  name: string;
+  description?: string | null;
 };
 
 const mainSection: AppNavigationSection = {
@@ -110,10 +118,15 @@ function getAppNavigationSections(isSystemAdmin: boolean) {
 export function buildAppNavigationLinks(
   isSystemAdmin: boolean,
   onSelect: () => void,
+  libraries: AppNavigationLibrary[] = [],
 ): NavigationMenuItem[][] {
   const sections = getAppNavigationSections(isSystemAdmin);
+  const mainItems = [
+    mainSection.items[0],
+    toLibrariesNavigationItem(libraries, onSelect),
+  ];
   const mainLinks: NavigationMenuItem[] = [
-    ...mainSection.items.map((item) => toNavigationItem(item, onSelect)),
+    ...mainItems.map((item) => toNavigationItem(item, onSelect)),
     ...sections
       .filter((section) => section.id !== mainSection.id)
       .map((section) => toNavigationSection(section, onSelect)),
@@ -159,6 +172,31 @@ function toNavigationItem(
     icon: item.icon,
     to: item.to,
     exact: item.to === "/",
-    onSelect,
+    defaultOpen: item.defaultOpen,
+    onSelect: item.onSelect ?? onSelect,
+    children: item.children,
   };
+}
+
+function toLibrariesNavigationItem(
+  libraries: AppNavigationLibrary[],
+  onSelect: () => void,
+): AppNavigationItem {
+  return {
+    label: "Libraries",
+    icon: "i-hugeicons-hierarchy-files",
+    to: "/libraries",
+    defaultOpen: true,
+    children: libraries.map((library) => ({
+      label: library.name,
+      description: library.description ?? undefined,
+      to: libraryRoute(library.name),
+      exact: true,
+      onSelect,
+    })),
+  };
+}
+
+function libraryRoute(name: string) {
+  return `/libraries/${encodeURIComponent(name)}`;
 }

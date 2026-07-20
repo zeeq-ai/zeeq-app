@@ -1,9 +1,9 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Documents;
 using Zeeq.Testing;
 using Zeeq.Testing.EntityGraphs;
-using Microsoft.EntityFrameworkCore;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -22,6 +22,42 @@ public sealed class PostgresLibraryDocumentStoreTests : PgTransactionalTestBase
 {
     public PostgresLibraryDocumentStoreTests(PgDatabaseFixture postgres)
         : base(postgres) { }
+
+    [Test]
+    public async Task UpdateLibraryAsync_PersistsIncludeAndExcludeFilters()
+    {
+        var (store, organizationId, library) = await CreateStoreWithLibraryAsync();
+        var now = DateTimeOffset.UtcNow;
+
+        var updated = await store.UpdateLibraryAsync(
+            new Library
+            {
+                Id = library.Id,
+                OrganizationId = organizationId,
+                TeamId = library.TeamId,
+                Name = library.Name,
+                Description = library.Description,
+                IncludeFilters = ["docs/**/*.md"],
+                ExcludeFilters = ["docs/archive/**"],
+                CreatedAt = library.CreatedAt,
+                UpdatedAt = now,
+            },
+            CancellationToken.None
+        );
+
+        _context.ChangeTracker.Clear();
+        var reloaded = await store.GetLibraryAsync(
+            organizationId,
+            library.Name,
+            CancellationToken.None
+        );
+
+        await Assert.That(updated.IncludeFilters).Contains("docs/**/*.md");
+        await Assert.That(updated.ExcludeFilters).Contains("docs/archive/**");
+        await Assert.That(reloaded).IsNotNull();
+        await Assert.That(reloaded!.IncludeFilters).Contains("docs/**/*.md");
+        await Assert.That(reloaded.ExcludeFilters).Contains("docs/archive/**");
+    }
 
     [Test]
     public async Task DeleteLibraryAsync_LibraryNotReferencedByAnyRepository_DeletesLibraryOnly()

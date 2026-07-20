@@ -57,9 +57,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { storeToRefs } from "pinia";
 import { useStorage } from "@vueuse/core";
 import { useAppStore } from "@/stores/app-store";
+import { useLibraryStore } from "@/stores/library-store";
 import {
   buildAppCommandGroups,
   buildAppNavigationLinks,
@@ -79,6 +81,8 @@ const sidebarDefaultStorage: DashboardSidebarStorage = {
 
 const sidebarOpen = ref(false);
 const appStore = useAppStore();
+const libraryStore = useLibraryStore();
+const { libraries } = storeToRefs(libraryStore);
 
 // Share Nuxt UI's resizable-sidebar storage object so the collapse toggle and
 // stored width stay in sync under the same localStorage key.
@@ -99,14 +103,48 @@ const sidebarCollapsed = computed({
   },
 });
 
+/**
+ * Library subtree rows come from the org-scoped library store so create/delete
+ * operations in the library view update the shell navigation reactively.
+ */
+const libraryNavigationItems = computed(() =>
+  libraries.value.map((library) => ({
+    name: library.name,
+    description: library.description,
+  })),
+);
+
 const navigationLinks = computed(() =>
-  buildAppNavigationLinks(appStore.isSystemAdmin, closeSidebar),
+  buildAppNavigationLinks(
+    appStore.isSystemAdmin,
+    closeSidebar,
+    libraryNavigationItems.value,
+  ),
 );
 const commandGroups = computed(() =>
   buildAppCommandGroups(appStore.isSystemAdmin),
 );
 
+onMounted(() => {
+  loadShellLibraries();
+});
+
+watch(
+  () => appStore.user?.organizationId,
+  () => {
+    loadShellLibraries();
+  },
+);
+
 function closeSidebar() {
   sidebarOpen.value = false;
+}
+
+function loadShellLibraries() {
+  if (!appStore.user?.organizationId) {
+    return;
+  }
+
+  void libraryStore.loadLibraries().catch(() => undefined);
 }
 </script>
