@@ -58,18 +58,13 @@
                     ? 'i-hugeicons-folder-open'
                     : node.isFolder
                       ? 'i-hugeicons-folder-01'
-                      : 'i-hugeicons-file-01'
+                      : (node as DocNode).origin === 'remote'
+                        ? 'i-hugeicons-file-cloud'
+                        : 'i-hugeicons-file-01'
                 "
                 class="size-4 shrink-0 text-neutral-400"
               />
               <span class="truncate text-sm">{{ node.label }}</span>
-              <UBadge
-                v-if="(node as DocNode).origin === 'remote'"
-                label="remote"
-                color="neutral"
-                variant="soft"
-                size="xs"
-              />
 
               <!-- Muted marker: document is excluded from code-review agents -->
               <UTooltip

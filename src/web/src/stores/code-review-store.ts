@@ -1,4 +1,5 @@
 import { defineStore, acceptHMRUpdate } from "pinia";
+import { useStorage } from "@vueuse/core";
 import {
   CodeReviews,
   codeReviewFileNameMatchTypeEnum,
@@ -53,6 +54,8 @@ export const modelTierItems = [
 export const managementFiltersItemId = "__repository_filters__";
 export const managementConfigItemId = "__agent_config__";
 
+type LastSelectedRepositoryIdsByOrganization = Record<string, string>;
+
 /**
  * Editable reviewer-agent form used by the root Manage Agents view.
  *
@@ -87,7 +90,43 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
   const githubSettingsStore = useGitHubSettingsStore();
   const organizationSettingsStore = useOrganizationSettingsStore();
 
-  const selectedRepositoryId = ref<string | null>(null);
+  const activeOrganizationId = computed(
+    () =>
+      appStore.currentOrganization?.id ?? appStore.user?.organizationId ?? "",
+  );
+  const lastSelectedRepositoryIdsByOrganization =
+    useStorage<LastSelectedRepositoryIdsByOrganization>(
+      "zeeq:code-review:last-repository-by-org",
+      {},
+    );
+  /** Last selected repository is a browser-local preference scoped per organization. */
+  const selectedRepositoryId = computed<string | null>({
+    get: () => {
+      const organizationId = activeOrganizationId.value;
+      return organizationId
+        ? (lastSelectedRepositoryIdsByOrganization.value[organizationId] ??
+            null)
+        : null;
+    },
+    set: (repositoryId) => {
+      const organizationId = activeOrganizationId.value;
+      if (!organizationId) {
+        return;
+      }
+
+      if (repositoryId) {
+        lastSelectedRepositoryIdsByOrganization.value = {
+          ...lastSelectedRepositoryIdsByOrganization.value,
+          [organizationId]: repositoryId,
+        };
+        return;
+      }
+
+      const next = { ...lastSelectedRepositoryIdsByOrganization.value };
+      delete next[organizationId];
+      lastSelectedRepositoryIdsByOrganization.value = next;
+    },
+  });
   const pullRequests = ref<CodeReviewPullRequestDto[]>([]);
   const pullRequestNextCursor = ref<CodeReviewStreamCursorDto | null>(null);
   const pullRequestPollCursor = ref<CodeReviewStreamCursorDto | null>(null);
@@ -153,10 +192,6 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
       configuredRepositories.value.find(
         (repository) => repository.id === selectedRepositoryId.value,
       ) ?? null,
-  );
-  const activeOrganizationId = computed(
-    () =>
-      appStore.currentOrganization?.id ?? appStore.user?.organizationId ?? "",
   );
   const hasConfiguredRepositories = computed(
     () => configuredRepositories.value.length > 0,

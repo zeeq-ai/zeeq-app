@@ -17,7 +17,7 @@
             label="Global file filters"
             icon="i-hugeicons-filter"
             color="neutral"
-            size="sm"
+            size="md"
             :variant="
               selectedManagementItemId === managementFiltersItemId
                 ? 'subtle'
@@ -30,7 +30,7 @@
             label="New agent"
             icon="i-hugeicons-plus-sign"
             color="neutral"
-            size="sm"
+            size="md"
             :title="newAgentButtonTitle"
             :variant="
               selectedManagementItemId === managementConfigItemId
@@ -44,7 +44,7 @@
             label="Shared prompt"
             icon="i-hugeicons-sticky-note-01"
             color="neutral"
-            size="sm"
+            size="md"
             variant="outline"
             :disabled="!selectedRepositoryId"
             @click="
@@ -60,12 +60,15 @@
             route.name !== 'CodeReviewSingle' &&
             route.name !== 'CodeReviewPullRequestSingle'
           "
-          :model-value="selectedRepositoryId ?? undefined"
+          :model-value="repositorySelectorValue"
           :items="repositoryItems"
+          :loading="repositorySelectorLoading"
+          :placeholder="repositorySelectorPlaceholder"
           color="neutral"
-          size="sm"
-          class="w-72 shrink-0"
-          :disabled="loadingRepositories || repositoryItems.length === 0"
+          variant="ghost"
+          size="lg"
+          class="font-bold"
+          :disabled="repositorySelectorLoading || repositoryItems.length === 0"
           @update:model-value="changeRepository"
         />
       </div>
@@ -118,6 +121,7 @@ const {
 } = storeToRefs(codeReviewStore);
 
 const sharedPromptFragmentOpen = ref(false);
+const repositoriesLoadAttempted = ref(false);
 
 const bodyClass = computed(() =>
   route.name === "CodeReviewPullRequests" ||
@@ -133,6 +137,34 @@ const repositoryItems = computed(() =>
     label: repository.displayName,
     value: repository.id,
   })),
+);
+const selectedRepositoryResolved = computed(
+  () =>
+    !selectedRepositoryId.value ||
+    repositoryItems.value.some(
+      (item) => item.value === selectedRepositoryId.value,
+    ),
+);
+const repositorySelectorPendingInitialLoad = computed(
+  () =>
+    !repositoriesLoadAttempted.value &&
+    Boolean(selectedRepositoryId.value) &&
+    !selectedRepositoryResolved.value,
+);
+const repositorySelectorLoading = computed(
+  () => loadingRepositories.value || repositorySelectorPendingInitialLoad.value,
+);
+const repositorySelectorValue = computed(() =>
+  repositorySelectorLoading.value || !selectedRepositoryResolved.value
+    ? undefined
+    : (selectedRepositoryId.value ?? undefined),
+);
+const repositorySelectorPlaceholder = computed(() =>
+  repositorySelectorLoading.value
+    ? "Loading..."
+    : repositoryItems.value.length === 0
+      ? "No repositories"
+      : "Select repository...",
 );
 
 /** Ephemeral entry present only while viewing a single review; reflects the active route. */
@@ -172,6 +204,7 @@ onMounted(async () => {
 });
 
 watch(activeOrganizationId, async () => {
+  repositoriesLoadAttempted.value = false;
   await loadRepositories();
 });
 
@@ -187,6 +220,8 @@ async function loadRepositories() {
       icon: "i-hugeicons-alert-02",
       color: "error",
     });
+  } finally {
+    repositoriesLoadAttempted.value = true;
   }
 }
 
