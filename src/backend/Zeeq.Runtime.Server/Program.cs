@@ -95,6 +95,7 @@ LlmStartupDiagnostics.LogEmbeddingConfigurationStatus(appSettings.Llm);
 if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddZeeqSnippetIndexing();
+    builder.Services.AddZeeqStalledIngestSyncCleanup();
 }
 
 var app = builder.Build();

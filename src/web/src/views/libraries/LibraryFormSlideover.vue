@@ -38,7 +38,9 @@
             :runs="ingestRuns"
             :loading-runs="loadingIngestRuns"
             :syncing="syncing"
+            :resetting="resetting"
             @sync-now="emits('sync-now')"
+            @reset-run-state="emits('reset-run-state')"
             @load-more="emits('load-more-runs')"
           />
         </template>
@@ -135,12 +137,14 @@ const props = defineProps<{
   ingestRuns: IngestRunPageResponse | null;
   loadingIngestRuns: boolean;
   syncing: boolean;
+  resetting: boolean;
   deleting: boolean;
   submitHandler: (data: LibraryFormSubmitPayload) => Promise<void>;
 }>();
 
 const emits = defineEmits<{
   "sync-now": [];
+  "reset-run-state": [];
   "load-more-runs": [];
   imported: [];
   delete: [name: string];

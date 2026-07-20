@@ -25,16 +25,31 @@
       </div>
     </div>
 
-    <UButton
-      label="Sync now"
-      icon="i-hugeicons-refresh"
-      color="neutral"
-      variant="subtle"
-      class="self-start"
-      :loading="syncing"
-      :disabled="syncing || isInFlight || source?.quarantined"
-      @click="emits('sync-now')"
-    />
+    <div class="flex flex-wrap gap-2">
+      <UButton
+        label="Sync now"
+        icon="i-hugeicons-refresh"
+        color="neutral"
+        variant="subtle"
+        :loading="syncing"
+        :disabled="syncing || isInFlight || source?.quarantined"
+        @click="emits('sync-now')"
+      />
+      <UTooltip
+        v-if="canReset"
+        text="Clear the stuck queued/running sync state so this library can sync again."
+      >
+        <UButton
+          label="Clear run state"
+          icon="i-hugeicons-broom"
+          color="warning"
+          variant="subtle"
+          :loading="resetting"
+          :disabled="resetting"
+          @click="emits('reset-run-state')"
+        />
+      </UTooltip>
+    </div>
 
     <!-- Run history -->
     <div>
@@ -110,10 +125,12 @@ const props = defineProps<{
   runs: IngestRunPageResponse | null;
   loadingRuns: boolean;
   syncing: boolean;
+  resetting: boolean;
 }>();
 
 const emits = defineEmits<{
   "sync-now": [];
+  "reset-run-state": [];
   "load-more": [];
 }>();
 
@@ -122,6 +139,10 @@ const isInFlight = computed(
 );
 
 const statusLabel = computed(() => props.source?.syncStatus ?? "idle");
+
+const canReset = computed(
+  () => props.source?.kind === "Private" && isInFlight.value,
+);
 
 const statusColor = computed(() => {
   switch (props.source?.syncStatus) {
@@ -144,6 +165,8 @@ function runStatusColor(status: string) {
       return "warning" as const;
     case "Failed":
       return "error" as const;
+    case "Stalled":
+      return "warning" as const;
     default:
       return "neutral" as const;
   }

@@ -68,9 +68,11 @@
       :ingest-runs="ingestRunsPage"
       :loading-ingest-runs="loadingIngestRuns"
       :syncing="syncingLibrary"
+      :resetting="resettingLibrarySync"
       :deleting="deletingLibrary"
       :submit-handler="onSubmitLibrary"
       @sync-now="onSyncNow"
+      @reset-run-state="onResetRunState"
       @load-more-runs="onLoadMoreRuns"
       @imported="onLibraryImportComplete"
       @delete="onDeleteLibrary"
@@ -289,6 +291,7 @@ async function resolveCreateSource(
 const ingestRunsPage = ref<IngestRunPageResponse | null>(null);
 const loadingIngestRuns = ref(false);
 const syncingLibrary = ref(false);
+const resettingLibrarySync = ref(false);
 const deletingLibrary = ref(false);
 
 /**
@@ -390,6 +393,29 @@ async function onSyncNow(options?: { silentOnRateLimit?: boolean }) {
     });
   } finally {
     syncingLibrary.value = false;
+  }
+}
+
+/** Clears a stuck private-library sync state and refreshes the status panel. */
+async function onResetRunState() {
+  const name = libraryFormTarget.value?.name;
+  if (!name) return;
+
+  resettingLibrarySync.value = true;
+  try {
+    await store.resetIngestRunState(name);
+    libraryFormTarget.value = await store.refreshLibrary(name);
+    await loadIngestRunsFirstPage(name);
+    pausePolling();
+    toast.add({ title: "Sync state cleared", color: "success" });
+  } catch (err: any) {
+    toast.add({
+      title: "Reset error",
+      description: err?.message ?? "Failed to clear sync state",
+      color: "error",
+    });
+  } finally {
+    resettingLibrarySync.value = false;
   }
 }
 

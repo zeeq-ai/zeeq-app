@@ -82,6 +82,7 @@ internal static class ZeeqWorkerHost
                 .AddZeeqIngest(workerAppSettings)
                 .AddTelemetryIngest(workerAppSettings.Telemetry)
                 .AddZeeqIngestScheduler()
+                .AddZeeqStalledIngestSyncCleanup()
                 .AddZeeqDispatchProcess();
 
             LlmStartupDiagnostics.LogEmbeddingConfigurationStatus(workerAppSettings.Llm);

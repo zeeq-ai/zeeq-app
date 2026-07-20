@@ -88,7 +88,29 @@ public sealed class PrivateRepositorySyncRequestedHandler(
             return message;
         }
 
-        await SetSyncStatusAsync(library, "running", cancellationToken);
+        if (!IsCurrentSync(library, message))
+        {
+            logger.LogWarning(
+                "Ignoring stale sync message for library {LibraryId} in org {OrganizationId}. Message run {MessageRunId} created at {MessageRunCreatedAtUtc}; active run is {ActiveRunId} created at {ActiveRunCreatedAtUtc}.",
+                message.LibraryId,
+                message.OrganizationId,
+                message.RunId,
+                message.RunCreatedAtUtc,
+                library.ActiveSyncRunId,
+                library.ActiveSyncRunCreatedAtUtc
+            );
+            return message;
+        }
+
+        if (!await SetSyncStatusAsync(library, "running", message, cancellationToken))
+        {
+            logger.LogWarning(
+                "Ignoring sync for library {LibraryId} in org {OrganizationId}: active run changed before it could start running.",
+                message.LibraryId,
+                message.OrganizationId
+            );
+            return message;
+        }
 
         var installation = await installations.FindActiveForOrganizationAsync(
             message.OrganizationId,
@@ -123,42 +145,87 @@ public sealed class PrivateRepositorySyncRequestedHandler(
         }
         finally
         {
-            await ResetSyncStateAsync(library, cancellationToken);
+            await ResetSyncStateAsync(library, message, cancellationToken);
         }
 
         return message;
     }
 
-    private async Task SetSyncStatusAsync(Library library, string syncStatus, CancellationToken ct)
+    private async Task<bool> SetSyncStatusAsync(
+        Library library,
+        string syncStatus,
+        PrivateRepositorySyncRequested message,
+        CancellationToken ct
+    )
     {
-        await libraries.UpdateSyncStateAsync(
+        var startedAtUtc = DateTimeOffset.UtcNow;
+        var updated = await libraries.TryUpdateCurrentSyncLeaseAsync(
             library.OrganizationId,
             library.Id,
+            message.RunId,
+            message.RunCreatedAtUtc,
             syncStatus,
             library.NextSyncAt,
             library.ManualTriggerHistory,
             library.SourceSyncedAt,
+            message.RunId,
+            message.RunCreatedAtUtc,
+            library.SyncQueuedAtUtc,
+            startedAtUtc,
             ct
         );
+        if (!updated)
+        {
+            return false;
+        }
+
         library.SyncStatus = syncStatus;
+        library.ActiveSyncRunId = message.RunId;
+        library.ActiveSyncRunCreatedAtUtc = message.RunCreatedAtUtc;
+        library.SyncStartedAtUtc = startedAtUtc;
+        return true;
     }
 
-    private async Task ResetSyncStateAsync(Library library, CancellationToken ct)
+    private async Task ResetSyncStateAsync(
+        Library library,
+        PrivateRepositorySyncRequested message,
+        CancellationToken ct
+    )
     {
         try
         {
             var nextSyncAt = NextSyncAt();
-            await libraries.UpdateSyncStateAsync(
+            var updated = await libraries.TryUpdateCurrentSyncLeaseAsync(
                 library.OrganizationId,
                 library.Id,
+                message.RunId,
+                message.RunCreatedAtUtc,
                 "idle",
                 nextSyncAt,
                 library.ManualTriggerHistory,
                 library.SourceSyncedAt,
-                ct
+                activeSyncRunId: null,
+                activeSyncRunCreatedAtUtc: null,
+                syncQueuedAtUtc: null,
+                syncStartedAtUtc: null,
+                ct: ct
             );
+            if (!updated)
+            {
+                logger.LogWarning(
+                    "Skipped final sync-state reset for library {LibraryId} in org {OrganizationId}: active run changed before completion.",
+                    library.Id,
+                    library.OrganizationId
+                );
+                return;
+            }
+
             library.SyncStatus = "idle";
             library.NextSyncAt = nextSyncAt;
+            library.ActiveSyncRunId = null;
+            library.ActiveSyncRunCreatedAtUtc = null;
+            library.SyncQueuedAtUtc = null;
+            library.SyncStartedAtUtc = null;
         }
         catch (Exception ex)
         {
@@ -170,6 +237,10 @@ public sealed class PrivateRepositorySyncRequestedHandler(
             );
         }
     }
+
+    private static bool IsCurrentSync(Library library, PrivateRepositorySyncRequested message) =>
+        library.ActiveSyncRunId == message.RunId
+        && library.ActiveSyncRunCreatedAtUtc == message.RunCreatedAtUtc;
 
     private DateTimeOffset NextSyncAt()
     {

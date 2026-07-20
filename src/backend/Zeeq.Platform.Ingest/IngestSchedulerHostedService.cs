@@ -97,14 +97,20 @@ public sealed class IngestSchedulerHostedService(
 
         foreach (var source in claimedSources)
         {
-            var runId = $"run_{Guid.CreateVersion7():N}";
-            var now = DateTimeOffset.UtcNow;
+            if (source.ActiveSyncRunId is null || source.ActiveSyncRunCreatedAtUtc is null)
+            {
+                logger.LogWarning(
+                    "Skipping scheduled sync publish for public source {PublicSourceId}: claim did not stamp an active run.",
+                    source.Id
+                );
+                continue;
+            }
 
             await publisher.PublishAsync(
                 new PublicRepositorySyncRequested
                 {
-                    RunId = runId,
-                    RunCreatedAtUtc = now,
+                    RunId = source.ActiveSyncRunId,
+                    RunCreatedAtUtc = source.ActiveSyncRunCreatedAtUtc.Value,
                     PublicSourceId = source.Id,
                     RepoUrl = source.RepoUrl,
                     Trigger = IngestTriggerReason.Scheduled,
@@ -117,7 +123,7 @@ public sealed class IngestSchedulerHostedService(
                 "Scheduled sync for public source {PublicSourceId} ({RepoUrl}), run {RunId}.",
                 source.Id,
                 source.RepoUrl,
-                runId
+                source.ActiveSyncRunId
             );
         }
 
@@ -129,14 +135,21 @@ public sealed class IngestSchedulerHostedService(
 
         foreach (var library in claimedLibraries)
         {
-            var runId = $"run_{Guid.CreateVersion7():N}";
-            var now = DateTimeOffset.UtcNow;
+            if (library.ActiveSyncRunId is null || library.ActiveSyncRunCreatedAtUtc is null)
+            {
+                logger.LogWarning(
+                    "Skipping scheduled sync publish for library {LibraryId} in org {OrganizationId}: claim did not stamp an active run.",
+                    library.Id,
+                    library.OrganizationId
+                );
+                continue;
+            }
 
             await publisher.PublishAsync(
                 new PrivateRepositorySyncRequested
                 {
-                    RunId = runId,
-                    RunCreatedAtUtc = now,
+                    RunId = library.ActiveSyncRunId,
+                    RunCreatedAtUtc = library.ActiveSyncRunCreatedAtUtc.Value,
                     OrganizationId = library.OrganizationId,
                     TeamId = library.TeamId,
                     LibraryId = library.Id,
@@ -151,7 +164,7 @@ public sealed class IngestSchedulerHostedService(
                 "Scheduled sync for library {LibraryId} in org {OrganizationId}, run {RunId}.",
                 library.Id,
                 library.OrganizationId,
-                runId
+                library.ActiveSyncRunId
             );
         }
     }

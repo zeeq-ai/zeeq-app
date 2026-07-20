@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using NpgsqlTypes;
+using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 
 namespace Zeeq.Data.Postgres.Documents;
@@ -85,32 +86,47 @@ internal sealed class PostgresLibraryDocumentStore(
     /// <inheritdoc />
     public async Task<IReadOnlyList<Library>> ClaimDueForSyncAsync(int limit, CancellationToken ct)
     {
-        var now = DateTimeOffset.UtcNow;
+        // NOTE: This value is both persisted in PostgreSQL and sent on the
+        // queue message as the active-run identity. PostgreSQL stores
+        // timestamptz at microsecond precision, while .NET ticks are 100ns.
+        var now = PostgresTimestampPrecision.TruncateToMicroseconds(DateTimeOffset.UtcNow);
 
-        // Mirrors PostgresDocsPublicSourceStore.ClaimDueForSyncAsync's atomic
-        // claim pattern. docs_libraries' primary key is composite
-        // (organization_id, id), so the claim subquery selects both columns
-        // and matches via a row-value IN, not a single-column IN.
-        return await db
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        await using var transaction = ownsTransaction
+            ? await db.Database.BeginTransactionAsync(ct)
+            : null;
+        var claimed = await db
             .Libraries.FromSql(
                 $"""
-                UPDATE zeeq.docs_libraries
-                SET sync_status = 'queued'
-                WHERE (organization_id, id) IN (
-                    SELECT organization_id, id FROM zeeq.docs_libraries
-                    WHERE sync_status = 'idle'
-                      AND source_kind IS NOT NULL
-                      AND next_sync_at IS NOT NULL
-                      AND next_sync_at <= {now}
-                    ORDER BY next_sync_at ASC
-                    LIMIT {limit}
-                    FOR UPDATE SKIP LOCKED
-                )
-                RETURNING *
+                SELECT * FROM zeeq.docs_libraries
+                WHERE sync_status = 'idle'
+                  AND source_kind IS NOT NULL
+                  AND next_sync_at IS NOT NULL
+                  AND next_sync_at <= {now}
+                ORDER BY next_sync_at ASC
+                LIMIT {limit}
+                FOR UPDATE SKIP LOCKED
                 """
             )
             .TagWithOperationCallSite("documents.library.claim_due_for_sync")
             .ToArrayAsync(ct);
+
+        foreach (var library in claimed)
+        {
+            library.SyncStatus = "queued";
+            library.ActiveSyncRunId = $"run_{Guid.CreateVersion7():N}";
+            library.ActiveSyncRunCreatedAtUtc = now;
+            library.SyncQueuedAtUtc = now;
+            library.SyncStartedAtUtc = null;
+            library.UpdatedAt = now;
+        }
+
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(ct);
+        }
+        return claimed;
     }
 
     /// <inheritdoc />
@@ -297,6 +313,272 @@ internal sealed class PostgresLibraryDocumentStore(
 
         await db.SaveChangesAsync(ct);
         return existing;
+    }
+
+    /// <inheritdoc />
+    public async Task<Library> UpdateSyncLeaseAsync(
+        string organizationId,
+        string libraryId,
+        string? syncStatus,
+        DateTimeOffset? nextSyncAt,
+        DateTimeOffset[] manualTriggerHistory,
+        DateTimeOffset? sourceSyncedAt,
+        string? activeSyncRunId,
+        DateTimeOffset? activeSyncRunCreatedAtUtc,
+        DateTimeOffset? syncQueuedAtUtc,
+        DateTimeOffset? syncStartedAtUtc,
+        CancellationToken ct
+    )
+    {
+        var existing = await db
+            .Libraries.TagWithOperationCallSite("documents.library.update_sync_lease")
+            .SingleAsync(row => row.OrganizationId == organizationId && row.Id == libraryId, ct);
+
+        existing.SyncStatus = syncStatus;
+        existing.NextSyncAt = nextSyncAt;
+        existing.ManualTriggerHistory = manualTriggerHistory;
+        existing.SourceSyncedAt = sourceSyncedAt;
+        existing.ActiveSyncRunId = activeSyncRunId;
+        existing.ActiveSyncRunCreatedAtUtc = activeSyncRunCreatedAtUtc;
+        existing.SyncQueuedAtUtc = syncQueuedAtUtc;
+        existing.SyncStartedAtUtc = syncStartedAtUtc;
+        existing.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await db.SaveChangesAsync(ct);
+        return existing;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> TryUpdateCurrentSyncLeaseAsync(
+        string organizationId,
+        string libraryId,
+        string expectedRunId,
+        DateTimeOffset expectedRunCreatedAtUtc,
+        string? syncStatus,
+        DateTimeOffset? nextSyncAt,
+        DateTimeOffset[] manualTriggerHistory,
+        DateTimeOffset? sourceSyncedAt,
+        string? activeSyncRunId,
+        DateTimeOffset? activeSyncRunCreatedAtUtc,
+        DateTimeOffset? syncQueuedAtUtc,
+        DateTimeOffset? syncStartedAtUtc,
+        CancellationToken ct
+    )
+    {
+        var now = DateTimeOffset.UtcNow;
+        var updated = await db
+            .Libraries.TagWithOperationCallSite("documents.library.try_update_current_sync_lease")
+            .Where(row =>
+                row.OrganizationId == organizationId
+                && row.Id == libraryId
+                && row.ActiveSyncRunId == expectedRunId
+                && row.ActiveSyncRunCreatedAtUtc == expectedRunCreatedAtUtc
+            )
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(row => row.SyncStatus, syncStatus)
+                        .SetProperty(row => row.NextSyncAt, nextSyncAt)
+                        .SetProperty(row => row.ManualTriggerHistory, manualTriggerHistory)
+                        .SetProperty(row => row.SourceSyncedAt, sourceSyncedAt)
+                        .SetProperty(row => row.ActiveSyncRunId, activeSyncRunId)
+                        .SetProperty(
+                            row => row.ActiveSyncRunCreatedAtUtc,
+                            activeSyncRunCreatedAtUtc
+                        )
+                        .SetProperty(row => row.SyncQueuedAtUtc, syncQueuedAtUtc)
+                        .SetProperty(row => row.SyncStartedAtUtc, syncStartedAtUtc)
+                        .SetProperty(row => row.UpdatedAt, now),
+                ct
+            );
+
+        return updated > 0;
+    }
+
+    /// <inheritdoc />
+    public async Task<LibrarySyncStateReset?> ResetLibrarySyncStateAsync(
+        string organizationId,
+        string libraryId,
+        DateTimeOffset now,
+        CancellationToken ct
+    )
+    {
+        now = PostgresTimestampPrecision.TruncateToMicroseconds(now);
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        await using var transaction = ownsTransaction
+            ? await db.Database.BeginTransactionAsync(ct)
+            : null;
+        var library = await db
+            .Libraries.FromSql(
+                $"""
+                SELECT * FROM zeeq.docs_libraries
+                WHERE organization_id = {organizationId}
+                  AND id = {libraryId}
+                  AND source_kind IS NOT NULL
+                  AND sync_status IN ('queued', 'running')
+                  AND active_sync_run_id IS NOT NULL
+                  AND active_sync_run_created_at_utc IS NOT NULL
+                FOR UPDATE
+                """
+            )
+            .TagWithOperationCallSite("documents.library.reset_sync_state_find")
+            .SingleOrDefaultAsync(ct);
+
+        if (library is null)
+        {
+            return null;
+        }
+
+        var cleared = ToStalledSyncReset(library);
+        var marked = await MarkRunStalledAsync(
+            cleared,
+            now,
+            "Repository sync was manually reset from the library sync status tab.",
+            ct
+        );
+        if (!marked)
+        {
+            return null;
+        }
+
+        // NOTE: Mark the active run while this library row is locked, then clear
+        // the lease in the same transaction. Reversing this order can strand an
+        // active run with no source row that can recover it later.
+        ClearSyncState(library, now);
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(ct);
+        }
+
+        return new LibrarySyncStateReset(library, cleared);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<StalledSyncReset>> ResetStalledSyncsAsync(
+        DateTimeOffset now,
+        TimeSpan queuedStaleAfter,
+        TimeSpan runningStaleAfter,
+        int limit,
+        CancellationToken ct
+    )
+    {
+        now = PostgresTimestampPrecision.TruncateToMicroseconds(now);
+        var queuedCutoff = now - queuedStaleAfter;
+        var runningCutoff = now - runningStaleAfter;
+
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        await using var transaction = ownsTransaction
+            ? await db.Database.BeginTransactionAsync(ct)
+            : null;
+        var stalled = await db
+            .Libraries.FromSql(
+                $"""
+                SELECT * FROM zeeq.docs_libraries
+                WHERE source_kind IS NOT NULL
+                  AND (
+                    (sync_status = 'queued'
+                     AND sync_queued_at_utc IS NOT NULL
+                     AND sync_queued_at_utc <= {queuedCutoff}
+                     AND active_sync_run_id IS NOT NULL
+                     AND active_sync_run_created_at_utc IS NOT NULL)
+                    OR
+                    (sync_status = 'running'
+                     AND sync_started_at_utc IS NOT NULL
+                     AND sync_started_at_utc <= {runningCutoff}
+                     AND active_sync_run_id IS NOT NULL
+                     AND active_sync_run_created_at_utc IS NOT NULL)
+                  )
+                ORDER BY coalesce(sync_started_at_utc, sync_queued_at_utc) ASC
+                LIMIT {limit}
+                FOR UPDATE SKIP LOCKED
+                """
+            )
+            .TagWithOperationCallSite("documents.library.reset_stalled_syncs")
+            .ToArrayAsync(ct);
+
+        var resets = new List<StalledSyncReset>(stalled.Length);
+        foreach (var library in stalled)
+        {
+            var reset = ToStalledSyncReset(library);
+            var marked = await MarkRunStalledAsync(
+                reset,
+                now,
+                "Repository sync was reset after exceeding the stalled sync timeout.",
+                ct
+            );
+            if (!marked)
+            {
+                continue;
+            }
+
+            // NOTE: The run transition and lease clear are intentionally in the
+            // same transaction while the source row is locked; otherwise a crash
+            // between separate operations can produce an idle library with a
+            // permanently active ingest-run record.
+            ClearSyncState(library, now);
+            resets.Add(reset);
+        }
+
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(ct);
+        }
+        return resets;
+    }
+
+    private static StalledSyncReset ToStalledSyncReset(Library library) =>
+        new(
+            RepositorySourceKind.Private,
+            library.Id,
+            library.OrganizationId,
+            library.Id,
+            library.ActiveSyncRunId,
+            library.ActiveSyncRunCreatedAtUtc
+        );
+
+    private async Task<bool> MarkRunStalledAsync(
+        StalledSyncReset reset,
+        DateTimeOffset completedAtUtc,
+        string failureMessage,
+        CancellationToken ct
+    )
+    {
+        if (reset.RunId is null || reset.RunCreatedAtUtc is null)
+        {
+            return false;
+        }
+
+        var updated = await db
+            .DocsIngestRuns.TagWithOperationCallSite("documents.library.mark_stalled_run")
+            .Where(run =>
+                run.Id == reset.RunId
+                && run.CreatedAtUtc == reset.RunCreatedAtUtc
+                && run.Status == IngestRunStatus.Running
+            )
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(run => run.Status, IngestRunStatus.Stalled)
+                        .SetProperty(run => run.FailureMessage, failureMessage)
+                        .SetProperty(run => run.CompletedAtUtc, completedAtUtc)
+                        .SetProperty(run => run.UpdatedAtUtc, completedAtUtc),
+                ct
+            );
+
+        return updated > 0;
+    }
+
+    private static void ClearSyncState(Library library, DateTimeOffset now)
+    {
+        library.SyncStatus = "idle";
+        library.NextSyncAt = now;
+        library.ActiveSyncRunId = null;
+        library.ActiveSyncRunCreatedAtUtc = null;
+        library.SyncQueuedAtUtc = null;
+        library.SyncStartedAtUtc = null;
+        library.UpdatedAt = now;
     }
 
     /// <inheritdoc />

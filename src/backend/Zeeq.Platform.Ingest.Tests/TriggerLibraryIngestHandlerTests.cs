@@ -1,8 +1,8 @@
 using System.Security.Claims;
-using Zeeq.Core.Common;
-using Zeeq.Core.Documents;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Zeeq.Core.Common;
+using Zeeq.Core.Documents;
 
 namespace Zeeq.Platform.Ingest.Tests;
 
@@ -42,7 +42,12 @@ public sealed class TriggerLibraryIngestHandlerTests
         var libraries = new FakeLibraryDocumentStore();
         var publicSources = new FakeDocsPublicSourceStore();
         var publisher = new TestMessagePublisher();
-        var handler = new TriggerLibraryIngestHandler(libraries, publicSources, publisher, Settings);
+        var handler = new TriggerLibraryIngestHandler(
+            libraries,
+            publicSources,
+            publisher,
+            Settings
+        );
 
         var result = await handler.HandleAsync(
             "org_1",
@@ -68,7 +73,12 @@ public sealed class TriggerLibraryIngestHandlerTests
         var libraries = new FakeLibraryDocumentStore { Libraries = { localLibrary } };
         var publicSources = new FakeDocsPublicSourceStore();
         var publisher = new TestMessagePublisher();
-        var handler = new TriggerLibraryIngestHandler(libraries, publicSources, publisher, Settings);
+        var handler = new TriggerLibraryIngestHandler(
+            libraries,
+            publicSources,
+            publisher,
+            Settings
+        );
 
         var result = await handler.HandleAsync(
             "org_1",
@@ -89,7 +99,12 @@ public sealed class TriggerLibraryIngestHandlerTests
         };
         var publicSources = new FakeDocsPublicSourceStore();
         var publisher = new TestMessagePublisher();
-        var handler = new TriggerLibraryIngestHandler(libraries, publicSources, publisher, Settings);
+        var handler = new TriggerLibraryIngestHandler(
+            libraries,
+            publicSources,
+            publisher,
+            Settings
+        );
 
         var result = await handler.HandleAsync(
             "org_1",
@@ -109,7 +124,12 @@ public sealed class TriggerLibraryIngestHandlerTests
         var libraries = new FakeLibraryDocumentStore { Libraries = { library } };
         var publicSources = new FakeDocsPublicSourceStore();
         var publisher = new TestMessagePublisher();
-        var handler = new TriggerLibraryIngestHandler(libraries, publicSources, publisher, Settings);
+        var handler = new TriggerLibraryIngestHandler(
+            libraries,
+            publicSources,
+            publisher,
+            Settings
+        );
 
         var result = await handler.HandleAsync(
             "org_1",
@@ -128,9 +148,16 @@ public sealed class TriggerLibraryIngestHandlerTests
         await Assert.That(published.RepoUrl).IsEqualTo("https://github.com/acme/docs");
         await Assert.That(published.RunId).IsEqualTo(ok.Value.RunId);
         await Assert.That(published.RunCreatedAtUtc).IsEqualTo(ok.Value.RunCreatedAtUtc);
+        await AssertPostgresMicrosecondPrecisionAsync(published.RunCreatedAtUtc);
         await Assert.That(published.Trigger).IsEqualTo(IngestTriggerReason.Manual);
 
         await Assert.That(library.SyncStatus).IsEqualTo("queued");
+        await Assert.That(library.ActiveSyncRunId).IsEqualTo(ok.Value.RunId);
+        await Assert.That(library.ActiveSyncRunCreatedAtUtc).IsEqualTo(ok.Value.RunCreatedAtUtc);
+        await Assert.That(library.SyncQueuedAtUtc).IsNotNull();
+        await AssertPostgresMicrosecondPrecisionAsync(library.ActiveSyncRunCreatedAtUtc!.Value);
+        await AssertPostgresMicrosecondPrecisionAsync(library.SyncQueuedAtUtc!.Value);
+        await Assert.That(library.SyncStartedAtUtc).IsNull();
         await Assert.That(library.ManualTriggerHistory.Length).IsEqualTo(1);
     }
 
@@ -151,7 +178,12 @@ public sealed class TriggerLibraryIngestHandlerTests
         var libraries = new FakeLibraryDocumentStore { Libraries = { library } };
         var publicSources = new FakeDocsPublicSourceStore();
         var publisher = new TestMessagePublisher();
-        var handler = new TriggerLibraryIngestHandler(libraries, publicSources, publisher, Settings);
+        var handler = new TriggerLibraryIngestHandler(
+            libraries,
+            publicSources,
+            publisher,
+            Settings
+        );
 
         var result = await handler.HandleAsync(
             "org_1",
@@ -188,7 +220,12 @@ public sealed class TriggerLibraryIngestHandlerTests
         var libraries = new FakeLibraryDocumentStore { Libraries = { library } };
         var publicSources = new FakeDocsPublicSourceStore();
         var publisher = new TestMessagePublisher();
-        var handler = new TriggerLibraryIngestHandler(libraries, publicSources, publisher, Settings);
+        var handler = new TriggerLibraryIngestHandler(
+            libraries,
+            publicSources,
+            publisher,
+            Settings
+        );
 
         var result = await handler.HandleAsync(
             "org_1",
@@ -234,7 +271,12 @@ public sealed class TriggerLibraryIngestHandlerTests
         var libraries = new FakeLibraryDocumentStore { Libraries = { library } };
         var publicSources = new FakeDocsPublicSourceStore { Sources = { source } };
         var publisher = new TestMessagePublisher();
-        var handler = new TriggerLibraryIngestHandler(libraries, publicSources, publisher, Settings);
+        var handler = new TriggerLibraryIngestHandler(
+            libraries,
+            publicSources,
+            publisher,
+            Settings
+        );
 
         var result = await handler.HandleAsync(
             "org_1",
@@ -247,7 +289,10 @@ public sealed class TriggerLibraryIngestHandlerTests
         var published = publisher.Published.OfType<PublicRepositorySyncRequested>().Single();
         await Assert.That(published.PublicSourceId).IsEqualTo("pubsrc_1");
         await Assert.That(published.RepoUrl).IsEqualTo("https://github.com/acme/public-docs");
+        await AssertPostgresMicrosecondPrecisionAsync(published.RunCreatedAtUtc);
         await Assert.That(source.SyncStatus).IsEqualTo("queued");
+        await AssertPostgresMicrosecondPrecisionAsync(source.ActiveSyncRunCreatedAtUtc!.Value);
+        await AssertPostgresMicrosecondPrecisionAsync(source.SyncQueuedAtUtc!.Value);
     }
 
     [Test]
@@ -275,7 +320,12 @@ public sealed class TriggerLibraryIngestHandlerTests
         var libraries = new FakeLibraryDocumentStore { Libraries = { library } };
         var publicSources = new FakeDocsPublicSourceStore { Sources = { source } };
         var publisher = new TestMessagePublisher();
-        var handler = new TriggerLibraryIngestHandler(libraries, publicSources, publisher, Settings);
+        var handler = new TriggerLibraryIngestHandler(
+            libraries,
+            publicSources,
+            publisher,
+            Settings
+        );
 
         var result = await handler.HandleAsync(
             "org_1",
@@ -303,7 +353,12 @@ public sealed class TriggerLibraryIngestHandlerTests
         var libraries = new FakeLibraryDocumentStore { Libraries = { library } };
         var publicSources = new FakeDocsPublicSourceStore();
         var publisher = new TestMessagePublisher();
-        var handler = new TriggerLibraryIngestHandler(libraries, publicSources, publisher, Settings);
+        var handler = new TriggerLibraryIngestHandler(
+            libraries,
+            publicSources,
+            publisher,
+            Settings
+        );
 
         var result = await handler.HandleAsync(
             "org_1",
@@ -316,4 +371,7 @@ public sealed class TriggerLibraryIngestHandlerTests
         // The three stale entries age out; only the fresh trigger remains.
         await Assert.That(library.ManualTriggerHistory.Length).IsEqualTo(1);
     }
+
+    private static async Task AssertPostgresMicrosecondPrecisionAsync(DateTimeOffset value) =>
+        await Assert.That(value.Ticks % TimeSpan.TicksPerMicrosecond).IsEqualTo(0);
 }

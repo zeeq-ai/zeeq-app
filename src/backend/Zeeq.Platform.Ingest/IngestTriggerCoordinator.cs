@@ -40,7 +40,10 @@ public static class IngestTriggerCoordinator
             return new IngestTriggerResult.AlreadyInFlight();
         }
 
-        var now = DateTimeOffset.UtcNow;
+        // NOTE: This timestamp is persisted on the library lease and sent on
+        // the queue message. Match PostgreSQL timestamptz precision up front so
+        // stale-message guards can compare the reloaded row exactly.
+        var now = PostgresTimestampPrecision.TruncateToMicroseconds(DateTimeOffset.UtcNow);
         var window = TimeSpan.FromSeconds(ingestSettings.ManualTriggerWindowSeconds);
         var recentTriggers = library
             .ManualTriggerHistory.Where(triggeredAt => now - triggeredAt <= window)
@@ -53,13 +56,17 @@ public static class IngestTriggerCoordinator
 
         var runId = $"run_{Guid.CreateVersion7():N}";
 
-        await libraries.UpdateSyncStateAsync(
+        await libraries.UpdateSyncLeaseAsync(
             library.OrganizationId,
             library.Id,
             syncStatus: "queued",
             nextSyncAt: library.NextSyncAt,
             manualTriggerHistory: [.. recentTriggers, now],
             sourceSyncedAt: library.SourceSyncedAt,
+            activeSyncRunId: runId,
+            activeSyncRunCreatedAtUtc: now,
+            syncQueuedAtUtc: now,
+            syncStartedAtUtc: null,
             ct
         );
 
@@ -105,7 +112,10 @@ public static class IngestTriggerCoordinator
             return new IngestTriggerResult.Quarantined();
         }
 
-        var now = DateTimeOffset.UtcNow;
+        // NOTE: This timestamp is persisted on the public-source lease and sent
+        // on the queue message. Match PostgreSQL timestamptz precision up front
+        // so stale-message guards can compare the reloaded row exactly.
+        var now = PostgresTimestampPrecision.TruncateToMicroseconds(DateTimeOffset.UtcNow);
         var window = TimeSpan.FromSeconds(ingestSettings.ManualTriggerWindowSeconds);
         var recentTriggers = source
             .ManualTriggerHistory.Where(triggeredAt => now - triggeredAt <= window)
@@ -119,6 +129,10 @@ public static class IngestTriggerCoordinator
         var runId = $"run_{Guid.CreateVersion7():N}";
 
         source.SyncStatus = "queued";
+        source.ActiveSyncRunId = runId;
+        source.ActiveSyncRunCreatedAtUtc = now;
+        source.SyncQueuedAtUtc = now;
+        source.SyncStartedAtUtc = null;
         source.ManualTriggerHistory = [.. recentTriggers, now];
         source.UpdatedAt = now;
         await sources.UpdateAsync(source, ct);

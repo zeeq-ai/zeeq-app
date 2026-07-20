@@ -32,6 +32,7 @@ internal sealed class LibraryConfiguration : IEntityTypeConfiguration<Library>
 
         // Sync lifecycle.
         entity.Property(library => library.SyncStatus).HasMaxLength(32);
+        entity.Property(library => library.ActiveSyncRunId).HasMaxLength(128);
         entity.Property(library => library.ManualTriggerHistory).HasColumnType("timestamptz[]");
 
         entity.Property(library => library.CreatedAt).IsRequired();
@@ -42,6 +43,12 @@ internal sealed class LibraryConfiguration : IEntityTypeConfiguration<Library>
 
         // Fast path for the scheduler's atomic claim query.
         entity.HasIndex(library => new { library.SyncStatus, library.NextSyncAt });
+        // Fast path for stalled sync cleanup.
+        // NOTE: Unlike request-path library indexes, this worker sweep is intentionally global
+        // and has no organization_id predicate; leading with SyncStatus matches the recovery
+        // query's WHERE clause instead of the normal org-prefixed access pattern.
+        entity.HasIndex(library => new { library.SyncStatus, library.SyncQueuedAtUtc });
+        entity.HasIndex(library => new { library.SyncStatus, library.SyncStartedAtUtc });
         // Resolve libraries that subscribe to a given public source.
         entity.HasIndex(library => library.PublicSourceId);
 
@@ -207,6 +214,7 @@ internal sealed class DocsPublicSourceConfiguration : IEntityTypeConfiguration<D
         entity.Property(source => source.DefaultIncludeFilters).HasColumnType("text[]");
         entity.Property(source => source.DefaultExcludeFilters).HasColumnType("text[]");
         entity.Property(source => source.SyncStatus).IsRequired().HasMaxLength(32);
+        entity.Property(source => source.ActiveSyncRunId).HasMaxLength(128);
         entity.Property(source => source.Status).IsRequired().HasMaxLength(32);
         entity.Property(source => source.ManualTriggerHistory).HasColumnType("timestamptz[]");
         entity.Property(source => source.CreatedAt).IsRequired();
@@ -221,6 +229,9 @@ internal sealed class DocsPublicSourceConfiguration : IEntityTypeConfiguration<D
             source.SyncStatus,
             source.NextSyncAt,
         });
+        // Stalled sync cleanup.
+        entity.HasIndex(source => new { source.SyncStatus, source.SyncQueuedAtUtc });
+        entity.HasIndex(source => new { source.SyncStatus, source.SyncStartedAtUtc });
     }
 }
 

@@ -109,6 +109,83 @@ public interface ILibraryDocumentStore : IIndexableDocumentStore<LibraryDocument
     );
 
     /// <summary>
+    /// Updates a private-source library's sync lifecycle fields plus active-run lease fields.
+    /// </summary>
+    Task<Library> UpdateSyncLeaseAsync(
+        string organizationId,
+        string libraryId,
+        string? syncStatus,
+        DateTimeOffset? nextSyncAt,
+        DateTimeOffset[] manualTriggerHistory,
+        DateTimeOffset? sourceSyncedAt,
+        string? activeSyncRunId,
+        DateTimeOffset? activeSyncRunCreatedAtUtc,
+        DateTimeOffset? syncQueuedAtUtc,
+        DateTimeOffset? syncStartedAtUtc,
+        CancellationToken ct
+    )
+    {
+        return UpdateSyncStateAsync(
+            organizationId,
+            libraryId,
+            syncStatus,
+            nextSyncAt,
+            manualTriggerHistory,
+            sourceSyncedAt,
+            ct
+        );
+    }
+
+    /// <summary>
+    /// Updates sync fields only if the library is still owned by the expected active run.
+    /// </summary>
+    Task<bool> TryUpdateCurrentSyncLeaseAsync(
+        string organizationId,
+        string libraryId,
+        string expectedRunId,
+        DateTimeOffset expectedRunCreatedAtUtc,
+        string? syncStatus,
+        DateTimeOffset? nextSyncAt,
+        DateTimeOffset[] manualTriggerHistory,
+        DateTimeOffset? sourceSyncedAt,
+        string? activeSyncRunId,
+        DateTimeOffset? activeSyncRunCreatedAtUtc,
+        DateTimeOffset? syncQueuedAtUtc,
+        DateTimeOffset? syncStartedAtUtc,
+        CancellationToken ct
+    )
+    {
+        throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// Clears a private-source library's active sync state and makes it eligible to run now.
+    /// </summary>
+    Task<LibrarySyncStateReset?> ResetLibrarySyncStateAsync(
+        string organizationId,
+        string libraryId,
+        DateTimeOffset now,
+        CancellationToken ct
+    )
+    {
+        throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// Clears stale queued/running private-source library syncs.
+    /// </summary>
+    Task<IReadOnlyList<StalledSyncReset>> ResetStalledSyncsAsync(
+        DateTimeOffset now,
+        TimeSpan queuedStaleAfter,
+        TimeSpan runningStaleAfter,
+        int limit,
+        CancellationToken ct
+    )
+    {
+        throw new NotSupportedException();
+    }
+
+    /// <summary>
     /// Inserts or updates a document by normalized path.
     /// </summary>
     Task<LibraryDocument> UpsertDocumentAsync(LibraryDocument document, CancellationToken ct);

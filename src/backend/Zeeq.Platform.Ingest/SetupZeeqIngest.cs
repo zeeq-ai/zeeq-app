@@ -66,5 +66,15 @@ public static class SetupZeeqIngest
 
             return services;
         }
+
+        /// <summary>
+        /// Adds the periodic recovery sweep that clears stalled repository sync leases.
+        /// </summary>
+        public IServiceCollection AddZeeqStalledIngestSyncCleanup()
+        {
+            services.AddHostedService<IngestStalledSyncCleanupHostedService>();
+
+            return services;
+        }
     }
 }

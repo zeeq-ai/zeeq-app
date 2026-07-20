@@ -24,4 +24,9 @@ public enum IngestRunStatus
     /// A fatal error prevented the run from completing any work.
     /// </summary>
     Failed,
+
+    /// <summary>
+    /// The run was left active past the allowed lease window and was cleared by recovery.
+    /// </summary>
+    Stalled,
 }

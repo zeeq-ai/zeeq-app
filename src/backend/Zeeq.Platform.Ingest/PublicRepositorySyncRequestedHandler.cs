@@ -84,6 +84,19 @@ public sealed class PublicRepositorySyncRequestedHandler(
             return message;
         }
 
+        if (!IsCurrentSync(source, message))
+        {
+            logger.LogWarning(
+                "Ignoring stale sync message for public source {PublicSourceId}. Message run {MessageRunId} created at {MessageRunCreatedAtUtc}; active run is {ActiveRunId} created at {ActiveRunCreatedAtUtc}.",
+                message.PublicSourceId,
+                message.RunId,
+                message.RunCreatedAtUtc,
+                source.ActiveSyncRunId,
+                source.ActiveSyncRunCreatedAtUtc
+            );
+            return message;
+        }
+
         if (source.Status == "quarantined")
         {
             // Defense in depth for a message enqueued before this quarantine
@@ -93,9 +106,20 @@ public sealed class PublicRepositorySyncRequestedHandler(
                 "Skipping sync for quarantined public source {PublicSourceId}.",
                 source.Id
             );
-            source.SyncStatus = "idle";
-            source.UpdatedAt = DateTimeOffset.UtcNow;
-            await sources.UpdateAsync(source, cancellationToken);
+            await TryUpdateSyncStateAsync(
+                source,
+                message,
+                syncStatus: "idle",
+                nextSyncAt: source.NextSyncAt,
+                syncedAt: source.SyncedAt,
+                status: source.Status,
+                activeSyncRunId: null,
+                activeSyncRunCreatedAtUtc: null,
+                syncQueuedAtUtc: null,
+                syncStartedAtUtc: null,
+                updatedAt: DateTimeOffset.UtcNow,
+                ct: cancellationToken
+            );
             return message;
         }
 
@@ -108,10 +132,20 @@ public sealed class PublicRepositorySyncRequestedHandler(
                     source.Id,
                     source.RepoUrl
                 );
-                source.Status = "quarantined";
-                source.SyncStatus = "idle";
-                source.UpdatedAt = DateTimeOffset.UtcNow;
-                await sources.UpdateAsync(source, cancellationToken);
+                await TryUpdateSyncStateAsync(
+                    source,
+                    message,
+                    syncStatus: "idle",
+                    nextSyncAt: source.NextSyncAt,
+                    syncedAt: source.SyncedAt,
+                    status: "quarantined",
+                    activeSyncRunId: null,
+                    activeSyncRunCreatedAtUtc: null,
+                    syncQueuedAtUtc: null,
+                    syncStartedAtUtc: null,
+                    updatedAt: DateTimeOffset.UtcNow,
+                    ct: cancellationToken
+                );
                 return message;
             case RepositoryVisibilityCheckResult.TransientError:
                 logger.LogWarning(
@@ -119,13 +153,34 @@ public sealed class PublicRepositorySyncRequestedHandler(
                     source.Id,
                     source.RepoUrl
                 );
-                await ResetSyncStateAsync(source, cancellationToken);
+                await ResetSyncStateAsync(source, message, cancellationToken);
                 return message;
         }
 
-        source.SyncStatus = "running";
-        source.UpdatedAt = DateTimeOffset.UtcNow;
-        await sources.UpdateAsync(source, cancellationToken);
+        var startedAtUtc = DateTimeOffset.UtcNow;
+        if (
+            !await TryUpdateSyncStateAsync(
+                source,
+                message,
+                syncStatus: "running",
+                nextSyncAt: source.NextSyncAt,
+                syncedAt: source.SyncedAt,
+                status: source.Status,
+                activeSyncRunId: message.RunId,
+                activeSyncRunCreatedAtUtc: message.RunCreatedAtUtc,
+                syncQueuedAtUtc: source.SyncQueuedAtUtc,
+                syncStartedAtUtc: startedAtUtc,
+                updatedAt: startedAtUtc,
+                ct: cancellationToken
+            )
+        )
+        {
+            logger.LogWarning(
+                "Ignoring sync for public source {PublicSourceId}: active run changed before it could start running.",
+                source.Id
+            );
+            return message;
+        }
 
         var job = await BuildJobAsync(source, message, cancellationToken);
 
@@ -156,20 +211,42 @@ public sealed class PublicRepositorySyncRequestedHandler(
         }
         finally
         {
-            await ResetSyncStateAsync(source, cancellationToken);
+            await ResetSyncStateAsync(source, message, cancellationToken);
         }
 
         return message;
     }
 
-    private async Task ResetSyncStateAsync(DocsPublicSource source, CancellationToken ct)
+    private async Task ResetSyncStateAsync(
+        DocsPublicSource source,
+        PublicRepositorySyncRequested message,
+        CancellationToken ct
+    )
     {
         try
         {
-            source.SyncStatus = "idle";
-            source.NextSyncAt = NextSyncAt();
-            source.UpdatedAt = DateTimeOffset.UtcNow;
-            await sources.UpdateAsync(source, ct);
+            var nextSyncAt = NextSyncAt();
+            var updated = await TryUpdateSyncStateAsync(
+                source,
+                message,
+                syncStatus: "idle",
+                nextSyncAt: nextSyncAt,
+                syncedAt: source.SyncedAt,
+                status: source.Status,
+                activeSyncRunId: null,
+                activeSyncRunCreatedAtUtc: null,
+                syncQueuedAtUtc: null,
+                syncStartedAtUtc: null,
+                updatedAt: DateTimeOffset.UtcNow,
+                ct: ct
+            );
+            if (!updated)
+            {
+                logger.LogWarning(
+                    "Skipped final sync-state reset for public source {PublicSourceId}: active run changed before completion.",
+                    source.Id
+                );
+            }
         }
         catch (Exception ex)
         {
@@ -180,6 +257,57 @@ public sealed class PublicRepositorySyncRequestedHandler(
                 source.Id
             );
         }
+    }
+
+    private static bool IsCurrentSync(DocsPublicSource source, PublicRepositorySyncRequested message) =>
+        source.ActiveSyncRunId == message.RunId
+        && source.ActiveSyncRunCreatedAtUtc == message.RunCreatedAtUtc;
+
+    private async Task<bool> TryUpdateSyncStateAsync(
+        DocsPublicSource source,
+        PublicRepositorySyncRequested message,
+        string syncStatus,
+        DateTimeOffset? nextSyncAt,
+        DateTimeOffset? syncedAt,
+        string status,
+        string? activeSyncRunId,
+        DateTimeOffset? activeSyncRunCreatedAtUtc,
+        DateTimeOffset? syncQueuedAtUtc,
+        DateTimeOffset? syncStartedAtUtc,
+        DateTimeOffset updatedAt,
+        CancellationToken ct
+    )
+    {
+        var updated = await sources.TryUpdateCurrentSyncLeaseAsync(
+            source.Id,
+            message.RunId,
+            message.RunCreatedAtUtc,
+            syncStatus,
+            nextSyncAt,
+            syncedAt,
+            status,
+            activeSyncRunId,
+            activeSyncRunCreatedAtUtc,
+            syncQueuedAtUtc,
+            syncStartedAtUtc,
+            updatedAt,
+            ct
+        );
+        if (!updated)
+        {
+            return false;
+        }
+
+        source.SyncStatus = syncStatus;
+        source.NextSyncAt = nextSyncAt;
+        source.SyncedAt = syncedAt;
+        source.Status = status;
+        source.ActiveSyncRunId = activeSyncRunId;
+        source.ActiveSyncRunCreatedAtUtc = activeSyncRunCreatedAtUtc;
+        source.SyncQueuedAtUtc = syncQueuedAtUtc;
+        source.SyncStartedAtUtc = syncStartedAtUtc;
+        source.UpdatedAt = updatedAt;
+        return true;
     }
 
     private DateTimeOffset NextSyncAt()

@@ -65,6 +65,33 @@ public sealed class IngestEndpoints : IEndpoint
             )
             .RequireActiveOrganization();
 
+        // POST /api/v1/orgs/{orgId}/libraries/{name}/ingest-run/reset
+        group
+            .MapPost(
+                "/{name}/ingest-run/reset",
+                static (
+                    [MaxLength(36)] string orgId,
+                    [MaxLength(200)] string name,
+                    ClaimsPrincipal user,
+                    [FromServices] ResetLibraryIngestRunStateHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, name, user, ct)
+            )
+            .WithName("ResetLibraryIngestRunState")
+            .Produces<ResetLibraryIngestRunStateResponse>()
+            .Produces<IngestError>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("Clear a stuck private library repository sync.")
+            .WithDescription(
+                """
+                Clears a private repository library's queued/running sync state and makes it
+                eligible to sync again immediately. If the active run row exists and is still
+                running, it is marked `Stalled`. Public-source-backed libraries are not reset
+                through this organization-scoped endpoint.
+                """
+            )
+            .RequireActiveOrganization();
+
         // GET /api/v1/orgs/{orgId}/libraries/{name}/ingest-runs
         group
             .MapGet(

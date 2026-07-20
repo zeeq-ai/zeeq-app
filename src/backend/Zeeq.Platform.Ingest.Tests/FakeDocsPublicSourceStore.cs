@@ -21,6 +21,10 @@ internal sealed class FakeDocsPublicSourceStore : IDocsPublicSourceStore
         existing.SyncedAt = source.SyncedAt;
         existing.SyncStatus = source.SyncStatus;
         existing.NextSyncAt = source.NextSyncAt;
+        existing.ActiveSyncRunId = source.ActiveSyncRunId;
+        existing.ActiveSyncRunCreatedAtUtc = source.ActiveSyncRunCreatedAtUtc;
+        existing.SyncQueuedAtUtc = source.SyncQueuedAtUtc;
+        existing.SyncStartedAtUtc = source.SyncStartedAtUtc;
         existing.Status = source.Status;
         existing.ManualTriggerHistory = source.ManualTriggerHistory;
         existing.UpdatedAt = source.UpdatedAt;
@@ -43,4 +47,42 @@ internal sealed class FakeDocsPublicSourceStore : IDocsPublicSourceStore
         int limit,
         CancellationToken ct
     ) => throw new NotSupportedException();
+
+    public Task<bool> TryUpdateCurrentSyncLeaseAsync(
+        string sourceId,
+        string expectedRunId,
+        DateTimeOffset expectedRunCreatedAtUtc,
+        string syncStatus,
+        DateTimeOffset? nextSyncAt,
+        DateTimeOffset? syncedAt,
+        string status,
+        string? activeSyncRunId,
+        DateTimeOffset? activeSyncRunCreatedAtUtc,
+        DateTimeOffset? syncQueuedAtUtc,
+        DateTimeOffset? syncStartedAtUtc,
+        DateTimeOffset updatedAt,
+        CancellationToken ct
+    )
+    {
+        var source = Sources.Single(s => s.Id == sourceId);
+        if (
+            source.ActiveSyncRunId != expectedRunId
+            || source.ActiveSyncRunCreatedAtUtc != expectedRunCreatedAtUtc
+        )
+        {
+            return Task.FromResult(false);
+        }
+
+        source.SyncStatus = syncStatus;
+        source.NextSyncAt = nextSyncAt;
+        source.SyncedAt = syncedAt;
+        source.Status = status;
+        source.ActiveSyncRunId = activeSyncRunId;
+        source.ActiveSyncRunCreatedAtUtc = activeSyncRunCreatedAtUtc;
+        source.SyncQueuedAtUtc = syncQueuedAtUtc;
+        source.SyncStartedAtUtc = syncStartedAtUtc;
+        source.UpdatedAt = updatedAt;
+
+        return Task.FromResult(true);
+    }
 }

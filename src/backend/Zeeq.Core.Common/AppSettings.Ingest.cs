@@ -68,4 +68,19 @@ public sealed record IngestSettings
     /// Maximum manual triggers allowed within <see cref="ManualTriggerWindowSeconds"/>.
     /// </summary>
     public int ManualTriggerMaxInWindow { get; init; } = 5;
+
+    /// <summary>
+    /// Period between stalled sync recovery sweeps.
+    /// </summary>
+    public TimeSpan StalledSyncSweepPeriod { get; init; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Maximum time a sync may remain queued before recovery clears it.
+    /// </summary>
+    public TimeSpan QueuedSyncStaleAfter { get; init; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// Maximum time a sync may remain running before recovery clears it.
+    /// </summary>
+    public TimeSpan RunningSyncStaleAfter { get; init; } = TimeSpan.FromHours(2);
 }
