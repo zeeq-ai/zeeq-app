@@ -2830,7 +2830,7 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                     b.HasIndex("AutoInviteSameDomain")
                         .IsUnique()
                         .HasDatabaseName("ix_core_organizations_auto_invite_same_domain")
-                        .HasFilter("auto_invite_same_domain_enabled = true AND auto_invite_same_domain IS NOT NULL");
+                        .HasFilter("auto_invite_same_domain_enabled = true AND auto_invite_same_domain IS NOT NULL AND disabled_at_utc IS NULL");
 
                     b.HasIndex("CreatedByUserId")
                         .HasDatabaseName("ix_core_organizations_created_by_user_id");

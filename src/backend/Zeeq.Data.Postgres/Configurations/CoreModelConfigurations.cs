@@ -1,6 +1,6 @@
-using Zeeq.Core.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Data.Postgres.Configurations;
 
@@ -46,7 +46,7 @@ internal sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organ
             .HasIndex(organization => organization.AutoInviteSameDomain)
             .IsUnique()
             .HasFilter(
-                "auto_invite_same_domain_enabled = true AND auto_invite_same_domain IS NOT NULL"
+                "auto_invite_same_domain_enabled = true AND auto_invite_same_domain IS NOT NULL AND disabled_at_utc IS NULL"
             );
         entity.Property(organization => organization.ActivatedAtUtc);
         entity

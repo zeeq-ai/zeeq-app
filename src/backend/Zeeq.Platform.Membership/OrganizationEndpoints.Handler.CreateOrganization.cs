@@ -96,16 +96,25 @@ public sealed class CreateOrganizationHandler(IZeeqMembershipStore store) : IEnd
             return ValidationProblem("organization", "You can create up to 5 organizations.");
         }
 
+        var creatorEmail =
+            user.FindFirstValue(OpenIddictConstants.Claims.Email)
+            ?? user.FindFirstValue(ClaimTypes.Email);
+        var creatorDomain = EmailDomainNormalizer.FromEmail(creatorEmail);
+        var domainAvailable =
+            creatorDomain is null
+            || await store.IsAutoInviteSameDomainAvailableAsync(creatorDomain, created.Id, ct);
+        var sameDomainStatus = OrganizationSameDomainOnboardingStatusFactory.Create(
+            created,
+            creatorEmail,
+            domainAvailable
+        );
+
         return TypedResults.Created(
             $"/api/v1/orgs/{created.Id}",
-            new OrganizationResponse(
-                Id: created.Id,
-                Slug: created.Slug,
-                DisplayName: created.DisplayName,
-                IconUrl: created.IconUrl,
-                Role: ownerMembership.Role,
-                CreatedAtUtc: created.CreatedAtUtc,
-                ActivatedAtUtc: created.ActivatedAtUtc
+            OrganizationSameDomainOnboardingStatusFactory.ToOrganizationResponse(
+                created,
+                ownerMembership.Role,
+                sameDomainStatus
             )
         );
     }

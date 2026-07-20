@@ -1,6 +1,7 @@
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace Zeeq.Data.Postgres.Identity;
 
@@ -12,6 +13,9 @@ namespace Zeeq.Data.Postgres.Identity;
 /// </remarks>
 internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqMembershipStore
 {
+    private const string AutoInviteSameDomainIndexName =
+        "ix_core_organizations_auto_invite_same_domain";
+
     // ── Organizations ──────────────────────────────────────────
 
     /// <inheritdoc />
@@ -50,9 +54,7 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
         CancellationToken ct
     ) =>
         db
-            .Organizations.TagWithOperationCallSite(
-                "membership.organization.find_activation_state"
-            )
+            .Organizations.TagWithOperationCallSite("membership.organization.find_activation_state")
             .AsNoTracking()
             .Where(organization => organization.Id == orgId)
             .Select(organization => new OrganizationActivationState(
@@ -87,11 +89,128 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
     }
 
     /// <inheritdoc />
+    public async Task<bool> UpdateOrganizationSameDomainOnboardingAsync(
+        Organization organization,
+        CancellationToken ct
+    )
+    {
+        organization.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        var entry = db.Entry(organization);
+        if (entry.State == EntityState.Detached)
+        {
+            db.Organizations.Attach(organization);
+            entry = db.Entry(organization);
+        }
+
+        entry.State = EntityState.Unchanged;
+        entry.Property(org => org.AutoInviteSameDomainEnabled).IsModified = true;
+        entry.Property(org => org.AutoInviteSameDomain).IsModified = true;
+        entry.Property(org => org.AutoInviteDefaultRole).IsModified = true;
+        entry.Property(org => org.UpdatedAtUtc).IsModified = true;
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return true;
+        }
+        catch (DbUpdateException ex) when (IsAutoInviteSameDomainUniqueViolation(ex))
+        {
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<string?> FindUserEmailByIdAsync(string userId, CancellationToken ct) =>
+        db
+            .Users.TagWithOperationCallSite("membership.user.find_email_by_id")
+            .AsNoTracking()
+            .Where(user => user.Id == userId && user.DisabledAtUtc == null)
+            .Select(user => user.Email)
+            .SingleOrDefaultAsync(ct);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<string, string?>> FindUserEmailsByIdsAsync(
+        string[] userIds,
+        CancellationToken ct
+    )
+    {
+        if (userIds.Length == 0)
+        {
+            return new Dictionary<string, string?>();
+        }
+
+        return await db
+            .Users.TagWithOperationCallSite("membership.user.find_emails_by_ids")
+            .AsNoTracking()
+            .Where(user => userIds.Contains(user.Id) && user.DisabledAtUtc == null)
+            .Select(user => new { user.Id, user.Email })
+            .ToDictionaryAsync(user => user.Id, user => user.Email, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> IsAutoInviteSameDomainAvailableAsync(
+        string domain,
+        string excludeOrgId,
+        CancellationToken ct
+    ) =>
+        !await db
+            .Organizations.TagWithOperationCallSite(
+                "membership.organization.is_auto_invite_same_domain_available"
+            )
+            .AsNoTracking()
+            .AnyAsync(
+                organization =>
+                    organization.Id != excludeOrgId
+                    && organization.AutoInviteSameDomainEnabled
+                    && organization.AutoInviteSameDomain == domain
+                    && organization.DisabledAtUtc == null,
+                ct
+            );
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<string, string>> FindAutoInviteSameDomainClaimsAsync(
+        string[] domains,
+        CancellationToken ct
+    )
+    {
+        if (domains.Length == 0)
+        {
+            return new Dictionary<string, string>();
+        }
+
+        return await db
+            .Organizations.TagWithOperationCallSite(
+                "membership.organization.find_auto_invite_same_domain_claims"
+            )
+            .AsNoTracking()
+            .Where(organization =>
+                organization.AutoInviteSameDomainEnabled
+                && organization.AutoInviteSameDomain != null
+                && domains.Contains(organization.AutoInviteSameDomain)
+                && organization.DisabledAtUtc == null
+            )
+            .Select(organization => new
+            {
+                Domain = organization.AutoInviteSameDomain!,
+                OrganizationId = organization.Id,
+            })
+            .ToDictionaryAsync(row => row.Domain, row => row.OrganizationId, ct);
+    }
+
+    /// <inheritdoc />
     public Task<int> CountOrganizationsCreatedByUserAsync(string userId, CancellationToken ct) =>
         db
             .Organizations.TagWithOperationCallSite("membership.organization.count_created_by_user")
             .AsNoTracking()
             .CountAsync(o => o.CreatedByUserId == userId, ct);
+
+    private static bool IsAutoInviteSameDomainUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException
+            is PostgresException
+            {
+                SqlState: PostgresErrorCodes.UniqueViolation,
+                ConstraintName: AutoInviteSameDomainIndexName,
+            };
 
     /// <inheritdoc />
     public async Task<Organization?> CreateOrganizationAsync(

@@ -1,7 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Testing;
 using Zeeq.Testing.EntityGraphs;
-using Microsoft.EntityFrameworkCore;
 
 namespace Zeeq.Platform.Membership.Tests;
 
@@ -236,6 +236,64 @@ public sealed class OrganizationStoreIntegrationTests(PgDatabaseFixture postgres
     }
 
     [Test]
+    public async Task FindUserEmailByIdAsync_WithExistingUser_ReturnsEmail()
+    {
+        var store = CreateStore();
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+
+        var email = await store.FindUserEmailByIdAsync(seed.Owner.Id, CancellationToken.None);
+
+        await Assert.That(email).IsEqualTo(seed.Owner.Email);
+    }
+
+    [Test]
+    public async Task FindUserEmailsByIdsAsync_WithExistingUsers_ReturnsEmailsByUserId()
+    {
+        var store = CreateStore();
+        var seed = await EntityGraph.AddGeneratedSeed(_context, userCount: 2).BuildAsync();
+
+        var emails = await store.FindUserEmailsByIdsAsync(
+            [seed.Users[0].Id, seed.Users[1].Id, "missing_user"],
+            CancellationToken.None
+        );
+
+        await Assert.That(emails).Count().IsEqualTo(2);
+        await Assert.That(emails[seed.Users[0].Id]).IsEqualTo(seed.Users[0].Email);
+        await Assert.That(emails[seed.Users[1].Id]).IsEqualTo(seed.Users[1].Email);
+    }
+
+    [Test]
+    public async Task IsAutoInviteSameDomainAvailableAsync_WithClaimedDomain_ReturnsFalse()
+    {
+        var store = CreateStore();
+        var seed = await EntityGraph
+            .AddGeneratedSeed(
+                _context,
+                organization =>
+                {
+                    organization.AutoInviteSameDomainEnabled = true;
+                    organization.AutoInviteSameDomain = "example.com";
+                    organization.AutoInviteDefaultRole = "member";
+                }
+            )
+            .BuildAsync();
+
+        var availableForOtherOrg = await store.IsAutoInviteSameDomainAvailableAsync(
+            "example.com",
+            "org_other",
+            CancellationToken.None
+        );
+        var availableForSameOrg = await store.IsAutoInviteSameDomainAvailableAsync(
+            "example.com",
+            seed.Organization.Id,
+            CancellationToken.None
+        );
+
+        await Assert.That(availableForOtherOrg).IsFalse();
+        await Assert.That(availableForSameOrg).IsTrue();
+    }
+
+    [Test]
     public async Task OrganizationSlugUniqueIndex_WithDuplicateSlug_ThrowsDbUpdateException()
     {
         var slug = "duplicate-" + Guid.NewGuid().ToString("N");
@@ -272,5 +330,139 @@ public sealed class OrganizationStoreIntegrationTests(PgDatabaseFixture postgres
         }
 
         await Assert.That(saveFailed).IsTrue();
+    }
+
+    [Test]
+    public async Task OrganizationAutoInviteSameDomainUniqueIndex_WithDuplicateEnabledDomain_ThrowsDbUpdateException()
+    {
+        var now = DateTimeOffset.UtcNow;
+        await SeedUser(_context, "same_domain_owner_1");
+        await SeedUser(_context, "same_domain_owner_2");
+
+        _context.Organizations.AddRange(
+            new Organization
+            {
+                Id = NewId("org"),
+                DisplayName = "First Org",
+                CreatedByUserId = "same_domain_owner_1",
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+                AutoInviteSameDomainEnabled = true,
+                AutoInviteSameDomain = "example.com",
+                AutoInviteDefaultRole = "member",
+            },
+            new Organization
+            {
+                Id = NewId("org"),
+                DisplayName = "Second Org",
+                CreatedByUserId = "same_domain_owner_2",
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+                AutoInviteSameDomainEnabled = true,
+                AutoInviteSameDomain = "example.com",
+                AutoInviteDefaultRole = "member",
+            }
+        );
+
+        var saveFailed = false;
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            saveFailed = true;
+        }
+
+        await Assert.That(saveFailed).IsTrue();
+    }
+
+    [Test]
+    public async Task OrganizationAutoInviteSameDomainUniqueIndex_WithDisabledOrganization_AllowsReuse()
+    {
+        var now = DateTimeOffset.UtcNow;
+        await SeedUser(_context, "disabled_domain_owner_1");
+        await SeedUser(_context, "disabled_domain_owner_2");
+
+        _context.Organizations.AddRange(
+            new Organization
+            {
+                Id = NewId("org"),
+                DisplayName = "Disabled Org",
+                CreatedByUserId = "disabled_domain_owner_1",
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+                DisabledAtUtc = now,
+                AutoInviteSameDomainEnabled = true,
+                AutoInviteSameDomain = "example.com",
+                AutoInviteDefaultRole = "member",
+            },
+            new Organization
+            {
+                Id = NewId("org"),
+                DisplayName = "Replacement Org",
+                CreatedByUserId = "disabled_domain_owner_2",
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+                AutoInviteSameDomainEnabled = true,
+                AutoInviteSameDomain = "example.com",
+                AutoInviteDefaultRole = "member",
+            }
+        );
+
+        await _context.SaveChangesAsync();
+    }
+
+    [Test]
+    public async Task UpdateOrganizationSameDomainOnboardingAsync_WithDuplicateDomain_ReturnsFalse()
+    {
+        var store = CreateStore();
+        var now = DateTimeOffset.UtcNow;
+        var targetOrgId = NewId("org");
+        await SeedUser(_context, "conflict_domain_owner_1");
+        await SeedUser(_context, "conflict_domain_owner_2");
+
+        _context.Organizations.AddRange(
+            new Organization
+            {
+                Id = NewId("org"),
+                DisplayName = "Claimed Org",
+                CreatedByUserId = "conflict_domain_owner_1",
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+                AutoInviteSameDomainEnabled = true,
+                AutoInviteSameDomain = "example.com",
+                AutoInviteDefaultRole = "member",
+            },
+            new Organization
+            {
+                Id = targetOrgId,
+                DisplayName = "Target Org",
+                CreatedByUserId = "conflict_domain_owner_2",
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+                AutoInviteDefaultRole = "member",
+            }
+        );
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var target =
+            await store.FindOrganizationByIdAsync(targetOrgId, CancellationToken.None)
+            ?? throw new InvalidOperationException("Target org was not seeded.");
+        target.AutoInviteSameDomainEnabled = true;
+        target.AutoInviteSameDomain = "example.com";
+        target.AutoInviteDefaultRole = "member";
+
+        var updated = await store.UpdateOrganizationSameDomainOnboardingAsync(
+            target,
+            CancellationToken.None
+        );
+
+        await Assert.That(updated).IsFalse();
+
+        var reloaded = await store.FindOrganizationByIdAsync(targetOrgId, CancellationToken.None);
+        await Assert.That(reloaded!.AutoInviteSameDomainEnabled).IsFalse();
+        await Assert.That(reloaded.AutoInviteSameDomain).IsNull();
     }
 }

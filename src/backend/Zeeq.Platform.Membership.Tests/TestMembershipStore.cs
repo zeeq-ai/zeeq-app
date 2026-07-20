@@ -22,6 +22,7 @@ internal sealed class TestMembershipStore : IZeeqMembershipStore
     public List<TeamMembership> TeamMemberships { get; } = [];
     public List<OrganizationMembership> Invitations { get; } = [];
     public List<OrganizationMember> Members { get; } = [];
+    public Dictionary<string, string?> UserEmails { get; } = [];
     public int LeaveOrganizationCalls { get; private set; }
 
     /// <summary>
@@ -35,6 +36,10 @@ internal sealed class TestMembershipStore : IZeeqMembershipStore
         Teams.Add(seed.RootTeam);
         Memberships.AddRange(seed.OrganizationMemberships);
         TeamMemberships.AddRange(seed.TeamMemberships);
+        foreach (var user in seed.Users)
+        {
+            UserEmails[user.Id] = user.Email;
+        }
 
         return this;
     }
@@ -115,6 +120,71 @@ internal sealed class TestMembershipStore : IZeeqMembershipStore
     /// <inheritdoc />
     public Task UpdateOrganizationAsync(Organization org, CancellationToken ct) =>
         Task.CompletedTask;
+
+    /// <inheritdoc />
+    public Task<bool> UpdateOrganizationSameDomainOnboardingAsync(
+        Organization organization,
+        CancellationToken ct
+    ) =>
+        Task.FromResult(
+            !(
+                organization.AutoInviteSameDomainEnabled
+                && organization.AutoInviteSameDomain is not null
+                && Organizations.Any(org =>
+                    org.Id != organization.Id
+                    && org.AutoInviteSameDomainEnabled
+                    && org.AutoInviteSameDomain == organization.AutoInviteSameDomain
+                    && org.DisabledAtUtc is null
+                )
+            )
+        );
+
+    /// <inheritdoc />
+    public Task<string?> FindUserEmailByIdAsync(string userId, CancellationToken ct) =>
+        Task.FromResult(UserEmails.GetValueOrDefault(userId));
+
+    /// <inheritdoc />
+    public Task<IReadOnlyDictionary<string, string?>> FindUserEmailsByIdsAsync(
+        string[] userIds,
+        CancellationToken ct
+    ) =>
+        Task.FromResult<IReadOnlyDictionary<string, string?>>(
+            userIds
+                .Distinct()
+                .Where(UserEmails.ContainsKey)
+                .ToDictionary(userId => userId, userId => UserEmails[userId])
+        );
+
+    /// <inheritdoc />
+    public Task<bool> IsAutoInviteSameDomainAvailableAsync(
+        string domain,
+        string excludeOrgId,
+        CancellationToken ct
+    ) =>
+        Task.FromResult(
+            !Organizations.Any(org =>
+                org.Id != excludeOrgId
+                && org.AutoInviteSameDomainEnabled
+                && org.AutoInviteSameDomain == domain
+                && org.DisabledAtUtc is null
+            )
+        );
+
+    /// <inheritdoc />
+    public Task<IReadOnlyDictionary<string, string>> FindAutoInviteSameDomainClaimsAsync(
+        string[] domains,
+        CancellationToken ct
+    ) =>
+        Task.FromResult<IReadOnlyDictionary<string, string>>(
+            Organizations
+                .Where(org =>
+                    org.AutoInviteSameDomainEnabled
+                    && org.AutoInviteSameDomain is not null
+                    && domains.Contains(org.AutoInviteSameDomain)
+                    && org.DisabledAtUtc is null
+                )
+                .ToDictionary(org => org.AutoInviteSameDomain!, org => org.Id)
+        );
 
     /// <inheritdoc />
     public Task<int> CountOrganizationsCreatedByUserAsync(string userId, CancellationToken ct) =>

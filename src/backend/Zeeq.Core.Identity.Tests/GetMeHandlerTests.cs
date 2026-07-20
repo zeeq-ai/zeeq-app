@@ -1,9 +1,9 @@
 using System.Collections;
 using System.Reflection;
 using System.Security.Claims;
+using OpenIddict.Abstractions;
 using Zeeq.Core.Common;
 using Zeeq.Core.Models;
-using OpenIddict.Abstractions;
 
 namespace Zeeq.Core.Identity.Tests;
 
@@ -239,6 +239,30 @@ public sealed class GetMeHandlerTests
 
         public Task UpdateOrganizationAsync(Organization org, CancellationToken ct) =>
             throw new NotSupportedException();
+
+        public Task<bool> UpdateOrganizationSameDomainOnboardingAsync(
+            Organization organization,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task<string?> FindUserEmailByIdAsync(string userId, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyDictionary<string, string?>> FindUserEmailsByIdsAsync(
+            string[] userIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task<bool> IsAutoInviteSameDomainAvailableAsync(
+            string domain,
+            string excludeOrgId,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyDictionary<string, string>> FindAutoInviteSameDomainClaimsAsync(
+            string[] domains,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
 
         public Task<int> CountOrganizationsCreatedByUserAsync(
             string userId,

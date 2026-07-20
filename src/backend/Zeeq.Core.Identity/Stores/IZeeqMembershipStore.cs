@@ -107,6 +107,63 @@ public interface IZeeqMembershipStore
     Task UpdateOrganizationAsync(Organization org, CancellationToken ct);
 
     /// <summary>
+    /// Persists only the same-domain onboarding organization settings.
+    /// </summary>
+    /// <param name="organization">Organization entity carrying the new same-domain settings.</param>
+    /// <param name="ct">Cancellation token for the database operation.</param>
+    /// <returns>
+    /// <see langword="true"/> when the settings were saved; <see langword="false"/>
+    /// when another enabled organization already owns the requested domain.
+    /// </returns>
+    Task<bool> UpdateOrganizationSameDomainOnboardingAsync(
+        Organization organization,
+        CancellationToken ct
+    );
+
+    /// <summary>
+    /// Resolves a user's current primary email address by local user ID.
+    /// </summary>
+    /// <param name="userId">Local user ID to resolve.</param>
+    /// <param name="ct">Cancellation token for the database operation.</param>
+    /// <returns>The user's email address, or <see langword="null"/> when missing.</returns>
+    Task<string?> FindUserEmailByIdAsync(string userId, CancellationToken ct);
+
+    /// <summary>
+    /// Batch resolves current primary email addresses by local user ID.
+    /// </summary>
+    /// <param name="userIds">Local user IDs to resolve.</param>
+    /// <param name="ct">Cancellation token for the database operation.</param>
+    /// <returns>Email addresses keyed by user ID. Missing users are omitted.</returns>
+    Task<IReadOnlyDictionary<string, string?>> FindUserEmailsByIdsAsync(
+        string[] userIds,
+        CancellationToken ct
+    );
+
+    /// <summary>
+    /// Checks whether a normalized same-domain onboarding domain can be claimed.
+    /// </summary>
+    /// <param name="domain">Normalized registrable domain, e.g. <c>example.com</c>.</param>
+    /// <param name="excludeOrgId">Organization ID to ignore during updates.</param>
+    /// <param name="ct">Cancellation token for the database operation.</param>
+    /// <returns><see langword="true"/> when no other enabled organization owns the domain.</returns>
+    Task<bool> IsAutoInviteSameDomainAvailableAsync(
+        string domain,
+        string excludeOrgId,
+        CancellationToken ct
+    );
+
+    /// <summary>
+    /// Finds active organizations that currently claim any of the supplied same-domain onboarding domains.
+    /// </summary>
+    /// <param name="domains">Normalized registrable domains to check.</param>
+    /// <param name="ct">Cancellation token for the database operation.</param>
+    /// <returns>Claiming organization ID keyed by normalized domain. Unclaimed domains are omitted.</returns>
+    Task<IReadOnlyDictionary<string, string>> FindAutoInviteSameDomainClaimsAsync(
+        string[] domains,
+        CancellationToken ct
+    );
+
+    /// <summary>
     /// Counts organizations originally created by the supplied user.
     /// </summary>
     /// <param name="userId">Local user ID to count created organizations for.</param>
