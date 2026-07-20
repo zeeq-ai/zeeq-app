@@ -25,7 +25,7 @@
       </div>
     </div>
 
-    <div class="flex flex-wrap gap-2">
+    <div class="flex flex-wrap justify-end gap-2">
       <UButton
         label="Sync now"
         icon="i-hugeicons-refresh"
@@ -41,7 +41,7 @@
       >
         <UButton
           label="Clear run state"
-          icon="i-hugeicons-broom"
+          icon="i-hugeicons-clean"
           color="warning"
           variant="subtle"
           :loading="resetting"
@@ -54,10 +54,7 @@
     <!-- Run history -->
     <div>
       <div class="mb-2 text-sm font-semibold">Sync history</div>
-      <p
-        v-if="source?.kind === 'Public'"
-        class="mb-2 text-xs opacity-75"
-      >
+      <p v-if="source?.kind === 'Public'" class="mb-2 text-xs opacity-75">
         This repository is shared — sync history reflects all organizations
         subscribed to it, not just yours.
       </p>
@@ -90,7 +87,9 @@
             </div>
           </div>
           <div class="mt-1 opacity-75">
-            +{{ run.filesAdded }} ~{{ run.filesUpdated }} →{{ run.filesMoved }}
+            +{{ run.filesAdded }} ~{{ run.filesUpdated }} →{{
+              run.filesMoved
+            }}
             -{{ run.filesDeleted }}
             <span v-if="Number(run.filesFailed) > 0" class="text-error">
               ({{ run.filesFailed }} failed)</span
@@ -135,7 +134,9 @@ const emits = defineEmits<{
 }>();
 
 const isInFlight = computed(
-  () => props.source?.syncStatus === "queued" || props.source?.syncStatus === "running",
+  () =>
+    props.source?.syncStatus === "queued" ||
+    props.source?.syncStatus === "running",
 );
 
 const statusLabel = computed(() => props.source?.syncStatus ?? "idle");

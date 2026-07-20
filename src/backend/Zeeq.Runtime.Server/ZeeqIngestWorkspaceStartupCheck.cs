@@ -7,15 +7,15 @@ namespace Zeeq.Runtime.Server;
 /// <remarks>
 /// <para>
 /// <b>Why this exists:</b> the worker's ingest workspace root
-/// (<see cref="IngestSettings.ContentRootPath"/>) is a mounted Cloud Storage
-/// FUSE volume in production (see
+/// (<see cref="IngestSettings.ContentRootPath"/>) is a mounted Cloud Run
+/// ephemeral disk in production (see
 /// <c>docs/content/5.configuration/1-gcp-runtime.md</c>), not local disk —
 /// a wrong mount path, a missing/misconfigured volume, or an IAM permission
-/// gap on the bucket would otherwise go undetected until the first real
+/// gap would otherwise go undetected until the first real
 /// customer's ingest job fails deep inside a background message handler,
 /// with a much less obvious error than "the mount doesn't work." This check
-/// exercises exactly the operations the mount and its IAM role need
-/// (create/get/delete) against the real configured root, so a broken mount
+/// exercises the filesystem operations the mount must support
+/// (create/read/delete) against the real configured root, so a broken mount
 /// fails loud at startup instead of silently on the first real job.
 /// </para>
 /// <para>

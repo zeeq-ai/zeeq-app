@@ -5,7 +5,7 @@ namespace Zeeq.Core.Documents.Dispatch;
 /// </summary>
 /// <remarks>
 /// The runner never hardcodes a path; it always writes under
-/// <see cref="RootPath"/>. Swapping local temp storage for a mounted GCS volume
+/// <see cref="RootPath"/>. Swapping local temp storage for a mounted volume
 /// is a provider swap (see <see cref="IIngestWorkspaceProvider"/>), invisible to
 /// the runner.
 /// </remarks>
@@ -20,7 +20,7 @@ public interface IIngestWorkspace : IAsyncDisposable
 
 /// <summary>
 /// Allocates <see cref="IIngestWorkspace"/> instances on the runtime's storage
-/// medium (local temp disk, mounted GCS volume, ...).
+/// medium (local temp disk, mounted ephemeral disk, ...).
 /// </summary>
 public interface IIngestWorkspaceProvider
 {

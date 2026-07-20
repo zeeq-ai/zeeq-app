@@ -1,10 +1,8 @@
 set -e
 
-# Provisions the GCS bucket mounted as the ingest workspace root (spec §11.2 /
-# Phase 3.2 — see .agents/plans/2026-07-06-repository-content-ingest.log.md).
-# Ingest still uses LocalTempWorkspaceProvider unchanged; the worker pool just
-# points AppSettings__Ingest__ContentRootPath at this bucket's Cloud Storage
-# FUSE mount instead of the OS temp directory (see build/ship-worker.sh).
+# Provisions the GCS bucket used by Cloud Storage FUSE runtime mounts.
+# Git clone ingest no longer uses this bucket; build/ship-worker.sh mounts a
+# Cloud Run ephemeral disk at AppSettings__Ingest__ContentRootPath instead.
 
 PROJECT=$GCP_PROJECT_ID # Set in .config/mise.toml
 RUNTIME_SA=$GCP_RUNTIME_SA # Set via env var
@@ -19,13 +17,8 @@ gcloud storage buckets create "gs://${BUCKET}" \
   --location="$REGION" \
   --uniform-bucket-level-access
 
-# Defense-in-depth: every workspace is deleted on dispose regardless of
-# outcome (LocalIngestWorkspace's local-temp semantics), but a hard process
-# kill mid-run (OOM, container restart) bypasses that `finally`/IAsyncDisposable
-# path and could leave an org's private clone sitting in the shared bucket
-# indefinitely. Age objects out after 3 days as a backstop — generous well
-# beyond any real run's duration, so this never races a legitimate in-progress
-# clone.
+# Keep a short lifecycle on this shared bucket as a safety backstop for
+# temporary mounted-storage files left behind by runtime use cases.
 lifecycle_file="$(mktemp)"
 trap 'rm -f "$lifecycle_file"' EXIT
 cat > "$lifecycle_file" <<'EOF'
@@ -55,11 +48,8 @@ gcloud storage buckets update "gs://${BUCKET}" \
 # through a mount: they let a holder change who else can access an object or
 # override a retention lock, which only widens what a compromised worker
 # process or leaked SA credential could do. A hand-rolled custom role here
-# was considered and rejected: this bucket is a single shared namespace
-# across every organization's private-source clones (paths are scoped by
-# org+library only at the *application* layer — see
-# LocalTempWorkspaceProvider.ResolveWorkspacePath — not by GCS IAM, which has
-# no native per-prefix authorization), and a custom role hand-copying a
+# was considered and rejected: this bucket can be a shared runtime mount,
+# and a custom role hand-copying a
 # subset of a predefined role's permissions would silently drift out of sync
 # if Cloud Run's GCS-mount feature (an evolving product) ever starts relying
 # on a permission this list didn't anticipate — safer to track Google's own
