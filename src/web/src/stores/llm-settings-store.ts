@@ -26,8 +26,22 @@ export const llmModelCatalog = {
     "accounts/fireworks/models/deepseek-v4-pro",
     "accounts/fireworks/models/deepseek-v4-flash",
   ],
-  OpenAI: ["gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.4", "gpt-5.5"],
-  "Azure OpenAI": ["gpt-5.4-mini", "gpt-5.6-luna", "gpt-5.4", "gpt-5.5"],
+  OpenAI: [
+    "gpt-5.4-mini",
+    "gpt-5.6-luna",
+    "gpt-5.6-terra",
+    "gpt-5.6-sol",
+    "gpt-5.4",
+    "gpt-5.5",
+  ],
+  "Azure OpenAI": [
+    "gpt-5.4-mini",
+    "gpt-5.6-luna",
+    "gpt-5.6-terra",
+    "gpt-5.6-sol",
+    "gpt-5.4",
+    "gpt-5.5",
+  ],
   Anthropic: [
     "claude-haiku-4-5",
     "claude-sonnet-4-6",
@@ -53,6 +67,8 @@ export const llmModelLabels: Record<string, string> = {
   "gpt-5.4": "GPT 5.4",
   "gpt-5.5": "GPT 5.5",
   "gpt-5.6-luna": "GPT 5.6 Luna",
+  "gpt-5.6-terra": "GPT 5.6 Terra",
+  "gpt-5.6-sol": "GPT 5.6 Sol",
   // Anthropic
   "claude-haiku-4-5": "Claude Haiku 4.5",
   "claude-sonnet-4-6": "Claude Sonnet 4.6",
