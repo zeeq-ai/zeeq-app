@@ -441,6 +441,46 @@ public sealed class GitHubCommentDomRenderingTests
     }
 
     [Test]
+    public async Task HeaderRenderer_WithViewReviewUrl_RendersManageLink()
+    {
+        var renderer = new GitHubCommentDomRenderer([new PullRequestHeaderSectionRenderer()]);
+        var context = new CodeReviewCommentRenderContext(
+            Review: null,
+            FindingsXml: null,
+            Findings: null,
+            FindingsLoadError: null,
+            ActionLinks: new(ViewReviewUrl: "https://app.zeeq.ai/code-reviews/reviews/cr_abc"),
+            RenderedAtUtc: DateTimeOffset.Parse("2026-06-25T17:19:43Z")
+        );
+
+        var body = renderer.Render(
+            kind: "review_completed",
+            clear: [],
+            context: context,
+            currentDom: GitHubCommentDom.Empty(Target)
+        );
+
+        await Assert
+            .That(body)
+            .Contains("[Manage this PR in Zeeq](https://app.zeeq.ai/code-reviews/reviews/cr_abc)");
+    }
+
+    [Test]
+    public async Task HeaderRenderer_WithoutViewReviewUrl_OmitsManageLink()
+    {
+        var renderer = new GitHubCommentDomRenderer([new PullRequestHeaderSectionRenderer()]);
+
+        var body = renderer.Render(
+            kind: "review_completed",
+            clear: [],
+            context: EmptyContext(),
+            currentDom: GitHubCommentDom.Empty(Target)
+        );
+
+        await Assert.That(body).DoesNotContain("Manage this PR in Zeeq");
+    }
+
+    [Test]
     public async Task FooterRenderer_WithViewReviewUrl_RendersLink()
     {
         var renderer = new GitHubCommentDomRenderer([

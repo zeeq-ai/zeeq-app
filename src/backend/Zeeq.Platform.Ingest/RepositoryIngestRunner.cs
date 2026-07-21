@@ -2,11 +2,11 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Dispatch;
 using Zeeq.Core.Documents.Parsing;
-using Microsoft.Extensions.Logging;
 
 namespace Zeeq.Platform.Ingest;
 
@@ -305,16 +305,6 @@ public sealed partial class RepositoryIngestRunner(
         var parsed = MarkdownParser.Parse(content, fileName);
         var now = DateTimeOffset.UtcNow;
 
-        if (
-            !normalizedPath.Equals(
-                "/" + file.RelativePath.Replace('\\', '/').TrimStart('/'),
-                StringComparison.Ordinal
-            )
-        )
-        {
-            LogPathCaseFolded(logger, job.RunId, file.RelativePath, normalizedPath);
-        }
-
         // Computed once and shared by both branches below — the public/private
         // entities differ only in identity/scope fields (Id, org/team/library
         // vs. public source id), never in how content is parsed or hashed.
@@ -530,17 +520,6 @@ public sealed partial class RepositoryIngestRunner(
         Message = "Ingest run failed fatally before any deletion sweep could run. RunId={RunId}"
     )]
     private static partial void LogRunFatalError(ILogger logger, string runId, Exception ex);
-
-    [LoggerMessage(
-        Level = LogLevel.Debug,
-        Message = "Ingest path case-folded to its stored identity. RunId={RunId}, SourcePath={SourcePath}, StoredPath={StoredPath}"
-    )]
-    private static partial void LogPathCaseFolded(
-        ILogger logger,
-        string runId,
-        string sourcePath,
-        string storedPath
-    );
 
     [LoggerMessage(
         Level = LogLevel.Warning,

@@ -200,7 +200,7 @@ public sealed partial class OctokitCheckRunClient(
 
     [LoggerMessage(
         EventId = 3310,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Creating check run. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, Name={CheckRunName}, HeadSha={HeadSha}, Status={Status}, Conclusion={Conclusion}"
     )]
     private static partial void LogCheckRunCreating(
@@ -215,7 +215,7 @@ public sealed partial class OctokitCheckRunClient(
 
     [LoggerMessage(
         EventId = 3311,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Created check run. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, HeadSha={HeadSha}, CheckRunId={CheckRunId}"
     )]
     private static partial void LogCheckRunCreated(
@@ -228,7 +228,7 @@ public sealed partial class OctokitCheckRunClient(
 
     [LoggerMessage(
         EventId = 3312,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Updating check run. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, CheckRunId={CheckRunId}, Status={Status}, Conclusion={Conclusion}"
     )]
     private static partial void LogCheckRunUpdating(
@@ -242,7 +242,7 @@ public sealed partial class OctokitCheckRunClient(
 
     [LoggerMessage(
         EventId = 3313,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Updated check run. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, CheckRunId={CheckRunId}"
     )]
     private static partial void LogCheckRunUpdated(

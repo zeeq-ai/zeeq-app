@@ -71,7 +71,14 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
         var leaseDuration = ResolveLeaseDuration();
         var targetKey = message.Target.ToStorageKey();
 
-        LogCommentWriteStarted(logger, targetKey, message.Kind, message.SignalId);
+        LogCommentWriteStarted(
+            logger,
+            targetKey,
+            message.Kind,
+            message.OwnerQualifiedRepoName,
+            message.PullRequestNumber,
+            message.SignalId
+        );
         if (!await TryAcquireLeaseAsync(leaseKey, workerId, leaseDuration, cancellationToken))
         {
             activity?.AddEvent(
@@ -127,6 +134,8 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
                 logger,
                 targetKey,
                 message.Kind,
+                message.OwnerQualifiedRepoName,
+                message.PullRequestNumber,
                 message.SignalId,
                 ex.GetType().Name
             );
@@ -154,7 +163,14 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
             LogCommentLeaseReleased(logger, targetKey, message.Kind, message.SignalId);
         }
 
-        LogCommentWriteCompleted(logger, targetKey, message.Kind, message.SignalId);
+        LogCommentWriteCompleted(
+            logger,
+            targetKey,
+            message.Kind,
+            message.OwnerQualifiedRepoName,
+            message.PullRequestNumber,
+            message.SignalId
+        );
         return message;
     }
 
@@ -750,18 +766,20 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
     [LoggerMessage(
         EventId = 3227,
         Level = LogLevel.Information,
-        Message = "Started GitHub comment write. Target={TargetKey}, Kind={Kind}, SignalId={SignalId}"
+        Message = "Started GitHub comment write. Target={TargetKey}, Kind={Kind}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, SignalId={SignalId}"
     )]
     private static partial void LogCommentWriteStarted(
         ILogger logger,
         string targetKey,
         string kind,
+        string ownerQualifiedRepoName,
+        int pullRequestNumber,
         string signalId
     );
 
     [LoggerMessage(
         EventId = 3228,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Completed GitHub comment render/write work task. Target={TargetKey}, Kind={Kind}, SignalId={SignalId}"
     )]
     private static partial void LogCommentWriteWorkCompleted(
@@ -773,7 +791,7 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
 
     [LoggerMessage(
         EventId = 3229,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Releasing GitHub comment lease. Target={TargetKey}, Kind={Kind}, SignalId={SignalId}"
     )]
     private static partial void LogCommentLeaseReleaseStarting(
@@ -785,7 +803,7 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
 
     [LoggerMessage(
         EventId = 3230,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Released GitHub comment lease. Target={TargetKey}, Kind={Kind}, SignalId={SignalId}"
     )]
     private static partial void LogCommentLeaseReleased(
@@ -798,31 +816,35 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
     [LoggerMessage(
         EventId = 3221,
         Level = LogLevel.Information,
-        Message = "Completed GitHub comment write. Target={TargetKey}, Kind={Kind}, SignalId={SignalId}"
+        Message = "Completed GitHub comment write. Target={TargetKey}, Kind={Kind}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, SignalId={SignalId}"
     )]
     private static partial void LogCommentWriteCompleted(
         ILogger logger,
         string targetKey,
         string kind,
+        string ownerQualifiedRepoName,
+        int pullRequestNumber,
         string signalId
     );
 
     [LoggerMessage(
         EventId = 3222,
         Level = LogLevel.Error,
-        Message = "Failed GitHub comment write. Target={TargetKey}, Kind={Kind}, SignalId={SignalId}, ErrorType={ErrorType}"
+        Message = "Failed GitHub comment write. Target={TargetKey}, Kind={Kind}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, SignalId={SignalId}, ErrorType={ErrorType}"
     )]
     private static partial void LogCommentWriteFailed(
         ILogger logger,
         string targetKey,
         string kind,
+        string ownerQualifiedRepoName,
+        int pullRequestNumber,
         string signalId,
         string errorType
     );
 
     [LoggerMessage(
         EventId = 3235,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Persisting repaired GitHub comment anchor. Target={TargetKey}, Kind={Kind}, CommentId={CommentId}"
     )]
     private static partial void LogCommentAnchorRepairStarting(
@@ -834,7 +856,7 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
 
     [LoggerMessage(
         EventId = 3236,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Persisted GitHub comment anchor. Target={TargetKey}, Kind={Kind}, CommentId={CommentId}"
     )]
     private static partial void LogCommentAnchorPersisted(
@@ -846,7 +868,7 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
 
     [LoggerMessage(
         EventId = 3224,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Skipped GitHub comment render. Target={TargetKey}, Kind={Kind}"
     )]
     private static partial void LogCommentRenderSkipped(
@@ -857,7 +879,7 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
 
     [LoggerMessage(
         EventId = 3238,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Loaded GitHub comment render context. Target={TargetKey}, Kind={Kind}, CodeReviewId={CodeReviewId}, ReviewStatus={ReviewStatus}, FindingsLoaded={FindingsLoaded}, HasFindingsLoadError={HasFindingsLoadError}"
     )]
     private static partial void LogCommentRenderContextLoaded(
@@ -872,7 +894,7 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
 
     [LoggerMessage(
         EventId = 3241,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "GitHub comment upsert returned. Target={TargetKey}, Kind={Kind}, CommentId={CommentId}"
     )]
     private static partial void LogCommentGitHubUpsertReturned(
@@ -884,7 +906,7 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
 
     [LoggerMessage(
         EventId = 3226,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Completed GitHub comment upsert. Target={TargetKey}, Kind={Kind}, CommentId={CommentId}"
     )]
     private static partial void LogCommentUpsertCompleted(

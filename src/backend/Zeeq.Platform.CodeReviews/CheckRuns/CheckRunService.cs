@@ -57,6 +57,7 @@ public sealed partial class CheckRunService(
                 && string.Equals(existingState.HeadSha, pr.HeadSha, StringComparison.Ordinal);
 
             long checkRunId;
+            string operation;
             if (existingForSameCommit)
             {
                 // A check run already exists for this commit; reset it to in_progress rather than
@@ -70,6 +71,7 @@ public sealed partial class CheckRunService(
                     ct
                 );
                 checkRunId = existingState.CheckRunId;
+                operation = "update";
                 // Reset persisted state to match the in_progress update sent to GitHub. Without
                 // this, a previously bypassed run (State=Removed, RemovedBy set) would be upserted
                 // with stale values even though GitHub now shows it as in_progress again.
@@ -91,6 +93,7 @@ public sealed partial class CheckRunService(
                     HeadSha = pr.HeadSha,
                     State = CheckRunBlockState.Blocking,
                 };
+                operation = "create";
             }
 
             await pullRequests.UpsertAsync(pr, ct);
@@ -101,7 +104,8 @@ public sealed partial class CheckRunService(
                 pr.OwnerQualifiedRepoName,
                 pr.PullRequestNumber,
                 pr.HeadSha,
-                checkRunId
+                checkRunId,
+                operation
             );
 
             activity?.AddEvent(
@@ -178,6 +182,8 @@ public sealed partial class CheckRunService(
         try
         {
             var existingState = pr.CheckRunState;
+            long checkRunId;
+            string operation;
             if (
                 existingState is not null
                 && string.Equals(existingState.HeadSha, pr.HeadSha, StringComparison.Ordinal)
@@ -190,16 +196,19 @@ public sealed partial class CheckRunService(
                     write,
                     ct
                 );
+                checkRunId = existingState.CheckRunId;
+                operation = "update";
             }
             else
             {
-                var checkRunId = await client.CreateAsync(
+                checkRunId = await client.CreateAsync(
                     pr.OrganizationId,
                     pr.OwnerQualifiedRepoName,
                     write,
                     ct
                 );
                 pr.CheckRunState = new() { CheckRunId = checkRunId, HeadSha = pr.HeadSha };
+                operation = "create";
             }
 
             pr.CheckRunState!.State = state;
@@ -222,6 +231,8 @@ public sealed partial class CheckRunService(
                 pr.OwnerQualifiedRepoName,
                 pr.PullRequestNumber,
                 pr.HeadSha,
+                checkRunId,
+                operation,
                 conclusion?.ToString(),
                 blocking
             );
@@ -476,7 +487,7 @@ public sealed partial class CheckRunService(
     [LoggerMessage(
         EventId = 3300,
         Level = LogLevel.Information,
-        Message = "Posted pending check run. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, HeadSha={HeadSha}, CheckRunId={CheckRunId}"
+        Message = "Posted pending check run. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, HeadSha={HeadSha}, CheckRunId={CheckRunId}, Operation={Operation}"
     )]
     private static partial void LogCheckRunPendingPosted(
         ILogger logger,
@@ -484,7 +495,8 @@ public sealed partial class CheckRunService(
         string ownerQualifiedRepoName,
         int pullRequestNumber,
         string headSha,
-        long checkRunId
+        long checkRunId,
+        string operation
     );
 
     [LoggerMessage(
@@ -504,7 +516,7 @@ public sealed partial class CheckRunService(
     [LoggerMessage(
         EventId = 3302,
         Level = LogLevel.Information,
-        Message = "Resolved check run. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, HeadSha={HeadSha}, Conclusion={Conclusion}, Blocking={Blocking}"
+        Message = "Resolved check run. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, HeadSha={HeadSha}, CheckRunId={CheckRunId}, Operation={Operation}, Conclusion={Conclusion}, Blocking={Blocking}"
     )]
     private static partial void LogCheckRunResolved(
         ILogger logger,
@@ -512,6 +524,8 @@ public sealed partial class CheckRunService(
         string ownerQualifiedRepoName,
         int pullRequestNumber,
         string headSha,
+        long checkRunId,
+        string operation,
         string? conclusion,
         bool blocking
     );

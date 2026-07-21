@@ -59,7 +59,7 @@ internal static class SetupLoggingExtension
                         ["service.version"] = GitVersionInfo.TelemetryVersion,
                     };
                 })
-                .MinimumLevel.Debug();
+                .MinimumLevel.Information();
         }
         else
         {

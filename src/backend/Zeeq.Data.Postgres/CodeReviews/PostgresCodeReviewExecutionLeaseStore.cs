@@ -271,7 +271,7 @@ internal sealed partial class PostgresCodeReviewExecutionLeaseStore(
 
     [LoggerMessage(
         EventId = 3401,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Prepared Postgres transaction for code-review execution lease acquisition. OrganizationId={OrganizationId}, CodeReviewId={CodeReviewId}, OwnsTransaction={OwnsTransaction}"
     )]
     private static partial void LogLeaseTransactionReady(
@@ -283,7 +283,7 @@ internal sealed partial class PostgresCodeReviewExecutionLeaseStore(
 
     [LoggerMessage(
         EventId = 3403,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Acquired Postgres advisory lock for code-review execution capacity. OrganizationId={OrganizationId}, CodeReviewId={CodeReviewId}"
     )]
     private static partial void LogLeaseAdvisoryLockAcquired(
@@ -294,7 +294,7 @@ internal sealed partial class PostgresCodeReviewExecutionLeaseStore(
 
     [LoggerMessage(
         EventId = 3405,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Loaded live code-review execution lease slots. OrganizationId={OrganizationId}, CodeReviewId={CodeReviewId}, LiveSlotCount={LiveSlotCount}, MaxConcurrentReviews={MaxConcurrentReviews}"
     )]
     private static partial void LogLiveExecutionLeasesLoaded(
@@ -307,7 +307,7 @@ internal sealed partial class PostgresCodeReviewExecutionLeaseStore(
 
     [LoggerMessage(
         EventId = 3407,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Completed Postgres code-review execution lease acquisition. OrganizationId={OrganizationId}, CodeReviewId={CodeReviewId}, Outcome={Outcome}, LeaseId={LeaseId}, SlotIndex={SlotIndex}"
     )]
     private static partial void LogLeaseAcquisitionCompleted(
