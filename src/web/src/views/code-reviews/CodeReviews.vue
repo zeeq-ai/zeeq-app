@@ -55,19 +55,20 @@
           />
         </UFieldGroup>
 
-        <USelect
+        <USelectMenu
           v-if="
             route.name !== 'CodeReviewSingle' &&
             route.name !== 'CodeReviewPullRequestSingle'
           "
           :model-value="repositorySelectorValue"
           :items="repositoryItems"
+          value-key="value"
           :loading="repositorySelectorLoading"
           :placeholder="repositorySelectorPlaceholder"
           color="neutral"
-          variant="ghost"
-          size="lg"
-          class="font-bold"
+          variant="outline"
+          size="md"
+          class="font-bold w-72"
           :disabled="repositorySelectorLoading || repositoryItems.length === 0"
           @update:model-value="changeRepository"
         />

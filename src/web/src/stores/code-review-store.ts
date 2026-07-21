@@ -234,7 +234,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     error.value = null;
 
     try {
-      await githubSettingsStore.loadRepositories();
+      await githubSettingsStore.loadConfiguredRepositories();
 
       if (
         selectedRepositoryId.value &&

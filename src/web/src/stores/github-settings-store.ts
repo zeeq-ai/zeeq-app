@@ -134,8 +134,33 @@ export const useGitHubSettingsStore = defineStore(
           installationConnected.value = false;
           availableRepositories.value = [];
           configuredRepositories.value = [];
+          return;
         }
 
+        error.value = toErrorMessage(err);
+        throw err;
+      } finally {
+        loadingRepositories.value = false;
+      }
+    }
+
+    /**
+     * Loads only the local Zeeq repository mappings, without the live GitHub
+     * installation-visible list. This is a plain DB read on the backend, so
+     * callers that only need configured/paused repos (e.g. the code review
+     * repository picker) can use it instead of `loadRepositories` to avoid
+     * depending on GitHub App/installation availability.
+     */
+    async function loadConfiguredRepositories() {
+      loadingRepositories.value = true;
+      error.value = null;
+
+      try {
+        const orgId = requireOrganizationId();
+        const configured = await GitHub.listConfiguredGitHubRepositories(orgId);
+        configuredRepositories.value =
+          normalizeConfiguredRepositories(configured);
+      } catch (err: unknown) {
         error.value = toErrorMessage(err);
         throw err;
       } finally {
@@ -349,6 +374,7 @@ export const useGitHubSettingsStore = defineStore(
       repositoryRows,
       librarySourceRepositories,
       loadRepositories,
+      loadConfiguredRepositories,
       enableRepository,
       setRepositoryEnabled,
       setRepositoryLibraryPickerVisible,

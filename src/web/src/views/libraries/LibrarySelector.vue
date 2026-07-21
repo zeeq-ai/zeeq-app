@@ -1,7 +1,7 @@
 <template>
   <!--
-  Library selector: a USelect dropdown of library names with a "+ Add new library"
-  sentinel item, including when no libraries exist yet.
+  Library selector: a filterable USelectMenu of library names with a "+ Add new
+  library" sentinel item, including when no libraries exist yet.
   -->
   <div class="flex w-full min-w-0 items-center gap-3">
     <div v-if="activeLibrary" class="min-w-0 flex-1">
@@ -81,16 +81,17 @@
       />
     </UFieldGroup>
 
-    <USelect
+    <USelectMenu
       :model-value="activeLibraryName ?? undefined"
       :items="selectItems"
+      value-key="value"
       :loading="loading"
       :disabled="loading"
       placeholder="Select a library..."
       color="neutral"
-      size="lg"
-      variant="ghost"
-      :class="['shrink-0', activeLibrary ? '' : 'ml-auto', 'font-bold']"
+      size="md"
+      variant="outline"
+      :class="['shrink-0', activeLibrary ? '' : 'ml-auto', 'font-bold', 'w-72']"
       @update:model-value="onSelect"
     />
   </div>
