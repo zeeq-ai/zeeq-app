@@ -9,7 +9,7 @@ namespace Zeeq.Core.Identity;
 /// <param name="ExpiresInDays">Requested lifetime in days, bounded by auth settings.</param>
 public sealed record UserTokenCreateRequest(
     [property: Required, MaxLength(200)] string DisplayName,
-    [property: Range(1, 3650)] int? ExpiresInDays
+    [property: Range(30, 730)] int? ExpiresInDays
 );
 
 /// <summary>

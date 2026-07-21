@@ -22,14 +22,22 @@
           />
         </UFormField>
 
-        <UFormField label="Expires in (days)" name="expiresInDays">
-          <UInput
-            v-model.number="formState.expiresInDays"
-            class="w-full"
-            type="number"
-            placeholder="Default: 90"
-            :min="1"
+        <UFormField
+          label="Expires in (days)"
+          name="expiresInDays"
+          :hint="expiresInDaysLabel"
+        >
+          <USlider
+            v-model="formState.expiresInDays"
+            :min="tokenLifetimeBounds.min"
+            :max="tokenLifetimeBounds.max"
+            :step="tokenLifetimeBounds.step"
+            tooltip
           />
+          <div class="mt-2 flex justify-between text-xs text-muted">
+            <span>{{ tokenLifetimeBounds.min }} days</span>
+            <span>{{ tokenLifetimeBounds.max }} days</span>
+          </div>
         </UFormField>
 
         <div class="flex justify-end gap-2">
@@ -105,7 +113,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import {
   useCredentialsStore,
   type UserTokenCreated,
@@ -117,21 +125,29 @@ const emit = defineEmits<{ "update:open": [value: boolean] }>();
 const toast = useToast();
 const credentialsStore = useCredentialsStore();
 
+const tokenLifetimeBounds = {
+  min: 30,
+  default: 365,
+  max: 730,
+  step: 30,
+} as const;
+
 const formState = reactive<{
   displayName: string;
-  expiresInDays: number | null;
+  expiresInDays: number;
 }>({
   displayName: "",
-  expiresInDays: null,
+  expiresInDays: tokenLifetimeBounds.default,
 });
 const created = ref<UserTokenCreated | null>(null);
 const reveal = ref(false);
+const expiresInDaysLabel = computed(() => `${formState.expiresInDays} days`);
 
 // Reset state each time the slideover opens.
 watch(open, (value) => {
   if (value) {
     formState.displayName = "";
-    formState.expiresInDays = null;
+    formState.expiresInDays = tokenLifetimeBounds.default;
     created.value = null;
     reveal.value = false;
   }
@@ -141,7 +157,7 @@ async function submit() {
   try {
     created.value = await credentialsStore.createUserToken(
       formState.displayName.trim(),
-      formState.expiresInDays ?? undefined,
+      formState.expiresInDays,
     );
     reveal.value = true;
   } catch {

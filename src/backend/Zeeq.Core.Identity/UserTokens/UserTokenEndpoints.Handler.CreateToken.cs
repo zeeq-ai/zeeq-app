@@ -1,8 +1,8 @@
 using System.Security.Claims;
-using Zeeq.Core.Common.AspNetCore.Contracts;
-using Zeeq.Core.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Zeeq.Core.Common.AspNetCore.Contracts;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Core.Identity;
 
@@ -49,14 +49,17 @@ public sealed partial class CreateUserTokenHandler(
         }
 
         var lifetimeDays = request.ExpiresInDays ?? settings.UserTokenDefaultLifetimeDays;
-        if (lifetimeDays <= 0 || lifetimeDays > settings.UserTokenMaxLifetimeDays)
+        if (
+            lifetimeDays < settings.UserTokenMinLifetimeDays
+            || lifetimeDays > settings.UserTokenMaxLifetimeDays
+        )
         {
             return TypedResults.ValidationProblem(
                 new Dictionary<string, string[]>
                 {
                     [nameof(request.ExpiresInDays)] =
                     [
-                        $"Expiration must be between 1 and {settings.UserTokenMaxLifetimeDays} days.",
+                        $"Expiration must be between {settings.UserTokenMinLifetimeDays} and {settings.UserTokenMaxLifetimeDays} days.",
                     ],
                 }
             );
