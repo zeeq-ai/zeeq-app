@@ -1,6 +1,6 @@
+using Microsoft.AspNetCore.Http.HttpResults;
 using Zeeq.Core.Models;
 using Zeeq.Testing.EntityGraphs;
-using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Zeeq.Platform.Membership.Tests;
 
@@ -62,5 +62,31 @@ public sealed class InvitationEndpointHandlerTests
         await Assert.That(result.Result is NotFound).IsTrue();
         await Assert.That(invitation.Status).IsEqualTo(MembershipStatus.Pending);
         await Assert.That(invitation.UserId).IsNull();
+    }
+
+    [Test]
+    public async Task AcceptInvitationAsDefaultHandler_WithManualInvitation_AcceptsInvitation()
+    {
+        var (seed, invitations) = await EntityGraph
+            .AddGeneratedSeed()
+            .AddPendingInvitation(invitation => invitation.Email = "manual@test.com")
+            .BuildAsync();
+        var invitation = invitations[0];
+        var store = new TestMembershipStore().AddSeed(seed).AddInvitations(invitations);
+
+        var handler = new AcceptInvitationAsDefaultHandler(store);
+        var result = await handler.HandleAsync(
+            invitation.Id,
+            MembershipTestClaims.TestUser("usr_manual", "manual@test.com"),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result is NoContent).IsTrue();
+        var acceptedMembership = store.Memberships.Single(membership =>
+            membership.Id == invitation.Id
+        );
+        await Assert.That(acceptedMembership.Status).IsEqualTo(MembershipStatus.Active);
+        await Assert.That(acceptedMembership.UserId).IsEqualTo("usr_manual");
+        await Assert.That(acceptedMembership.IsDefault).IsTrue();
     }
 }

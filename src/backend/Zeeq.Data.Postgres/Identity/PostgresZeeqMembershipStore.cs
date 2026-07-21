@@ -135,7 +135,8 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
         CancellationToken ct
     )
     {
-        if (userIds.Length == 0)
+        var distinctUserIds = userIds.Distinct().ToArray();
+        if (distinctUserIds.Length == 0)
         {
             return new Dictionary<string, string?>();
         }
@@ -143,7 +144,7 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
         return await db
             .Users.TagWithOperationCallSite("membership.user.find_emails_by_ids")
             .AsNoTracking()
-            .Where(user => userIds.Contains(user.Id) && user.DisabledAtUtc == null)
+            .Where(user => distinctUserIds.Contains(user.Id) && user.DisabledAtUtc == null)
             .Select(user => new { user.Id, user.Email })
             .ToDictionaryAsync(user => user.Id, user => user.Email, ct);
     }
@@ -583,6 +584,10 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
                 m.Id == membershipId
                 && m.InvitedEmail != null
                 && m.InvitedEmail.ToLower() == normalizedEmail
+                // NOTE: This lookup only powers the same-domain onboarding details screen.
+                // General invitation acceptance validates manual invitations through
+                // ListPendingInvitationsForEmailAsync before accepting the membership.
+                && m.IsSameDomainAutoInvite
                 && m.Status == MembershipStatus.Pending
                 && m.DisabledAtUtc == null
                 && m.ExpiresAtUtc > now

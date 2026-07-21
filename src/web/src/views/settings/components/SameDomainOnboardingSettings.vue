@@ -37,20 +37,25 @@
 
       <USeparator />
 
-      <!-- Default role selector is active only while same-domain onboarding is enabled. -->
-      <UFormField
-        label="Default role"
-        description="Applied to invitations created from the claimed domain."
-      >
+      <!-- Default role selector aligns with the right-side controls in this settings page. -->
+      <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+        <div class="min-w-0">
+          <h3 class="text-sm font-medium text-highlighted">Default role</h3>
+          <p class="mt-1 text-sm text-muted">
+            Applied to invitations created from the claimed domain.
+          </p>
+        </div>
+
         <USelect
           :model-value="selectedDefaultRole"
           :items="roleItems"
+          aria-label="Default role"
           color="neutral"
-          class="w-40"
+          class="w-full sm:w-40"
           :disabled="!canManage || saving || !enabled"
           @update:model-value="updateDefaultRole"
         />
-      </UFormField>
+      </div>
     </div>
   </UPageCard>
 </template>
