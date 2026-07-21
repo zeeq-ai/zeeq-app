@@ -36,6 +36,10 @@ export type PivotedSeries = {
 /** Label shown for a null series key (ungrouped or missing dimension value). */
 const ungroupedLabel = "All";
 
+type SeriesLabelOptions = {
+  seriesLabel?: (seriesKey: string) => string;
+};
+
 /** Numeric finding-severity fields on a review-findings point. */
 type SeverityKey = "critical" | "major" | "minor" | "suggestion" | "comment";
 
@@ -186,10 +190,14 @@ export function capSeries(
 /** Builds a stacked bar option from a pivoted series (UI-1/2/6). */
 export function timeSeriesOption(
   pivot: PivotedSeries,
-  options: { maxSeries?: number; showLegend?: boolean } = {},
+  options: {
+    maxSeries?: number;
+    showLegend?: boolean;
+  } & SeriesLabelOptions = {},
 ): EChartsOption {
   const capped = capSeries(pivot, options.maxSeries ?? maxStackedSeries);
   const showLegend = options.showLegend ?? true;
+  const seriesLabel = options.seriesLabel ?? identitySeriesLabel;
   // `id` (not just `name`) matters here: vue-echarts inspects each refresh's
   // series array and forces a replaceMerge on `series` whenever the count
   // shrinks between updates (e.g. the top-N+"Other" cap or natural user/tool
@@ -222,6 +230,7 @@ export function timeSeriesOption(
           top: 8,
           bottom: 8,
           width: 140,
+          formatter: seriesLabel,
         }
       : { show: false },
     grid: {
@@ -254,7 +263,9 @@ export function timeSeriesOption(
  */
 export function severityBarOption(
   points: ReviewFindingsPoint[],
+  options: SeriesLabelOptions = {},
 ): EChartsOption {
+  const seriesLabel = options.seriesLabel ?? identitySeriesLabel;
   const totalsByKey = new Map<string, Record<string, number>>();
   for (const point of points) {
     const key = point.seriesKey ?? ungroupedLabel;
@@ -286,7 +297,11 @@ export function severityBarOption(
     legend: { bottom: 0 },
     grid: { left: 8, right: 24, top: 24, bottom: 48, containLabel: true },
     xAxis: { type: "value" },
-    yAxis: { type: "category", data: categories },
+    yAxis: {
+      type: "category",
+      data: categories,
+      axisLabel: { formatter: seriesLabel },
+    },
     series,
   };
 }
@@ -295,6 +310,7 @@ export function severityBarOption(
 export function volumeBarOption(
   points: ReviewVolumePoint[],
   windowRange: MetricWindowRangeMs,
+  options: SeriesLabelOptions = {},
 ): EChartsOption {
   const pivot = pivotByBucket(
     points,
@@ -303,7 +319,7 @@ export function volumeBarOption(
     (point) => toMetricNumber(point.count),
     windowRange,
   );
-  return timeSeriesOption(pivot);
+  return timeSeriesOption(pivot, options);
 }
 
 /** Caps pie slices to the top `maxSlices` by value, folding the rest into "Other". */
@@ -326,7 +342,9 @@ function capPieData(
 function donutOptionFromTotals(
   entries: { name: string; value: number }[],
   isDark: boolean,
+  options: SeriesLabelOptions = {},
 ): EChartsOption {
+  const seriesLabel = options.seriesLabel ?? identitySeriesLabel;
   const series: PieSeriesOption[] = [
     {
       id: "main",
@@ -339,13 +357,23 @@ function donutOptionFromTotals(
       // unpredictable background. That stroke is the "bloom"/fringe around
       // the text. We already know the (themed) chart background, so set the
       // color explicitly per mode and skip the auto-contrast guess entirely.
-      label: { color: isDark ? "#999" : "#3f3f46" },
+      label: {
+        color: isDark ? "#999" : "#3f3f46",
+        formatter: (params) =>
+          seriesLabel(String((params as { name: string }).name)),
+      },
       data: capPieData(entries),
     },
   ];
 
   return {
-    tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
+    tooltip: {
+      trigger: "item",
+      formatter: (params: unknown) => {
+        const item = params as { name: string; value: number; percent: number };
+        return `${seriesLabel(item.name)}: ${item.value} (${item.percent}%)`;
+      },
+    },
     legend: {
       type: "scroll",
       orient: "vertical",
@@ -353,6 +381,7 @@ function donutOptionFromTotals(
       top: 8,
       bottom: 8,
       width: 140,
+      formatter: seriesLabel,
     },
     series,
   };
@@ -376,6 +405,7 @@ function totalsBySeriesKey<T>(
 export function volumeDonutOption(
   points: ReviewVolumePoint[],
   isDark: boolean,
+  options: SeriesLabelOptions = {},
 ): EChartsOption {
   return donutOptionFromTotals(
     totalsBySeriesKey(
@@ -384,6 +414,7 @@ export function volumeDonutOption(
       (point) => toMetricNumber(point.count),
     ),
     isDark,
+    options,
   );
 }
 
@@ -400,6 +431,10 @@ export function toolCallDonutOption(
     ),
     isDark,
   );
+}
+
+function identitySeriesLabel(seriesKey: string): string {
+  return seriesKey;
 }
 
 /** Builds the p50/p95/p99 line option for a histogram metric (UI-8/9). */

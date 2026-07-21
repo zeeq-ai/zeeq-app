@@ -87,7 +87,12 @@
 
 <script setup lang="ts">
 import { useColorMode } from "@vueuse/core";
-import type { ReviewFindingsPoint, ReviewVolumePoint } from "@/api/generated";
+import {
+  reviewVolumeGroupEnum,
+  type ReviewFindingsPoint,
+  type ReviewVolumeGroup,
+  type ReviewVolumePoint,
+} from "@/api/generated";
 import {
   metricWindowRangeMs,
   type MetricWindowToken,
@@ -98,6 +103,7 @@ import {
   volumeBarOption,
   volumeDonutOption,
 } from "./chart-options";
+import { repositoryLabel } from "./repository-labels";
 
 const colorMode = useColorMode();
 const isDark = computed(() => colorMode.value === "dark");
@@ -122,6 +128,8 @@ const props = defineProps<{
   authorItems: { label: string; value: string }[];
   /** Shared dashboard window; fills empty buckets so the x-axis reflects the true cadence. */
   window: MetricWindowToken;
+  /** Review volume grouping dimension. Repo grouping uses shortened repository labels. */
+  reviewVolumeGroup: ReviewVolumeGroup;
 }>();
 
 const emits = defineEmits<{
@@ -132,7 +140,9 @@ const emits = defineEmits<{
 
 /** UI-3: severity stacked bar grouped by repository. */
 const findingsByRepoOption = computed(() =>
-  severityBarOption(props.reviewFindingsByRepo),
+  severityBarOption(props.reviewFindingsByRepo, {
+    seriesLabel: repositoryLabel,
+  }),
 );
 
 /** UI-3: severity stacked bar grouped by request origin. */
@@ -142,11 +152,28 @@ const findingsByOriginOption = computed(() =>
 
 /** UI-4: bucketed review-volume stacked bars over time, filled across the full window. */
 const volumeOption = computed(() =>
-  volumeBarOption(props.reviewVolume, metricWindowRangeMs(props.window)),
+  volumeBarOption(
+    props.reviewVolume,
+    metricWindowRangeMs(props.window),
+    reviewVolumeSeriesLabelOptions.value,
+  ),
 );
 
 /** UI-5: donut of total review volume by series key. */
 const donutOption = computed(() =>
-  volumeDonutOption(props.reviewVolume, isDark.value),
+  volumeDonutOption(
+    props.reviewVolume,
+    isDark.value,
+    reviewVolumeSeriesLabelOptions.value,
+  ),
 );
+
+const reviewVolumeSeriesLabelOptions = computed(() => {
+  // NOTE: Keep raw repository seriesKey values for chart grouping/identity.
+  // Repository label normalization is presentation-only because middle
+  // truncation can collide for different long repository names.
+  return props.reviewVolumeGroup === reviewVolumeGroupEnum.Repo
+    ? { seriesLabel: repositoryLabel }
+    : {};
+});
 </script>

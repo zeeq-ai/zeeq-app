@@ -90,6 +90,7 @@
               :author-logins="filterAuthorLogins"
               :author-items="authorItems"
               :window="window"
+              :review-volume-group="reviewVolumeGroup"
               @update:origin="onOriginChange"
               @update:repositoryIds="onRepositoriesChange"
               @update:authorLogins="onAuthorsChange"
@@ -165,6 +166,7 @@ import {
   autoRefreshItems,
   useMetricsAutoRefresh,
 } from "./useMetricsAutoRefresh";
+import { repositoryLabel } from "./repository-labels";
 
 // Root view is the only store consumer; children receive data as props.
 const metricsStore = useMetricsStore();
@@ -196,6 +198,7 @@ const {
   filterTools,
   filterRepositoryIds,
   filterAuthorLogins,
+  reviewVolumeGroup,
   filterOptionUsers,
   filterOptionTools,
   filterOptionRepositories,
@@ -248,18 +251,19 @@ const repositoryItems = computed(() => {
   // with a short id so the filter options are distinguishable.
   const nameCounts = new Map<string, number>();
   for (const repository of repositories) {
-    nameCounts.set(
-      repository.displayName,
-      (nameCounts.get(repository.displayName) ?? 0) + 1,
-    );
+    const label = repositoryLabel(repository.displayName);
+    nameCounts.set(label, (nameCounts.get(label) ?? 0) + 1);
   }
-  return repositories.map((repository) => ({
-    label:
-      (nameCounts.get(repository.displayName) ?? 0) > 1
-        ? `${repository.displayName} (${repository.id.slice(-8)})`
-        : repository.displayName,
-    value: repository.id,
-  }));
+  return repositories.map((repository) => {
+    const label = repositoryLabel(repository.displayName);
+    return {
+      label:
+        (nameCounts.get(label) ?? 0) > 1
+          ? `${label} (${repository.id.slice(-8)})`
+          : label,
+      value: repository.id,
+    };
+  });
 });
 
 const tabItems = [
