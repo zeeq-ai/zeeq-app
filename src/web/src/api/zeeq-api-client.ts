@@ -226,7 +226,14 @@ async function readResponseData<TResponseData>(
     return text as TResponseData;
   }
 
-  return JSON.parse(text) as TResponseData;
+  try {
+    return JSON.parse(text) as TResponseData;
+  } catch {
+    // Non-JSON bodies (e.g. an HTML error page from a proxy) still need to
+    // reach the status check in `client()` so failures surface as a
+    // status-aware ZeeqApiError instead of an opaque SyntaxError.
+    return text as TResponseData;
+  }
 }
 
 /** Extracts a friendly message from ProblemDetails-style API errors. */
