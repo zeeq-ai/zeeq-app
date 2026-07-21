@@ -1,5 +1,10 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Infrastructure;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Routing;
 using OpenIddict.Abstractions;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
@@ -10,6 +15,55 @@ namespace Zeeq.Integrations.GitHub.Tests;
 
 public sealed class GitHubRepositoryManagementHandlerTests
 {
+    [Test]
+    public async Task MapEndpoints_ListConfiguredRequiresCookieAuthButNoOwnerAdminRole()
+    {
+        var endpoint = await MapEndpointByNameAsync("ListConfiguredGitHubRepositories");
+        var authorization = endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>();
+
+        await Assert
+            .That(
+                authorization.Any(data =>
+                    data.AuthenticationSchemes == SetupIdentityExtension.CookieScheme
+                )
+            )
+            .IsTrue();
+        await Assert
+            .That(authorization.Any(data => !string.IsNullOrWhiteSpace(data.Roles)))
+            .IsFalse();
+        await Assert.That(AuthorizationPolicyRoles(endpoint).Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task MapEndpoints_RepositoryManagementRoutesRequireOwnerOrAdmin()
+    {
+        var managementEndpointNames = new[]
+        {
+            "ListAvailableGitHubRepositories",
+            "CreateGitHubRepositoryMapping",
+            "UpdateGitHubRepositoryVisibility",
+            "UpdateGitHubRepositoryMapping",
+            "DisableGitHubRepositoryMapping",
+        };
+
+        foreach (var endpointName in managementEndpointNames)
+        {
+            var endpoint = await MapEndpointByNameAsync(endpointName);
+            var authorization = endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>();
+
+            await Assert
+                .That(
+                    authorization.Any(data =>
+                        data.AuthenticationSchemes == SetupIdentityExtension.CookieScheme
+                    )
+                )
+                .IsTrue();
+            await Assert
+                .That(AuthorizationPolicyRoles(endpoint).SetEquals(["owner", "admin"]))
+                .IsTrue();
+        }
+    }
+
     [Test]
     public async Task CreateMapping_WithAvailableRepository_UpsertsOrganizationScopedMapping()
     {
@@ -566,6 +620,29 @@ public sealed class GitHubRepositoryManagementHandlerTests
                 authenticationType: "Test"
             )
         );
+
+    private static async Task<RouteEndpoint> MapEndpointByNameAsync(string endpointName)
+    {
+        var builder = WebApplication.CreateBuilder();
+        await using var app = builder.Build();
+        var endpoints = new GitHubRepositoryEndpoints();
+
+        endpoints.MapEndpoints(app, app);
+
+        return ((IEndpointRouteBuilder)app)
+            .DataSources.SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Single(endpoint =>
+                endpoint.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName == endpointName
+            );
+    }
+
+    private static HashSet<string> AuthorizationPolicyRoles(RouteEndpoint endpoint) =>
+        endpoint
+            .Metadata.GetOrderedMetadata<AuthorizationPolicy>()
+            .SelectMany(policy => policy.Requirements.OfType<RolesAuthorizationRequirement>())
+            .SelectMany(requirement => requirement.AllowedRoles)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private static CodeRepository Repository(
         string id,

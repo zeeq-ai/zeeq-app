@@ -188,14 +188,18 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
   const configuredRepositories = computed<GitHubConfiguredRepository[]>(
     () => githubSettingsStore.configuredRepositories,
   );
+  const webhookEnabledRepositories = computed<GitHubConfiguredRepository[]>(
+    () =>
+      configuredRepositories.value.filter((repository) => repository.enabled),
+  );
   const selectedRepository = computed<GitHubConfiguredRepository | null>(
     () =>
-      configuredRepositories.value.find(
+      webhookEnabledRepositories.value.find(
         (repository) => repository.id === selectedRepositoryId.value,
       ) ?? null,
   );
   const hasConfiguredRepositories = computed(
-    () => configuredRepositories.value.length > 0,
+    () => webhookEnabledRepositories.value.length > 0,
   );
   const hasUnreadPullRequestUpdates = computed(() =>
     Object.values(pullRequestUiStateById.value).some(
@@ -239,7 +243,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
 
       if (
         selectedRepositoryId.value &&
-        !configuredRepositories.value.some(
+        !webhookEnabledRepositories.value.some(
           (repository) => repository.id === selectedRepositoryId.value,
         )
       ) {
@@ -248,7 +252,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
 
       if (!selectedRepositoryId.value) {
         selectedRepositoryId.value =
-          configuredRepositories.value[0]?.id ?? null;
+          webhookEnabledRepositories.value[0]?.id ?? null;
       }
     } catch (err: unknown) {
       error.value = errorMessage(err, "Could not load repositories.");
@@ -698,7 +702,8 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     await loadConfiguredRepositories();
 
     if (!selectedRepositoryId.value) {
-      selectedRepositoryId.value = configuredRepositories.value[0]?.id ?? null;
+      selectedRepositoryId.value =
+        webhookEnabledRepositories.value[0]?.id ?? null;
     }
 
     await loadSelectedRepositoryManagement();
@@ -1331,6 +1336,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     pollingSinglePullRequestReviews,
     error,
     configuredRepositories,
+    webhookEnabledRepositories,
     selectedRepository,
     activeOrganizationId,
     hasConfiguredRepositories,

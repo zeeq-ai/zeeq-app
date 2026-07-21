@@ -1,5 +1,5 @@
-using Zeeq.Core.Identity;
 using Microsoft.AspNetCore.Authorization;
+using Zeeq.Core.Identity;
 
 namespace Zeeq.Platform.Documents;
 
@@ -37,7 +37,12 @@ public sealed class DocumentEndpoints : IEndpoint
             .Produces<DocumentResponse[]>()
             .Produces<DocumentError>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
-            .WithSummary("List documents in a library.");
+            .WithSummary("List documents.")
+            .WithDescription(
+                """
+                Returns the document metadata rows for the route library.
+                """
+            );
 
         // PUT /api/v1/orgs/{orgId}/libraries/{name}/documents
         group
@@ -56,7 +61,12 @@ public sealed class DocumentEndpoints : IEndpoint
             .Produces<DocumentResponse>()
             .Produces<DocumentError>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
-            .WithSummary("Write a markdown document into a library.");
+            .WithSummary("Upsert a document.")
+            .WithDescription(
+                """
+                Creates or replaces a markdown document in the route library.
+                """
+            );
 
         // DELETE /api/v1/orgs/{orgId}/libraries/{name}/documents?path=...
         group
@@ -74,7 +84,12 @@ public sealed class DocumentEndpoints : IEndpoint
             .Produces(StatusCodes.Status204NoContent)
             .Produces<DocumentError>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
-            .WithSummary("Delete a document from a library.");
+            .WithSummary("Delete a document.")
+            .WithDescription(
+                """
+                Deletes one document from the route library by path.
+                """
+            );
 
         // GET /api/v1/orgs/{orgId}/libraries/{name}/documents/content?path=...
         group
@@ -92,7 +107,12 @@ public sealed class DocumentEndpoints : IEndpoint
             .Produces<DocumentContentResponse>()
             .Produces<DocumentError>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
-            .WithSummary("Read a document's full markdown content by path.");
+            .WithSummary("Get document content.")
+            .WithDescription(
+                """
+                Returns the full markdown body for one document by path.
+                """
+            );
 
         // GET /api/v1/orgs/{orgId}/libraries/{name}/documents/parse-preview?path=...
         group
@@ -110,8 +130,12 @@ public sealed class DocumentEndpoints : IEndpoint
             .Produces<DocumentParsePreviewResponse>()
             .Produces<DocumentError>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
-            .WithSummary(
-                "Preview the title/keywords/headings/snippets the indexing pipeline would extract from a document, without persisting anything."
+            .WithSummary("Preview document parsing.")
+            .WithDescription(
+                """
+                Shows the title, keywords, headings, and snippets the indexing pipeline
+                would extract from a document without persisting changes.
+                """
             );
 
         // GET /api/v1/orgs/{orgId}/libraries/{name}/documents/search?query=...&limit=...
@@ -131,7 +155,12 @@ public sealed class DocumentEndpoints : IEndpoint
             .Produces<DocumentSearchResultResponse[]>()
             .Produces<DocumentError>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
-            .WithSummary("Search documents in a library by keywords.");
+            .WithSummary("Search documents.")
+            .WithDescription(
+                """
+                Searches documents in the route library by keyword query.
+                """
+            );
 
         // POST /api/v1/orgs/{orgId}/libraries/{name}/documents/review-exclusion
         group
@@ -149,8 +178,13 @@ public sealed class DocumentEndpoints : IEndpoint
             .Produces<DocumentResponse>()
             .Produces<DocumentError>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
-            .WithSummary(
-                "Set or clear a document's code-review exclusion. Excluded documents never surface to code-review agents via list/search tools; direct reads by path still resolve. Synced/remote documents are rejected."
+            .WithSummary("Set review exclusion.")
+            .WithDescription(
+                """
+                Sets or clears a document's code-review exclusion. Excluded documents do
+                not surface to code-review agents via list/search tools, but direct reads
+                by path still resolve. Synced documents are rejected.
+                """
             );
 
         // POST /api/v1/orgs/{orgId}/libraries/{name}/documents/rename  (D-3)
@@ -170,6 +204,11 @@ public sealed class DocumentEndpoints : IEndpoint
             .Produces<DocumentError>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
             .Produces<DocumentError>(StatusCodes.Status409Conflict)
-            .WithSummary("Rename (move) a document to a new path within the library.");
+            .WithSummary("Rename a document.")
+            .WithDescription(
+                """
+                Moves one document to a new path within the route library.
+                """
+            );
     }
 }

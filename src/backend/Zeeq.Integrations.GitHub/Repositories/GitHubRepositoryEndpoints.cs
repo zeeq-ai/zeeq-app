@@ -30,10 +30,15 @@ public sealed class GitHubRepositoryEndpoints : IEndpoint
                 {
                     AuthenticationSchemes = SetupIdentityExtension.CookieScheme,
                 }
-            )
-            .RequireAuthorization(a => a.RequireRole("owner", "admin"));
+            );
         group.RequireRouteOrganizationMatchesCookie();
 
+        var managementGroup = group
+            .MapGroup("")
+            .RequireAuthorization(a => a.RequireRole("owner", "admin"));
+
+        // This route does not require the `owner` or `admin` role because it is used to populate the
+        // "Add repository" UI, which is available to all members of the organization
         // GET /api/v1/orgs/{orgId}/integrations/github/repositories/configured
         group
             .MapGet(
@@ -54,12 +59,12 @@ public sealed class GitHubRepositoryEndpoints : IEndpoint
                 incoming PR and comment webhooks create code-review work. Library-source
                 visibility is tracked separately and does not change GitHub App access.
 
-                Requires the `owner` or `admin` role.
+                Requires active membership in the route organization.
                 """
             );
 
         // GET /api/v1/orgs/{orgId}/integrations/github/repositories/available
-        group
+        managementGroup
             .MapGet(
                 "/available",
                 static (
@@ -83,7 +88,7 @@ public sealed class GitHubRepositoryEndpoints : IEndpoint
             );
 
         // POST /api/v1/orgs/{orgId}/integrations/github/repositories
-        group
+        managementGroup
             .MapPost(
                 "/",
                 static (
@@ -109,7 +114,7 @@ public sealed class GitHubRepositoryEndpoints : IEndpoint
             );
 
         // PUT /api/v1/orgs/{orgId}/integrations/github/repositories/visibility
-        group
+        managementGroup
             .MapPut(
                 "/visibility",
                 static (
@@ -135,7 +140,7 @@ public sealed class GitHubRepositoryEndpoints : IEndpoint
             );
 
         // PUT /api/v1/orgs/{orgId}/integrations/github/repositories/{repositoryId}
-        group
+        managementGroup
             .MapPut(
                 "/{repositoryId}",
                 static (
@@ -162,7 +167,7 @@ public sealed class GitHubRepositoryEndpoints : IEndpoint
             );
 
         // DELETE /api/v1/orgs/{orgId}/integrations/github/repositories/{repositoryId}
-        group
+        managementGroup
             .MapDelete(
                 "/{repositoryId}",
                 static (
