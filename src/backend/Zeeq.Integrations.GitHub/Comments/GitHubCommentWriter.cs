@@ -254,7 +254,7 @@ internal sealed partial class GitHubCommentWriter(ILogger<GitHubCommentWriter> l
 
     [LoggerMessage(
         EventId = 3600,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Started GitHub comment writer upsert. Target={TargetKey}, Kind={Kind}, Repo={OwnerQualifiedRepoName}, ExistingCommentId={ExistingCommentId}, BodyCharCount={BodyCharCount}"
     )]
     private static partial void LogWriterUpsertStarted(
@@ -268,7 +268,7 @@ internal sealed partial class GitHubCommentWriter(ILogger<GitHubCommentWriter> l
 
     [LoggerMessage(
         EventId = 3601,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Starting direct GitHub comment update. Target={TargetKey}, Kind={Kind}, Repo={OwnerQualifiedRepoName}, CommentId={CommentId}"
     )]
     private static partial void LogWriterDirectUpdateStarting(
@@ -281,7 +281,7 @@ internal sealed partial class GitHubCommentWriter(ILogger<GitHubCommentWriter> l
 
     [LoggerMessage(
         EventId = 3602,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Completed direct GitHub comment update. Target={TargetKey}, Kind={Kind}, CommentId={CommentId}"
     )]
     private static partial void LogWriterDirectUpdateCompleted(
@@ -305,7 +305,7 @@ internal sealed partial class GitHubCommentWriter(ILogger<GitHubCommentWriter> l
 
     [LoggerMessage(
         EventId = 3604,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Starting GitHub comment marker scan before create. Target={TargetKey}, Kind={Kind}, Repo={OwnerQualifiedRepoName}"
     )]
     private static partial void LogWriterMarkerScanStarting(
@@ -317,7 +317,7 @@ internal sealed partial class GitHubCommentWriter(ILogger<GitHubCommentWriter> l
 
     [LoggerMessage(
         EventId = 3605,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Found existing GitHub comment by marker scan. Target={TargetKey}, Kind={Kind}, CommentId={CommentId}, ScannedCount={ScannedCount}"
     )]
     private static partial void LogWriterMarkerMatchFound(
@@ -330,7 +330,7 @@ internal sealed partial class GitHubCommentWriter(ILogger<GitHubCommentWriter> l
 
     [LoggerMessage(
         EventId = 3606,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Completed marker-scan GitHub comment update. Target={TargetKey}, Kind={Kind}, CommentId={CommentId}, Duration={Duration}"
     )]
     private static partial void LogWriterMarkerUpdateCompleted(
@@ -343,7 +343,7 @@ internal sealed partial class GitHubCommentWriter(ILogger<GitHubCommentWriter> l
 
     [LoggerMessage(
         EventId = 3607,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Completed GitHub comment marker scan without match. Target={TargetKey}, Kind={Kind}, ScannedCount={ScannedCount}"
     )]
     private static partial void LogWriterMarkerScanCompletedWithoutMatch(
@@ -355,7 +355,7 @@ internal sealed partial class GitHubCommentWriter(ILogger<GitHubCommentWriter> l
 
     [LoggerMessage(
         EventId = 3608,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Starting GitHub comment create. Target={TargetKey}, Kind={Kind}, Repo={OwnerQualifiedRepoName}"
     )]
     private static partial void LogWriterCreateStarting(
@@ -367,7 +367,7 @@ internal sealed partial class GitHubCommentWriter(ILogger<GitHubCommentWriter> l
 
     [LoggerMessage(
         EventId = 3609,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Completed GitHub comment create. Target={TargetKey}, Kind={Kind}, CommentId={CommentId}, Duration={Duration}"
     )]
     private static partial void LogWriterCreateCompleted(
@@ -380,7 +380,7 @@ internal sealed partial class GitHubCommentWriter(ILogger<GitHubCommentWriter> l
 
     [LoggerMessage(
         EventId = 3610,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Completed GitHub comment update call. Kind={Kind}, RequestedCommentId={RequestedCommentId}, ReturnedCommentId={ReturnedCommentId}, Duration={Duration}"
     )]
     private static partial void LogWriterUpdateCompleted(

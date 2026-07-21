@@ -355,7 +355,7 @@ public sealed partial class CodeReviewLlmTierResolver(
 
     [LoggerMessage(
         EventId = 3280,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Resolving code-review LLM tier. OrganizationId={OrganizationId}, Tier={Tier}"
     )]
     private static partial void LogTierResolutionStarted(
@@ -366,7 +366,7 @@ public sealed partial class CodeReviewLlmTierResolver(
 
     [LoggerMessage(
         EventId = 3281,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Found organization LLM configuration for code-review tier. OrganizationId={OrganizationId}, Tier={Tier}"
     )]
     private static partial void LogOrganizationLlmConfigurationFound(

@@ -217,7 +217,9 @@ public sealed partial class CodeReviewRunRequestedHandler(
                 logger,
                 message.OrganizationId,
                 message.CodeReviewRecordId,
-                lease.LeaseId
+                lease.LeaseId,
+                lease.SlotIndex,
+                settings.MaxConcurrentReviews
             );
 
             review.Status = CodeReviewStatus.Running;
@@ -255,6 +257,8 @@ public sealed partial class CodeReviewRunRequestedHandler(
             LogRunnerReturned(
                 logger,
                 message.OrganizationId,
+                message.OwnerQualifiedRepoName,
+                message.PullRequestNumber,
                 message.CodeReviewRecordId,
                 result.CriticalFindings,
                 result.MajorFindings,
@@ -311,6 +315,8 @@ public sealed partial class CodeReviewRunRequestedHandler(
             LogCommentSignalPublished(
                 logger,
                 message.OrganizationId,
+                message.OwnerQualifiedRepoName,
+                message.PullRequestNumber,
                 message.CodeReviewRecordId,
                 "review_completed"
             );
@@ -368,6 +374,8 @@ public sealed partial class CodeReviewRunRequestedHandler(
             LogCommentSignalPublished(
                 logger,
                 message.OrganizationId,
+                message.OwnerQualifiedRepoName,
+                message.PullRequestNumber,
                 message.CodeReviewRecordId,
                 "review_failed"
             );
@@ -555,6 +563,8 @@ public sealed partial class CodeReviewRunRequestedHandler(
             LogCommentSignalPublished(
                 logger,
                 message.OrganizationId,
+                message.OwnerQualifiedRepoName,
+                message.PullRequestNumber,
                 message.CodeReviewRecordId,
                 "review_failed"
             );
@@ -574,6 +584,7 @@ public sealed partial class CodeReviewRunRequestedHandler(
             logger,
             message.OrganizationId,
             message.CodeReviewRecordId,
+            settings.MaxConcurrentReviews,
             CapacityDeferralDelay
         );
         await Task.Delay(CapacityDeferralDelay, _timeProvider, cancellationToken);
@@ -933,13 +944,15 @@ public sealed partial class CodeReviewRunRequestedHandler(
     [LoggerMessage(
         EventId = 3220,
         Level = LogLevel.Information,
-        Message = "Acquired code review execution lease. OrganizationId={OrganizationId}, CodeReviewId={CodeReviewId}, LeaseId={LeaseId}"
+        Message = "Acquired code review execution lease. OrganizationId={OrganizationId}, CodeReviewId={CodeReviewId}, LeaseId={LeaseId}, SlotIndex={SlotIndex}, MaxConcurrentReviews={MaxConcurrentReviews}"
     )]
     private static partial void LogExecutionLeaseAcquired(
         ILogger logger,
         string organizationId,
         string codeReviewId,
-        string leaseId
+        string leaseId,
+        int slotIndex,
+        int maxConcurrentReviews
     );
 
     [LoggerMessage(
@@ -958,11 +971,13 @@ public sealed partial class CodeReviewRunRequestedHandler(
     [LoggerMessage(
         EventId = 3223,
         Level = LogLevel.Information,
-        Message = "Code review runner returned findings. OrganizationId={OrganizationId}, CodeReviewId={CodeReviewId}, Critical={CriticalFindings}, Major={MajorFindings}, Minor={MinorFindings}, Suggestion={SuggestionFindings}, Comment={CommentFindings}"
+        Message = "Code review runner returned findings. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, CodeReviewId={CodeReviewId}, Critical={CriticalFindings}, Major={MajorFindings}, Minor={MinorFindings}, Suggestion={SuggestionFindings}, Comment={CommentFindings}"
     )]
     private static partial void LogRunnerReturned(
         ILogger logger,
         string organizationId,
+        string ownerQualifiedRepoName,
+        int pullRequestNumber,
         string codeReviewId,
         int criticalFindings,
         int majorFindings,
@@ -974,11 +989,13 @@ public sealed partial class CodeReviewRunRequestedHandler(
     [LoggerMessage(
         EventId = 3224,
         Level = LogLevel.Information,
-        Message = "Published code review comment signal. OrganizationId={OrganizationId}, CodeReviewId={CodeReviewId}, Kind={Kind}"
+        Message = "Published code review comment signal. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, CodeReviewId={CodeReviewId}, Kind={Kind}"
     )]
     private static partial void LogCommentSignalPublished(
         ILogger logger,
         string organizationId,
+        string ownerQualifiedRepoName,
+        int pullRequestNumber,
         string codeReviewId,
         string kind
     );
@@ -1002,12 +1019,13 @@ public sealed partial class CodeReviewRunRequestedHandler(
     [LoggerMessage(
         EventId = 3211,
         Level = LogLevel.Information,
-        Message = "Deferred code review because organization capacity is full. OrganizationId={OrganizationId}, CodeReviewId={CodeReviewId}, Delay={Delay}"
+        Message = "Deferred code review because organization capacity is full. OrganizationId={OrganizationId}, CodeReviewId={CodeReviewId}, MaxConcurrentReviews={MaxConcurrentReviews}, Delay={Delay}"
     )]
     private static partial void LogCapacityDeferred(
         ILogger logger,
         string organizationId,
         string codeReviewId,
+        int maxConcurrentReviews,
         TimeSpan delay
     );
 

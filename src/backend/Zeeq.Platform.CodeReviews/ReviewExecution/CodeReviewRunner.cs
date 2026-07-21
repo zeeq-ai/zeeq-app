@@ -141,7 +141,12 @@ public sealed partial class CodeReviewRunner(
                 logger,
                 review.Id,
                 agentResolution.Agents.Count,
-                agentResolution.NoAgentsActivated
+                agentResolution.HasConfiguredAgents,
+                agentResolution.NoAgentsActivated,
+                mappedLibraryNames.Length,
+                prompt.SharedPullRequestPromptBody.Length,
+                fileScope.InScopeFiles.Count,
+                fileScope.OutOfScopeFiles.Count
             );
 
             var previousReviews = !string.IsNullOrEmpty(review.ReviewGroupId)
@@ -176,17 +181,18 @@ public sealed partial class CodeReviewRunner(
             var validation = ValidateXml(xml);
             var counts = validation.Output!.CountFindings();
 
+            var findingsStorageUri = await WriteFindingsAsync(review, xml, cancellationToken);
+
             LogReviewXmlValidated(
                 logger,
                 review.Id,
+                findingsStorageUri,
                 counts.Critical,
                 counts.Major,
                 counts.Minor,
                 counts.Suggestion,
                 counts.Comment
             );
-
-            var findingsStorageUri = await WriteFindingsAsync(review, xml, cancellationToken);
 
             activity?.AddEvent(
                 [
@@ -290,7 +296,7 @@ public sealed partial class CodeReviewRunner(
 
     [LoggerMessage(
         EventId = 3267,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Resolved code-review runtime agents. CodeReviewId={CodeReviewId}, ReviewerCount={ReviewerCount}, HasConfiguredAgents={HasConfiguredAgents}, NoAgentsActivated={NoAgentsActivated}"
     )]
     private static partial void LogAgentsResolved(
@@ -303,7 +309,7 @@ public sealed partial class CodeReviewRunner(
 
     [LoggerMessage(
         EventId = 3268,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Built code-review prompt. CodeReviewId={CodeReviewId}, PromptLength={PromptLength}"
     )]
     private static partial void LogPromptBuilt(
@@ -315,23 +321,29 @@ public sealed partial class CodeReviewRunner(
     [LoggerMessage(
         EventId = 3269,
         Level = LogLevel.Information,
-        Message = "Starting code-review agent execution. CodeReviewId={CodeReviewId}, ReviewerCount={ReviewerCount}, NoAgentsActivated={NoAgentsActivated}"
+        Message = "Starting code-review agent execution. CodeReviewId={CodeReviewId}, ReviewerCount={ReviewerCount}, HasConfiguredAgents={HasConfiguredAgents}, NoAgentsActivated={NoAgentsActivated}, MappedLibraryCount={MappedLibraryCount}, PromptLength={PromptLength}, InScopeFileCount={InScopeFileCount}, OutOfScopeFileCount={OutOfScopeFileCount}"
     )]
     private static partial void LogAgentExecutionStarting(
         ILogger logger,
         string codeReviewId,
         int reviewerCount,
-        bool noAgentsActivated
+        bool hasConfiguredAgents,
+        bool noAgentsActivated,
+        int mappedLibraryCount,
+        int promptLength,
+        int inScopeFileCount,
+        int outOfScopeFileCount
     );
 
     [LoggerMessage(
         EventId = 3270,
         Level = LogLevel.Information,
-        Message = "Validated code-review XML output. CodeReviewId={CodeReviewId}, Critical={CriticalFindings}, Major={MajorFindings}, Minor={MinorFindings}, Suggestion={SuggestionFindings}, Comment={CommentFindings}"
+        Message = "Validated code-review XML output. CodeReviewId={CodeReviewId}, FindingsStorageUri={FindingsStorageUri}, Critical={CriticalFindings}, Major={MajorFindings}, Minor={MinorFindings}, Suggestion={SuggestionFindings}, Comment={CommentFindings}"
     )]
     private static partial void LogReviewXmlValidated(
         ILogger logger,
         string codeReviewId,
+        string findingsStorageUri,
         int criticalFindings,
         int majorFindings,
         int minorFindings,
@@ -341,7 +353,7 @@ public sealed partial class CodeReviewRunner(
 
     [LoggerMessage(
         EventId = 3261,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Wrote code-review findings artifact. CodeReviewId={CodeReviewId}, FindingsStorageUri={FindingsStorageUri}"
     )]
     private static partial void LogFindingsArtifactWritten(
@@ -352,7 +364,7 @@ public sealed partial class CodeReviewRunner(
 
     [LoggerMessage(
         EventId = 3271,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Resolved mapped libraries for code review. OrganizationId={OrganizationId}, RepositoryId={RepositoryId}, MappedLibraryCount={MappedLibraryCount}"
     )]
     private static partial void LogLibrariesResolved(

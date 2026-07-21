@@ -221,7 +221,12 @@ public sealed partial class CodeReviewAgentExecutor(
             "code-review.workflow.execute"
         );
 
-        LogWorkflowStarted(_logger, reviewers.Count, reviewerFacets);
+        LogWorkflowStarted(
+            _logger,
+            reviewers.Count,
+            reviewerFacets,
+            sharedPullRequestPromptBody.Length
+        );
 
         try
         {
@@ -243,7 +248,7 @@ public sealed partial class CodeReviewAgentExecutor(
             );
 
             var xml = ValidateAndSerializeAggregateBlocks(aggregateBlocks);
-            LogWorkflowCompleted(_logger, reviewers.Count, reviewerFacets);
+            LogWorkflowCompleted(_logger, reviewers.Count, reviewerFacets, aggregateBlocks.Length);
 
             return xml;
         }
@@ -642,7 +647,7 @@ public sealed partial class CodeReviewAgentExecutor(
 
     [LoggerMessage(
         EventId = 3232,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Resolved code-review agents. OrganizationId={OrganizationId}, ReviewerCount={ReviewerCount}, ReviewerFacets={ReviewerFacets}"
     )]
     private static partial void LogReviewersResolved(
@@ -655,23 +660,25 @@ public sealed partial class CodeReviewAgentExecutor(
     [LoggerMessage(
         EventId = 3233,
         Level = LogLevel.Information,
-        Message = "Started code-review workflow. ReviewerCount={ReviewerCount}, ReviewerFacets={ReviewerFacets}"
+        Message = "Started code-review workflow. ReviewerCount={ReviewerCount}, ReviewerFacets={ReviewerFacets}, PromptLength={PromptLength}"
     )]
     private static partial void LogWorkflowStarted(
         ILogger logger,
         int reviewerCount,
-        string reviewerFacets
+        string reviewerFacets,
+        int promptLength
     );
 
     [LoggerMessage(
         EventId = 3234,
         Level = LogLevel.Information,
-        Message = "Completed code-review workflow. ReviewerCount={ReviewerCount}, ReviewerFacets={ReviewerFacets}"
+        Message = "Completed code-review workflow. ReviewerCount={ReviewerCount}, ReviewerFacets={ReviewerFacets}, OutputLength={OutputLength}"
     )]
     private static partial void LogWorkflowCompleted(
         ILogger logger,
         int reviewerCount,
-        string reviewerFacets
+        string reviewerFacets,
+        int outputLength
     );
 
     [LoggerMessage(
@@ -688,21 +695,21 @@ public sealed partial class CodeReviewAgentExecutor(
 
     [LoggerMessage(
         EventId = 3236,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Starting code-review workflow streaming run. PromptLength={PromptLength}"
     )]
     private static partial void LogWorkflowStreamingStarting(ILogger logger, int promptLength);
 
     [LoggerMessage(
         EventId = 3237,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Started code-review workflow streaming run."
     )]
     private static partial void LogWorkflowStreamingStarted(ILogger logger);
 
     [LoggerMessage(
         EventId = 3238,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Received code-review workflow stream output. OutputIndex={OutputIndex}, OutputLength={OutputLength}"
     )]
     private static partial void LogWorkflowStreamOutputReceived(
@@ -736,7 +743,7 @@ public sealed partial class CodeReviewAgentExecutor(
 
     [LoggerMessage(
         EventId = 3242,
-        Level = LogLevel.Information,
+        Level = LogLevel.Debug,
         Message = "Completed code-review workflow streaming run. OutputCount={OutputCount}, HasWorkflowException={HasWorkflowException}"
     )]
     private static partial void LogWorkflowStreamingCompleted(
