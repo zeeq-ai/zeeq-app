@@ -308,8 +308,8 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
                 }
             )
             // OpenAI Chat Completions compatibility: some models (e.g. gpt-5.6-luna) reject
-            // Temperature = 0 and also reject function tools when reasoning_effort is anything
-            // other than "none". This innermost middleware rewrites those options before the
+            // Temperature = 0 and also reject function tools when the reasoning_effort request
+            // parameter is present. This innermost middleware rewrites those options before the
             // call reaches the provider SDK.
             .Use(
                 getResponseFunc: (messages, options, innerClient, cancellationToken) =>
@@ -347,11 +347,10 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
         if (
             options.Tools is { Count: > 0 }
             && IsReasoningWithToolsUnsupportedModel(model)
-            && options.Reasoning?.Effort != ReasoningEffort.None
+            && options.Reasoning is not null
         )
         {
-            options.Reasoning ??= new ReasoningOptions();
-            options.Reasoning.Effort = ReasoningEffort.None;
+            options.Reasoning = null;
         }
     }
 
