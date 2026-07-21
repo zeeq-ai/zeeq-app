@@ -239,23 +239,23 @@ function statusColor(
   }
 
   if (status === "Completed" && findingsCount > 0) {
-    if (item.criticalFindings > 0) {
+    if (Number(item.criticalFindings) > 0) {
       return "error";
     }
 
-    if (item.majorFindings > 0) {
+    if (Number(item.majorFindings) > 0) {
       return "warning";
     }
 
-    if (item.minorFindings > 0) {
+    if (Number(item.minorFindings) > 0) {
       return "neutral";
     }
 
-    if (item.suggestionFindings > 0) {
+    if (Number(item.suggestionFindings) > 0) {
       return "info";
     }
 
-    if (item.commentFindings > 0) {
+    if (Number(item.commentFindings) > 0) {
       return "tertiary";
     }
   }
