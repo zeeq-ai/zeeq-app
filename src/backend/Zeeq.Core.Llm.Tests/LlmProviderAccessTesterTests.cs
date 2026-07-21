@@ -2,8 +2,44 @@ using System.Runtime.CompilerServices;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
+using OpenAIChatCompletionOptions = OpenAI.Chat.ChatCompletionOptions;
+using OpenAIChatReasoningEffortLevel = OpenAI.Chat.ChatReasoningEffortLevel;
 
 namespace Zeeq.Core.Llm.Tests;
+
+/*
+Verification notes for the GPT-5.6 tool-call compatibility shim:
+
+These unit tests protect the option-normalization surface, but the behavior that
+matters is the fully wired runtime client because MEAI's OpenAI adapter combines
+ChatOptions, RawRepresentationFactory, and function tools immediately before the
+provider SDK serializes the request. To verify end-to-end:
+
+1. Rebuild the local server resource with Aspire:
+   aspire resource zeeq-server rebuild --non-interactive
+   aspire wait zeeq-server --non-interactive
+
+2. Attach CSharpRepl to the `Zeeq.Runtime.Server` process:
+   csharprepl connect list
+   NO_COLOR=1 csharprepl connect <PID> --eval '<probe>'
+
+3. In the probe, resolve real services from DI (`PostgresDbContext`,
+   `ILlmClientFactory`, and `KeyEncryptionService`), decrypt the organization
+   managed OpenAI/Azure OpenAI keys, then call `factory.CreateChatClient(...)`.
+   Build a `ChatOptions` with:
+   - a function tool, for example `AIFunctionFactory.Create(() => "ok", name: "test_tool")`
+   - a `RawRepresentationFactory` that returns `OpenAI.Chat.ChatCompletionOptions`
+     with `ReasoningEffortLevel = High`
+
+4. Send a small prompt such as "Call test_tool, then reply OK." Expected result:
+   Azure OpenAI `gpt-5.6-luna` succeeds because the shim omits raw
+   `reasoning_effort`; native OpenAI `gpt-5.6-luna`, `gpt-5.6-sol`, and
+   `gpt-5.6-terra` succeed because the shim sends `reasoning_effort=none`.
+
+This runtime probe caught provider differences that unit tests alone did not:
+native OpenAI accepts explicit `none`, while Azure OpenAI rejects any serialized
+`reasoning_effort` value for GPT-5.6 function-tool calls on Chat Completions.
+*/
 
 /// <summary>
 /// Unit tests for bounded provider access testing.
@@ -119,17 +155,119 @@ public sealed class LlmProviderAccessTesterTests
     }
 
     [Test]
-    public async Task NormalizeOpenAiChatCompletionsOptions_WithLunaTools_RemovesReasoningOptions()
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithGpt56Tools_RemovesReasoningOptions()
+    {
+        foreach (var model in new[] { "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra" })
+        {
+            var options = new ChatOptions
+            {
+                Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High },
+                Tools = [AIFunctionFactory.Create(() => "ok", name: "test_tool")],
+            };
+
+            LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("OpenAI", model, options);
+
+            await Assert.That(options.Reasoning).IsNull();
+        }
+    }
+
+    [Test]
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithOpenAiGpt56Tools_SetsRawReasoningEffortToNone()
+    {
+        foreach (var model in new[] { "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra" })
+        {
+            var options = new ChatOptions
+            {
+                Tools = [AIFunctionFactory.Create(() => "ok", name: "test_tool")],
+                RawRepresentationFactory = _ =>
+#pragma warning disable OPENAI001
+                    new OpenAIChatCompletionOptions
+                    {
+                        ReasoningEffortLevel = OpenAIChatReasoningEffortLevel.High,
+                    },
+#pragma warning restore OPENAI001
+            };
+
+            LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("OpenAI", model, options);
+
+            var rawOptions = (OpenAIChatCompletionOptions)options.RawRepresentationFactory!(null!)!;
+#pragma warning disable OPENAI001
+            await Assert.That(rawOptions.ReasoningEffortLevel).IsEqualTo(
+                OpenAIChatReasoningEffortLevel.None
+            );
+#pragma warning restore OPENAI001
+        }
+    }
+
+    [Test]
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithAzureGpt56Tools_RemovesRawReasoningEffort()
     {
         var options = new ChatOptions
         {
-            Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High },
             Tools = [AIFunctionFactory.Create(() => "ok", name: "test_tool")],
+            RawRepresentationFactory = _ =>
+#pragma warning disable OPENAI001
+                new OpenAIChatCompletionOptions
+                {
+                    ReasoningEffortLevel = OpenAIChatReasoningEffortLevel.High,
+                },
+#pragma warning restore OPENAI001
         };
 
-        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("gpt-5.6-luna", options);
+        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions(
+            "Azure OpenAI",
+            "gpt-5.6-luna",
+            options
+        );
 
-        await Assert.That(options.Reasoning).IsNull();
+        var rawOptions = (OpenAIChatCompletionOptions)options.RawRepresentationFactory!(null!)!;
+#pragma warning disable OPENAI001
+        await Assert.That(rawOptions.ReasoningEffortLevel.HasValue).IsFalse();
+#pragma warning restore OPENAI001
+    }
+
+    [Test]
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithReusedOptions_DoesNotStackRawFactoryWrappers()
+    {
+        var options = new ChatOptions
+        {
+            Tools = [AIFunctionFactory.Create(() => "ok", name: "test_tool")],
+            RawRepresentationFactory = _ =>
+#pragma warning disable OPENAI001
+                new OpenAIChatCompletionOptions
+                {
+                    ReasoningEffortLevel = OpenAIChatReasoningEffortLevel.High,
+                },
+#pragma warning restore OPENAI001
+        };
+
+        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions(
+            "Azure OpenAI",
+            "gpt-5.6-luna",
+            options
+        );
+        var wrappedFactory = options.RawRepresentationFactory;
+
+        var azureRawOptions = (OpenAIChatCompletionOptions)wrappedFactory!(null!)!;
+#pragma warning disable OPENAI001
+        await Assert.That(azureRawOptions.ReasoningEffortLevel.HasValue).IsFalse();
+#pragma warning restore OPENAI001
+
+        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions(
+            "OpenAI",
+            "gpt-5.6-luna",
+            options
+        );
+
+        await Assert.That(ReferenceEquals(wrappedFactory, options.RawRepresentationFactory))
+            .IsTrue();
+
+        var openAiRawOptions = (OpenAIChatCompletionOptions)options.RawRepresentationFactory!(null!)!;
+#pragma warning disable OPENAI001
+        await Assert.That(openAiRawOptions.ReasoningEffortLevel).IsEqualTo(
+            OpenAIChatReasoningEffortLevel.None
+        );
+#pragma warning restore OPENAI001
     }
 
     [Test]
@@ -140,9 +278,15 @@ public sealed class LlmProviderAccessTesterTests
             Tools = [AIFunctionFactory.Create(() => "ok", name: "test_tool")],
         };
 
-        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("gpt-5.6-luna", options);
+        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("OpenAI", "gpt-5.6-luna", options);
 
         await Assert.That(options.Reasoning).IsNull();
+        var rawOptions = (OpenAIChatCompletionOptions)options.RawRepresentationFactory!(null!)!;
+#pragma warning disable OPENAI001
+        await Assert.That(rawOptions.ReasoningEffortLevel).IsEqualTo(
+            OpenAIChatReasoningEffortLevel.None
+        );
+#pragma warning restore OPENAI001
     }
 
     [Test]
@@ -153,13 +297,13 @@ public sealed class LlmProviderAccessTesterTests
             Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High },
         };
 
-        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("gpt-5.6-luna", options);
+        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("OpenAI", "gpt-5.6-luna", options);
 
         await Assert.That(options.Reasoning?.Effort).IsEqualTo(ReasoningEffort.High);
     }
 
     [Test]
-    public async Task NormalizeOpenAiChatCompletionsOptions_WithNonLunaTools_PreservesReasoningEffort()
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithNonGpt56Tools_PreservesReasoningEffort()
     {
         var options = new ChatOptions
         {
@@ -167,7 +311,7 @@ public sealed class LlmProviderAccessTesterTests
             Tools = [AIFunctionFactory.Create(() => "ok", name: "test_tool")],
         };
 
-        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("gpt-5.6-sol", options);
+        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("OpenAI", "gpt-5.5", options);
 
         await Assert.That(options.Reasoning?.Effort).IsEqualTo(ReasoningEffort.High);
     }
@@ -177,7 +321,7 @@ public sealed class LlmProviderAccessTesterTests
     {
         var options = new ChatOptions { Temperature = 0 };
 
-        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("gpt-5.6-luna", options);
+        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("OpenAI", "gpt-5.6-luna", options);
 
         await Assert.That(options.Temperature).IsEqualTo(1);
     }

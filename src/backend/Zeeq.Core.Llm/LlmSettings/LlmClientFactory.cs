@@ -9,6 +9,7 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using OpenAI;
+using OpenAIChatCompletionOptions = OpenAI.Chat.ChatCompletionOptions;
 using Zeeq.Core.Common;
 
 namespace Zeeq.Core.Llm;
@@ -41,6 +42,9 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
     /// Zeeq's operation-level limits rather than the transport default.
     /// </remarks>
     private static readonly TimeSpan ChatClientTimeout = TimeSpan.FromSeconds(300);
+
+    private const string RawReasoningEffortFactoryStateKey =
+        "Zeeq.Core.Llm.OpenAiRawReasoningEffortFactoryState";
 
     private static readonly HttpClient SharedHttpClient = new() { Timeout = ChatClientTimeout };
 
@@ -307,20 +311,23 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
                     config.EnableSensitiveData = true; // TODO: This should be only on local
                 }
             )
-            // OpenAI Chat Completions compatibility: some models (e.g. gpt-5.6-luna) reject
-            // Temperature = 0 and also reject function tools when the reasoning_effort request
-            // parameter is present. This innermost middleware rewrites those options before the
-            // call reaches the provider SDK.
+            // OpenAI Chat Completions compatibility. GPT-5.6 models work with
+            // function tools on Chat Completions only when reasoning_effort is
+            // absent, so Zeeq intentionally drops explicit reasoning for those
+            // tool-call requests instead of routing native OpenAI through
+            // Responses and giving Azure a different behavior. Luna also rejects
+            // Temperature = 0. This innermost middleware rewrites the MEAI
+            // ChatOptions immediately before the provider SDK sees the request.
             .Use(
                 getResponseFunc: (messages, options, innerClient, cancellationToken) =>
                 {
-                    NormalizeOpenAiChatCompletionsOptions(model, options);
+                    NormalizeOpenAiChatCompletionsOptions(provider, model, options);
 
                     return innerClient.GetResponseAsync(messages, options, cancellationToken);
                 },
                 getStreamingResponseFunc: (messages, options, innerClient, cancellationToken) =>
                 {
-                    NormalizeOpenAiChatCompletionsOptions(model, options);
+                    NormalizeOpenAiChatCompletionsOptions(provider, model, options);
 
                     return innerClient.GetStreamingResponseAsync(
                         messages,
@@ -332,7 +339,11 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
             .Build(services);
     }
 
-    internal static void NormalizeOpenAiChatCompletionsOptions(string model, ChatOptions? options)
+    internal static void NormalizeOpenAiChatCompletionsOptions(
+        string provider,
+        string model,
+        ChatOptions? options
+    )
     {
         if (options is null)
         {
@@ -347,10 +358,96 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
         if (
             options.Tools is { Count: > 0 }
             && IsReasoningWithToolsUnsupportedModel(model)
-            && options.Reasoning is not null
         )
         {
+            // NOTE: We intentionally trade explicit reasoning effort for one
+            // Chat Completions code path across OpenAI and Azure OpenAI.
+            // GPT-5.6 rejects reasoning_effort with function tools on this
+            // endpoint, so keeping tools reliable means removing MEAI reasoning
+            // before the provider SDK serializes the request.
             options.Reasoning = null;
+            ClearRawOpenAiChatReasoningEffort(
+                options,
+                useExplicitNone: IsOpenAiProvider(provider)
+            );
+        }
+    }
+
+    private static void ClearRawOpenAiChatReasoningEffort(
+        ChatOptions options,
+        bool useExplicitNone
+    )
+    {
+        var properties = options.AdditionalProperties ??= [];
+        if (
+            properties.TryGetValue(RawReasoningEffortFactoryStateKey, out var existingState)
+            && existingState is RawReasoningEffortFactoryState state
+        )
+        {
+            state.UseExplicitNone = useExplicitNone;
+
+            return;
+        }
+
+        state = new RawReasoningEffortFactoryState(
+            options.RawRepresentationFactory,
+            useExplicitNone
+        );
+        properties[RawReasoningEffortFactoryStateKey] = state;
+        options.RawRepresentationFactory = state.CreateRawRepresentation;
+    }
+
+    private sealed class RawReasoningEffortFactoryState(
+        Func<IChatClient, object?>? originalFactory,
+        bool useExplicitNone
+    )
+    {
+        public bool UseExplicitNone { get; set; } = useExplicitNone;
+
+        public object? CreateRawRepresentation(IChatClient client)
+        {
+            var rawRepresentation = originalFactory?.Invoke(client);
+            if (rawRepresentation is OpenAIChatCompletionOptions rawOptions)
+            {
+                ApplyReasoningEffortCompatibility(rawOptions);
+            }
+            else if (rawRepresentation is null && UseExplicitNone)
+            {
+#pragma warning disable OPENAI001
+                rawRepresentation = new OpenAIChatCompletionOptions
+                {
+                    ReasoningEffortLevel = OpenAI.Chat.ChatReasoningEffortLevel.None,
+                };
+#pragma warning restore OPENAI001
+            }
+
+            return rawRepresentation;
+        }
+
+        private void ApplyReasoningEffortCompatibility(OpenAIChatCompletionOptions rawOptions)
+        {
+            // MEAI OpenAIChatClient.ToOpenAIOptions first asks
+            // ChatOptions.RawRepresentationFactory for a raw OpenAI
+            // ChatCompletionOptions and only maps ChatOptions.Reasoning when
+            // that raw options object has no ReasoningEffortLevel. Clearing
+            // ChatOptions.Reasoning alone therefore does not remove an already
+            // populated raw ReasoningEffortLevel. Native OpenAI GPT-5.6
+            // requires the explicit value `none`, while Azure OpenAI rejects
+            // any reasoning_effort value on Chat Completions with tools.
+            // Keep that provider split local to the compatibility shim so
+            // both providers still use the same Chat Completions client path.
+#pragma warning disable OPENAI001
+            if (UseExplicitNone)
+            {
+                rawOptions.ReasoningEffortLevel = OpenAI.Chat.ChatReasoningEffortLevel.None;
+            }
+            else
+            {
+                rawOptions.ReasoningEffortLevel = default(
+                    OpenAI.Chat.ChatReasoningEffortLevel?
+                );
+            }
+#pragma warning restore OPENAI001
         }
     }
 
@@ -411,7 +508,7 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
     /// Models that reject <c>reasoning_effort</c> with function tools on Chat Completions.
     /// Checked case-insensitively against a substring of the configured model identifier.
     /// </summary>
-    private static readonly string[] ReasoningWithToolsUnsupportedModelLabels = ["gpt-5.6-luna"];
+    private static readonly string[] ReasoningWithToolsUnsupportedModelLabels = ["gpt-5.6"];
 
     /// <summary>
     /// Returns true when <paramref name="model" /> appears in
@@ -458,6 +555,13 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
     /// </summary>
     private static bool IsAzureOpenAiProvider(string provider) =>
         provider.Trim().Equals("Azure OpenAI", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Identifies the native OpenAI provider, which needs <c>reasoning_effort=none</c>
+    /// rather than an omitted value for GPT-5.6 Chat Completions tool calls.
+    /// </summary>
+    private static bool IsOpenAiProvider(string provider) =>
+        provider.Trim().Equals("OpenAI", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Identifies providers currently routed through the OpenAI-compatible SDK path.

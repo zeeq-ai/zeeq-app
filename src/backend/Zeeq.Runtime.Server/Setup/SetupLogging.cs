@@ -1,7 +1,4 @@
-using Serilog;
 using Serilog.Events;
-using Serilog.Formatting.Compact;
-using Zeeq.Core.Common;
 
 namespace Zeeq.Runtime.Server.Setup;
 
@@ -43,8 +40,15 @@ internal static class SetupLoggingExtension
     {
         var logConfiguration = new LoggerConfiguration();
 
+        var resourceAttributes = new Dictionary<string, object>
+        {
+            ["service.name"] = "zeeq",
+            ["service.version"] = GitVersionInfo.TelemetryVersion,
+        };
+
         if (environment.IsDevelopment())
         {
+            // Local development logging configuration
             Console.WriteLine(
                 $"Using development logging template: {LoggingConstants.DevelopmentTemplate}"
             );
@@ -53,16 +57,14 @@ internal static class SetupLoggingExtension
                 .WriteTo.Console(outputTemplate: LoggingConstants.DevelopmentTemplate)
                 .WriteTo.OpenTelemetry(options =>
                 {
-                    options.ResourceAttributes = new Dictionary<string, object>
-                    {
-                        ["service.name"] = "zeeq",
-                        ["service.version"] = GitVersionInfo.TelemetryVersion,
-                    };
+                    options.ResourceAttributes = resourceAttributes;
                 })
-                .MinimumLevel.Information();
+                // Local dev minimum is Debug
+                .MinimumLevel.Debug();
         }
         else
         {
+            // Production and upstream logging configuration
             logConfiguration
                 .Enrich.WithProperty("GitSha", GitVersionInfo.ShortSha)
                 .Enrich.WithProperty("Version", GitVersionInfo.DisplayVersion)
@@ -70,13 +72,10 @@ internal static class SetupLoggingExtension
                 .WriteTo.Console(outputTemplate: LoggingConstants.ProductionTemplate)
                 .WriteTo.OpenTelemetry(options =>
                 {
-                    options.ResourceAttributes = new Dictionary<string, object>
-                    {
-                        ["service.name"] = "zeeq",
-                        ["service.version"] = GitVersionInfo.TelemetryVersion,
-                    };
+                    options.ResourceAttributes = resourceAttributes;
                 })
-                .MinimumLevel.Debug();
+                // Production, stating minimum is Information
+                .MinimumLevel.Information();
         }
 
         logConfiguration
