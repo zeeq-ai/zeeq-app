@@ -1,5 +1,5 @@
-using Zeeq.Core.Identity;
 using Microsoft.AspNetCore.Authorization;
+using Zeeq.Core.Identity;
 
 namespace Zeeq.Platform.Documents;
 
@@ -55,8 +55,13 @@ public sealed class SnippetEndpoints : IEndpoint
             .Produces<SnippetSearchResultResponse[]>()
             .Produces<DocumentError>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
-            .WithSummary(
-                "Search section or code snippets in a library by semantic + full-text hybrid ranking."
+            .WithSummary("Search snippets.")
+            .WithDescription(
+                """
+                Searches section or code snippets in the route library. The handler validates
+                `kind`, resolves the library, embeds the query with full-text fallback, and
+                returns ranked rows with score components and degraded-mode metadata.
+                """
             );
     }
 }

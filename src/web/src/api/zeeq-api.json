@@ -435,31 +435,6 @@
         }
       }
     },
-    "/api/v1/orgs/{orgId}/integrations/github/repositories/configured": {
-      "get": {
-        "tags": [
-          "GitHub"
-        ],
-        "summary": "List configured repositories.",
-        "description": "Returns the GitHub repositories already registered in Zeeq for the route\norganization, along with their local settings. `Enabled` controls whether\nincoming PR and comment webhooks create code-review work. Library-source\nvisibility is tracked separately and does not change GitHub App access.\n\nRequires the `owner` or `admin` role.",
-        "operationId": "ListConfiguredGitHubRepositories",
-        "parameters": [
-          {
-            "name": "orgId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
     "/api/v1/orgs/{orgId}/integrations/github/repositories/available": {
       "get": {
         "tags": [
@@ -615,6 +590,31 @@
           },
           {
             "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/integrations/github/repositories/configured": {
+      "get": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "List configured repositories.",
+        "description": "Returns the GitHub repositories already registered in Zeeq for the route\norganization, along with their local settings. `Enabled` controls whether\nincoming PR and comment webhooks create code-review work. Library-source\nvisibility is tracked separately and does not change GitHub App access.\n\nRequires active membership in the route organization.",
+        "operationId": "ListConfiguredGitHubRepositories",
+        "parameters": [
+          {
+            "name": "orgId",
             "in": "path",
             "required": true,
             "schema": {
@@ -2072,7 +2072,8 @@
         "tags": [
           "Library Documents"
         ],
-        "summary": "List documents in a library.",
+        "summary": "List documents.",
+        "description": "Returns the document metadata rows for the route library.",
         "operationId": "ListLibraryDocuments",
         "parameters": [
           {
@@ -2125,7 +2126,8 @@
         "tags": [
           "Library Documents"
         ],
-        "summary": "Write a markdown document into a library.",
+        "summary": "Upsert a document.",
+        "description": "Creates or replaces a markdown document in the route library.",
         "operationId": "UpsertLibraryDocument",
         "parameters": [
           {
@@ -2185,7 +2187,8 @@
         "tags": [
           "Library Documents"
         ],
-        "summary": "Delete a document from a library.",
+        "summary": "Delete a document.",
+        "description": "Deletes one document from the route library by path.",
         "operationId": "DeleteLibraryDocument",
         "parameters": [
           {
@@ -2238,7 +2241,8 @@
         "tags": [
           "Library Documents"
         ],
-        "summary": "Read a document's full markdown content by path.",
+        "summary": "Get document content.",
+        "description": "Returns the full markdown body for one document by path.",
         "operationId": "GetLibraryDocumentContent",
         "parameters": [
           {
@@ -2298,7 +2302,8 @@
         "tags": [
           "Library Documents"
         ],
-        "summary": "Preview the title/keywords/headings/snippets the indexing pipeline would extract from a document, without persisting anything.",
+        "summary": "Preview document parsing.",
+        "description": "Shows the title, keywords, headings, and snippets the indexing pipeline\nwould extract from a document without persisting changes.",
         "operationId": "PreviewLibraryDocumentParse",
         "parameters": [
           {
@@ -2358,7 +2363,8 @@
         "tags": [
           "Library Documents"
         ],
-        "summary": "Search documents in a library by keywords.",
+        "summary": "Search documents.",
+        "description": "Searches documents in the route library by keyword query.",
         "operationId": "SearchLibraryDocuments",
         "parameters": [
           {
@@ -2433,7 +2439,8 @@
         "tags": [
           "Library Documents"
         ],
-        "summary": "Set or clear a document's code-review exclusion. Excluded documents never surface to code-review agents via list/search tools; direct reads by path still resolve. Synced/remote documents are rejected.",
+        "summary": "Set review exclusion.",
+        "description": "Sets or clears a document's code-review exclusion. Excluded documents do\nnot surface to code-review agents via list/search tools, but direct reads\nby path still resolve. Synced documents are rejected.",
         "operationId": "SetLibraryDocumentReviewExclusion",
         "parameters": [
           {
@@ -2495,7 +2502,8 @@
         "tags": [
           "Library Documents"
         ],
-        "summary": "Rename (move) a document to a new path within the library.",
+        "summary": "Rename a document.",
+        "description": "Moves one document to a new path within the route library.",
         "operationId": "RenameLibraryDocument",
         "parameters": [
           {
@@ -3098,7 +3106,8 @@
         "tags": [
           "Library Snippets"
         ],
-        "summary": "Search section or code snippets in a library by semantic + full-text hybrid ranking.",
+        "summary": "Search snippets.",
+        "description": "Searches section or code snippets in the route library. The handler validates\n`kind`, resolves the library, embeds the query with full-text fallback, and\nreturns ranked rows with score components and degraded-mode metadata.",
         "operationId": "SearchLibrarySnippets",
         "parameters": [
           {

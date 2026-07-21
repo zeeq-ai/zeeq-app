@@ -111,7 +111,7 @@ const organizationSettingsStore = useOrganizationSettingsStore();
 const { canManageOrganization } = storeToRefs(organizationSettingsStore);
 const {
   selectedRepositoryId,
-  configuredRepositories,
+  webhookEnabledRepositories,
   loadingRepositories,
   activeOrganizationId,
   selectedManagementItemId,
@@ -134,7 +134,7 @@ const bodyClass = computed(() =>
 );
 
 const repositoryItems = computed(() =>
-  configuredRepositories.value.map((repository) => ({
+  webhookEnabledRepositories.value.map((repository) => ({
     label: repository.displayName,
     value: repository.id,
   })),
