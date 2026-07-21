@@ -5,11 +5,11 @@ using Anthropic;
 using Anthropic.Core;
 using Azure;
 using Azure.AI.OpenAI;
-using Zeeq.Core.Common;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using OpenAI;
+using Zeeq.Core.Common;
 
 namespace Zeeq.Core.Llm;
 
@@ -307,25 +307,20 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
                     config.EnableSensitiveData = true; // TODO: This should be only on local
                 }
             )
-            // Temperature normalization: some models (e.g. gpt-5.6-luna) reject Temperature = 0
-            // and only accept the default value of 1. This innermost middleware rewrites
-            // Temperature from 0 to 1 for those models before the call reaches the provider SDK.
+            // OpenAI Chat Completions compatibility: some models (e.g. gpt-5.6-luna) reject
+            // Temperature = 0 and also reject function tools when reasoning_effort is anything
+            // other than "none". This innermost middleware rewrites those options before the
+            // call reaches the provider SDK.
             .Use(
                 getResponseFunc: (messages, options, innerClient, cancellationToken) =>
                 {
-                    if (options?.Temperature == 0 && IsTemperatureZeroUnsupportedModel(model))
-                    {
-                        options.Temperature = 1;
-                    }
+                    NormalizeOpenAiChatCompletionsOptions(model, options);
 
                     return innerClient.GetResponseAsync(messages, options, cancellationToken);
                 },
                 getStreamingResponseFunc: (messages, options, innerClient, cancellationToken) =>
                 {
-                    if (options?.Temperature == 0 && IsTemperatureZeroUnsupportedModel(model))
-                    {
-                        options.Temperature = 1;
-                    }
+                    NormalizeOpenAiChatCompletionsOptions(model, options);
 
                     return innerClient.GetStreamingResponseAsync(
                         messages,
@@ -335,6 +330,29 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
                 }
             )
             .Build(services);
+    }
+
+    internal static void NormalizeOpenAiChatCompletionsOptions(string model, ChatOptions? options)
+    {
+        if (options is null)
+        {
+            return;
+        }
+
+        if (options.Temperature == 0 && IsTemperatureZeroUnsupportedModel(model))
+        {
+            options.Temperature = 1;
+        }
+
+        if (
+            options.Tools is { Count: > 0 }
+            && IsReasoningWithToolsUnsupportedModel(model)
+            && options.Reasoning?.Effort != ReasoningEffort.None
+        )
+        {
+            options.Reasoning ??= new ReasoningOptions();
+            options.Reasoning.Effort = ReasoningEffort.None;
+        }
     }
 
     /// <summary>
@@ -391,12 +409,35 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
     private static readonly string[] TemperatureZeroUnsupportedModelLabels = ["gpt-5.6-luna"];
 
     /// <summary>
+    /// Models that reject <c>reasoning_effort</c> with function tools on Chat Completions.
+    /// Checked case-insensitively against a substring of the configured model identifier.
+    /// </summary>
+    private static readonly string[] ReasoningWithToolsUnsupportedModelLabels = ["gpt-5.6-luna"];
+
+    /// <summary>
     /// Returns true when <paramref name="model" /> appears in
     /// <see cref="TemperatureZeroUnsupportedModelLabels" />.
     /// </summary>
     private static bool IsTemperatureZeroUnsupportedModel(string model)
     {
         foreach (var label in TemperatureZeroUnsupportedModelLabels)
+        {
+            if (model.Contains(label, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="model" /> appears in
+    /// <see cref="ReasoningWithToolsUnsupportedModelLabels" />.
+    /// </summary>
+    private static bool IsReasoningWithToolsUnsupportedModel(string model)
+    {
+        foreach (var label in ReasoningWithToolsUnsupportedModelLabels)
         {
             if (model.Contains(label, StringComparison.OrdinalIgnoreCase))
             {

@@ -23,7 +23,7 @@ gcloud run deploy zeeq-runtime \
   --allow-unauthenticated \
   --add-cloudsql-instances="${ZEEQ_CLOUDSQL_INSTANCE}" \
   --min-instances=0 \
-  --max-instances=1 \
+  --max-instances=4 \
   --timeout=15m \
   --region="${REGION}" \
   --cpu-boost \
