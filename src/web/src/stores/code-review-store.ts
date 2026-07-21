@@ -182,6 +182,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     null,
   );
   const loadingSinglePullRequest = ref(false);
+  const pollingSinglePullRequestReviews = ref(false);
   const error = ref<string | null>(null);
 
   const configuredRepositories = computed<GitHubConfiguredRepository[]>(
@@ -450,6 +451,71 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     } finally {
       loadingSinglePullRequest.value = false;
     }
+  }
+
+  /**
+   * Polls the newest reviews for the standalone single-PR view (Mode 1) and
+   * merges any new/updated rows into `singlePullRequestReviews`.
+   *
+   * Mirrors `refreshSelectedPullRequestReviews`'s upsert-by-id merge, but reads
+   * `singlePullRequest`/`singlePullRequestReviews` so it doesn't disturb inbox
+   * state and keeps working from a shared single-view link with no inbox context.
+   */
+  async function pollSinglePullRequestReviews() {
+    const pullRequest = singlePullRequest.value;
+
+    if (!pullRequest || pollingSinglePullRequestReviews.value) {
+      return;
+    }
+
+    const orgId = requireOrganizationId();
+    const requestedPullRequestId = pullRequest.id;
+    pollingSinglePullRequestReviews.value = true;
+
+    try {
+      const reviews = await CodeReviews.listPullRequestCodeReviews(
+        pullRequest.id,
+        orgId,
+        {
+          createdAtUtc: pullRequest.createdAtUtc,
+          pageSize: 20,
+        },
+      );
+
+      // NOTE: Not reachable today (this view has no route-param watcher, so
+      // singlePullRequest is never reassigned to a different PR while mounted),
+      // but this poll spans an await and the standalone view could later gain
+      // in-place PR navigation. Guard defensively so a stale response can't
+      // merge reviews into whatever PR is selected by the time it resolves.
+      if (singlePullRequest.value?.id !== requestedPullRequestId) {
+        return false;
+      }
+
+      const knownIds = new Set(
+        singlePullRequestReviews.value.map((review) => review.id),
+      );
+
+      for (const review of [...reviews.items].reverse()) {
+        upsertSinglePullRequestReview(review);
+      }
+
+      // NOTE: Deliberately not touching singlePullRequestNextCursor here. This
+      // poll always re-fetches the newest page to catch new/updated reviews;
+      // reassigning the cursor from that response would clobber pagination
+      // progress from a (future) load-older-reviews action. The cursor is
+      // owned solely by loadSinglePullRequest's initial load.
+      return reviews.items.some((review) => !knownIds.has(review.id));
+    } finally {
+      pollingSinglePullRequestReviews.value = false;
+    }
+  }
+
+  function upsertSinglePullRequestReview(review: CodeReviewRecordDto) {
+    const withoutExisting = singlePullRequestReviews.value.filter(
+      (item) => item.id !== review.id,
+    );
+
+    singlePullRequestReviews.value = [review, ...withoutExisting];
   }
 
   /**
@@ -996,6 +1062,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     }
 
     const orgId = requireOrganizationId();
+    const requestedPullRequestId = pullRequest.id;
     const reviews = await CodeReviews.listPullRequestCodeReviews(
       pullRequest.id,
       orgId,
@@ -1005,11 +1072,23 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
       },
     );
 
+    // NOTE: The inbox lets the user click a different PR row while this poll-
+    // triggered refresh is still in flight, reassigning selectedPullRequest
+    // before this await resolves. Discard the response instead of merging
+    // reviews for a PR that is no longer selected.
+    if (selectedPullRequest.value?.id !== requestedPullRequestId) {
+      return;
+    }
+
     for (const review of [...reviews.items].reverse()) {
       upsertReview(review);
     }
 
-    selectedPullRequestReviewsNextCursor.value = reviews.nextCursor;
+    // NOTE: Deliberately not touching selectedPullRequestReviewsNextCursor
+    // here. This refresh always re-fetches the newest page to catch new/
+    // updated reviews; reassigning the cursor from that response would
+    // clobber pagination progress from a (future) load-older-reviews action.
+    // The cursor is owned solely by selectPullRequest's initial load.
   }
 
   function upsertReview(review: CodeReviewRecordDto) {
@@ -1249,6 +1328,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     singlePullRequestReviews,
     singlePullRequestNextCursor,
     loadingSinglePullRequest,
+    pollingSinglePullRequestReviews,
     error,
     configuredRepositories,
     selectedRepository,
@@ -1263,6 +1343,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     loadReviewFindings,
     pollPullRequestUpdates,
     pollInboxUpdates,
+    pollSinglePullRequestReviews,
     loadAgentManagement,
     setSelectedRepository,
     loadSelectedRepositoryManagement,

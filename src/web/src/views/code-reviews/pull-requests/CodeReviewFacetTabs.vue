@@ -77,7 +77,7 @@
           <UBadge
             :label="`${item.count}`"
             :color="item.color"
-            variant="subtle"
+            variant="soft"
             size="sm"
             class="ml-1"
           />
@@ -96,8 +96,7 @@
             <UBadge
               :label="`${item.count}`"
               :color="item.color"
-              variant="subtle"
-              class="rounded-full"
+              variant="soft"
             />
             <span class="text-sm font-medium text-highlighted">
               {{ item.label }} findings
@@ -306,7 +305,7 @@ type SeverityItem = {
   value: string;
   level: CodeReviewFindingLevel;
   count: number;
-  color: "error" | "warning" | "neutral" | "info";
+  color: "error" | "warning" | "neutral" | "info" | "tertiary";
   disabled: boolean;
   description: string;
 };
@@ -476,7 +475,7 @@ const items = computed<SeverityItem[]>(() => [
     value: "comments",
     level: codeReviewFindingLevelEnum.Comment,
     count: countForLevel(codeReviewFindingLevelEnum.Comment),
-    color: "neutral",
+    color: "tertiary",
     disabled: countForLevel(codeReviewFindingLevelEnum.Comment) === 0,
     description: "Informational notes preserved from the reviewer output.",
   },

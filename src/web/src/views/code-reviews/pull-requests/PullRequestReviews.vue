@@ -216,6 +216,9 @@ const detailPanelOpen = computed({
   },
 });
 
+/** Guards against registering polling resources after an interrupted mount (route change while loading). */
+let isUnmounted = false;
+
 onMounted(async () => {
   await refreshInbox();
 
@@ -248,6 +251,8 @@ onMounted(async () => {
     }
   }
 
+  if (isUnmounted) return;
+
   syncUrlAfterLoad();
   markInitialized();
 
@@ -256,6 +261,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  isUnmounted = true;
   stopPolling();
   document.removeEventListener("visibilitychange", handleVisibilityChange);
 });
@@ -264,6 +270,9 @@ onBeforeUnmount(() => {
 watch(activeOrganizationId, async () => {
   stopPolling();
   await refreshInbox();
+
+  if (isUnmounted) return;
+
   startPolling();
 });
 

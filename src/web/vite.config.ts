@@ -23,10 +23,25 @@ export default defineConfig({
   plugins: [
     vue(),
     ui({
+      theme: {
+        // Adds `tertiary` (purple) alongside the defaults so severity badges
+        // (e.g. code review "Comment" findings) can use a color distinct from
+        // `secondary`/`info`, which both default to blue.
+        colors: [
+          "primary",
+          "secondary",
+          "tertiary",
+          "info",
+          "success",
+          "warning",
+          "error",
+        ],
+      },
       ui: {
         colors: {
           primary: "cyan",
           neutral: "zinc",
+          tertiary: "purple",
         },
         button: {
           // Neutral solid buttons use subtle variant styling in dark mode.
