@@ -92,7 +92,8 @@ type CodeReviewStatusColor =
   | "warning"
   | "error"
   | "neutral"
-  | "info";
+  | "info"
+  | "tertiary";
 
 type CodeReviewAccordionItemViewModel = {
   label: string;
@@ -238,7 +239,25 @@ function statusColor(
   }
 
   if (status === "Completed" && findingsCount > 0) {
-    return "warning";
+    if (item.criticalFindings > 0) {
+      return "error";
+    }
+
+    if (item.majorFindings > 0) {
+      return "warning";
+    }
+
+    if (item.minorFindings > 0) {
+      return "neutral";
+    }
+
+    if (item.suggestionFindings > 0) {
+      return "info";
+    }
+
+    if (item.commentFindings > 0) {
+      return "tertiary";
+    }
   }
 
   if (status === "Pending") {

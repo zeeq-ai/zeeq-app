@@ -134,7 +134,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
 import { CodeReviews } from "@/api/generated";
 import type {
@@ -176,6 +176,9 @@ const bypassing = ref(false);
 
 const toast = useToast();
 
+/** Guards against registering polling resources after an interrupted mount (route change while loading). */
+let isUnmounted = false;
+
 onMounted(async () => {
   if (!props.c) return;
 
@@ -184,8 +187,73 @@ onMounted(async () => {
     props.c,
   );
 
+  if (isUnmounted) return;
+
   openReviewId.value = singlePullRequestReviews.value[0]?.id;
+
+  startPolling();
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 });
+
+onBeforeUnmount(() => {
+  isUnmounted = true;
+  stopPolling();
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
+});
+
+// ── Polling: pick up new code reviews triggered by later commits ─────────
+
+const pollIntervalMs = 7_500;
+let pollHandle: number | null = null;
+
+/** Starts quiet visibility-aware polling while this view is mounted. */
+function startPolling() {
+  if (!props.c || document.visibilityState !== "visible") {
+    return;
+  }
+
+  if (pollHandle === null) {
+    pollHandle = window.setInterval(() => {
+      void runPollCycle();
+    }, pollIntervalMs);
+  }
+}
+
+/** Clears the poller when leaving this view or hiding the tab. */
+function stopPolling() {
+  if (pollHandle === null) {
+    return;
+  }
+
+  window.clearInterval(pollHandle);
+  pollHandle = null;
+}
+
+/**
+ * NOTE: `pollSinglePullRequestReviews` is called fire-and-forget from the
+ * interval and the visibility handler below; `void` alone silences the
+ * unused-promise lint but does nothing about rejections. Matches the same
+ * quiet-polling convention as PullRequestReviews.vue's runPollingCycle —
+ * transient API failures are swallowed here since manual refresh (reload)
+ * surfaces persistent failures without interrupting review reading.
+ */
+async function runPollCycle() {
+  try {
+    await codeReviewStore.pollSinglePullRequestReviews();
+  } catch {
+    // Intentionally quiet — see NOTE above.
+  }
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === "visible") {
+    startPolling();
+    void runPollCycle();
+    return;
+  }
+
+  stopPolling();
+}
 
 async function handleLoadReviewFindings(review: CodeReviewRecordDto) {
   await codeReviewStore.loadReviewFindings(review);
