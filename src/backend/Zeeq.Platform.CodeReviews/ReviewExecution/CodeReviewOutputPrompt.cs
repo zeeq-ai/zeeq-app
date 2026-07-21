@@ -73,7 +73,7 @@ internal static class CodeReviewOutputPrompt
 
         {
           "summary": "(Short terse, summary of the review and findings)",
-          "details": "(MAX 3-6 sentences with more detailed overview of the review findings; simple, direct language explaining the findings and implications that extends the summary without getting into the low-level details)",
+          "details": "(MAX 3-6 sentences with more detailed overview of the review findings; simple, direct language explaining the findings and implications that extends the summary without getting into the low-level details. No fenced code blocks here; just prose.)",
           "findings": [
             {
               "level": "CRITICAL",
@@ -81,7 +81,7 @@ internal static class CodeReviewOutputPrompt
               "line": 42,
               "side": "RIGHT",
               "summary": "Unsanitized user input passed directly to command handler",
-              "details": "The `Payload` property is bound directly from the request body without validation...\n\n```cs\n// Cite reference to/the/file/path.cs@L12\npublic static ErrorOr<SomeResult> SomeMethod()\n{\n    var x = SomeMethodReturningRecord(); // 👈 Destructure here instead\n    if (...)\n    {\n        // 👇 Is there a more specific Exception type?\n        throw new Exception(\"Bad thing happened\"); // ⚠️ Contract is ErrorOr; do not throw\n    }\n}\n```"
+              "details": "The `Payload` property is bound directly from the request body without validation...\n\n```cs\n// Cite reference to/the/file/path.cs@L12\npublic static ErrorOr<SomeResult> SomeMethod()\n{\n    var x = SomeMethodReturningRecord(); // 👈 Destructure here instead\n    if (...)\n    {\n        // 👇 Is there a more specific Exception type?\n        throw new Exception(\"Bad thing happened\"); // ⚠️ Contract is ErrorOr; do not throw\n    }\n}\n```\n\nThis can lead to...\n\nA better approach is to..."
             }
           ]
         }

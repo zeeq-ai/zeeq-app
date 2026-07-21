@@ -123,6 +123,15 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
             null,
             CancellationToken.None
         );
+        var user = await _context.Users.SingleAsync(user =>
+            user.Email == "existing-user@example.com"
+        );
+        await AddActivatedOrganizationMembershipAsync(
+            user.Id,
+            "Existing User Activated Org",
+            isDefault: false,
+            createdAtUtc: DateTimeOffset.UtcNow
+        );
         await store.EnsureUserAsync(
             "mock",
             providerSubject,
@@ -160,6 +169,15 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         );
         invitation.Status = MembershipStatus.Declined;
         await _context.SaveChangesAsync();
+        var user = await _context.Users.SingleAsync(user =>
+            user.Email == "declined-user@example.com"
+        );
+        await AddActivatedOrganizationMembershipAsync(
+            user.Id,
+            "Declined User Activated Org",
+            isDefault: false,
+            createdAtUtc: DateTimeOffset.UtcNow
+        );
 
         await store.EnsureUserAsync(
             "mock",
@@ -179,6 +197,217 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
 
         await Assert.That(invitationCount).IsEqualTo(1);
         await Assert.That(pendingInvitationCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task EnsureUserAsync_ExistingIdentityWithOnlyInactiveOrganizations_DoesNotReturnInactiveContext()
+    {
+        var providerSubject = Guid.NewGuid().ToString("N");
+        var store = new PostgresZeeqIdentityStore(_context);
+
+        await store.EnsureUserAsync(
+            "mock",
+            providerSubject,
+            "Inactive User",
+            "inactive-user@example.com",
+            null,
+            CancellationToken.None
+        );
+
+        Func<Task> act = async () =>
+            await store.EnsureUserAsync(
+                "mock",
+                providerSubject,
+                "Inactive User",
+                "inactive-user@example.com",
+                null,
+                CancellationToken.None
+            );
+
+        await Assert.That(act).Throws<InvalidOperationException>();
+    }
+
+    [Test]
+    public async Task EnsureUserAsync_ExistingIdentityWithInactiveOrgMembership_DoesNotUseStaleTeamMembership()
+    {
+        var providerSubject = Guid.NewGuid().ToString("N");
+        var store = new PostgresZeeqIdentityStore(_context);
+        await store.EnsureUserAsync(
+            "mock",
+            providerSubject,
+            "Stale Team User",
+            "stale-team-user@example.com",
+            null,
+            CancellationToken.None
+        );
+        var user = await _context.Users.SingleAsync(user =>
+            user.Email == "stale-team-user@example.com"
+        );
+        var activated = await AddActivatedOrganizationMembershipAsync(
+            user.Id,
+            "Stale Team Activated Org",
+            isDefault: false,
+            createdAtUtc: DateTimeOffset.UtcNow
+        );
+        var organizationMembership = await _context.OrganizationMemberships.SingleAsync(
+            membership =>
+                membership.UserId == user.Id
+                && membership.OrganizationId == activated.OrganizationId
+        );
+        organizationMembership.DisabledAtUtc = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync();
+
+        Func<Task> act = async () =>
+            await store.EnsureUserAsync(
+                "mock",
+                providerSubject,
+                "Stale Team User",
+                "stale-team-user@example.com",
+                null,
+                CancellationToken.None
+            );
+
+        await Assert.That(act).Throws<InvalidOperationException>();
+    }
+
+    [Test]
+    public async Task EnsureUserAsync_ExistingIdentity_PrefersActivatedOrganization()
+    {
+        var providerSubject = Guid.NewGuid().ToString("N");
+        var store = new PostgresZeeqIdentityStore(_context);
+        var initialContext = await store.EnsureUserAsync(
+            "mock",
+            providerSubject,
+            "Domain User",
+            "activated-user@example.com",
+            null,
+            CancellationToken.None
+        );
+
+        var activated = await AddActivatedOrganizationMembershipAsync(
+            initialContext.UserId,
+            "Activated Org",
+            isDefault: false,
+            createdAtUtc: DateTimeOffset.UtcNow
+        );
+
+        var nextContext = await store.EnsureUserAsync(
+            "mock",
+            providerSubject,
+            "Domain User",
+            "activated-user@example.com",
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(initialContext.OrganizationId).IsNotEqualTo(activated.OrganizationId);
+        await Assert.That(nextContext.OrganizationId).IsEqualTo(activated.OrganizationId);
+        await Assert.That(nextContext.TeamId).IsEqualTo(activated.TeamId);
+    }
+
+    [Test]
+    public async Task EnsureUserAsync_ExistingIdentity_PrefersDefaultActivatedOrganization()
+    {
+        var providerSubject = Guid.NewGuid().ToString("N");
+        var store = new PostgresZeeqIdentityStore(_context);
+        var initialContext = await store.EnsureUserAsync(
+            "mock",
+            providerSubject,
+            "Domain User",
+            "default-activated-user@example.com",
+            null,
+            CancellationToken.None
+        );
+
+        await AddActivatedOrganizationMembershipAsync(
+            initialContext.UserId,
+            "Earlier Activated Org",
+            isDefault: false,
+            createdAtUtc: DateTimeOffset.UtcNow.AddMinutes(-2)
+        );
+        var defaultActivated = await AddActivatedOrganizationMembershipAsync(
+            initialContext.UserId,
+            "Default Activated Org",
+            isDefault: true,
+            createdAtUtc: DateTimeOffset.UtcNow
+        );
+
+        var nextContext = await store.EnsureUserAsync(
+            "mock",
+            providerSubject,
+            "Domain User",
+            "default-activated-user@example.com",
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(nextContext.OrganizationId).IsEqualTo(defaultActivated.OrganizationId);
+        await Assert.That(nextContext.TeamId).IsEqualTo(defaultActivated.TeamId);
+    }
+
+    private async Task<(
+        string OrganizationId,
+        string TeamId
+    )> AddActivatedOrganizationMembershipAsync(
+        string userId,
+        string displayName,
+        bool isDefault,
+        DateTimeOffset createdAtUtc
+    )
+    {
+        var organizationId = "org_" + Guid.NewGuid().ToString("N");
+        var teamId = "team_" + Guid.NewGuid().ToString("N");
+        _context.Organizations.Add(
+            new Organization
+            {
+                Id = organizationId,
+                DisplayName = displayName,
+                Slug = OrganizationSlugGenerator.Create(displayName, organizationId),
+                CreatedByUserId = userId,
+                CreatedAtUtc = createdAtUtc,
+                UpdatedAtUtc = createdAtUtc,
+                ActivatedAtUtc = createdAtUtc,
+            }
+        );
+        _context.Teams.Add(
+            new Team
+            {
+                Id = teamId,
+                OrganizationId = organizationId,
+                DisplayName = displayName + " Root Team",
+                IsRootTeam = true,
+                CreatedByUserId = userId,
+                CreatedAtUtc = createdAtUtc,
+                UpdatedAtUtc = createdAtUtc,
+            }
+        );
+        _context.OrganizationMemberships.Add(
+            new OrganizationMembership
+            {
+                Id = "mem_" + Guid.NewGuid().ToString("N"),
+                OrganizationId = organizationId,
+                UserId = userId,
+                Role = "member",
+                Status = MembershipStatus.Active,
+                IsDefault = isDefault,
+                CreatedByUserId = userId,
+                CreatedAtUtc = createdAtUtc,
+            }
+        );
+        _context.TeamMemberships.Add(
+            new TeamMembership
+            {
+                OrganizationId = organizationId,
+                TeamId = teamId,
+                UserId = userId,
+                Role = "member",
+                CreatedByUserId = userId,
+                CreatedAtUtc = createdAtUtc,
+            }
+        );
+        await _context.SaveChangesAsync();
+
+        return (organizationId, teamId);
     }
 
     private async Task<(string OrganizationId, string OwnerId)> SeedSameDomainOrganizationAsync(

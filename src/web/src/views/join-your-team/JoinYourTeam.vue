@@ -18,6 +18,8 @@
 
       <!-- Matched organization and owner context shown before accepting. -->
       <div v-else-if="sameDomainInvitation" class="flex flex-col gap-5">
+        <USeparator label="Join organization" />
+
         <div class="flex items-center gap-3">
           <UAvatar
             :src="sameDomainInvitation.organizationIconUrl ?? undefined"
@@ -35,7 +37,7 @@
           </div>
         </div>
 
-        <USeparator />
+        <USeparator label="Invited by organization owner" />
 
         <div class="flex items-center gap-3">
           <UAvatar
@@ -151,20 +153,26 @@ const cardDescription = computed(() =>
 );
 const errorMessage = computed(() => sameDomainInvitationError.value);
 
-// Re-check auth and invitation state on mount because this bare route can be
-// reached directly, from the router guard, or after an OAuth redirect.
+// Load invitation state before /me because new same-domain users can have an
+// inactive personal org until they accept the matched team invitation.
 onMounted(async () => {
   try {
+    await appStore.fetchSameDomainInvitation({
+      force: true,
+      allowWithoutAuthenticated: true,
+    });
+
+    if (sameDomainInvitation.value) {
+      return;
+    }
+
     await appStore.fetchUser({ force: true });
     if (!appStore.isAuthenticated) {
       await router.replace({
         path: "/login",
         query: { returnUrl: route.fullPath },
       });
-      return;
     }
-
-    await appStore.fetchSameDomainInvitation({ force: true });
   } catch (err: unknown) {
     toast.add({
       title: "Could not load invitation",

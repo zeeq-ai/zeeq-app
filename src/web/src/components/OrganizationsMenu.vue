@@ -3,6 +3,7 @@ import { computed } from "vue";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import { storeToRefs } from "pinia";
 import { useAppStore } from "@/stores/app-store";
+import { isActivatedOrganization } from "@/utils/organizationAccess";
 
 defineProps<{
   collapsed?: boolean;
@@ -12,11 +13,12 @@ const store = useAppStore();
 const { user: me, currentOrganization } = storeToRefs(store);
 
 /**
- * /me is the tenancy source for the shell.  Pending invitations are excluded
- * from switch targets because they do not have active org/team claims yet.
+ * /me is the tenancy source for the shell. Pending invitations and inactive
+ * organizations are excluded because selecting them would produce unusable
+ * tenant claims.
  */
 const activeOrganizations = computed(
-  () => me.value?.organizations?.filter((org) => org.status === "Active") ?? [],
+  () => me.value?.organizations?.filter(isActivatedOrganization) ?? [],
 );
 
 const selectedOrganization = computed(() => {

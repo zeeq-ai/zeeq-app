@@ -27,16 +27,27 @@ public sealed class SwitchOrgHandler(
         var target = memberships.FirstOrDefault(m => m.OrganizationId == orgId);
 
         if (target is null)
+        {
             return TypedResults.NotFound();
+        }
 
-        // Resolve the target org's slug for the new cookie claim
+        // Resolve the target org before writing tenant claims. Active membership
+        // alone is not enough: inactive personal orgs can exist before billing or
+        // activation, and switching into one would poison the user's session.
         var org = await store.FindOrganizationByIdAsync(orgId, ct);
+        if (org is null || org.ActivatedAtUtc is null || org.DisabledAtUtc is not null)
+        {
+            return TypedResults.NotFound();
+        }
+
         var orgSlug = org?.Slug;
 
         var teamId = await store.FindRootTeamIdForMemberAsync(orgId, userId, ct);
 
         if (teamId is null)
+        {
             return TypedResults.NotFound();
+        }
 
         var newPrincipal = ExternalUserPrincipalFactory.CreateCookiePrincipal(
             new AuthContext(userId, orgId, teamId),

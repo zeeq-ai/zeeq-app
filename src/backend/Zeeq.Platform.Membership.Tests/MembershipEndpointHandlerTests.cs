@@ -1,10 +1,10 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Http.HttpResults;
+using OpenIddict.Abstractions;
 using Zeeq.Core.Common;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
 using Zeeq.Testing.EntityGraphs;
-using Microsoft.AspNetCore.Http.HttpResults;
-using OpenIddict.Abstractions;
 
 namespace Zeeq.Platform.Membership.Tests;
 
@@ -82,6 +82,26 @@ public sealed class MembershipEndpointHandlerTests
 
         await Assert.That(ok).IsNotNull();
         await Assert.That(ok!.Value!.FindFirstValue(AuthClaims.TeamId)).IsEqualTo(seed.RootTeam.Id);
+    }
+
+    [Test]
+    public async Task SwitchOrgHandler_WithInactiveOrganization_ReturnsNotFound()
+    {
+        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        seed.Organization.ActivatedAtUtc = null;
+        var store = new TestMembershipStore().AddSeed(seed);
+
+        // Guards that an active membership row is not enough to switch tenants.
+        // The target organization must also be activated, otherwise /me rejects
+        // the new cookie and the user can be locked out.
+        var handler = new SwitchOrgHandler(store, CreateSystemAdminEvaluator());
+        var result = await handler.HandleAsync(
+            seed.Organization.Id,
+            TestUserWithTeam(seed.Owner.Id, "team_old"),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result is NotFound).IsTrue();
     }
 
     private static SystemAdminEvaluator CreateSystemAdminEvaluator() =>

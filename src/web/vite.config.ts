@@ -1,4 +1,5 @@
-import { defineConfig, type ProxyOptions } from "vite";
+import type { ProxyOptions } from "vite";
+import { defineConfig } from "vitest/config";
 import vue from "@vitejs/plugin-vue";
 import ui from "@nuxt/ui/vite";
 import path from "path";
@@ -144,5 +145,12 @@ export default defineConfig({
         ws: true,
       },
     },
+  },
+  test: {
+    environment: "happy-dom",
+    globals: false,
+    include: ["src/**/*.test.ts"],
+    restoreMocks: true,
+    clearMocks: true,
   },
 });
