@@ -7,6 +7,13 @@
       icon="i-hugeicons-user"
     >
       <div class="flex flex-col gap-3">
+        <UAlert
+          variant="outline"
+          description="New org activation currently requires admin action."
+          icon="i-hugeicons-information-square"
+        >
+        </UAlert>
+
         <UButton
           v-for="provider in providers"
           :key="provider.name"
@@ -28,6 +35,23 @@
         >
           No sign-in providers are available.
         </p>
+
+        <USeparator label="Reach out" class="my-4" />
+
+        <UButton
+          block
+          size="lg"
+          color="neutral"
+          variant="subtle"
+          to="https://www.linkedin.com/in/charlescchen/"
+          :avatar="{
+            src: avatarSrc,
+            loading: 'lazy',
+          }"
+          external
+        >
+          Linkedin
+        </UButton>
       </div>
     </UPageCard>
 
@@ -69,6 +93,7 @@ const router = useRouter();
 const route = useRoute();
 const appStore = useAppStore();
 const loggingOut = ref(false);
+const avatarSrc = `${import.meta.env.BASE_URL}favicon-32x32.png`;
 
 interface LoginProvider {
   name: string;
