@@ -18,7 +18,7 @@ export const organizationRoleOptions = ["owner", "admin", "member"] as const;
 export const sameDomainOnboardingRoleOptions = ["member", "admin"] as const;
 
 type OrganizationRole = (typeof organizationRoleOptions)[number];
-type SameDomainOnboardingRole =
+export type SameDomainOnboardingRole =
   (typeof sameDomainOnboardingRoleOptions)[number];
 
 /**

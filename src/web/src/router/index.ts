@@ -19,6 +19,7 @@ router.beforeEach(async (to) => {
   const store = useAppStore();
   const loginReturnUrl = readSingleQueryValue(to.query.returnUrl);
   const isLoginRoute = to.path === "/login" || to.path === "/auth/login";
+  const isJoinYourTeamRoute = to.path === "/join-your-team";
   const isInactiveOrgLoginRoute =
     isLoginRoute && readSingleQueryValue(to.query.inactiveOrg) === "true";
   if (isLoginRoute && isActivationReturnUrl(loginReturnUrl)) {
@@ -78,6 +79,18 @@ router.beforeEach(async (to) => {
       }
       return { path: returnUrl };
     }
+
+    if (
+      !isJoinYourTeamRoute &&
+      !isAuthEntryRoute &&
+      (await hasSameDomainInvitation(store))
+    ) {
+      return {
+        path: "/join-your-team",
+        query: { returnUrl: to.fullPath },
+      };
+    }
+
     return true;
   }
 
@@ -103,4 +116,13 @@ function requiresSystemAdmin(to: {
 /** Reads a query value only when it is present as a single string. */
 function readSingleQueryValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+async function hasSameDomainInvitation(store: ReturnType<typeof useAppStore>) {
+  try {
+    await store.fetchSameDomainInvitation();
+    return store.sameDomainInvitation !== null;
+  } catch {
+    return false;
+  }
 }

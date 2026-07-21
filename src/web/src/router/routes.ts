@@ -197,6 +197,11 @@ export const routes: Array<RouteRecordRaw> = [
     component: () => import("@/views/login/SelectOrg.vue"),
   },
   {
+    path: "/join-your-team",
+    name: "JoinYourTeam",
+    component: () => import("@/views/join-your-team/JoinYourTeam.vue"),
+  },
+  {
     path: "/activate-account",
     redirect: "/login?inactiveOrg=true",
   },

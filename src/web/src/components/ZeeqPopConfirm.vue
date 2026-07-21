@@ -26,8 +26,8 @@
             <UButton
               :label="confirmLabel"
               size="xs"
-              color="error"
-              icon="i-hugeicons-delete-02"
+              :color="confirmColor"
+              :icon="confirmIcon"
               @click="confirm"
             />
           </div>
@@ -49,9 +49,13 @@ withDefaults(
     title: string;
     body: string;
     confirmLabel?: string;
+    confirmColor?: "error" | "neutral";
+    confirmIcon?: string;
   }>(),
   {
     confirmLabel: "Delete",
+    confirmColor: "error",
+    confirmIcon: "i-hugeicons-delete-02",
   },
 );
 
