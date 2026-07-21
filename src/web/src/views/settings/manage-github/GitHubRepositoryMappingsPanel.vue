@@ -14,12 +14,45 @@
             which repositories appear as library sources.
           </p>
         </div>
+      </div>
+
+      <div v-if="rows.length > 0" class="flex flex-wrap items-center gap-2">
+        <UInput
+          v-model="searchQuery"
+          placeholder="Filter repositories"
+          icon="i-hugeicons-search-01"
+          aria-label="Filter repositories"
+          size="sm"
+          class="min-w-48 grow"
+        >
+          <template #trailing>
+            <UButton
+              v-if="searchQuery"
+              icon="i-hugeicons-cancel-01"
+              size="xs"
+              color="neutral"
+              aria-label="Clear filter"
+              @click="clearSearch"
+            />
+          </template>
+        </UInput>
+
+        <USelectMenu
+          v-model="statusFilter"
+          :items="statusFilterOptions"
+          multiple
+          placeholder="Filter by status"
+          aria-label="Filter by status"
+          size="sm"
+          class="w-48"
+        />
 
         <UButton
           label="Refresh"
           icon="i-hugeicons-refresh"
           color="neutral"
           variant="ghost"
+          class="ml-auto"
           :loading="loading"
           @click="emits('refresh')"
         />
@@ -52,6 +85,15 @@
         title="No repositories found"
         description="The linked GitHub App installation has not granted Zeeq access to any repositories."
         icon="i-hugeicons-github"
+        color="neutral"
+        variant="subtle"
+      />
+
+      <UAlert
+        v-else-if="filteredRows.length === 0"
+        title="No matching repositories"
+        description="No repository names match the current filter."
+        icon="i-hugeicons-search-01"
         color="neutral"
         variant="subtle"
       />
@@ -187,11 +229,20 @@
           </div>
         </div>
       </div>
+
+      <div v-if="pageCount > 1" class="flex justify-center">
+        <UPagination
+          v-model:page="page"
+          :items-per-page="pageSize"
+          :total="filteredRows.length"
+        />
+      </div>
     </div>
   </UPageCard>
 </template>
 
 <script setup lang="ts">
+import { useFuse } from "@vueuse/integrations/useFuse";
 import type { GitHubRepositoryMappingRow } from "@/stores/github-settings-store";
 
 type RepositoryStatusViewModel = {
@@ -245,12 +296,93 @@ const emits = defineEmits<{
 /** Indicates whether any row-level mutation is currently in flight. */
 const saving = computed(() => Boolean(props.savingRepositoryId));
 
+// ── Filtering and pagination (client-side only) ─────────────────────────
+
+const pageSize = 10;
+const searchQuery = ref("");
+const page = ref(1);
+
+const { results: fuseResults } = useFuse(searchQuery, () => props.rows, {
+  fuseOptions: {
+    keys: ["ownerQualifiedName"],
+    threshold: 0.35,
+    ignoreLocation: true,
+  },
+});
+
+type StatusFilterOption = "Enabled" | "Paused" | "Not enabled" | "Visible";
+
+const statusFilterOptions: StatusFilterOption[] = [
+  "Enabled",
+  "Paused",
+  "Not enabled",
+  "Visible",
+];
+const statusFilter = ref<StatusFilterOption[]>([]);
+
+/**
+ * Enabled/Paused/Not-enabled are already mutually exclusive per row (a row
+ * only ever carries one of the three), so selecting several of them is a
+ * union match. Visible is an independent flag (a row can be Enabled and
+ * Visible at once) folded into the same union for simplicity.
+ */
+function matchesStatusFilter(row: GitHubRepositoryMappingRow): boolean {
+  if (statusFilter.value.length === 0) return true;
+
+  const isConfigured = Boolean(row.configuredMapping);
+  const isEnabled = row.configuredMapping?.enabled === true;
+  const statusLabel: StatusFilterOption = !isConfigured
+    ? "Not enabled"
+    : isEnabled
+      ? "Enabled"
+      : "Paused";
+
+  return statusFilter.value.some((filter) =>
+    filter === "Visible" ? row.visibleInLibraryPicker : filter === statusLabel,
+  );
+}
+
+/** Rows matching the current search filter, or all rows when it's empty. */
+const searchedRows = computed<GitHubRepositoryMappingRow[]>(() => {
+  if (!searchQuery.value.trim()) return props.rows;
+  return fuseResults.value.map((result) => result.item);
+});
+
+/** Search-matched rows narrowed further by the selected status filters. */
+const filteredRows = computed(() =>
+  searchedRows.value.filter(matchesStatusFilter),
+);
+
+const pageCount = computed(() =>
+  Math.max(1, Math.ceil(filteredRows.value.length / pageSize)),
+);
+
+/** Filtered rows sliced to the active page. */
+const pagedRows = computed(() => {
+  const start = (page.value - 1) * pageSize;
+  return filteredRows.value.slice(start, start + pageSize);
+});
+
+// Reset to page 1 whenever a filter changes so stale pages aren't shown.
+watch([searchQuery, statusFilter], () => {
+  page.value = 1;
+});
+
+// Clamp the page if filtering shrinks the result set below the current page.
+watch(pageCount, (count) => {
+  if (page.value > count) page.value = count;
+});
+
+function clearSearch() {
+  searchQuery.value = "";
+}
+
 /**
  * Projects API/store rows into the exact state the template renders. Keeping
  * this cached view model avoids method calls inside the repository `v-for`.
  */
 const repositoryRowsViewModel = computed<RepositoryRowViewModel[]>(() =>
-  props.rows.map(toRepositoryRowViewModel),
+  pagedRows.value.map(toRepositoryRowViewModel),
 );
 
 function toRepositoryRowViewModel(

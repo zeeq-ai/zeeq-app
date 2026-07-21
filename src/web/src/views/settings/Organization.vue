@@ -14,7 +14,11 @@
           color="neutral"
           variant="ghost"
           :disabled="saving"
-          @click="newOrganizationOpen = true"
+          @click="
+            () => {
+              newOrganizationOpen = true;
+            }
+          "
         />
         <UButton
           label="Save changes"
