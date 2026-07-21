@@ -3,7 +3,7 @@
     Same-domain onboarding settings panel. This child owns only local display
     state and emits typed update requests to the root settings view.
   -->
-  <UPageCard variant="subtle">
+  <UPageCard v-if="shouldShowPanel" variant="subtle">
     <div class="grid gap-5">
       <!-- Enablement summary and switch derived from backend eligibility fields. -->
       <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
@@ -26,18 +26,8 @@
         />
       </div>
 
-      <!-- Backend block reasons explain why the owner/admin cannot enable now. -->
-      <UAlert
-        v-if="blockReason && !enabled"
-        icon="i-hugeicons-alert-02"
-        color="warning"
-        variant="subtle"
-        :description="blockReason"
-      />
-
-      <USeparator />
-
       <!-- Default role selector aligns with the right-side controls in this settings page. -->
+      <USeparator />
       <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
         <div class="min-w-0">
           <h3 class="text-sm font-medium text-highlighted">Default role</h3>
@@ -91,9 +81,10 @@ const canEnable = computed(
   () => props.organization?.autoInviteSameDomainCanEnable === true,
 );
 const domain = computed(() => props.organization?.autoInviteSameDomain ?? null);
-const blockReason = computed(
-  () => props.organization?.autoInviteSameDomainBlockReason ?? null,
-);
+// NOTE: When same-domain onboarding cannot be enabled, hide the feature entirely.
+// Public owner email domains are a permanent restriction and should not surface
+// an actionable-looking panel in organization settings.
+const shouldShowPanel = computed(() => enabled.value || canEnable.value);
 const selectedDefaultRole = computed(() =>
   toSameDomainOnboardingRole(props.organization?.autoInviteDefaultRole),
 );

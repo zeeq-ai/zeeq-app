@@ -8,6 +8,7 @@
     "build": "yarn generate && vite build && vue-tsc -b",
     "preview": "vite preview",
     "generate": "kubb generate",
+    "test": "vitest run",
     "generate:watch": "kubb --watch"
   },
   "dependencies": {
@@ -39,6 +40,7 @@
     "@vue/tsconfig": "^0.9.1",
     "@vueuse/core": "^14.3.0",
     "@vueuse/integrations": "^14.3.0",
+    "happy-dom": "^20.11.0",
     "highlight.js": "^11.11.1",
     "prettier": "^3.8.4",
     "sass-embedded": "^1.100.0",
@@ -47,6 +49,7 @@
     "unplugin-vue-router": "^0.19.2",
     "vite": "^8.0.12",
     "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^4.1.10",
     "vue-tsc": "^3.2.8"
   }
 }

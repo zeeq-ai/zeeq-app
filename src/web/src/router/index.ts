@@ -12,8 +12,8 @@ const router = createRouter({
 /**
  * Auth guard.  Calls fetchUser() on first navigation.  Authenticated users
  * are redirected away from /login; unauthenticated users are sent to /login
- * with ?returnUrl= unless the route is public (/login, /auth/login, /auth/complete,
- * /login?inactiveOrg=true).
+ * with ?returnUrl= unless the route is public (/login, /auth/login,
+ * /auth/complete, /join-your-team, /login?inactiveOrg=true).
  */
 router.beforeEach(async (to) => {
   const store = useAppStore();
@@ -29,6 +29,19 @@ router.beforeEach(async (to) => {
     return { path: to.path, query, replace: true };
   }
 
+  if (
+    !isJoinYourTeamRoute &&
+    shouldCheckSameDomainBeforeMe(to.path, isInactiveOrgLoginRoute) &&
+    (await hasSameDomainInvitation(store, { allowWithoutAuthenticated: true }))
+  ) {
+    return {
+      path: "/join-your-team",
+      query: {
+        returnUrl: sameDomainReturnUrl(to.fullPath, isInactiveOrgLoginRoute),
+      },
+    };
+  }
+
   // Re-check auth on first load AND when arriving on auth entry routes
   // (/login, /auth/login, /auth/complete, /select-org) while not yet authenticated.  Without
   // this, a successful OAuth login that redirects back to /login?returnUrl=...
@@ -41,6 +54,7 @@ router.beforeEach(async (to) => {
     to.path.startsWith("/auth/complete") ||
     to.path.startsWith("/select-org");
   if (
+    !isJoinYourTeamRoute &&
     !isInactiveOrgLoginRoute &&
     !store.isAuthenticated &&
     (!store.authChecked || isAuthEntryRoute)
@@ -50,6 +64,7 @@ router.beforeEach(async (to) => {
 
   const isPublicRoute =
     isInactiveOrgLoginRoute ||
+    isJoinYourTeamRoute ||
     to.path === "/login" ||
     to.path === "/auth/login" ||
     to.path.startsWith("/login?") ||
@@ -83,7 +98,9 @@ router.beforeEach(async (to) => {
     if (
       !isJoinYourTeamRoute &&
       !isAuthEntryRoute &&
-      (await hasSameDomainInvitation(store))
+      (await hasSameDomainInvitation(store, {
+        allowWithoutAuthenticated: false,
+      }))
     ) {
       return {
         path: "/join-your-team",
@@ -118,11 +135,35 @@ function readSingleQueryValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-async function hasSameDomainInvitation(store: ReturnType<typeof useAppStore>) {
+async function hasSameDomainInvitation(
+  store: ReturnType<typeof useAppStore>,
+  options: { allowWithoutAuthenticated: boolean },
+) {
   try {
-    await store.fetchSameDomainInvitation();
+    await store.fetchSameDomainInvitation({
+      allowWithoutAuthenticated: options.allowWithoutAuthenticated,
+    });
     return store.sameDomainInvitation !== null;
   } catch {
     return false;
   }
+}
+
+function shouldCheckSameDomainBeforeMe(
+  path: string,
+  isInactiveOrgLoginRoute: boolean,
+) {
+  return (
+    isInactiveOrgLoginRoute ||
+    (!path.startsWith("/login") &&
+      !path.startsWith("/auth/login") &&
+      !path.startsWith("/auth/complete"))
+  );
+}
+
+function sameDomainReturnUrl(
+  fullPath: string,
+  isInactiveOrgLoginRoute: boolean,
+) {
+  return isInactiveOrgLoginRoute ? "/" : fullPath;
 }

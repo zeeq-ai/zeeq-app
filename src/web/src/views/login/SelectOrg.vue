@@ -116,6 +116,7 @@ import { useRoute } from "vue-router";
 import { Memberships, type OrgSummary } from "@/api/generated";
 import { useAppStore } from "@/stores/app-store";
 import { ZeeqApiError } from "@/api/zeeq-api-client";
+import { isActivatedOrganization } from "@/utils/organizationAccess";
 
 const route = useRoute();
 const appStore = useAppStore();
@@ -144,11 +145,12 @@ const safeReturnUrl = computed(() =>
 );
 
 /**
- * Active organizations from /me. The authorize endpoint only redirects here when
- * there is more than one, but the list is derived defensively from /me.
+ * Activated organizations from /me. The authorize endpoint only redirects here
+ * when there is more than one, but the list is derived defensively from /me so
+ * inactive memberships cannot be selected into the identity cookie.
  */
 const selectableOrgs = computed<OrgSummary[]>(() =>
-  (appStore.user?.organizations ?? []).filter((org) => org.status === "Active"),
+  (appStore.user?.organizations ?? []).filter(isActivatedOrganization),
 );
 
 onMounted(async () => {

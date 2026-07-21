@@ -9,28 +9,31 @@
       />
 
       <UPageCard variant="subtle" :ui="{ container: 'p-0 sm:p-0 gap-y-0' }">
-        <!-- Active memberships returned by /me drive tenancy actions. -->
+        <!-- Active memberships returned by /me drive tenancy display and actions. -->
         <ul role="list" class="divide-y divide-default">
           <li
-            v-for="org in activeOrganizations"
-            :key="org.id"
+            v-for="membership in activeMemberships"
+            :key="membership.org.id"
             class="flex items-center justify-between gap-3 px-4 py-3 sm:px-6"
           >
             <div class="flex min-w-0 items-center gap-3">
               <UAvatar
-                :src="org.iconUrl || undefined"
+                :src="membership.org.iconUrl || undefined"
                 icon="i-hugeicons-cube"
                 size="md"
               />
               <div class="min-w-0 text-sm">
                 <p class="truncate font-medium text-highlighted">
-                  {{ org.displayName }}
+                  {{ membership.org.displayName }}
                 </p>
                 <p class="truncate text-muted">
-                  {{ org.role }}
-                  <span v-if="org.isDefault"> &middot; default</span>
-                  <span v-if="org.id === currentOrganizationId">
+                  {{ membership.org.role }}
+                  <span v-if="membership.org.isDefault"> &middot; default</span>
+                  <span v-if="membership.org.id === currentOrganizationId">
                     &middot; active
+                  </span>
+                  <span v-if="!membership.activated">
+                    &middot; not activated
                   </span>
                 </p>
               </div>
@@ -43,8 +46,12 @@
                 size="xs"
                 color="neutral"
                 variant="ghost"
-                :disabled="saving || org.id === currentOrganizationId"
-                @click="switchOrganization(org.id)"
+                :disabled="
+                  saving ||
+                  !membership.activated ||
+                  membership.org.id === currentOrganizationId
+                "
+                @click="switchOrganization(membership.org.id)"
               />
               <UButton
                 label="Default"
@@ -52,19 +59,21 @@
                 size="xs"
                 color="neutral"
                 variant="ghost"
-                :disabled="saving || org.isDefault"
-                @click="setDefault(org.id)"
+                :disabled="
+                  saving || !membership.activated || membership.org.isDefault
+                "
+                @click="setDefault(membership.org.id)"
               />
               <ZeeqPopConfirm
                 title="Leave Organization"
-                :body="`Leave ${org.displayName}? You will lose access unless you are invited again.`"
+                :body="`Leave ${membership.org.displayName}? You will lose access unless you are invited again.`"
                 confirm-label="Leave"
                 icon="i-hugeicons-delete-02"
                 size="xs"
                 color="error"
                 variant="ghost"
-                :disabled="saving"
-                @confirm="leaveOrganization(org.id)"
+                :disabled="saving || !membership.activated"
+                @confirm="leaveOrganization(membership.org.id)"
               />
             </div>
           </li>
@@ -116,6 +125,12 @@ import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 import InvitationRow from "./components/InvitationRow.vue";
 import { useAppStore } from "@/stores/app-store";
 import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
+import type { OrgSummary } from "@/api/generated";
+
+type MembershipRow = {
+  org: OrgSummary;
+  activated: boolean;
+};
 
 const toast = useToast();
 const appStore = useAppStore();
@@ -126,11 +141,17 @@ const { invitations, saving } = storeToRefs(settingsStore);
 const currentOrganizationId = computed(() => me.value?.organizationId ?? null);
 
 /**
- * Active org rows come from /me because this view is about the caller's own
- * tenancy choices rather than organization administration.
+ * Active membership rows come from /me. Inactive organizations remain visible
+ * as a future activation entry point, but tenancy-writing actions stay disabled
+ * until the organization can satisfy /me's active-current-org filter.
  */
-const activeOrganizations = computed(
-  () => me.value?.organizations?.filter((org) => org.status === "Active") ?? [],
+const activeMemberships = computed<MembershipRow[]>(() =>
+  (me.value?.organizations ?? [])
+    .filter((org) => org.status === "Active")
+    .map((org) => ({
+      org,
+      activated: org.activatedAtUtc !== null,
+    })),
 );
 
 /** Loads pending invitations when the view is opened directly. */

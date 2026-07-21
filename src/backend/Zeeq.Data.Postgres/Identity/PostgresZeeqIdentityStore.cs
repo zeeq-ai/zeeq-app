@@ -491,13 +491,111 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
         CancellationToken cancellationToken
     )
     {
-        var teamMembership = await db
-            .TeamMemberships.TagWithOperationCallSite("identity.auth_context.find_active")
+        var activatedContext = await db
+            .OrganizationMemberships.TagWithOperationCallSite(
+                "identity.auth_context.find_activated_org_membership"
+            )
             .AsNoTracking()
-            .Where(membership => membership.UserId == userId && membership.DisabledAtUtc == null)
-            .OrderBy(membership => membership.CreatedAtUtc)
+            .Where(membership =>
+                membership.UserId == userId
+                && membership.Status == MembershipStatus.Active
+                && membership.DisabledAtUtc == null
+            )
+            .Join(
+                db.Organizations.TagWithOperationCallSite(
+                        "identity.auth_context.find_activated_org"
+                    )
+                    .AsNoTracking()
+                    .Where(organization =>
+                        organization.ActivatedAtUtc != null && organization.DisabledAtUtc == null
+                    ),
+                membership => membership.OrganizationId,
+                organization => organization.Id,
+                (membership, organization) =>
+                    new { OrganizationMembership = membership, organization }
+            )
+            .Join(
+                db.Teams.TagWithOperationCallSite("identity.auth_context.find_activated_root_team")
+                    .AsNoTracking()
+                    .Where(team => team.IsRootTeam && team.DisabledAtUtc == null),
+                joined => joined.OrganizationMembership.OrganizationId,
+                team => team.OrganizationId,
+                (joined, team) => new { joined.OrganizationMembership, Team = team }
+            )
+            .Join(
+                db.TeamMemberships.TagWithOperationCallSite(
+                        "identity.auth_context.find_activated_root_team_membership"
+                    )
+                    .AsNoTracking()
+                    .Where(membership =>
+                        membership.UserId == userId && membership.DisabledAtUtc == null
+                    ),
+                joined => new
+                {
+                    joined.OrganizationMembership.OrganizationId,
+                    TeamId = joined.Team.Id,
+                },
+                teamMembership => new { teamMembership.OrganizationId, teamMembership.TeamId },
+                (joined, teamMembership) =>
+                    new { joined.OrganizationMembership, TeamMembership = teamMembership }
+            )
+            .OrderByDescending(joined => joined.OrganizationMembership.IsDefault)
+            .ThenBy(joined => joined.OrganizationMembership.CreatedAtUtc)
+            .ThenBy(joined => joined.TeamMembership.CreatedAtUtc)
+            .ThenBy(joined => joined.OrganizationMembership.OrganizationId)
+            .ThenBy(joined => joined.TeamMembership.TeamId)
+            .Select(joined => new AuthContext(
+                userId,
+                joined.OrganizationMembership.OrganizationId,
+                joined.TeamMembership.TeamId
+            ))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (activatedContext is not null)
+        {
+            return activatedContext;
+        }
+
+        var fallbackContext = await db
+            .OrganizationMemberships.TagWithOperationCallSite(
+                "identity.auth_context.find_fallback_org_membership"
+            )
+            .AsNoTracking()
+            .Where(membership =>
+                membership.UserId == userId
+                && membership.Status == MembershipStatus.Active
+                && membership.DisabledAtUtc == null
+            )
+            .Join(
+                db.Organizations.TagWithOperationCallSite("identity.auth_context.find_fallback_org")
+                    .AsNoTracking()
+                    .Where(organization =>
+                        organization.ActivatedAtUtc != null && organization.DisabledAtUtc == null
+                    ),
+                membership => membership.OrganizationId,
+                organization => organization.Id,
+                (membership, organization) => membership.OrganizationId
+            )
+            .Join(
+                db.TeamMemberships.TagWithOperationCallSite(
+                        "identity.auth_context.find_fallback_team"
+                    )
+                    .AsNoTracking()
+                    .Where(membership =>
+                        membership.UserId == userId && membership.DisabledAtUtc == null
+                    ),
+                organizationId => organizationId,
+                teamMembership => teamMembership.OrganizationId,
+                (organizationId, teamMembership) => teamMembership
+            )
+            .OrderBy(teamMembership => teamMembership.CreatedAtUtc)
+            .Select(teamMembership => new AuthContext(
+                userId,
+                teamMembership.OrganizationId,
+                teamMembership.TeamId
+            ))
             .FirstAsync(cancellationToken);
 
-        return new AuthContext(userId, teamMembership.OrganizationId, teamMembership.TeamId);
+        return fallbackContext;
     }
 }

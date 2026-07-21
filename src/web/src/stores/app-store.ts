@@ -61,6 +61,7 @@ export const useAppStore = defineStore("app-store", () => {
   let fetchUserPromise: Promise<void> | null = null;
   let fetchBackendVersionPromise: Promise<void> | null = null;
   let fetchSameDomainInvitationPromise: Promise<void> | null = null;
+  let fetchSameDomainInvitationAllowsUnauthenticated = false;
   let fetchUserRequestId = 0;
   let fetchBackendVersionRequestId = 0;
   let fetchSameDomainInvitationRequestId = 0;
@@ -176,32 +177,52 @@ export const useAppStore = defineStore("app-store", () => {
   /**
    * Finds the first pending same-domain invitation that has not been dismissed
    * for the current browser session.
+   *
+   * `allowWithoutAuthenticated` is only for the first-login inactive-org path:
+   * /me can redirect to /login?inactiveOrg=true before the user accepts their
+   * same-domain invitation, while invitation endpoints can still use the
+   * signed browser cookie to prove the caller.
    */
-  async function fetchSameDomainInvitation(options: { force?: boolean } = {}) {
-    if (fetchSameDomainInvitationPromise && !options.force) {
+  async function fetchSameDomainInvitation(
+    options: { force?: boolean; allowWithoutAuthenticated?: boolean } = {},
+  ) {
+    const allowWithoutAuthenticated =
+      options.allowWithoutAuthenticated === true;
+    if (!isAuthenticated.value && !allowWithoutAuthenticated) {
+      // NOTE: Authenticated-only callers can resolve synchronously while logged
+      // out. Avoid caching a no-op promise that can race the inactive-login
+      // lookup, which intentionally allows cookie-authenticated invitation APIs.
+      sameDomainInvitation.value = null;
+      sameDomainInvitationChecked.value = true;
+      sameDomainInvitationLoading.value = false;
+      return;
+    }
+
+    if (
+      fetchSameDomainInvitationPromise &&
+      !options.force &&
+      fetchSameDomainInvitationAllowsUnauthenticated ===
+        allowWithoutAuthenticated
+    ) {
       return fetchSameDomainInvitationPromise;
     }
 
     const requestId = ++fetchSameDomainInvitationRequestId;
+    fetchSameDomainInvitationAllowsUnauthenticated = allowWithoutAuthenticated;
     // Defer one microtask so the shared promise is assigned before a synchronous
     // auth-state branch can complete and run the cleanup path.
     fetchSameDomainInvitationPromise = Promise.resolve().then(() =>
-      runSameDomainInvitationFetch(requestId),
+      runSameDomainInvitationFetch(requestId, allowWithoutAuthenticated),
     );
 
     return fetchSameDomainInvitationPromise;
   }
 
-  async function runSameDomainInvitationFetch(requestId: number) {
+  async function runSameDomainInvitationFetch(
+    requestId: number,
+    allowWithoutAuthenticated: boolean,
+  ) {
     try {
-      if (!isAuthenticated.value) {
-        if (requestId === fetchSameDomainInvitationRequestId) {
-          sameDomainInvitation.value = null;
-          sameDomainInvitationChecked.value = true;
-        }
-        return;
-      }
-
       if (requestId === fetchSameDomainInvitationRequestId) {
         sameDomainInvitationLoading.value = true;
         sameDomainInvitationError.value = null;
@@ -216,11 +237,26 @@ export const useAppStore = defineStore("app-store", () => {
           result !== null &&
           readSuppressedSameDomainInvitationIds().has(result.invitationId);
 
-        sameDomainInvitation.value =
-          isAuthenticated.value && !isSuppressed ? result : null;
+        if (result !== null && !isSuppressed) {
+          sameDomainInvitation.value = result;
+        } else {
+          sameDomainInvitation.value = null;
+        }
         sameDomainInvitationChecked.value = true;
       }
     } catch (err: unknown) {
+      if (
+        allowWithoutAuthenticated &&
+        err instanceof ZeeqApiError &&
+        err.status === 401
+      ) {
+        if (requestId === fetchSameDomainInvitationRequestId) {
+          sameDomainInvitation.value = null;
+          sameDomainInvitationChecked.value = true;
+        }
+        return;
+      }
+
       if (requestId === fetchSameDomainInvitationRequestId) {
         sameDomainInvitationError.value =
           err instanceof Error
@@ -232,6 +268,7 @@ export const useAppStore = defineStore("app-store", () => {
       if (requestId === fetchSameDomainInvitationRequestId) {
         sameDomainInvitationLoading.value = false;
         fetchSameDomainInvitationPromise = null;
+        fetchSameDomainInvitationAllowsUnauthenticated = false;
       }
     }
   }
@@ -256,6 +293,7 @@ export const useAppStore = defineStore("app-store", () => {
     authError.value = null;
     fetchSameDomainInvitationRequestId++;
     fetchSameDomainInvitationPromise = null;
+    fetchSameDomainInvitationAllowsUnauthenticated = false;
     sameDomainInvitation.value = null;
     sameDomainInvitationLoading.value = false;
     sameDomainInvitationChecked.value = false;
