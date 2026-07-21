@@ -47,6 +47,17 @@
             square
             @click="toggleColorMode"
           />
+
+          <UButton
+            icon="i-hugeicons-book-open-01"
+            color="neutral"
+            variant="ghost"
+            square
+            :href="docsUrl"
+            external
+            target="_blank"
+            aria-label="Open documentation"
+          />
         </template>
       </UDashboardNavbar>
 
@@ -67,6 +78,7 @@
 import { storeToRefs } from "pinia";
 import { useColorMode, useClipboard } from "@vueuse/core";
 import { useRoute } from "vue-router";
+import { docsUrl } from "@/runtime-env";
 import { useAppStore } from "@/stores/app-store";
 import {
   useCartStore,
