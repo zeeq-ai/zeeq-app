@@ -1,6 +1,6 @@
+using Microsoft.AspNetCore.Http.HttpResults;
 using Zeeq.Core.Models;
 using Zeeq.Testing.EntityGraphs;
-using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Zeeq.Platform.Membership.Tests;
 
@@ -148,5 +148,167 @@ public sealed class OrganizationEndpointHandlerTests
         await Assert.That(ok).IsNotNull();
         await Assert.That(ok!.Value!.IconUrl).IsNull();
         await Assert.That(org.IconUrl).IsNull();
+    }
+
+    [Test]
+    public async Task UpdateSameDomainOnboardingHandler_InvalidRole_ReturnsValidationProblem()
+    {
+        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        seed.Owner.Email = "owner@example.com";
+        var store = new TestMembershipStore().AddSeed(seed);
+        var handler = new UpdateSameDomainOnboardingHandler(store);
+
+        var result = await handler.HandleAsync(
+            seed.Organization.Id,
+            new UpdateSameDomainOnboardingRequest { Enabled = true, DefaultRole = "owner" },
+            MembershipTestClaims.TestUser(seed.Owner.Id),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result is ValidationProblem).IsTrue();
+        await Assert.That(seed.Organization.AutoInviteSameDomainEnabled).IsFalse();
+    }
+
+    [Test]
+    public async Task UpdateSameDomainOnboardingHandler_MissingEnabled_ReturnsValidationProblem()
+    {
+        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        seed.Owner.Email = "owner@example.com";
+        var store = new TestMembershipStore().AddSeed(seed);
+        var handler = new UpdateSameDomainOnboardingHandler(store);
+
+        var result = await handler.HandleAsync(
+            seed.Organization.Id,
+            new UpdateSameDomainOnboardingRequest { DefaultRole = "member" },
+            MembershipTestClaims.TestUser(seed.Owner.Id),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result is ValidationProblem).IsTrue();
+        await Assert.That(seed.Organization.AutoInviteSameDomainEnabled).IsFalse();
+    }
+
+    [Test]
+    public async Task UpdateSameDomainOnboardingHandler_Enable_WithPublicCreatorDomain_ReturnsValidationProblem()
+    {
+        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        seed.Owner.Email = "owner@gmail.com";
+        var store = new TestMembershipStore().AddSeed(seed);
+        var handler = new UpdateSameDomainOnboardingHandler(store);
+
+        var result = await handler.HandleAsync(
+            seed.Organization.Id,
+            new UpdateSameDomainOnboardingRequest { Enabled = true, DefaultRole = "member" },
+            MembershipTestClaims.TestUser(seed.Owner.Id),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result is ValidationProblem).IsTrue();
+        await Assert.That(seed.Organization.AutoInviteSameDomainEnabled).IsFalse();
+        await Assert.That(seed.Organization.AutoInviteSameDomain).IsNull();
+    }
+
+    [Test]
+    public async Task UpdateSameDomainOnboardingHandler_Enable_WithDuplicateDomain_ReturnsValidationProblem()
+    {
+        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        seed.Owner.Email = "owner@example.com";
+        var store = new TestMembershipStore().AddSeed(seed);
+        store.Organizations.Add(
+            new Organization
+            {
+                Id = "org_conflict",
+                DisplayName = "Conflict",
+                CreatedByUserId = "user_conflict",
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+                AutoInviteSameDomainEnabled = true,
+                AutoInviteSameDomain = "example.com",
+                AutoInviteDefaultRole = "member",
+            }
+        );
+        var handler = new UpdateSameDomainOnboardingHandler(store);
+
+        var result = await handler.HandleAsync(
+            seed.Organization.Id,
+            new UpdateSameDomainOnboardingRequest { Enabled = true, DefaultRole = "admin" },
+            MembershipTestClaims.TestUser(seed.Owner.Id),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result is ValidationProblem).IsTrue();
+        await Assert.That(seed.Organization.AutoInviteSameDomainEnabled).IsFalse();
+    }
+
+    [Test]
+    public async Task UpdateSameDomainOnboardingHandler_Enable_WithOmittedRole_DefaultsToMember()
+    {
+        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        seed.Owner.Email = "owner@example.com";
+        var store = new TestMembershipStore().AddSeed(seed);
+        var handler = new UpdateSameDomainOnboardingHandler(store);
+
+        var result = await handler.HandleAsync(
+            seed.Organization.Id,
+            new UpdateSameDomainOnboardingRequest { Enabled = true },
+            MembershipTestClaims.TestUser(seed.Owner.Id),
+            CancellationToken.None
+        );
+        var ok = result.Result as Ok<SameDomainOnboardingStatusResponse>;
+
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(ok!.Value!.DefaultRole).IsEqualTo("member");
+        await Assert.That(seed.Organization.AutoInviteDefaultRole).IsEqualTo("member");
+    }
+
+    [Test]
+    public async Task UpdateSameDomainOnboardingHandler_Disable_ClearsDomain()
+    {
+        var seed = await EntityGraph
+            .AddGeneratedSeed(
+                null,
+                organization =>
+                {
+                    organization.AutoInviteSameDomainEnabled = true;
+                    organization.AutoInviteSameDomain = "example.com";
+                    organization.AutoInviteDefaultRole = "admin";
+                }
+            )
+            .BuildAsync();
+        seed.Owner.Email = "owner@example.com";
+        var store = new TestMembershipStore().AddSeed(seed);
+        var handler = new UpdateSameDomainOnboardingHandler(store);
+
+        var result = await handler.HandleAsync(
+            seed.Organization.Id,
+            new UpdateSameDomainOnboardingRequest { Enabled = false, DefaultRole = "admin" },
+            MembershipTestClaims.TestUser(seed.Owner.Id),
+            CancellationToken.None
+        );
+        var ok = result.Result as Ok<SameDomainOnboardingStatusResponse>;
+
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(ok!.Value!.Enabled).IsFalse();
+        await Assert.That(seed.Organization.AutoInviteSameDomainEnabled).IsFalse();
+        await Assert.That(seed.Organization.AutoInviteSameDomain).IsNull();
+        await Assert.That(seed.Organization.AutoInviteDefaultRole).IsEqualTo("member");
+    }
+
+    [Test]
+    public async Task GetOrganizationsHandler_WithPrivateCreatorDomain_ReturnsCanEnable()
+    {
+        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        seed.Owner.Email = "owner@example.com";
+        var store = new TestMembershipStore().AddSeed(seed);
+        var handler = new GetOrganizationsHandler(store);
+
+        var result = await handler.HandleAsync(
+            MembershipTestClaims.TestUser(seed.Owner.Id),
+            CancellationToken.None
+        );
+        var organization = result.Value!.Single();
+
+        await Assert.That(organization.AutoInviteSameDomainCanEnable).IsTrue();
+        await Assert.That(organization.AutoInviteSameDomain).IsEqualTo("example.com");
+        await Assert.That(organization.AutoInviteSameDomainBlockReason).IsNull();
     }
 }

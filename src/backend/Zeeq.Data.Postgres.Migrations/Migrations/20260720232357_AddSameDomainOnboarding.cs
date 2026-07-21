@@ -41,7 +41,7 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                 table: "core_organizations",
                 column: "auto_invite_same_domain",
                 unique: true,
-                filter: "auto_invite_same_domain_enabled = true AND auto_invite_same_domain IS NOT NULL");
+                filter: "auto_invite_same_domain_enabled = true AND auto_invite_same_domain IS NOT NULL AND disabled_at_utc IS NULL");
         }
 
         /// <inheritdoc />

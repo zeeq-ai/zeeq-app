@@ -1,5 +1,5 @@
-using Zeeq.Core.Identity;
 using Microsoft.AspNetCore.Authorization;
+using Zeeq.Core.Identity;
 
 namespace Zeeq.Platform.Membership;
 
@@ -107,6 +107,32 @@ public sealed partial class OrganizationEndpoints : IEndpoint
                 """
                 Updates the editable profile fields — name, slug, or icon — of the organization
                 identified by `orgId`. A changed slug must still be available.
+
+                Requires the `owner` or `admin` role in the organization.
+                """
+            );
+
+        // PUT /api/v1/orgs/{orgId}/same-domain-onboarding
+        orgGroup
+            .MapPut(
+                "/same-domain-onboarding",
+                static (
+                    string orgId,
+                    UpdateSameDomainOnboardingRequest request,
+                    ClaimsPrincipal user,
+                    [FromServices] UpdateSameDomainOnboardingHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, request, user, ct)
+            )
+            .RequireAuthorization(a => a.RequireRole("owner", "admin"))
+            .RequireActiveOrganization()
+            .WithName("UpdateSameDomainOnboarding")
+            .WithTags("Organizations")
+            .WithSummary("Update same-domain onboarding settings.")
+            .WithDescription(
+                """
+                Enables or disables automatic same-domain invitations for the organization.
+                Enabling derives the claimable domain from the organization creator's email.
 
                 Requires the `owner` or `admin` role in the organization.
                 """

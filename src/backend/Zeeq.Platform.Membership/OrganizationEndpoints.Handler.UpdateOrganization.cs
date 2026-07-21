@@ -6,8 +6,7 @@ namespace Zeeq.Platform.Membership;
 /// Updates organization name, slug, or icon. Validates slug format and
 /// uniqueness.
 /// </summary>
-public sealed partial class UpdateOrganizationHandler(IZeeqMembershipStore store)
-    : IEndpointHandler
+public sealed partial class UpdateOrganizationHandler(IZeeqMembershipStore store) : IEndpointHandler
 {
     /// <summary>
     /// Applies settings-form updates: display name, slug (with format +
@@ -69,15 +68,22 @@ public sealed partial class UpdateOrganizationHandler(IZeeqMembershipStore store
 
         await store.UpdateOrganizationAsync(org, ct);
 
+        var creatorEmail = await store.FindUserEmailByIdAsync(org.CreatedByUserId, ct);
+        var creatorDomain = EmailDomainNormalizer.FromEmail(creatorEmail);
+        var domainAvailable =
+            creatorDomain is null
+            || await store.IsAutoInviteSameDomainAvailableAsync(creatorDomain, org.Id, ct);
+        var sameDomainStatus = OrganizationSameDomainOnboardingStatusFactory.Create(
+            org,
+            creatorEmail,
+            domainAvailable
+        );
+
         return TypedResults.Ok(
-            new OrganizationResponse(
-                Id: org.Id,
-                Slug: org.Slug,
-                DisplayName: org.DisplayName,
-                IconUrl: org.IconUrl,
-                Role: membership.Role,
-                CreatedAtUtc: org.CreatedAtUtc,
-                ActivatedAtUtc: org.ActivatedAtUtc
+            OrganizationSameDomainOnboardingStatusFactory.ToOrganizationResponse(
+                org,
+                membership.Role,
+                sameDomainStatus
             )
         );
     }

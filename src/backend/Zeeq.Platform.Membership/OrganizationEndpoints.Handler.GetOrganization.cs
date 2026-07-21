@@ -28,15 +28,29 @@ public sealed class GetOrganizationHandler(IZeeqMembershipStore store) : IEndpoi
         if (org is null)
             return TypedResults.NotFound();
 
+        var creatorEmail = await store.FindUserEmailByIdAsync(org.CreatedByUserId, ct);
+        var domainAvailable = true;
+        var creatorDomain = EmailDomainNormalizer.FromEmail(creatorEmail);
+        if (creatorDomain is not null)
+        {
+            domainAvailable = await store.IsAutoInviteSameDomainAvailableAsync(
+                creatorDomain,
+                org.Id,
+                ct
+            );
+        }
+
+        var sameDomainStatus = OrganizationSameDomainOnboardingStatusFactory.Create(
+            org,
+            creatorEmail,
+            domainAvailable
+        );
+
         return TypedResults.Ok(
-            new OrganizationResponse(
-                Id: org.Id,
-                Slug: org.Slug,
-                DisplayName: org.DisplayName,
-                IconUrl: org.IconUrl,
-                Role: membership.Role,
-                CreatedAtUtc: org.CreatedAtUtc,
-                ActivatedAtUtc: org.ActivatedAtUtc
+            OrganizationSameDomainOnboardingStatusFactory.ToOrganizationResponse(
+                org,
+                membership.Role,
+                sameDomainStatus
             )
         );
     }

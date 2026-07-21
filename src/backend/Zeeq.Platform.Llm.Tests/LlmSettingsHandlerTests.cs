@@ -1,12 +1,12 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Caching.Memory;
+using OpenIddict.Abstractions;
 using Zeeq.Core.Common;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
 using Zeeq.Platform.Llm;
-using Microsoft.AspNetCore.Http.HttpResults;
-using Microsoft.Extensions.Caching.Memory;
-using OpenIddict.Abstractions;
 
 namespace Zeeq.Platform.Llm.Tests;
 
@@ -411,6 +411,30 @@ public sealed class LlmSettingsHandlerTests
 
         public Task UpdateOrganizationAsync(Organization org, CancellationToken ct) =>
             throw new NotImplementedException();
+
+        public Task<bool> UpdateOrganizationSameDomainOnboardingAsync(
+            Organization organization,
+            CancellationToken ct
+        ) => throw new NotImplementedException();
+
+        public Task<string?> FindUserEmailByIdAsync(string userId, CancellationToken ct) =>
+            throw new NotImplementedException();
+
+        public Task<IReadOnlyDictionary<string, string?>> FindUserEmailsByIdsAsync(
+            string[] userIds,
+            CancellationToken ct
+        ) => throw new NotImplementedException();
+
+        public Task<bool> IsAutoInviteSameDomainAvailableAsync(
+            string domain,
+            string excludeOrgId,
+            CancellationToken ct
+        ) => throw new NotImplementedException();
+
+        public Task<IReadOnlyDictionary<string, string>> FindAutoInviteSameDomainClaimsAsync(
+            string[] domains,
+            CancellationToken ct
+        ) => throw new NotImplementedException();
 
         public Task<int> CountOrganizationsCreatedByUserAsync(
             string userId,

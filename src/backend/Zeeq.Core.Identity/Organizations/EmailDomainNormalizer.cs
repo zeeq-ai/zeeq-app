@@ -13,40 +13,40 @@ namespace Zeeq.Core.Identity;
 public static class EmailDomainNormalizer
 {
     private static readonly FrozenSet<string> MultiLabelPublicSuffixes = new[]
-        {
-            "co.uk",
-            "gov.uk",
-            "org.uk",
-            "ac.uk",
-            "com.au",
-            "net.au",
-            "org.au",
-            "co.jp",
-            "ne.jp",
-            "or.jp",
-            "com.br",
-            "com.mx",
-            "com.ar",
-            "com.sg",
-            "com.tr",
-            "co.in",
-            "co.nz",
-            "co.za",
-            "co.kr",
-            "com.cn",
-            "com.hk",
-            "com.tw",
-            "github.io",
-            "gitlab.io",
-            "pages.dev",
-            "vercel.app",
-            "netlify.app",
-            "herokuapp.com",
-            "firebaseapp.com",
-            "web.app",
-            "cloudfront.net",
-            "azurewebsites.net",
-        }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+    {
+        "co.uk",
+        "gov.uk",
+        "org.uk",
+        "ac.uk",
+        "com.au",
+        "net.au",
+        "org.au",
+        "co.jp",
+        "ne.jp",
+        "or.jp",
+        "com.br",
+        "com.mx",
+        "com.ar",
+        "com.sg",
+        "com.tr",
+        "co.in",
+        "co.nz",
+        "co.za",
+        "co.kr",
+        "com.cn",
+        "com.hk",
+        "com.tw",
+        "github.io",
+        "gitlab.io",
+        "pages.dev",
+        "vercel.app",
+        "netlify.app",
+        "herokuapp.com",
+        "firebaseapp.com",
+        "web.app",
+        "cloudfront.net",
+        "azurewebsites.net",
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Returns a normalized registrable domain from an email address, or null
@@ -80,12 +80,19 @@ public static class EmailDomainNormalizer
             return null;
         }
 
-        var normalized = domain.Trim().TrimEnd('.').ToLowerInvariant();
+        var trimmed = domain.Trim();
+        if (trimmed.Contains(".."))
+        {
+            return null;
+        }
+
+        var normalized = (
+            trimmed.EndsWith(".", StringComparison.Ordinal) ? trimmed[..^1] : trimmed
+        ).ToLowerInvariant();
         if (
             normalized.Length is 0 or > 253
             || normalized.StartsWith('.')
             || normalized.Contains(' ')
-            || normalized.Contains("..")
         )
         {
             return null;

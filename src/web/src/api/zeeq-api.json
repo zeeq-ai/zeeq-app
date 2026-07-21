@@ -4131,6 +4131,61 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/same-domain-onboarding": {
+      "put": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Update same-domain onboarding settings.",
+        "description": "Enables or disables automatic same-domain invitations for the organization.\nEnabling derives the claimable domain from the organization creator's email.\n\nRequires the `owner` or `admin` role in the organization.",
+        "operationId": "UpdateSameDomainOnboarding",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSameDomainOnboardingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SameDomainOnboardingStatusResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/members": {
       "get": {
         "tags": [
@@ -9139,7 +9194,12 @@
           "iconUrl",
           "role",
           "createdAtUtc",
-          "activatedAtUtc"
+          "activatedAtUtc",
+          "autoInviteSameDomainEnabled",
+          "autoInviteSameDomain",
+          "autoInviteDefaultRole",
+          "autoInviteSameDomainCanEnable",
+          "autoInviteSameDomainBlockReason"
         ],
         "type": "object",
         "properties": {
@@ -9184,6 +9244,32 @@
             ],
             "description": "UTC timestamp when the organization became active.",
             "format": "date-time"
+          },
+          "autoInviteSameDomainEnabled": {
+            "type": "boolean",
+            "description": "Whether same-domain onboarding is enabled."
+          },
+          "autoInviteSameDomain": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Normalized domain currently claimed for auto-invites."
+          },
+          "autoInviteDefaultRole": {
+            "type": "string",
+            "description": "Role assigned to auto-created same-domain invitations."
+          },
+          "autoInviteSameDomainCanEnable": {
+            "type": "boolean",
+            "description": "Whether the organization can enable same-domain onboarding."
+          },
+          "autoInviteSameDomainBlockReason": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Reason enabling is blocked, when any."
           }
         },
         "description": "Organization details returned by membership endpoints."
@@ -9485,6 +9571,45 @@
           }
         },
         "description": "Request body for rotating an existing tenant-owned LLM API key."
+      },
+      "SameDomainOnboardingStatusResponse": {
+        "required": [
+          "enabled",
+          "domain",
+          "defaultRole",
+          "canEnable",
+          "blockReason"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether same-domain onboarding is enabled."
+          },
+          "domain": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Normalized domain currently claimed for auto-invites."
+          },
+          "defaultRole": {
+            "type": "string",
+            "description": "Role assigned to auto-created invitations."
+          },
+          "canEnable": {
+            "type": "boolean",
+            "description": "Whether the organization can enable same-domain onboarding."
+          },
+          "blockReason": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Reason enabling is blocked, when any."
+          }
+        },
+        "description": "Current same-domain onboarding settings and enablement eligibility."
       },
       "SaveCartItemRequest": {
         "required": [
@@ -10006,6 +10131,31 @@
           }
         },
         "description": "Request body for updating organization display details."
+      },
+      "UpdateSameDomainOnboardingRequest": {
+        "required": [
+          "enabled"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": [
+              "null",
+              "boolean"
+            ],
+            "description": "Whether same-domain onboarding should be enabled."
+          },
+          "defaultRole": {
+            "maxLength": 64,
+            "pattern": "^(admin|member)$",
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Role assigned to auto-created invitations; defaults to `member`."
+          }
+        },
+        "description": "Request body for same-domain onboarding settings."
       },
       "UpsertDocumentRequest": {
         "required": [

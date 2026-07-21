@@ -9,6 +9,7 @@ public sealed class EmailDomainRuleTests
 {
     [Test]
     [Arguments("owner@example.com", "example.com")]
+    [Arguments("owner@example.com.", "example.com")]
     [Arguments("OWNER@Sub.Example.COM", "example.com")]
     [Arguments("owner@team.example.co.uk", "example.co.uk")]
     [Arguments("owner@engineering.example.gov.uk", "example.gov.uk")]
@@ -32,6 +33,7 @@ public sealed class EmailDomainRuleTests
     [Arguments("owner@@example.com")]
     [Arguments("owner@.example.com")]
     [Arguments("owner@example..com")]
+    [Arguments("owner@example.com..")]
     [Arguments("owner@-example.com")]
     [Arguments("owner@example-.com")]
     [Arguments("owner@co.uk")]

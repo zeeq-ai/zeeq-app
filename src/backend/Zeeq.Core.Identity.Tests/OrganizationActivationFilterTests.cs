@@ -1,10 +1,10 @@
 using System.Security.Claims;
-using Zeeq.Core.Common;
-using Zeeq.Core.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging.Abstractions;
+using Zeeq.Core.Common;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Core.Identity.Tests;
 
@@ -105,9 +105,7 @@ public sealed class OrganizationActivationFilterTests
 
         await Assert.That(result).IsTypeOf<RedirectHttpResult>();
         var redirect = (RedirectHttpResult)result!;
-        await Assert
-            .That(redirect.Url)
-            .IsEqualTo("https://app.zeeq.ai/web/login?inactiveOrg=true");
+        await Assert.That(redirect.Url).IsEqualTo("https://app.zeeq.ai/web/login?inactiveOrg=true");
         await Assert.That(redirect.Permanent).IsFalse();
         await Assert.That(redirect.PreserveMethod).IsFalse();
     }
@@ -157,9 +155,7 @@ public sealed class OrganizationActivationFilterTests
 
         await Assert.That(result).IsTypeOf<RedirectHttpResult>();
         var redirect = (RedirectHttpResult)result!;
-        await Assert
-            .That(redirect.Url)
-            .IsEqualTo("https://app.zeeq.ai/web/login?inactiveOrg=true");
+        await Assert.That(redirect.Url).IsEqualTo("https://app.zeeq.ai/web/login?inactiveOrg=true");
     }
 
     [Test]
@@ -257,6 +253,30 @@ public sealed class OrganizationActivationFilterTests
 
         public Task UpdateOrganizationAsync(Organization org, CancellationToken ct) =>
             throw new NotSupportedException();
+
+        public Task<bool> UpdateOrganizationSameDomainOnboardingAsync(
+            Organization organization,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task<string?> FindUserEmailByIdAsync(string userId, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyDictionary<string, string?>> FindUserEmailsByIdsAsync(
+            string[] userIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task<bool> IsAutoInviteSameDomainAvailableAsync(
+            string domain,
+            string excludeOrgId,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyDictionary<string, string>> FindAutoInviteSameDomainClaimsAsync(
+            string[] domains,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
 
         public Task<int> CountOrganizationsCreatedByUserAsync(
             string userId,
