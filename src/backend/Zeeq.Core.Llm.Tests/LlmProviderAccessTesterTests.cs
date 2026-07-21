@@ -119,7 +119,7 @@ public sealed class LlmProviderAccessTesterTests
     }
 
     [Test]
-    public async Task NormalizeOpenAiChatCompletionsOptions_WithLunaTools_SetsReasoningEffortNone()
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithLunaTools_RemovesReasoningOptions()
     {
         var options = new ChatOptions
         {
@@ -129,11 +129,11 @@ public sealed class LlmProviderAccessTesterTests
 
         LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("gpt-5.6-luna", options);
 
-        await Assert.That(options.Reasoning?.Effort).IsEqualTo(ReasoningEffort.None);
+        await Assert.That(options.Reasoning).IsNull();
     }
 
     [Test]
-    public async Task NormalizeOpenAiChatCompletionsOptions_WithLunaToolsAndNoReasoning_CreatesNoneReasoning()
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithLunaToolsAndNoReasoning_PreservesNullReasoning()
     {
         var options = new ChatOptions
         {
@@ -142,7 +142,7 @@ public sealed class LlmProviderAccessTesterTests
 
         LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("gpt-5.6-luna", options);
 
-        await Assert.That(options.Reasoning?.Effort).IsEqualTo(ReasoningEffort.None);
+        await Assert.That(options.Reasoning).IsNull();
     }
 
     [Test]
