@@ -7,14 +7,19 @@ import type { CreateOrganizationRequest } from "@/api/generated/types/CreateOrga
 import type { InvitationResponse } from "@/api/generated/types/InvitationResponse";
 import type { MemberResponse } from "@/api/generated/types/MemberResponse";
 import type { OrganizationResponse } from "@/api/generated/types/OrganizationResponse";
+import type { SameDomainOnboardingStatusResponse } from "@/api/generated/types/SameDomainOnboardingStatusResponse";
 import type { UpdateOrganizationRequest } from "@/api/generated/types/UpdateOrganizationRequest";
+import type { UpdateSameDomainOnboardingRequest } from "@/api/generated/types/UpdateSameDomainOnboardingRequest";
 
 /**
  * Canonical role values accepted by the membership API and used by settings UI.
  */
 export const organizationRoleOptions = ["owner", "admin", "member"] as const;
+export const sameDomainOnboardingRoleOptions = ["member", "admin"] as const;
 
 type OrganizationRole = (typeof organizationRoleOptions)[number];
+type SameDomainOnboardingRole =
+  (typeof sameDomainOnboardingRoleOptions)[number];
 
 /**
  * Store for organization settings screens.
@@ -135,6 +140,50 @@ export const useOrganizationSettingsStore = defineStore(
           request,
         );
         await appStore.fetchUser({ force: true });
+      } catch (err: unknown) {
+        error.value = toErrorMessage(err);
+        throw err;
+      } finally {
+        saving.value = false;
+      }
+    }
+
+    /**
+     * Updates same-domain onboarding settings for the active organization.
+     */
+    async function updateSameDomainOnboarding(request: {
+      enabled: boolean;
+      defaultRole?: SameDomainOnboardingRole | null;
+    }) {
+      const organizationId = currentOrganizationId.value;
+      const organizationAtStart = organization.value;
+      if (!organizationId || !organizationAtStart) {
+        return;
+      }
+
+      const updateRequest: UpdateSameDomainOnboardingRequest = {
+        enabled: request.enabled,
+        defaultRole: request.defaultRole,
+      };
+
+      saving.value = true;
+      error.value = null;
+
+      try {
+        const status = await Organizations.updateSameDomainOnboarding(
+          organizationId,
+          updateRequest,
+        );
+        await appStore.fetchUser({ force: true });
+
+        if (
+          currentOrganizationId.value === organizationId &&
+          organization.value === organizationAtStart
+        ) {
+          patchSameDomainOnboardingStatus(organizationAtStart, status);
+        }
+
+        return status;
       } catch (err: unknown) {
         error.value = toErrorMessage(err);
         throw err;
@@ -369,6 +418,7 @@ export const useOrganizationSettingsStore = defineStore(
       loadOrganizationInvitations,
       loadInvitations,
       updateOrganization,
+      updateSameDomainOnboarding,
       createOrganization,
       createInvitation,
       changeMemberRole,
@@ -385,6 +435,17 @@ export const useOrganizationSettingsStore = defineStore(
 /** Normalizes thrown values for UI error surfaces. */
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Unknown settings error";
+}
+
+function patchSameDomainOnboardingStatus(
+  organization: OrganizationResponse,
+  status: SameDomainOnboardingStatusResponse,
+) {
+  organization.autoInviteSameDomainEnabled = status.enabled;
+  organization.autoInviteSameDomain = status.domain;
+  organization.autoInviteDefaultRole = status.defaultRole;
+  organization.autoInviteSameDomainCanEnable = status.canEnable;
+  organization.autoInviteSameDomainBlockReason = status.blockReason;
 }
 
 if (import.meta.hot) {
