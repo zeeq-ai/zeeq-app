@@ -115,6 +115,7 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
         }
         catch (DbUpdateException ex) when (IsAutoInviteSameDomainUniqueViolation(ex))
         {
+            entry.State = EntityState.Detached;
             return false;
         }
     }
@@ -516,20 +517,25 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
     public async Task<IReadOnlyList<OrganizationMembership>> ListPendingInvitationsForEmailAsync(
         string email,
         CancellationToken ct
-    ) =>
-        await db
+    )
+    {
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+
+        return await db
             .OrganizationMemberships.TagWithOperationCallSite(
                 "membership.invitation.list_pending_for_email"
             )
             .AsNoTracking()
             .Where(m =>
-                m.InvitedEmail == email
+                m.InvitedEmail != null
+                && m.InvitedEmail.ToLower() == normalizedEmail
                 && m.Status == MembershipStatus.Pending
                 && m.DisabledAtUtc == null
                 && m.ExpiresAtUtc > DateTimeOffset.UtcNow
             )
             .OrderBy(m => m.CreatedAtUtc)
             .ToArrayAsync(ct);
+    }
 
     /// <inheritdoc />
     /// <remarks>
@@ -554,6 +560,73 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
             .ToArrayAsync(ct);
 
     /// <inheritdoc />
+    public async Task<SameDomainInvitationDetails?> FindSameDomainInvitationDetailsAsync(
+        string membershipId,
+        string email,
+        CancellationToken ct
+    )
+    {
+        var now = DateTimeOffset.UtcNow;
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+        var invitedDomain = EmailDomainNormalizer.FromEmail(normalizedEmail);
+        if (invitedDomain is null || PublicEmailDomainCatalog.IsPublicEmailDomain(invitedDomain))
+        {
+            return null;
+        }
+
+        return await db
+            .OrganizationMemberships.TagWithOperationCallSite(
+                "membership.invitation.find_same_domain_details"
+            )
+            .AsNoTracking()
+            .Where(m =>
+                m.Id == membershipId
+                && m.InvitedEmail != null
+                && m.InvitedEmail.ToLower() == normalizedEmail
+                && m.Status == MembershipStatus.Pending
+                && m.DisabledAtUtc == null
+                && m.ExpiresAtUtc > now
+            )
+            .Join(
+                db.Organizations.AsNoTracking(),
+                membership => membership.OrganizationId,
+                organization => organization.Id,
+                (membership, organization) =>
+                    new { Membership = membership, Organization = organization }
+            )
+            .Where(row =>
+                row.Organization.DisabledAtUtc == null
+                && row.Organization.AutoInviteSameDomainEnabled
+                && row.Organization.AutoInviteSameDomain == invitedDomain
+            )
+            .Join(
+                db.Users.AsNoTracking(),
+                row => row.Organization.CreatedByUserId,
+                owner => owner.Id,
+                (row, owner) =>
+                    new
+                    {
+                        row.Membership,
+                        row.Organization,
+                        Owner = owner,
+                    }
+            )
+            .Where(row => row.Owner.DisabledAtUtc == null)
+            .Select(row => new SameDomainInvitationDetails(
+                row.Membership.Id,
+                row.Organization.Id,
+                row.Organization.DisplayName,
+                row.Organization.IconUrl,
+                row.Owner.Id,
+                row.Owner.DisplayName,
+                row.Owner.Email,
+                row.Owner.PictureUrl,
+                row.Membership.Role
+            ))
+            .SingleOrDefaultAsync(ct);
+    }
+
+    /// <inheritdoc />
     /// <remarks>
     /// Atomically transitions a pending row to active and adds the user to the
     /// organization's root team, after verifying the user does not already have
@@ -564,6 +637,20 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
     public async Task<bool> AcceptInvitationAsync(
         string membershipId,
         string userId,
+        CancellationToken ct
+    ) => await AcceptInvitationCoreAsync(membershipId, userId, setAsDefault: false, ct);
+
+    /// <inheritdoc />
+    public async Task<bool> AcceptInvitationAsDefaultAsync(
+        string membershipId,
+        string userId,
+        CancellationToken ct
+    ) => await AcceptInvitationCoreAsync(membershipId, userId, setAsDefault: true, ct);
+
+    private async Task<bool> AcceptInvitationCoreAsync(
+        string membershipId,
+        string userId,
+        bool setAsDefault,
         CancellationToken ct
     )
     {
@@ -653,6 +740,29 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
         if (affected != 1)
         {
             return false;
+        }
+
+        if (setAsDefault)
+        {
+            await db
+                .OrganizationMemberships.TagWithOperationCallSite(
+                    "membership.invitation.accept_as_default_clear_existing"
+                )
+                .Where(m =>
+                    m.UserId == userId && m.IsDefault && m.Status == MembershipStatus.Active
+                )
+                .ExecuteUpdateAsync(setters => setters.SetProperty(m => m.IsDefault, false), ct);
+
+            await db
+                .OrganizationMemberships.TagWithOperationCallSite(
+                    "membership.invitation.accept_as_default_apply"
+                )
+                .Where(m =>
+                    m.Id == membershipId
+                    && m.UserId == userId
+                    && m.Status == MembershipStatus.Active
+                )
+                .ExecuteUpdateAsync(setters => setters.SetProperty(m => m.IsDefault, true), ct);
         }
 
         var hasRootTeamMembership = await db

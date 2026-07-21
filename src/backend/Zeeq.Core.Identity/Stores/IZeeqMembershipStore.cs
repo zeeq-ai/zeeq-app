@@ -21,6 +21,21 @@ public sealed record OrganizationMember(
 );
 
 /// <summary>
+/// Same-domain invitation details shown before a user accepts the invitation.
+/// </summary>
+public sealed record SameDomainInvitationDetails(
+    string InvitationId,
+    string OrganizationId,
+    string OrganizationName,
+    string? OrganizationIconUrl,
+    string OwnerUserId,
+    string OwnerDisplayName,
+    string? OwnerEmail,
+    string? OwnerPictureUrl,
+    string Role
+);
+
+/// <summary>
 /// Persistence contract for organization membership: org CRUD, member
 /// listing, role changes, invitations, and default-org management.
 /// </summary>
@@ -348,6 +363,32 @@ public interface IZeeqMembershipStore
     /// transaction so the accepted organization can be switched to immediately.
     /// </remarks>
     Task<bool> AcceptInvitationAsync(string membershipId, string userId, CancellationToken ct);
+
+    /// <summary>
+    /// Accepts an invitation and makes the invited organization the user's default organization.
+    /// </summary>
+    /// <param name="membershipId">Invitation membership row ID.</param>
+    /// <param name="userId">Local user accepting the invitation.</param>
+    /// <param name="ct">Cancellation token for the database operation.</param>
+    /// <returns><see langword="true"/> if the invitation was accepted; otherwise <see langword="false"/>.</returns>
+    Task<bool> AcceptInvitationAsDefaultAsync(
+        string membershipId,
+        string userId,
+        CancellationToken ct
+    );
+
+    /// <summary>
+    /// Looks up same-domain invitation details after verifying the invitation belongs to the caller email.
+    /// </summary>
+    /// <param name="membershipId">Invitation membership row ID.</param>
+    /// <param name="email">Authenticated caller email.</param>
+    /// <param name="ct">Cancellation token for the database operation.</param>
+    /// <returns>Invitation details when the pending invitation belongs to the caller; otherwise null.</returns>
+    Task<SameDomainInvitationDetails?> FindSameDomainInvitationDetailsAsync(
+        string membershipId,
+        string email,
+        CancellationToken ct
+    );
 
     /// <summary>
     /// Declines an invitation: Status → MembershipStatus.Declined, sets DisabledAtUtc.

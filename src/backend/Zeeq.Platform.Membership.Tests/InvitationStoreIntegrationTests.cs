@@ -1,7 +1,8 @@
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Testing;
 using Zeeq.Testing.EntityGraphs;
-using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Zeeq.Platform.Membership.Tests;
 
@@ -128,6 +129,106 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
             CancellationToken.None
         );
         await Assert.That(rootTeamId).IsEqualTo(seed.RootTeam.Id);
+    }
+
+    [Test]
+    public async Task AcceptInvitationAsDefaultAsync_WithPendingInvitation_SetsInvitedOrgAsDefault()
+    {
+        var store = CreateStore();
+        var (seed, invitations, users) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddPendingInvitation(invitation => invitation.Email = "default-join@test.com")
+            .AddUsers(user => user.Email = "default-join@test.com")
+            .BuildAsync();
+        var invitation = invitations[0];
+        var invitedUser = users[0];
+
+        var result = await store.AcceptInvitationAsDefaultAsync(
+            invitation.Id,
+            invitedUser.Id,
+            CancellationToken.None
+        );
+
+        await Assert.That(result).IsTrue();
+
+        var defaultMemberships = await _context
+            .OrganizationMemberships.Where(m => m.UserId == invitedUser.Id && m.IsDefault)
+            .ToArrayAsync();
+
+        await Assert.That(defaultMemberships).Count().IsEqualTo(1);
+        await Assert.That(defaultMemberships[0].OrganizationId).IsEqualTo(seed.Organization.Id);
+    }
+
+    [Test]
+    public async Task FindSameDomainInvitationDetailsAsync_WithCallerEmail_ReturnsOwnerAndOrganizationDetails()
+    {
+        var store = CreateStore();
+        var (seed, invitations) = await EntityGraph
+            .AddGeneratedSeed(
+                _context,
+                organization =>
+                {
+                    organization.DisplayName = "Acme";
+                    organization.IconUrl = "data:image/png;base64,abc";
+                    organization.AutoInviteSameDomainEnabled = true;
+                    organization.AutoInviteSameDomain = "test.com";
+                    organization.AutoInviteDefaultRole = "member";
+                }
+            )
+            .AddPendingInvitation(invitation => invitation.Email = "same-domain@test.com")
+            .BuildAsync();
+        seed.Owner.PictureUrl = "https://example.com/owner.png";
+        await _context.SaveChangesAsync();
+        var invitation = invitations[0];
+
+        var details = await store.FindSameDomainInvitationDetailsAsync(
+            invitation.Id,
+            "SAME-DOMAIN@test.com",
+            CancellationToken.None
+        );
+
+        await Assert.That(details).IsNotNull();
+        await Assert.That(details!.OrganizationName).IsEqualTo("Acme");
+        await Assert.That(details.OrganizationIconUrl).IsEqualTo("data:image/png;base64,abc");
+        await Assert.That(details.OwnerUserId).IsEqualTo(seed.Owner.Id);
+        await Assert.That(details.OwnerEmail).IsEqualTo(seed.Owner.Email);
+        await Assert.That(details.OwnerPictureUrl).IsEqualTo("https://example.com/owner.png");
+    }
+
+    [Test]
+    public async Task FindSameDomainInvitationDetailsAsync_WithWrongEmail_ReturnsNull()
+    {
+        var store = CreateStore();
+        var (_, invitations) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddPendingInvitation(invitation => invitation.Email = "same-domain@test.com")
+            .BuildAsync();
+
+        var details = await store.FindSameDomainInvitationDetailsAsync(
+            invitations[0].Id,
+            "other@test.com",
+            CancellationToken.None
+        );
+
+        await Assert.That(details).IsNull();
+    }
+
+    [Test]
+    public async Task FindSameDomainInvitationDetailsAsync_WithOrdinaryInvitation_ReturnsNull()
+    {
+        var store = CreateStore();
+        var (_, invitations) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddPendingInvitation(invitation => invitation.Email = "ordinary@test.com")
+            .BuildAsync();
+
+        var details = await store.FindSameDomainInvitationDetailsAsync(
+            invitations[0].Id,
+            "ordinary@test.com",
+            CancellationToken.None
+        );
+
+        await Assert.That(details).IsNull();
     }
 
     [Test]

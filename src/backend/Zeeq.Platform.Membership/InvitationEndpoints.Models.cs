@@ -31,3 +31,35 @@ public sealed record InvitationResponse(
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset ExpiresAtUtc
 );
+
+/// <summary>
+/// Same-domain invitation details shown before a user accepts the invitation.
+/// </summary>
+public sealed record SameDomainInvitationDetailsResponse(
+    string InvitationId,
+    string OrganizationId,
+    string OrganizationName,
+    string? OrganizationIconUrl,
+    string OwnerUserId,
+    string OwnerDisplayName,
+    string? OwnerEmail,
+    string? OwnerPictureUrl,
+    string Role
+)
+{
+    /// <summary>
+    /// Maps the persistence read model to the API response shape.
+    /// </summary>
+    public static SameDomainInvitationDetailsResponse From(SameDomainInvitationDetails details) =>
+        new(
+            details.InvitationId,
+            details.OrganizationId,
+            details.OrganizationName,
+            details.OrganizationIconUrl,
+            details.OwnerUserId,
+            details.OwnerDisplayName,
+            details.OwnerEmail,
+            details.OwnerPictureUrl,
+            details.Role
+        );
+}
