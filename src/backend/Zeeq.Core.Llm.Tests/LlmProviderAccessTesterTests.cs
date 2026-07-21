@@ -118,6 +118,70 @@ public sealed class LlmProviderAccessTesterTests
         await Assert.That(agent).IsAssignableTo<AIAgent>();
     }
 
+    [Test]
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithLunaTools_SetsReasoningEffortNone()
+    {
+        var options = new ChatOptions
+        {
+            Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High },
+            Tools = [AIFunctionFactory.Create(() => "ok", name: "test_tool")],
+        };
+
+        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("gpt-5.6-luna", options);
+
+        await Assert.That(options.Reasoning?.Effort).IsEqualTo(ReasoningEffort.None);
+    }
+
+    [Test]
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithLunaToolsAndNoReasoning_CreatesNoneReasoning()
+    {
+        var options = new ChatOptions
+        {
+            Tools = [AIFunctionFactory.Create(() => "ok", name: "test_tool")],
+        };
+
+        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("gpt-5.6-luna", options);
+
+        await Assert.That(options.Reasoning?.Effort).IsEqualTo(ReasoningEffort.None);
+    }
+
+    [Test]
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithLunaAndNoTools_PreservesReasoningEffort()
+    {
+        var options = new ChatOptions
+        {
+            Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High },
+        };
+
+        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("gpt-5.6-luna", options);
+
+        await Assert.That(options.Reasoning?.Effort).IsEqualTo(ReasoningEffort.High);
+    }
+
+    [Test]
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithNonLunaTools_PreservesReasoningEffort()
+    {
+        var options = new ChatOptions
+        {
+            Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High },
+            Tools = [AIFunctionFactory.Create(() => "ok", name: "test_tool")],
+        };
+
+        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("gpt-5.6-sol", options);
+
+        await Assert.That(options.Reasoning?.Effort).IsEqualTo(ReasoningEffort.High);
+    }
+
+    [Test]
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithLunaTemperatureZero_RewritesTemperature()
+    {
+        var options = new ChatOptions { Temperature = 0 };
+
+        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("gpt-5.6-luna", options);
+
+        await Assert.That(options.Temperature).IsEqualTo(1);
+    }
+
     private static ResolvedLlmConfiguration Configuration(
         string provider = "OpenAI",
         string model = "gpt-test"
