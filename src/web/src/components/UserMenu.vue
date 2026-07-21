@@ -33,7 +33,6 @@
         />
       </div>
     </template>
-
   </UDropdownMenu>
 </template>
 
@@ -106,6 +105,14 @@ const backendVersionDateLabel = computed(() => {
     ? backendVersion.value.buildTimeEst
     : backendVersion.value.checkedAtUtc;
 });
+const organizationRoleLabel = computed(() => {
+  const role = me.value?.organizationRole;
+  if (!role) {
+    return "Role unavailable";
+  }
+
+  return `Role: ${formatRole(role)}`;
+});
 
 const items = computed<DropdownMenuItem[][]>(() => [
   [
@@ -116,6 +123,13 @@ const items = computed<DropdownMenuItem[][]>(() => [
     },
   ],
   [
+    {
+      label: organizationRoleLabel.value,
+      icon: "i-hugeicons-user-star-01",
+      onSelect(e: Event) {
+        e.preventDefault();
+      },
+    },
     // {
     //   label: "Profile",
     //   icon: "i-hugeicons-user",
@@ -264,5 +278,9 @@ onMounted(() => {
 
 function shortSha(sha?: string | null) {
   return sha?.slice(0, 8) ?? "unknown";
+}
+
+function formatRole(role: string) {
+  return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
 }
 </script>
