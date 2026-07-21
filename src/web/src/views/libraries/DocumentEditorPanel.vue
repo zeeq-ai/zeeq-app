@@ -575,6 +575,11 @@ function onReview() {
   emits("review", originalText.value, text.value, assembledPath.value);
 }
 
+defineExpose({
+  /** Triggers the same review flow as the "Review and save" button (no-op if not ready). */
+  triggerReview: onReview,
+});
+
 // ── New doc seed template ───────────────────────────────────────────────
 
 const NEW_DOC_TEMPLATE = `---

@@ -43,6 +43,7 @@
 
       <!-- Editor panel (fills remaining space) -->
       <DocumentEditorPanel
+        ref="editorPanelRef"
         class="min-w-0 flex-1"
         :document="loadedDocument"
         :loading="editorLoading"
@@ -88,6 +89,7 @@
 
     <!-- Reviewed save: side-by-side diff in a bottom drawer (D-6) -->
     <DocumentDiffDrawer
+      ref="diffDrawerRef"
       v-model:open="diffOpen"
       :original="diffOriginal"
       :next="diffNext"
@@ -131,6 +133,9 @@ import DocumentSearchPanel from "./DocumentSearchPanel.vue";
 import DocumentParsePreviewSlideover from "./DocumentParsePreviewSlideover.vue";
 import DocumentRenameSlideover from "./DocumentRenameSlideover.vue";
 
+type DocumentEditorPanelInstance = InstanceType<typeof DocumentEditorPanel>;
+type DocumentDiffDrawerInstance = InstanceType<typeof DocumentDiffDrawer>;
+
 const toast = useToast();
 const store = useLibraryStore();
 const githubStore = useGitHubSettingsStore();
@@ -156,6 +161,9 @@ const {
 
 const { configuredRepositories, librarySourceRepositories } =
   storeToRefs(githubStore);
+
+const editorPanelRef = ref<DocumentEditorPanelInstance | null>(null);
+const diffDrawerRef = ref<DocumentDiffDrawerInstance | null>(null);
 
 const librarySelectionLoading = ref(false);
 const editorLoading = computed(
@@ -638,6 +646,33 @@ async function onConfirmSave() {
     });
   }
 }
+
+/**
+ * CMD+S / CTRL+S triggers "Review and save" from the editor, or "Save
+ * changes" when the review drawer is already open, instead of the browser's
+ * save-page dialog.
+ */
+function handleGlobalKeydown(event: KeyboardEvent) {
+  if (event.key.toLowerCase() !== "s" || !(event.metaKey || event.ctrlKey)) {
+    return;
+  }
+
+  event.preventDefault();
+
+  if (diffOpen.value) {
+    diffDrawerRef.value?.triggerSave();
+  } else {
+    editorPanelRef.value?.triggerReview();
+  }
+}
+
+onMounted(() => {
+  window.addEventListener("keydown", handleGlobalKeydown);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleGlobalKeydown);
+});
 
 // ── Search panel ────────────────────────────────────────────────────────
 

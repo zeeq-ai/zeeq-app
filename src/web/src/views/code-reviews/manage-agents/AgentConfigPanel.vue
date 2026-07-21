@@ -22,38 +22,40 @@
           :ui="{ list: 'w-auto', trigger: 'grow-0' }"
         />
 
-        <!--
+        <UFieldGroup>
+          <!--
         Copy (create mode only): opens the source library slideover where the
         user can seed this new agent from a built-in template or an existing
         agent in any org repository. The library emits a ready-to-use form.
         -->
-        <UButton
-          v-if="!agent"
-          label="Clone"
-          icon="i-hugeicons-copy-01"
-          color="neutral"
-          variant="soft"
-          :disabled="disabled || saving"
-          @click="emits('openSourceLibrary')"
-        />
+          <UButton
+            v-if="!agent"
+            label="Templates"
+            icon="i-hugeicons-copy-01"
+            color="neutral"
+            variant="subtle"
+            :disabled="disabled || saving"
+            @click="emits('openSourceLibrary')"
+          />
 
-        <UButton
-          :label="agent ? 'Save' : 'Deploy'"
-          icon="i-hugeicons-floppy-disk"
-          color="neutral"
-          variant="subtle"
-          :loading="saving"
-          :disabled="!canSave"
-          @click="submit"
-        />
-        <UButton
-          label="Cancel"
-          color="neutral"
-          variant="soft"
-          size="md"
-          :disabled="saving"
-          @click="emits('cancel')"
-        />
+          <UButton
+            :label="agent ? 'Save' : 'Deploy'"
+            icon="i-hugeicons-floppy-disk"
+            color="neutral"
+            variant="subtle"
+            :loading="saving"
+            :disabled="!canSave"
+            @click="submit"
+          />
+          <UButton
+            label="Cancel"
+            color="neutral"
+            variant="subtle"
+            size="md"
+            :disabled="saving"
+            @click="emits('cancel')"
+          />
+        </UFieldGroup>
       </div>
     </div>
 
