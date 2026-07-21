@@ -188,7 +188,16 @@ public sealed record AuthSettings
     /// Used when the management API request omits an explicit lifetime. These tokens
     /// are still issued by OpenIddict and checked against local metadata for revocation.
     /// </remarks>
-    public int UserTokenDefaultLifetimeDays { get; set; } = 90;
+    public int UserTokenDefaultLifetimeDays { get; set; } = 365;
+
+    /// <summary>
+    /// Minimum allowed lifetime for browser-created long-lived user tokens.
+    /// </summary>
+    /// <remarks>
+    /// Keeps generated credentials aligned with the settings UI slider and avoids
+    /// very short-lived credentials that are better served by interactive auth.
+    /// </remarks>
+    public int UserTokenMinLifetimeDays { get; set; } = 30;
 
     /// <summary>
     /// Maximum allowed lifetime for browser-created long-lived user tokens.
@@ -197,7 +206,7 @@ public sealed record AuthSettings
     /// Caps user input from the token management API. This is a risk-control default,
     /// not a replacement for future org policy, audit, and rotation controls.
     /// </remarks>
-    public int UserTokenMaxLifetimeDays { get; set; } = 365;
+    public int UserTokenMaxLifetimeDays { get; set; } = 730;
 
     /// <summary>
     /// <see cref="Issuer" /> without a trailing slash for consistent URL composition.

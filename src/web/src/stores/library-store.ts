@@ -26,6 +26,7 @@ import type { SetDocumentReviewExclusionRequest } from "@/api/generated/types/Se
 import type { TriggerIngestRunResponse } from "@/api/generated/types/TriggerIngestRunResponse";
 import type { IngestRunPageResponse } from "@/api/generated/types/IngestRunPageResponse";
 import type { ResetLibraryIngestRunStateResponse } from "@/api/generated/types/ResetLibraryIngestRunStateResponse";
+import { useGitHubSettingsStore } from "@/stores/github-settings-store";
 
 /**
  * Library management store: libraries (CRUD), the documents in the active library,
@@ -290,6 +291,7 @@ export const useLibraryStore = defineStore("library", () => {
       libraryName,
       request,
     );
+    await useGitHubSettingsStore().loadConfiguredRepositories();
   }
 
   /** Downloads local library documents as either a signed Zeeq export or a standard zip. */
