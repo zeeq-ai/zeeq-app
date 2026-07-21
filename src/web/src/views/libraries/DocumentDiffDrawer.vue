@@ -22,11 +22,21 @@
       >
         <template #header>
           <h2 class="text-highlighted font-semibold">Review changes</h2>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3 text-xs text-muted">
+              <span class="flex items-center gap-1">
+                <UKbd value="escape" size="sm" />
+                to cancel
+              </span>
+              <span class="flex items-center gap-1">
+                <UKbd value="meta" size="sm" /><UKbd size="sm">S</UKbd>
+                to save
+              </span>
+            </div>
             <UButton
               label="Cancel"
               color="neutral"
-              variant="outline"
+              variant="ghost"
               @click="closeDrawer"
             />
             <UButton
@@ -117,6 +127,11 @@ function confirmSave() {
   saving.value = true;
   emits("confirm");
 }
+
+defineExpose({
+  /** Triggers the same save flow as the "Save changes" button. */
+  triggerSave: confirmSave,
+});
 </script>
 
 <style scoped>
