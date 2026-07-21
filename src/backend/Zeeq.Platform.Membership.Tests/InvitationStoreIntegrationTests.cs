@@ -175,7 +175,11 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
                     organization.AutoInviteDefaultRole = "member";
                 }
             )
-            .AddPendingInvitation(invitation => invitation.Email = "same-domain@test.com")
+            .AddPendingInvitation(invitation =>
+            {
+                invitation.Email = "same-domain@test.com";
+                invitation.IsSameDomainAutoInvite = true;
+            })
             .BuildAsync();
         seed.Owner.PictureUrl = "https://example.com/owner.png";
         await _context.SaveChangesAsync();

@@ -25,7 +25,7 @@ public sealed class AcceptInvitationAsDefaultHandler(IZeeqMembershipStore store)
         }
 
         var invitations = await store.ListPendingInvitationsForEmailAsync(email, ct);
-        if (!invitations.Any(invitation => invitation.Id == invitationId))
+        if (!invitations.Any(i => i.Id == invitationId))
         {
             return TypedResults.NotFound();
         }

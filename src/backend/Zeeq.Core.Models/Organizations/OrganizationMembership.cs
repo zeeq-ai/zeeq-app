@@ -50,6 +50,11 @@ public sealed class OrganizationMembership : DomainEntityBase, IOrganizationScop
     public string? InvitedEmail { get; init; }
 
     /// <summary>
+    /// Whether this pending invitation was created by same-domain onboarding.
+    /// </summary>
+    public bool IsSameDomainAutoInvite { get; set; }
+
+    /// <summary>
     /// Local user who created this membership or sent the invitation.
     /// </summary>
     public required string CreatedByUserId { get; init; }

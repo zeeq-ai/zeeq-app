@@ -210,11 +210,14 @@ async function dismissInvitation() {
   }
 
   notNowSaving.value = true;
-  appStore.suppressSameDomainInvitation(
-    sameDomainInvitation.value.invitationId,
-  );
-  await router.replace("/settings/organization");
-  notNowSaving.value = false;
+  try {
+    appStore.suppressSameDomainInvitation(
+      sameDomainInvitation.value.invitationId,
+    );
+    await router.replace("/settings/organization");
+  } finally {
+    notNowSaving.value = false;
+  }
 }
 
 // Used for fallback states where no same-domain invitation is currently shown.

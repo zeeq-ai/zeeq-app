@@ -60,7 +60,52 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         await Assert.That(invitations).Count().IsEqualTo(1);
         await Assert.That(invitations[0].OrganizationId).IsNotEqualTo(context.OrganizationId);
         await Assert.That(invitations[0].Role).IsEqualTo("admin");
+        await Assert.That(invitations[0].IsSameDomainAutoInvite).IsTrue();
         await Assert.That(invitations[0].ExpiresAtUtc).IsNotNull();
+    }
+
+    [Test]
+    public async Task EnsureUserAsync_NewMatchingPrivateDomain_ReplacesExpiredSameDomainInvitation()
+    {
+        var target = await SeedSameDomainOrganizationAsync("example.com", "member");
+        var expiredInvitation = new OrganizationMembership
+        {
+            Id = "mem_" + Guid.NewGuid().ToString("N"),
+            OrganizationId = target.OrganizationId,
+            UserId = null,
+            Role = "member",
+            Status = MembershipStatus.Pending,
+            InvitedEmail = "expired-user@example.com",
+            IsSameDomainAutoInvite = true,
+            CreatedByUserId = target.OwnerId,
+            CreatedAtUtc = DateTimeOffset.UtcNow.AddDays(-10),
+            ExpiresAtUtc = DateTimeOffset.UtcNow.AddDays(-1),
+        };
+        _context.OrganizationMemberships.Add(expiredInvitation);
+        await _context.SaveChangesAsync();
+
+        await new PostgresZeeqIdentityStore(_context).EnsureUserAsync(
+            "mock",
+            Guid.NewGuid().ToString("N"),
+            "Domain User",
+            "expired-user@example.com",
+            null,
+            CancellationToken.None
+        );
+
+        _context.ChangeTracker.Clear();
+        var invitations = await _context
+            .OrganizationMemberships.Where(m => m.InvitedEmail == "expired-user@example.com")
+            .OrderBy(m => m.CreatedAtUtc)
+            .ToArrayAsync();
+
+        await Assert.That(invitations).Count().IsEqualTo(2);
+        await Assert.That(invitations[0].Status).IsEqualTo(MembershipStatus.Declined);
+        await Assert.That(invitations[0].DisabledAtUtc).IsNotNull();
+        await Assert.That(invitations[1].Status).IsEqualTo(MembershipStatus.Pending);
+        await Assert.That(invitations[1].DisabledAtUtc).IsNull();
+        await Assert.That(invitations[1].ExpiresAtUtc).IsNotNull();
+        await Assert.That(invitations[1].ExpiresAtUtc!.Value).IsGreaterThan(DateTimeOffset.UtcNow);
     }
 
     [Test]
@@ -136,9 +181,13 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         await Assert.That(pendingInvitationCount).IsEqualTo(0);
     }
 
-    private async Task SeedSameDomainOrganizationAsync(string domain, string defaultRole)
+    private async Task<(string OrganizationId, string OwnerId)> SeedSameDomainOrganizationAsync(
+        string domain,
+        string defaultRole
+    )
     {
         var ownerId = "owner_" + Guid.NewGuid().ToString("N");
+        var organizationId = "org_" + Guid.NewGuid().ToString("N");
         var now = DateTimeOffset.UtcNow;
         _context.Users.Add(
             new User
@@ -154,7 +203,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         _context.Organizations.Add(
             new Organization
             {
-                Id = "org_" + Guid.NewGuid().ToString("N"),
+                Id = organizationId,
                 DisplayName = "Domain Org",
                 CreatedByUserId = ownerId,
                 CreatedAtUtc = now,
@@ -166,5 +215,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         );
 
         await _context.SaveChangesAsync();
+
+        return (organizationId, ownerId);
     }
 }

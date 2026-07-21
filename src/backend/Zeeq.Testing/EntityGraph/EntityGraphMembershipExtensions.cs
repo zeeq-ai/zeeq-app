@@ -33,6 +33,11 @@ public sealed class PendingInvitationPrototype
     public DateTimeOffset? DisabledAtUtc { get; set; }
 
     /// <summary>
+    /// Whether the generated invitation should behave like a same-domain auto invite.
+    /// </summary>
+    public bool IsSameDomainAutoInvite { get; set; }
+
+    /// <summary>
     /// Whether the generated invitation should be persisted when the graph is built.
     /// </summary>
     public bool PersistOnBuild { get; set; } = true;
@@ -277,6 +282,7 @@ public static class EntityGraphMembershipExtensions
                     Role = prototype.Role,
                     Status = MembershipStatus.Pending,
                     InvitedEmail = prototype.Email ?? $"{SeedContext.NewId("invite")}@example.test",
+                    IsSameDomainAutoInvite = prototype.IsSameDomainAutoInvite,
                     CreatedByUserId = builder.Seed.Owner.Id,
                     CreatedAtUtc = createdAt,
                     ExpiresAtUtc = prototype.ExpiresAtUtc ?? createdAt.AddDays(7),

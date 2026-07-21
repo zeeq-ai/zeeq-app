@@ -15,6 +15,10 @@ public sealed class EmailDomainRuleTests
     [Arguments("owner@engineering.example.gov.uk", "example.gov.uk")]
     [Arguments("owner@dept.example.com.au", "example.com.au")]
     [Arguments("owner@team.example.github.io", "example.github.io")]
+    [Arguments("owner@dept.foo.co.id", "foo.co.id")]
+    [Arguments("owner@dept.example.co.us", "example.co.us")]
+    [Arguments("owner@dept.example.com.ua", "example.com.ua")]
+    [Arguments("owner@team.co.fr", "co.fr")]
     public async Task FromEmail_WithValidEmail_ReturnsRegistrableDomain(
         string email,
         string expectedDomain
@@ -37,6 +41,8 @@ public sealed class EmailDomainRuleTests
     [Arguments("owner@-example.com")]
     [Arguments("owner@example-.com")]
     [Arguments("owner@co.uk")]
+    [Arguments("owner@co.id")]
+    [Arguments("owner@co.us")]
     [Arguments("owner@github.io")]
     public async Task FromEmail_WithInvalidEmail_ReturnsNull(string email)
     {

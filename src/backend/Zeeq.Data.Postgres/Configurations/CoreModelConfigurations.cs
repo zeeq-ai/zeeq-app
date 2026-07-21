@@ -168,6 +168,7 @@ internal sealed class OrganizationMembershipConfiguration
             .HasMaxLength(32)
             .HasConversion<string>();
         entity.Property(membership => membership.InvitedEmail).HasMaxLength(320);
+        entity.Property(membership => membership.IsSameDomainAutoInvite).IsRequired();
         entity.Property(membership => membership.CreatedByUserId).IsRequired().HasMaxLength(128);
         entity.Property(membership => membership.CreatedAtUtc).IsRequired();
         entity.HasIndex(membership => membership.DisabledAtUtc);
@@ -183,6 +184,14 @@ internal sealed class OrganizationMembershipConfiguration
             .HasIndex(membership => new { membership.OrganizationId, membership.UserId })
             .IsUnique()
             .HasFilter("user_id IS NOT NULL AND status = 'Active'");
+
+        entity
+            .HasIndex(membership => new { membership.OrganizationId, membership.InvitedEmail })
+            .IsUnique()
+            .HasDatabaseName("ix_core_organization_memberships_same_domain_auto_invite")
+            .HasFilter(
+                "is_same_domain_auto_invite = true AND invited_email IS NOT NULL AND status = 'Pending' AND disabled_at_utc IS NULL"
+            );
 
         entity
             .HasOne<Organization>()

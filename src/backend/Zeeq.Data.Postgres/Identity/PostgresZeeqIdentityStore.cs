@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
 
@@ -7,6 +8,9 @@ namespace Zeeq.Data.Postgres.Identity;
 /// <inheritdoc cref="IZeeqIdentityStore" />
 public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdentityStore
 {
+    private const string SameDomainAutoInviteIndexName =
+        "ix_core_organization_memberships_same_domain_auto_invite";
+
     /// <inheritdoc />
     public async Task<AuthContext> EnsureUserAsync(
         string provider,
@@ -145,7 +149,7 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
             }
         );
 
-        await CreateSameDomainInvitationIfEligibleAsync(
+        var sameDomainInvitation = await CreateSameDomainInvitationIfEligibleAsync(
             organizationId,
             userId,
             normalizedEmail,
@@ -153,12 +157,23 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
             cancellationToken
         );
 
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception)
+            when (sameDomainInvitation is not null
+                && IsSameDomainAutoInviteUniqueViolation(exception)
+            )
+        {
+            db.Entry(sameDomainInvitation).State = EntityState.Detached;
+            await db.SaveChangesAsync(cancellationToken);
+        }
 
         return new AuthContext(userId, organizationId, teamId);
     }
 
-    private async Task CreateSameDomainInvitationIfEligibleAsync(
+    private async Task<OrganizationMembership?> CreateSameDomainInvitationIfEligibleAsync(
         string personalOrganizationId,
         string userId,
         string? email,
@@ -169,7 +184,7 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
         var domain = EmailDomainNormalizer.FromEmail(email);
         if (domain is null || PublicEmailDomainCatalog.IsPublicEmailDomain(domain))
         {
-            return;
+            return null;
         }
 
         var candidate = await db
@@ -191,8 +206,10 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
 
         if (candidate is null || email is null)
         {
-            return;
+            return null;
         }
+
+        var invitationEmail = email.Trim().ToLowerInvariant();
 
         var alreadyActive = await db
             .OrganizationMemberships.TagWithOperationCallSite(
@@ -210,8 +227,28 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
 
         if (alreadyActive)
         {
-            return;
+            return null;
         }
+
+        await db
+            .OrganizationMemberships.TagWithOperationCallSite(
+                "identity.same_domain.retire_expired_invitation"
+            )
+            .Where(membership =>
+                membership.OrganizationId == candidate.Id
+                && membership.InvitedEmail == invitationEmail
+                && membership.IsSameDomainAutoInvite
+                && membership.Status == MembershipStatus.Pending
+                && membership.DisabledAtUtc == null
+                && membership.ExpiresAtUtc <= now
+            )
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(membership => membership.Status, MembershipStatus.Declined)
+                        .SetProperty(membership => membership.DisabledAtUtc, now),
+                cancellationToken
+            );
 
         var pendingExists = await db
             .OrganizationMemberships.TagWithOperationCallSite(
@@ -221,7 +258,8 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
             .AnyAsync(
                 membership =>
                     membership.OrganizationId == candidate.Id
-                    && membership.InvitedEmail == email
+                    && membership.InvitedEmail == invitationEmail
+                    && membership.IsSameDomainAutoInvite
                     && membership.Status == MembershipStatus.Pending
                     && membership.DisabledAtUtc == null
                     && membership.ExpiresAtUtc > now,
@@ -230,27 +268,37 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
 
         if (pendingExists)
         {
-            return;
+            return null;
         }
 
-        db.OrganizationMemberships.Add(
-            new OrganizationMembership
-            {
-                Id = "mem_" + Guid.NewGuid().ToString("N"),
-                OrganizationId = candidate.Id,
-                UserId = null,
-                Role = NormalizeAutoInviteRole(candidate.AutoInviteDefaultRole),
-                Status = MembershipStatus.Pending,
-                InvitedEmail = email,
-                CreatedByUserId = candidate.CreatedByUserId,
-                CreatedAtUtc = now,
-                ExpiresAtUtc = now.AddDays(7),
-            }
-        );
+        var invitation = new OrganizationMembership
+        {
+            Id = "mem_" + Guid.NewGuid().ToString("N"),
+            OrganizationId = candidate.Id,
+            UserId = null,
+            Role = NormalizeAutoInviteRole(candidate.AutoInviteDefaultRole),
+            Status = MembershipStatus.Pending,
+            InvitedEmail = invitationEmail,
+            IsSameDomainAutoInvite = true,
+            CreatedByUserId = candidate.CreatedByUserId,
+            CreatedAtUtc = now,
+            ExpiresAtUtc = now.AddDays(7),
+        };
+        db.OrganizationMemberships.Add(invitation);
+
+        return invitation;
     }
 
     private static string NormalizeAutoInviteRole(string role) =>
         role is "admin" ? "admin" : "member";
+
+    private static bool IsSameDomainAutoInviteUniqueViolation(DbUpdateException exception) =>
+        exception.InnerException
+            is PostgresException
+            {
+                SqlState: PostgresErrorCodes.UniqueViolation,
+                ConstraintName: SameDomainAutoInviteIndexName,
+            };
 
     /// <inheritdoc />
     public async Task CreatePendingDcrSetupAsync(

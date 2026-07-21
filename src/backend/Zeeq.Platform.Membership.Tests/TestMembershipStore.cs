@@ -414,6 +414,7 @@ internal sealed class TestMembershipStore : IZeeqMembershipStore
             Role = invitation.Role,
             Status = MembershipStatus.Active,
             InvitedEmail = invitation.InvitedEmail,
+            IsSameDomainAutoInvite = invitation.IsSameDomainAutoInvite,
             CreatedByUserId = invitation.CreatedByUserId,
             CreatedAtUtc = invitation.CreatedAtUtc,
             ExpiresAtUtc = null,
@@ -482,6 +483,7 @@ internal sealed class TestMembershipStore : IZeeqMembershipStore
         var invitation = Invitations.SingleOrDefault(invitation =>
             invitation.Id == membershipId
             && invitation.InvitedEmail?.ToLowerInvariant() == normalizedEmail
+            && invitation.IsSameDomainAutoInvite
             && invitation.Status == MembershipStatus.Pending
             && invitation.DisabledAtUtc is null
             && invitation.ExpiresAtUtc > DateTimeOffset.UtcNow
