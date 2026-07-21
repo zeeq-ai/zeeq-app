@@ -336,17 +336,21 @@ internal sealed class TestMembershipStore : IZeeqMembershipStore
     public Task<IReadOnlyList<OrganizationMembership>> ListPendingInvitationsForEmailAsync(
         string email,
         CancellationToken ct
-    ) =>
-        Task.FromResult<IReadOnlyList<OrganizationMembership>>(
+    )
+    {
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+
+        return Task.FromResult<IReadOnlyList<OrganizationMembership>>(
             Invitations
                 .Where(i =>
-                    i.InvitedEmail == email
+                    i.InvitedEmail?.ToLowerInvariant() == normalizedEmail
                     && i.Status == MembershipStatus.Pending
                     && i.DisabledAtUtc is null
                     && i.ExpiresAtUtc > DateTimeOffset.UtcNow
                 )
                 .ToArray()
         );
+    }
 
     /// <inheritdoc />
     public Task<IReadOnlyList<OrganizationMembership>> ListPendingInvitationsForOrganizationAsync(
@@ -442,6 +446,75 @@ internal sealed class TestMembershipStore : IZeeqMembershipStore
         }
 
         return Task.FromResult(true);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> AcceptInvitationAsDefaultAsync(
+        string membershipId,
+        string userId,
+        CancellationToken ct
+    )
+    {
+        var accepted = await AcceptInvitationAsync(membershipId, userId, ct);
+        if (!accepted)
+        {
+            return false;
+        }
+
+        var acceptedMembership = Memberships.Single(membership => membership.Id == membershipId);
+        foreach (var membership in Memberships.Where(membership => membership.UserId == userId))
+        {
+            membership.IsDefault = membership.Id == acceptedMembership.Id;
+        }
+
+        return true;
+    }
+
+    /// <inheritdoc />
+    public Task<SameDomainInvitationDetails?> FindSameDomainInvitationDetailsAsync(
+        string membershipId,
+        string email,
+        CancellationToken ct
+    )
+    {
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+        var invitedDomain = EmailDomainNormalizer.FromEmail(normalizedEmail);
+        var invitation = Invitations.SingleOrDefault(invitation =>
+            invitation.Id == membershipId
+            && invitation.InvitedEmail?.ToLowerInvariant() == normalizedEmail
+            && invitation.Status == MembershipStatus.Pending
+            && invitation.DisabledAtUtc is null
+            && invitation.ExpiresAtUtc > DateTimeOffset.UtcNow
+        );
+        var organization = invitation is null
+            ? null
+            : Organizations.SingleOrDefault(org => org.Id == invitation.OrganizationId);
+        var ownerEmail = organization is null
+            ? null
+            : UserEmails.GetValueOrDefault(organization.CreatedByUserId);
+
+        return Task.FromResult(
+            invitation is null
+            || organization is null
+            || invitedDomain is null
+            || PublicEmailDomainCatalog.IsPublicEmailDomain(invitedDomain)
+            || organization.DisabledAtUtc is not null
+            || !organization.AutoInviteSameDomainEnabled
+            || organization.AutoInviteSameDomain != invitedDomain
+            || string.IsNullOrWhiteSpace(ownerEmail)
+                ? null
+                : new SameDomainInvitationDetails(
+                    invitation.Id,
+                    organization.Id,
+                    organization.DisplayName,
+                    organization.IconUrl,
+                    organization.CreatedByUserId,
+                    "Owner",
+                    ownerEmail,
+                    null,
+                    invitation.Role
+                )
+        );
     }
 
     /// <inheritdoc />

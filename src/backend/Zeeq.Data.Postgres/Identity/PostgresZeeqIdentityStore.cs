@@ -1,6 +1,6 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace Zeeq.Data.Postgres.Identity;
 
@@ -145,10 +145,112 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
             }
         );
 
+        await CreateSameDomainInvitationIfEligibleAsync(
+            organizationId,
+            userId,
+            normalizedEmail,
+            now,
+            cancellationToken
+        );
+
         await db.SaveChangesAsync(cancellationToken);
 
         return new AuthContext(userId, organizationId, teamId);
     }
+
+    private async Task CreateSameDomainInvitationIfEligibleAsync(
+        string personalOrganizationId,
+        string userId,
+        string? email,
+        DateTimeOffset now,
+        CancellationToken cancellationToken
+    )
+    {
+        var domain = EmailDomainNormalizer.FromEmail(email);
+        if (domain is null || PublicEmailDomainCatalog.IsPublicEmailDomain(domain))
+        {
+            return;
+        }
+
+        var candidate = await db
+            .Organizations.TagWithOperationCallSite("identity.same_domain.find_candidate")
+            .AsNoTracking()
+            .Where(organization =>
+                organization.Id != personalOrganizationId
+                && organization.AutoInviteSameDomainEnabled
+                && organization.AutoInviteSameDomain == domain
+                && organization.DisabledAtUtc == null
+            )
+            .Select(organization => new
+            {
+                organization.Id,
+                organization.CreatedByUserId,
+                organization.AutoInviteDefaultRole,
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (candidate is null || email is null)
+        {
+            return;
+        }
+
+        var alreadyActive = await db
+            .OrganizationMemberships.TagWithOperationCallSite(
+                "identity.same_domain.check_existing_membership"
+            )
+            .AsNoTracking()
+            .AnyAsync(
+                membership =>
+                    membership.OrganizationId == candidate.Id
+                    && membership.UserId == userId
+                    && membership.Status == MembershipStatus.Active
+                    && membership.DisabledAtUtc == null,
+                cancellationToken
+            );
+
+        if (alreadyActive)
+        {
+            return;
+        }
+
+        var pendingExists = await db
+            .OrganizationMemberships.TagWithOperationCallSite(
+                "identity.same_domain.check_existing_invitation"
+            )
+            .AsNoTracking()
+            .AnyAsync(
+                membership =>
+                    membership.OrganizationId == candidate.Id
+                    && membership.InvitedEmail == email
+                    && membership.Status == MembershipStatus.Pending
+                    && membership.DisabledAtUtc == null
+                    && membership.ExpiresAtUtc > now,
+                cancellationToken
+            );
+
+        if (pendingExists)
+        {
+            return;
+        }
+
+        db.OrganizationMemberships.Add(
+            new OrganizationMembership
+            {
+                Id = "mem_" + Guid.NewGuid().ToString("N"),
+                OrganizationId = candidate.Id,
+                UserId = null,
+                Role = NormalizeAutoInviteRole(candidate.AutoInviteDefaultRole),
+                Status = MembershipStatus.Pending,
+                InvitedEmail = email,
+                CreatedByUserId = candidate.CreatedByUserId,
+                CreatedAtUtc = now,
+                ExpiresAtUtc = now.AddDays(7),
+            }
+        );
+    }
+
+    private static string NormalizeAutoInviteRole(string role) =>
+        role is "admin" ? "admin" : "member";
 
     /// <inheritdoc />
     public async Task CreatePendingDcrSetupAsync(

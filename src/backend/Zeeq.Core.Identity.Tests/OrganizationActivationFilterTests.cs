@@ -348,6 +348,18 @@ public sealed class OrganizationActivationFilterTests
             CancellationToken ct
         ) => throw new NotSupportedException();
 
+        public Task<bool> AcceptInvitationAsDefaultAsync(
+            string membershipId,
+            string userId,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task<SameDomainInvitationDetails?> FindSameDomainInvitationDetailsAsync(
+            string membershipId,
+            string email,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
         public Task<bool> DeclineInvitationAsync(string membershipId, CancellationToken ct) =>
             throw new NotSupportedException();
 

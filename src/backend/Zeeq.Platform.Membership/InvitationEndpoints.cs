@@ -130,6 +130,27 @@ public sealed class InvitationEndpoints : IEndpoint
                 """
             );
 
+        // GET /api/v1/me/invitations/{id}/same-domain-details
+        group
+            .MapGet(
+                "/{id}/same-domain-details",
+                static (
+                    string id,
+                    ClaimsPrincipal user,
+                    [FromServices] GetSameDomainInvitationDetailsHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(id, user, ct)
+            )
+            .WithName("GetSameDomainInvitationDetails")
+            .WithTags("Invitations")
+            .WithSummary("Get same-domain invitation details.")
+            .WithDescription(
+                """
+                Returns organization and owner display details for a same-domain invitation
+                addressed to the authenticated user.
+                """
+            );
+
         // POST /api/v1/me/invitations/{id}/accept
         group
             .MapPost(
@@ -152,6 +173,30 @@ public sealed class InvitationEndpoints : IEndpoint
                 The user can only act on invitations addressed to their own email. This route
                 intentionally remains outside current-org activation filtering so invited
                 users can join an active org even when their current org is inactive or unset.
+                """
+            );
+
+        // POST /api/v1/me/invitations/{id}/accept-as-default
+        group
+            .MapPost(
+                "/{id}/accept-as-default",
+                static (
+                    string id,
+                    ClaimsPrincipal user,
+                    [FromServices] AcceptInvitationAsDefaultHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(id, user, ct)
+            )
+            .WithName("AcceptInvitationAsDefault")
+            .WithTags("Invitations")
+            .WithSummary("Accept an invitation as default.")
+            .WithDescription(
+                """
+                Accepts the pending invitation (`id`) addressed to the authenticated user,
+                then makes the invited organization the user's default organization.
+
+                This is used by same-domain onboarding so the user lands in the team they
+                joined after accepting.
                 """
             );
 

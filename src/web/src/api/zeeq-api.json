@@ -3786,6 +3786,41 @@
         }
       }
     },
+    "/api/v1/me/invitations/{id}/same-domain-details": {
+      "get": {
+        "tags": [
+          "Invitations"
+        ],
+        "summary": "Get same-domain invitation details.",
+        "description": "Returns organization and owner display details for a same-domain invitation\naddressed to the authenticated user.",
+        "operationId": "GetSameDomainInvitationDetails",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SameDomainInvitationDetailsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/v1/me/invitations/{id}/accept": {
       "post": {
         "tags": [
@@ -3794,6 +3829,34 @@
         "summary": "Accept an invitation.",
         "description": "Accepts the pending invitation (`id`) addressed to the authenticated user,\ncreating their membership in the inviting organization at the invited role.\n\nThe user can only act on invitations addressed to their own email. This route\nintentionally remains outside current-org activation filtering so invited\nusers can join an active org even when their current org is inactive or unset.",
         "operationId": "AcceptInvitation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/me/invitations/{id}/accept-as-default": {
+      "post": {
+        "tags": [
+          "Invitations"
+        ],
+        "summary": "Accept an invitation as default.",
+        "description": "Accepts the pending invitation (`id`) addressed to the authenticated user,\nthen makes the invited organization the user's default organization.\n\nThis is used by same-domain onboarding so the user lands in the team they\njoined after accepting.",
+        "operationId": "AcceptInvitationAsDefault",
         "parameters": [
           {
             "name": "id",
@@ -9571,6 +9634,59 @@
           }
         },
         "description": "Request body for rotating an existing tenant-owned LLM API key."
+      },
+      "SameDomainInvitationDetailsResponse": {
+        "required": [
+          "invitationId",
+          "organizationId",
+          "organizationName",
+          "organizationIconUrl",
+          "ownerUserId",
+          "ownerDisplayName",
+          "ownerEmail",
+          "ownerPictureUrl",
+          "role"
+        ],
+        "type": "object",
+        "properties": {
+          "invitationId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "organizationIconUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ownerUserId": {
+            "type": "string"
+          },
+          "ownerDisplayName": {
+            "type": "string"
+          },
+          "ownerEmail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ownerPictureUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "description": "Same-domain invitation details shown before a user accepts the invitation."
       },
       "SameDomainOnboardingStatusResponse": {
         "required": [
