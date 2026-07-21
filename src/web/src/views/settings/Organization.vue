@@ -50,6 +50,14 @@
       @error="showError"
     />
 
+    <SameDomainOnboardingSettings
+      class="mt-4"
+      :organization
+      :can-manage="canManageOrganization"
+      :saving
+      @update="saveSameDomainOnboarding"
+    />
+
     <USlideover
       v-model:open="newOrganizationOpen"
       title="New organization"
@@ -84,8 +92,10 @@
 import { onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
 import OrganizationForm from "./components/OrganizationForm.vue";
+import SameDomainOnboardingSettings from "./components/SameDomainOnboardingSettings.vue";
 import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
 import type { CreateOrganizationRequest } from "@/api/generated/types/CreateOrganizationRequest";
+import type { SameDomainOnboardingRole } from "@/stores/organization-settings-store";
 
 const toast = useToast();
 const settingsStore = useOrganizationSettingsStore();
@@ -139,6 +149,28 @@ async function createOrganization(request: CreateOrganizationRequest) {
   } catch (err: unknown) {
     showCreateError(
       err instanceof Error ? err.message : "Could not create organization.",
+    );
+  }
+}
+
+/** Saves same-domain onboarding settings through the feature store. */
+async function saveSameDomainOnboarding(request: {
+  enabled: boolean;
+  defaultRole?: SameDomainOnboardingRole | null;
+}) {
+  try {
+    await settingsStore.updateSameDomainOnboarding(request);
+    toast.add({
+      title: "Onboarding settings saved",
+      icon: "i-hugeicons-tick-02",
+      color: "success",
+    });
+  } catch (err: unknown) {
+    showToastError(
+      "Onboarding settings failed",
+      err instanceof Error
+        ? err.message
+        : "Could not save onboarding settings.",
     );
   }
 }
