@@ -63,7 +63,7 @@ public sealed class MetricsEndpoints : IEndpoint
                     )]
                         string metricType,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "7d", "14d", "30d")]
+                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
                         string? window,
                     [FromQuery] MetricSeriesGroup groupBy,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? users,
@@ -109,7 +109,7 @@ public sealed class MetricsEndpoints : IEndpoint
                     )]
                         string metricType,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "7d", "14d", "30d")]
+                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
                         string? window,
                     [FromQuery] MetricSeriesGroup primaryGroupBy,
                     [FromQuery] MetricSeriesGroup secondaryGroupBy,
@@ -148,7 +148,7 @@ public sealed class MetricsEndpoints : IEndpoint
                     [MaxLength(MaxIdLength)] string orgId,
                     [AllowedValues(ReviewDuration, ReviewTokens, ReviewCost)] string metricType,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "7d", "14d", "30d")]
+                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
                         string? window,
                     [FromQuery, MaxLength(MaxIdLength)] string? repositoryId,
                     [FromQuery, MaxLength(MaxFacetLength)] string? facet,
@@ -171,7 +171,7 @@ public sealed class MetricsEndpoints : IEndpoint
                     [MaxLength(MaxIdLength)] string orgId,
                     [AllowedValues(ReviewDuration, ReviewTokens, ReviewCost)] string metricType,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "7d", "14d", "30d")]
+                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
                         string? window,
                     [FromQuery, MaxLength(MaxIdLength)] string? repositoryId,
                     [FromQuery, MaxLength(MaxFacetLength)] string? facet,
@@ -194,7 +194,7 @@ public sealed class MetricsEndpoints : IEndpoint
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "7d", "14d", "30d")]
+                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
                         string? window,
                     [FromQuery, MaxLength(MaxIdLength)] string? library,
                     [FromQuery, Range(1, 100)] int? top,
@@ -218,7 +218,7 @@ public sealed class MetricsEndpoints : IEndpoint
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "7d", "14d", "30d")]
+                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
                         string? window,
                     [FromQuery, AllowedValues("section", "code")] string kind,
                     [FromQuery, MaxLength(MaxIdLength)] string? library,
@@ -251,7 +251,7 @@ public sealed class MetricsEndpoints : IEndpoint
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "7d", "14d", "30d")]
+                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
                         string? window,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? repositoryIds,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? authorLogins,
@@ -286,7 +286,7 @@ public sealed class MetricsEndpoints : IEndpoint
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "7d", "14d", "30d")]
+                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
                         string? window,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? repositoryIds,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? authorLogins,
@@ -311,7 +311,7 @@ public sealed class MetricsEndpoints : IEndpoint
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "7d", "14d", "30d")]
+                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
                         string? window,
                     [FromQuery] FindingSeverity severity,
                     [FromQuery, MaxLength(MaxIdLength)] string? cursor,
@@ -341,7 +341,7 @@ public sealed class MetricsEndpoints : IEndpoint
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "7d", "14d", "30d")]
+                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
                         string? window,
                     [FromServices] GetMetricsOverviewHandler handler,
                     CancellationToken ct

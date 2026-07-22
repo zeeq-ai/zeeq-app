@@ -16,6 +16,7 @@ public sealed class MetricWindowMappingTests
     [Arguments(MetricWindow.H4, 240d, 15d)]
     [Arguments(MetricWindow.H12, 720d, 30d)]
     [Arguments(MetricWindow.H24, 1440d, 60d)]
+    [Arguments(MetricWindow.H72, 4320d, 120d)]
     [Arguments(MetricWindow.D7, 10080d, 360d)]
     [Arguments(MetricWindow.D14, 20160d, 720d)]
     [Arguments(MetricWindow.D30, 43200d, 1440d)]
