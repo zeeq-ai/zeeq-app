@@ -28,6 +28,9 @@ public enum MetricWindow
     /// <summary>24 hours, 1-hour buckets.</summary>
     H24,
 
+    /// <summary>72 hours, 2-hour buckets.</summary>
+    H72,
+
     /// <summary>7 days, 6-hour buckets.</summary>
     D7,
 
@@ -64,6 +67,7 @@ public static class MetricWindowExtensions
                 MetricWindow.H4 => new(TimeSpan.FromHours(4), TimeSpan.FromMinutes(15)),
                 MetricWindow.H12 => new(TimeSpan.FromHours(12), TimeSpan.FromMinutes(30)),
                 MetricWindow.H24 => new(TimeSpan.FromHours(24), TimeSpan.FromHours(1)),
+                MetricWindow.H72 => new(TimeSpan.FromHours(72), TimeSpan.FromHours(2)),
                 MetricWindow.D7 => new(TimeSpan.FromDays(7), TimeSpan.FromHours(6)),
                 MetricWindow.D14 => new(TimeSpan.FromDays(14), TimeSpan.FromHours(12)),
                 MetricWindow.D30 => new(TimeSpan.FromDays(30), TimeSpan.FromDays(1)),

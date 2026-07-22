@@ -66,6 +66,7 @@ internal static class MetricWindowQuery
         ["4h"] = MetricWindow.H4,
         ["12h"] = MetricWindow.H12,
         ["24h"] = MetricWindow.H24,
+        ["72h"] = MetricWindow.H72,
         ["7d"] = MetricWindow.D7,
         ["14d"] = MetricWindow.D14,
         ["30d"] = MetricWindow.D30,
