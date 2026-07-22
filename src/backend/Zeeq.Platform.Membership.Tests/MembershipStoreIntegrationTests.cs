@@ -1,8 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Identity;
 using Zeeq.Testing;
 using Zeeq.Testing.EntityGraphs;
-using Microsoft.EntityFrameworkCore;
 
 namespace Zeeq.Platform.Membership.Tests;
 
@@ -386,5 +386,57 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
         }
 
         await Assert.That(saveFailed).IsTrue();
+    }
+
+    [Test]
+    public async Task FindMembershipActivationStateAsync_WithActiveMembership_ReturnsActiveState()
+    {
+        var store = CreateStore();
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+
+        var state = await store.FindMembershipActivationStateAsync(
+            seed.Organization.Id,
+            seed.Owner.Id,
+            CancellationToken.None
+        );
+
+        // Guards that an active, non-disabled membership row reports IsActive.
+        await Assert.That(state).IsNotNull();
+        await Assert.That(state!.IsActive).IsTrue();
+    }
+
+    [Test]
+    public async Task FindMembershipActivationStateAsync_WithDisabledMembership_ReturnsInactiveState()
+    {
+        var store = CreateStore();
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await store.RemoveMemberAsync(seed.Organization.Id, seed.Owner.Id, CancellationToken.None);
+
+        var state = await store.FindMembershipActivationStateAsync(
+            seed.Organization.Id,
+            seed.Owner.Id,
+            CancellationToken.None
+        );
+
+        // Guards that a disabled row is still returned (so the token
+        // middleware can distinguish "missing" from "disabled") but reports
+        // IsActive = false.
+        await Assert.That(state).IsNotNull();
+        await Assert.That(state!.IsActive).IsFalse();
+    }
+
+    [Test]
+    public async Task FindMembershipActivationStateAsync_WithNoMembershipRow_ReturnsNull()
+    {
+        var store = CreateStore();
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+
+        var state = await store.FindMembershipActivationStateAsync(
+            seed.Organization.Id,
+            "user_never_a_member",
+            CancellationToken.None
+        );
+
+        await Assert.That(state).IsNull();
     }
 }

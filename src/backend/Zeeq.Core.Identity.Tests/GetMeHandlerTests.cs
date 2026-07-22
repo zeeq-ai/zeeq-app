@@ -361,5 +361,11 @@ public sealed class GetMeHandlerTests
             string membershipId,
             CancellationToken ct
         ) => throw new NotSupportedException();
+
+        public Task<MembershipActivationState?> FindMembershipActivationStateAsync(
+            string orgId,
+            string userId,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
     }
 }

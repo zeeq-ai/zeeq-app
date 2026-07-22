@@ -1,4 +1,9 @@
-﻿using Zeeq.Core.Carts;
+﻿using Microsoft.AspNetCore.DataProtection;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Zeeq.Core.Carts;
 using Zeeq.Core.Common;
 using Zeeq.Core.Common.Storage;
 using Zeeq.Core.Documents;
@@ -14,11 +19,6 @@ using Zeeq.Data.Postgres.LlmSettings;
 using Zeeq.Data.Postgres.Metrics;
 using Zeeq.Data.Postgres.Telemetry;
 using Zeeq.Platform.CodeReviews;
-using Microsoft.AspNetCore.DataProtection;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Hybrid;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Zeeq.Data.Postgres;
 
@@ -74,7 +74,20 @@ public static class PostgresSetupExtension
             // Register Postgres-specific implementations of identity stores.
             services.AddScoped<IZeeqIdentityStore, PostgresZeeqIdentityStore>();
             services.AddScoped<IZeeqAuthStateStore, PostgresZeeqAuthStateStore>();
-            services.AddScoped<IZeeqMembershipStore, PostgresZeeqMembershipStore>();
+            services.AddScoped<PostgresZeeqMembershipStore>();
+            services.AddScoped<IZeeqMembershipStore>(serviceProvider =>
+            {
+                var store = serviceProvider.GetRequiredService<PostgresZeeqMembershipStore>();
+                var cache = serviceProvider.GetService<HybridCache>();
+
+                return cache is null
+                    ? store
+                    : new CachedZeeqMembershipStore(
+                        store,
+                        cache,
+                        serviceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CachedZeeqMembershipStore>>()
+                    );
+            });
             services.AddScoped<ILlmSettingsStore, PostgresLlmSettingsStore>();
             services.AddScoped<IEncryptedValueStore, PostgresEncryptedValueStore>();
             services.AddScoped<IGitHubInstallationStore, PostgresGitHubInstallationStore>();

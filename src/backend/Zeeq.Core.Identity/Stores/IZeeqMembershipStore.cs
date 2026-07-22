@@ -422,4 +422,23 @@ public interface IZeeqMembershipStore
     /// deleted so the membership table preserves invitation history.
     /// </remarks>
     Task<bool> CancelInvitationAsync(string orgId, string membershipId, CancellationToken ct);
+
+    // ── Token-Validation Membership Check ─────────────────
+
+    /// <summary>
+    /// Resolves the narrow membership-activation state used by the token
+    /// validation membership check.
+    /// </summary>
+    /// <param name="orgId">Organization the membership belongs to.</param>
+    /// <param name="userId">Local user ID whose membership should be checked.</param>
+    /// <param name="ct">Cancellation token for the database operation.</param>
+    /// <returns>
+    /// A narrow activation projection when a membership row exists for the
+    /// user in the organization (any status); otherwise <see langword="null"/>.
+    /// </returns>
+    Task<MembershipActivationState?> FindMembershipActivationStateAsync(
+        string orgId,
+        string userId,
+        CancellationToken ct
+    );
 }

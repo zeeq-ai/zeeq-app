@@ -326,15 +326,17 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
             .OrderBy(x => x.DisplayName)
             .ToArrayAsync(ct);
 
-        return rows.Select(x => new OrganizationMember(
+        return
+        [
+            .. rows.Select(x => new OrganizationMember(
                 x.Id,
                 x.DisplayName,
                 x.Email,
                 x.PictureUrl,
                 x.Role,
                 x.CreatedAtUtc
-            ))
-            .ToArray();
+            )),
+        ];
     }
 
     /// <inheritdoc />
@@ -858,4 +860,26 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
 
         return affected > 0;
     }
+
+    // ── Token-Validation Membership Check ───────────────────────
+
+    /// <inheritdoc />
+    public Task<MembershipActivationState?> FindMembershipActivationStateAsync(
+        string orgId,
+        string userId,
+        CancellationToken ct
+    ) =>
+        db
+            .OrganizationMemberships.TagWithOperationCallSite(
+                "membership.organization_membership.find_activation_state"
+            )
+            .AsNoTracking()
+            .Where(m => m.OrganizationId == orgId && m.UserId == userId)
+            .Select(m => new MembershipActivationState(
+                m.OrganizationId,
+                userId,
+                m.Status,
+                m.DisabledAtUtc != null
+            ))
+            .SingleOrDefaultAsync(ct);
 }
