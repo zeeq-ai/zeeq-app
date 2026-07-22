@@ -366,13 +366,19 @@ export const useMetricsStore = defineStore("metrics-store", () => {
 
   /**
    * Loads the first page of the findings drill-down list for a severity (the Critical/Major
-   * stat-card slideover), replacing any previously loaded page for that severity.
+   * stat-card slideover), replacing any previously loaded page for that severity. The slideover
+   * has its own period selector that defaults to but does not back-propagate into the shared
+   * dashboard `window`, so callers pass the window explicitly rather than this action reading
+   * the store's `window` ref.
    */
-  async function loadFindingReviews(severity: FindingSeverity) {
+  async function loadFindingReviews(
+    severity: FindingSeverity,
+    windowToken: MetricWindowToken,
+  ) {
     const orgId = requireOrganizationId();
     await run(`findingReviews:${severity}`, async () => {
       const page = await Metrics.listFindingReviews(orgId, {
-        window: window.value,
+        window: windowToken,
         severity,
       });
       findingReviewItems.value = {
@@ -388,9 +394,14 @@ export const useMetricsStore = defineStore("metrics-store", () => {
 
   /**
    * Appends the next page for a severity using its stored cursor. No-op when there is no next
-   * page (the slideover hides the "Load more" control in that case, but this guards direct calls).
+   * page (the slideover hides the "Load more" control in that case, but this guards direct
+   * calls). `windowToken` must match the window the current page/cursor was fetched under — see
+   * {@link loadFindingReviews}.
    */
-  async function loadMoreFindingReviews(severity: FindingSeverity) {
+  async function loadMoreFindingReviews(
+    severity: FindingSeverity,
+    windowToken: MetricWindowToken,
+  ) {
     const cursor = findingReviewNextCursor.value[severity];
     if (!cursor) {
       return;
@@ -398,7 +409,7 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     const orgId = requireOrganizationId();
     await run(`findingReviews:${severity}:more`, async () => {
       const page = await Metrics.listFindingReviews(orgId, {
-        window: window.value,
+        window: windowToken,
         severity,
         cursor,
       });

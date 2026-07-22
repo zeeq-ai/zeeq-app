@@ -73,7 +73,7 @@
               :finding-reviews-loading-more="findingReviewsLoadingMore"
               @update:users="onUsersChange"
               @update:tools="onToolsChange"
-              @open-finding-reviews="onOpenFindingReviews"
+              @load-finding-reviews="onLoadFindingReviews"
               @load-more-finding-reviews="onLoadMoreFindingReviews"
             />
           </template>
@@ -167,7 +167,11 @@ import {
   codeReviewRequestOriginEnum,
   type FindingSeverity,
 } from "@/api/generated";
-import { histogramMetricType, useMetricsStore } from "@/stores/metrics-store";
+import {
+  histogramMetricType,
+  useMetricsStore,
+  type MetricWindowToken,
+} from "@/stores/metrics-store";
 import { useLibraryStore } from "@/stores/library-store";
 import MetricsWindowSelect from "./MetricsWindowSelect.vue";
 import OverviewTab from "./OverviewTab.vue";
@@ -441,14 +445,26 @@ function onAuthorsChange(value: string[]) {
   void refreshNow().catch(() => {});
 }
 
-/** Loads the first page of the findings drill-down list when a stat card is opened. */
-function onOpenFindingReviews(severity: FindingSeverity) {
-  void metricsStore.loadFindingReviews(severity).catch(() => {});
+/**
+ * Loads a page for the findings drill-down slideover — fired on open and on every tab/period
+ * change inside it. `windowToken` is the slideover's own local selection, independent of the
+ * dashboard's shared `window`.
+ */
+function onLoadFindingReviews(
+  severity: FindingSeverity,
+  windowToken: MetricWindowToken,
+) {
+  void metricsStore.loadFindingReviews(severity, windowToken).catch(() => {});
 }
 
-/** Loads the next page for the currently open findings drill-down severity. */
-function onLoadMoreFindingReviews(severity: FindingSeverity) {
-  void metricsStore.loadMoreFindingReviews(severity).catch(() => {});
+/** Loads the next page for the findings drill-down slideover's active severity/period. */
+function onLoadMoreFindingReviews(
+  severity: FindingSeverity,
+  windowToken: MetricWindowToken,
+) {
+  void metricsStore
+    .loadMoreFindingReviews(severity, windowToken)
+    .catch(() => {});
 }
 
 // Load the filter option lists once; failures are non-fatal (dropdowns stay empty).
