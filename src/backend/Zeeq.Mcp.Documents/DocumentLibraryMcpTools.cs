@@ -3,11 +3,11 @@ using System.Diagnostics.Metrics;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using ModelContextProtocol.Server;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Snippets;
 using Zeeq.Core.Identity;
-using ModelContextProtocol.Server;
 
 namespace Zeeq.Mcp.Documents;
 
@@ -458,12 +458,6 @@ public sealed partial class DocumentLibraryMcpTools
     }
 
     /// <summary>
-    /// Projects a stored document to the terse list-document summary (table-of-contents index).
-    /// </summary>
-    private static DocumentSummary ToSummary(LibraryDocument document) =>
-        new(document.Id, document.Path, document.Title, document.Keywords, document.Headings);
-
-    /// <summary>
     /// Projects a combined-search hit to its JSON shape, adding match type and per-signal scores.
     /// </summary>
     /// <remarks>
@@ -528,27 +522,12 @@ public sealed partial class DocumentLibraryMcpTools
     private sealed record ResolvedLibrary(string OrganizationId, Library? Library, string? Error);
 
     /// <summary>
-    /// Compact document shape returned by MCP list tools (table-of-contents index).
-    /// </summary>
-    /// <param name="Id">Stable document identifier.</param>
-    /// <param name="Path">Normalized document path.</param>
-    /// <param name="Title">Display title resolved from Markdown.</param>
-    /// <param name="Keywords">Normalized front-matter keywords.</param>
-    /// <param name="Headings">Plain heading text in document order.</param>
-    private sealed record DocumentSummary(
-        string Id,
-        string Path,
-        string Title,
-        string[] Keywords,
-        string[] Headings
-    );
-
-    /// <summary>
     /// A combined-search hit: the document fields plus why it matched and how strongly.
     /// </summary>
     /// <remarks>
-    /// Mirrors <see cref="DocumentSummary"/> and adds match metadata at the same level, keeping the
-    /// search payload flat for the consuming agent.
+    /// Carries the full document fields (unlike the folded path tree returned by
+    /// <c>list_documents</c>) plus match metadata at the same level, keeping the search payload
+    /// flat for the consuming agent.
     /// </remarks>
     /// <param name="Id">Stable document identifier.</param>
     /// <param name="Path">Normalized document path.</param>

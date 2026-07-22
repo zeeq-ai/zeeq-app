@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
+using Microsoft.Extensions.Caching.Hybrid;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
 using Zeeq.Mcp.Documents;
@@ -38,11 +39,133 @@ public sealed class DocumentLibraryMcpToolsTests
     {
         var response = await DocumentLibraryMcpTools.ListDocuments(
             new TestLibraryDocumentStore(),
+            new TestHybridCache(),
             TestUser(),
             ""
         );
 
         await Assert.That(response).IsEqualTo("library is required.");
+    }
+
+    [Test]
+    public async Task ListDocuments_WithSharedRootAndBranching_StripsRootAndKeepsBranches()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(PathDocument("root/a/one.md", ["x"]));
+        store.Documents.Add(PathDocument("root/b/two.md", []));
+
+        var response = await DocumentLibraryMcpTools.ListDocuments(
+            store,
+            new TestHybridCache(),
+            TestUser(),
+            "kb"
+        );
+
+        await Assert.That(response).Contains("Path root: zeeq://root");
+        await Assert.That(response).Contains("one.md");
+        await Assert.That(response).Contains("[1]: x");
+        await Assert.That(response).Contains("two.md");
+        await Assert.That(response).Contains("[0]:");
+    }
+
+    [Test]
+    public async Task ListDocuments_WithoutSharedRoot_OmitsPathRootLine()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(PathDocument("alpha/one.md", ["x"]));
+        store.Documents.Add(PathDocument("beta/two.md", ["y"]));
+
+        var response = await DocumentLibraryMcpTools.ListDocuments(
+            store,
+            new TestHybridCache(),
+            TestUser(),
+            "kb"
+        );
+
+        await Assert.That(response).DoesNotContain("Path root:");
+        await Assert.That(response).Contains("Join key's full branch");
+        await Assert.That(response).Contains("alpha");
+        await Assert.That(response).Contains("beta");
+    }
+
+    [Test]
+    public async Task ListDocuments_WithSingleRootLevelDocument_RendersLeafWithoutDirectory()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(PathDocument("solo.md", []));
+
+        var response = await DocumentLibraryMcpTools.ListDocuments(
+            store,
+            new TestHybridCache(),
+            TestUser(),
+            "kb"
+        );
+
+        await Assert.That(response).DoesNotContain("Path root:");
+        await Assert.That(response).Contains("solo.md");
+        await Assert.That(response).Contains("[0]:");
+    }
+
+    [Test]
+    public async Task ListDocuments_WithSingleDocumentUnderDirectoryChain_StripsChainButKeepsDocument()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(PathDocument("a/b/c.md", ["k1", "k2"]));
+
+        var response = await DocumentLibraryMcpTools.ListDocuments(
+            store,
+            new TestHybridCache(),
+            TestUser(),
+            "kb"
+        );
+
+        await Assert.That(response).Contains("Path root: zeeq://a/b");
+        await Assert.That(response).Contains("c.md");
+        await Assert.That(response).Contains("[2]: k1,k2");
+    }
+
+    [Test]
+    public async Task ListDocuments_WithSecondCall_ReturnsCachedResultDespiteStoreChange()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(PathDocument("one.md", ["x"]));
+        var cache = new TestHybridCache();
+
+        var first = await DocumentLibraryMcpTools.ListDocuments(store, cache, TestUser(), "kb");
+
+        // Mutates the store after the first call; a fresh (uncached) call would see this.
+        store.Documents.Add(PathDocument("two.md", ["y"]));
+        var second = await DocumentLibraryMcpTools.ListDocuments(store, cache, TestUser(), "kb");
+
+        await Assert.That(second).IsEqualTo(first);
+        await Assert.That(second).DoesNotContain("two.md");
+    }
+
+    [Test]
+    public async Task ListDocuments_WithCaseDifferingLibraryNames_DoesNotCollideInCache()
+    {
+        // Library names are case-sensitive and unique-per-org only up to exact string equality,
+        // so "kb" and "KB" can be two different libraries. Keying the cache on the resolved
+        // library id (not a lowercased name) must keep their responses independent.
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary(id: "lib_lower", name: "kb"));
+        store.Libraries.Add(TestLibrary(id: "lib_upper", name: "KB"));
+        store.Documents.Add(PathDocument("one.md", ["x"], libraryId: "lib_lower"));
+        store.Documents.Add(PathDocument("two.md", ["y"], libraryId: "lib_upper"));
+        var cache = new TestHybridCache();
+
+        var lower = await DocumentLibraryMcpTools.ListDocuments(store, cache, TestUser(), "kb");
+        var upper = await DocumentLibraryMcpTools.ListDocuments(store, cache, TestUser(), "KB");
+
+        await Assert.That(lower).Contains("one.md");
+        await Assert.That(lower).DoesNotContain("two.md");
+        await Assert.That(upper).Contains("two.md");
+        await Assert.That(upper).DoesNotContain("one.md");
     }
 
     [Test]
@@ -111,12 +234,12 @@ public sealed class DocumentLibraryMcpToolsTests
     private static ClaimsPrincipal TestUser() =>
         new(new ClaimsIdentity([new Claim(AuthClaims.OrganizationId, "org_123")], "test"));
 
-    private static Library TestLibrary() =>
+    private static Library TestLibrary(string id = "lib_123", string name = "kb") =>
         new()
         {
-            Id = "lib_123",
+            Id = id,
             OrganizationId = "org_123",
-            Name = "kb",
+            Name = name,
             Description = "Knowledge base",
             CreatedAt = DateTimeOffset.UnixEpoch,
             UpdatedAt = DateTimeOffset.UnixEpoch,
@@ -136,6 +259,34 @@ public sealed class DocumentLibraryMcpToolsTests
             Content = content,
             ProcessingStatus = DocumentProcessingStatus.Pending,
             TokenCount = 7,
+            ContentHash = "hash",
+            CreatedAt = DateTimeOffset.UnixEpoch,
+            UpdatedAt = DateTimeOffset.UnixEpoch,
+        };
+
+    /// <summary>
+    /// A minimal document for the <c>list_documents</c> path-folding tests, where only path and
+    /// keywords vary; unlike <see cref="TestDocument"/> it lets each test control the path shape
+    /// that exercises root-stripping and chain-folding.
+    /// </summary>
+    private static LibraryDocument PathDocument(
+        string path,
+        string[] keywords,
+        string libraryId = "lib_123"
+    ) =>
+        new()
+        {
+            Id = $"{libraryId}:{path}",
+            OrganizationId = "org_123",
+            LibraryId = libraryId,
+            Path = path,
+            Title = path,
+            TitleNormalized = path,
+            Keywords = keywords,
+            Headings = [],
+            Content = "Body",
+            ProcessingStatus = DocumentProcessingStatus.Pending,
+            TokenCount = 1,
             ContentHash = "hash",
             CreatedAt = DateTimeOffset.UnixEpoch,
             UpdatedAt = DateTimeOffset.UnixEpoch,
@@ -315,5 +466,58 @@ public sealed class DocumentLibraryMcpToolsTests
                     document.OrganizationId == organizationId && document.LibraryId == libraryId
                 )
                 .ToArray();
+    }
+
+    /// <summary>
+    /// In-memory HybridCache for tests: calls the factory on first access and stores the result.
+    /// </summary>
+    private sealed class TestHybridCache : HybridCache
+    {
+        private readonly Dictionary<string, object?> _values = [];
+
+        public override async ValueTask<T> GetOrCreateAsync<TState, T>(
+            string key,
+            TState state,
+            Func<TState, CancellationToken, ValueTask<T>> factory,
+            HybridCacheEntryOptions? options = null,
+            IEnumerable<string>? tags = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (_values.TryGetValue(key, out var value))
+            {
+                return (T)value!;
+            }
+
+            var created = await factory(state, cancellationToken);
+            _values[key] = created;
+            return created;
+        }
+
+        public override ValueTask SetAsync<T>(
+            string key,
+            T value,
+            HybridCacheEntryOptions? options = null,
+            IEnumerable<string>? tags = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _values[key] = value;
+            return ValueTask.CompletedTask;
+        }
+
+        public override ValueTask RemoveAsync(
+            string key,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _values.Remove(key);
+            return ValueTask.CompletedTask;
+        }
+
+        public override ValueTask RemoveByTagAsync(
+            string tag,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.CompletedTask;
     }
 }
