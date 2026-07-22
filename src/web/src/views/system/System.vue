@@ -4,7 +4,7 @@
       <UNavigationMenu :items="links" highlight class="-mx-1 flex-1" />
     </template>
 
-    <div class="mx-auto flex w-full flex-col gap-4 lg:max-w-3xl">
+    <div class="mx-auto flex w-full flex-col gap-4">
       <RouterView />
     </div>
   </ZeeqView>
@@ -17,6 +17,11 @@ import type { NavigationMenuItem } from "@nuxt/ui";
 /** System navigation is route-backed so admin pages remain shareable URLs. */
 const links: NavigationMenuItem[][] = [
   [
+    {
+      label: "Organizations",
+      icon: "i-hugeicons-building-03",
+      to: "/system/organizations",
+    },
     {
       label: "Diagnostics",
       icon: "i-hugeicons-activity-02",

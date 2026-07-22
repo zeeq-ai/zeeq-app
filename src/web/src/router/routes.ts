@@ -124,6 +124,13 @@ export const routes: Array<RouteRecordRaw> = [
         meta: { title: "System", requiresSystemAdmin: true },
         children: [
           {
+            path: "organizations",
+            name: "SystemOrganizations",
+            component: () =>
+              import("@/views/system/organizations/SystemOrganizations.vue"),
+            meta: { title: "Organizations", requiresSystemAdmin: true },
+          },
+          {
             path: "diagnostics",
             name: "SystemDiagnostics",
             component: () =>
