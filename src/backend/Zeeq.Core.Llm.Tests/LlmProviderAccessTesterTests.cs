@@ -35,6 +35,9 @@ provider SDK serializes the request. To verify end-to-end:
    Azure OpenAI `gpt-5.6-luna` succeeds because the shim omits raw
    `reasoning_effort`; native OpenAI `gpt-5.6-luna`, `gpt-5.6-sol`, and
    `gpt-5.6-terra` succeed because the shim sends `reasoning_effort=none`.
+   Also run a no-tool `Temperature = 0` probe for `gpt-5.5` and the GPT-5.6
+   models; the shim should rewrite temperature to the provider default and the
+   call should complete.
 
 This runtime probe caught provider differences that unit tests alone did not:
 native OpenAI accepts explicit `none`, while Azure OpenAI rejects any serialized
@@ -317,13 +320,26 @@ public sealed class LlmProviderAccessTesterTests
     }
 
     [Test]
-    public async Task NormalizeOpenAiChatCompletionsOptions_WithLunaTemperatureZero_RewritesTemperature()
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithUnsupportedTemperatureZeroModels_RewritesTemperature()
+    {
+        foreach (var model in new[] { "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra" })
+        {
+            var options = new ChatOptions { Temperature = 0 };
+
+            LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("OpenAI", model, options);
+
+            await Assert.That(options.Temperature).IsEqualTo(1);
+        }
+    }
+
+    [Test]
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithSupportedTemperatureZeroModel_PreservesTemperature()
     {
         var options = new ChatOptions { Temperature = 0 };
 
-        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("OpenAI", "gpt-5.6-luna", options);
+        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("OpenAI", "gpt-5.4", options);
 
-        await Assert.That(options.Temperature).IsEqualTo(1);
+        await Assert.That(options.Temperature).IsEqualTo(0);
     }
 
     private static ResolvedLlmConfiguration Configuration(

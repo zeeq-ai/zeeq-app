@@ -186,6 +186,7 @@ import {
 import { repositoryLabel } from "./repository-labels";
 
 // Root view is the only store consumer; children receive data as props.
+const toast = useToast();
 const metricsStore = useMetricsStore();
 const {
   window,
@@ -306,13 +307,13 @@ const tabItems = [
     value: "knowledge",
   },
   {
-    label: "Agents",
-    icon: "i-hugeicons-robot-01",
+    label: "Sessions",
+    icon: "i-hugeicons-chat-spark-01",
     slot: "agents",
     value: "agents",
   },
   {
-    label: "Performance",
+    label: "Review Throughput",
     icon: "i-hugeicons-dashboard-speed-01",
     slot: "performance",
     value: "performance",
@@ -321,6 +322,32 @@ const tabItems = [
 
 const activeTab = ref<string>("overview");
 const durationKey = histogramMetricType.reviewDuration;
+
+const sessionTelemetryDocsUrl =
+  "https://zeeq.ai/docs/key-features/session-telemetry";
+const sessionTelemetryToastId = "session-telemetry-empty";
+
+/** True once every Sessions-tab series has loaded and come back empty (no telemetry recorded). */
+const isSessionTelemetryEmpty = computed(
+  () =>
+    agentTokenByModelSeries.value.length === 0 &&
+    agentTokenByUserSeries.value.length === 0 &&
+    agentTokenByModelUserSeries.value.length === 0 &&
+    agentCostUsdSeries.value.length === 0,
+);
+
+// Set by the activeTab watcher below when the user switches into the Sessions tab, and consumed
+// (and cleared) by loadActiveTab's "agents" case once that switch's load resolves — so the
+// empty-telemetry toast fires once per switch, not on every periodic auto-refresh tick while the
+// user is already sitting on the tab (loadActiveTab also runs on the refresh interval, which
+// never touches `activeTab`).
+let sessionsTabSwitch = false;
+
+watch(activeTab, (tab, previousTab) => {
+  if (tab === "agents" && tab !== previousTab) {
+    sessionsTabSwitch = true;
+  }
+});
 
 /** UI-8 duration percentiles for the current window, keyed by metric type. */
 const durationPercentiles = computed(
@@ -381,9 +408,35 @@ async function loadActiveTab() {
         metricsStore.loadSectionLeaderboard(),
       ]);
       break;
-    case "agents":
+    case "agents": {
       await metricsStore.loadAgentUsageSeries();
+      const wasSwitch = sessionsTabSwitch;
+      sessionsTabSwitch = false;
+      if (wasSwitch && isSessionTelemetryEmpty.value) {
+        // Stable id: useToast().add() merges into an existing toast with the same id (resetting
+        // its 30s duration) instead of stacking a second, identical toast — so a still-open
+        // toast from a prior visit gets refreshed rather than duplicated. (Don't call
+        // toast.remove() first: its 200ms delayed removal is id-based and unconditional, so it
+        // would delete this freshly re-added toast out from under itself.)
+        toast.add({
+          id: sessionTelemetryToastId,
+          title: "No session telemetry yet",
+          description:
+            "This organization hasn't recorded any agent session telemetry. Set it up to start capturing usage here.",
+          icon: "i-hugeicons-information-circle",
+          color: "info",
+          duration: 30_000,
+          actions: [
+            {
+              label: "Learn how to set it up",
+              to: sessionTelemetryDocsUrl,
+              target: "_blank",
+            },
+          ],
+        });
+      }
       break;
+    }
     case "performance":
       await Promise.all([
         metricsStore.loadPercentiles(durationKey),

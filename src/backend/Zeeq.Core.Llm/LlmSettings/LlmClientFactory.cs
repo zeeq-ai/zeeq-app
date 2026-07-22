@@ -315,9 +315,10 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
             // function tools on Chat Completions only when reasoning_effort is
             // absent, so Zeeq intentionally drops explicit reasoning for those
             // tool-call requests instead of routing native OpenAI through
-            // Responses and giving Azure a different behavior. Luna also rejects
-            // Temperature = 0. This innermost middleware rewrites the MEAI
-            // ChatOptions immediately before the provider SDK sees the request.
+            // Responses and giving Azure a different behavior. GPT-5.5 and
+            // GPT-5.6 also reject Temperature = 0. This innermost middleware
+            // rewrites the MEAI ChatOptions immediately before the provider SDK
+            // sees the request.
             .Use(
                 getResponseFunc: (messages, options, innerClient, cancellationToken) =>
                 {
@@ -502,7 +503,11 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
     /// Models that reject <c>Temperature = 0</c> and only accept the default value of 1.
     /// Checked case-insensitively against a substring of the configured model identifier.
     /// </summary>
-    private static readonly string[] TemperatureZeroUnsupportedModelLabels = ["gpt-5.6-luna"];
+    private static readonly string[] TemperatureZeroUnsupportedModelLabels =
+    [
+        "gpt-5.5",
+        "gpt-5.6",
+    ];
 
     /// <summary>
     /// Models that reject <c>reasoning_effort</c> with function tools on Chat Completions.

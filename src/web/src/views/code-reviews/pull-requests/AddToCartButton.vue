@@ -5,7 +5,7 @@
     icon="i-hugeicons-shopping-basket-remove-01"
     label="In cart"
     color="primary"
-    variant="subtle"
+    variant="soft"
     size="xs"
     :loading="isToggling"
     @click="emits('toggleCart', finding, reviewer, null)"
