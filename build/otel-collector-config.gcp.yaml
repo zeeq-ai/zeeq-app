@@ -1,0 +1,124 @@
+# yaml-language-server: $schema=none
+# Production OpenTelemetry Collector config for Zeeq agent telemetry.
+#
+# Public traffic terminates at Caddy on https://otel.zeeq.ai. Caddy forwards
+# OTLP/HTTP requests to this collector on loopback only, so port 4318 stays an
+# implementation detail rather than a public internet surface.
+#
+# This config intentionally supports OTLP/HTTP only. OTLP/gRPC is omitted for
+# the first production deployment to keep firewall, proxy, and client setup
+# simple: public HTTPS 443 -> Caddy -> private Docker network port 4318.
+
+extensions:
+  # Validate the caller's bearer token at the collector edge before expensive
+  # filtering or forwarding. The Zeeq server still performs its own auth check;
+  # this is an outer gate that keeps unauthenticated noise out of the exporter
+  # queue and off the runtime.
+  oidc:
+    # Production OpenIddict discovery currently reports issuer
+    # "https://app.zeeq.ai/". Keep the trailing slash: OIDC issuer comparison is
+    # exact, and omitting it can fail collector startup.
+    issuer_url: "${env:ZEEQ_ISSUER_URL}"
+    # Current user tokens are minted for the same resource used by MCP. If Zeeq
+    # later provisions a dedicated telemetry audience, update this env var and
+    # the user-token issuance path together.
+    audience: "${env:ZEEQ_TELEMETRY_AUDIENCE}"
+    username_claim: sub
+
+  # Forward the original inbound Authorization header to Zeeq. Zeeq derives
+  # organization/user scope from the validated principal, not from telemetry
+  # payload attributes, so this header is required for correct attribution.
+  headers_setter:
+    headers:
+      - action: upsert
+        key: authorization
+        from_context: authorization
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        # Bind inside the private Docker network. The collector container does
+        # not publish 4318 to the VM, so Caddy is the only public ingress path.
+        endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: oidc
+        # Required so headers_setter can read the inbound Authorization metadata.
+        include_metadata: true
+
+exporters:
+  # Export to Zeeq's root OTLP/HTTP endpoint. The otlphttp exporter appends
+  # /v1/logs and /v1/traces per signal.
+  otlphttp/zeeq:
+    endpoint: "${env:ZEEQ_OTLP_HTTP_ENDPOINT}"
+    auth:
+      authenticator: headers_setter
+    sending_queue:
+      enabled: true
+
+processors:
+  # Put the memory limiter first in each pipeline so bursts are refused before
+  # the collector runs filter and batch work that could increase memory pressure.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # Logs: retain only Claude Code and Codex session-relevant log records. Zeeq
+  # has defensive server-side filters too, but edge filtering keeps high-volume
+  # non-session telemetry from reaching Cloud Run and Postgres.
+  filter/agent_session_logs:
+    error_mode: ignore
+    logs:
+      log_record:
+        - |
+          not (
+            resource.attributes["service.name"] == "claude-code" and
+            (log.body == "claude_code.user_prompt" or
+             log.body == "claude_code.tool_result" or
+             log.body == "claude_code.api_request" or
+             log.body == "claude_code.tool_decision")
+          ) and not (
+            IsMatch(resource.attributes["service.name"], ".*codex.*") and
+            (log.attributes["prompt_length"] != nil or
+             (log.attributes["tool_name"] != nil and log.attributes["call_id"] != nil) or
+             log.attributes["event.kind"] == "response.completed" or
+             (log.attributes["mcp_servers"] != nil and log.attributes["approval_policy"] != nil))
+          )
+
+  # Traces: Copilot Chat carries the useful prompt/completion/tool telemetry in
+  # spans, gated by chat_session_id so sessionless editor noise is dropped.
+  filter/agent_session_traces:
+    error_mode: ignore
+    traces:
+      span:
+        - |
+          not (
+            resource.attributes["service.name"] == "copilot-chat" and
+            span.attributes["copilot_chat.chat_session_id"] != nil and
+            (span.attributes["gen_ai.operation.name"] == "invoke_agent" or
+             span.attributes["gen_ai.operation.name"] == "chat" or
+             span.attributes["gen_ai.operation.name"] == "execute_tool")
+          )
+
+  batch:
+    send_batch_size: 128
+    send_batch_max_size: 512
+    timeout: 5s
+    # Critical for per-user auth forwarding: each distinct Authorization header
+    # gets its own batcher, preventing telemetry from two users from sharing one
+    # exported batch with a single forwarded token.
+    metadata_keys: [authorization]
+    metadata_cardinality_limit: 1000
+
+service:
+  extensions: [oidc, headers_setter]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/agent_session_logs, batch]
+      exporters: [otlphttp/zeeq]
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/agent_session_traces, batch]
+      exporters: [otlphttp/zeeq]
