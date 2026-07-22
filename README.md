@@ -171,3 +171,13 @@ Then create a PR in a test repo that has obviously wrong code (or any code) and 
 
 - [OTEL](https://learn.microsoft.com/en-us/azure/managed-grafana/grafana-opentelemetry-app-insights)
 - [Copilot OTEL](https://github.com/microsoft/vscode-copilot-chat/blob/main/docs/monitoring/agent_monitoring.mdco)
+
+---
+
+## License
+
+Zeeq
+Copyright (C) 2026 Charles Chen
+
+Zeeq is licensed under the GNU Affero General Public License,
+version 3 or later. See [LICENSE](LICENSE) for details.
