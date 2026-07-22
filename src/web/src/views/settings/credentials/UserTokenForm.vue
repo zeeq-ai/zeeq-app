@@ -84,7 +84,11 @@
               color="neutral"
               variant="subtle"
               size="xs"
-              @click="reveal = !reveal"
+              @click="
+                () => {
+                  reveal = !reveal;
+                }
+              "
             />
             <UButton
               icon="i-hugeicons-copy-01"

@@ -864,6 +864,15 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
     // ── Token-Validation Membership Check ───────────────────────
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Removed memberships are retained (soft-deleted) for audit history, so
+    /// a user who was removed and later re-invited to the same organization
+    /// can legally have more than one row for the same
+    /// <c>(OrganizationId, UserId)</c> pair — the unique index only
+    /// constrains active rows. Ordering active-first, then most recent, and
+    /// taking the first row keeps this a single query while still
+    /// preferring the live membership over historical ones.
+    /// </remarks>
     public Task<MembershipActivationState?> FindMembershipActivationStateAsync(
         string orgId,
         string userId,
@@ -875,11 +884,13 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
             )
             .AsNoTracking()
             .Where(m => m.OrganizationId == orgId && m.UserId == userId)
+            .OrderByDescending(m => m.Status == MembershipStatus.Active && m.DisabledAtUtc == null)
+            .ThenByDescending(m => m.CreatedAtUtc)
             .Select(m => new MembershipActivationState(
                 m.OrganizationId,
                 userId,
                 m.Status,
                 m.DisabledAtUtc != null
             ))
-            .SingleOrDefaultAsync(ct);
+            .FirstOrDefaultAsync(ct);
 }

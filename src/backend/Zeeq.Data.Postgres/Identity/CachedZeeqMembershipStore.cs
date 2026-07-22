@@ -278,10 +278,26 @@ internal sealed partial class CachedZeeqMembershipStore(
     /// <summary>
     /// Best-effort eviction of every cached activation entry for a user,
     /// across all organizations, keyed by the user tag stamped on every
-    /// cached entry. Used by invitation acceptance, which has no direct
-    /// organization ID to build a single cache key from without an extra
-    /// store round trip that could itself race.
+    /// cached entry (see <see cref="FindMembershipActivationStateAsync"/>).
+    /// Used by invitation acceptance, which has no direct organization ID to
+    /// build a single cache key from without an extra store round trip.
     /// </summary>
+    /// <remarks>
+    /// NOTE: this deliberately evicts the user's cached state for every
+    /// organization, not just the one just joined. A narrower <c>(org,
+    /// user)</c>-keyed eviction was considered and rejected: it would
+    /// require resolving the organization ID from the membership row after
+    /// the accept already succeeded, and that resolve could itself race or
+    /// fail transiently — silently skipping eviction and leaving the exact
+    /// stale-403-after-join problem this eviction exists to close. Tagging
+    /// and evicting by user alone cannot miss for that reason; the cost is
+    /// a handful of extra cache entries evicted per accepted invitation,
+    /// which is cheap since users belong to few organizations. The tag
+    /// shape is defined once in <see cref="MembershipActivationCacheKeys.BuildUserTag"/>
+    /// and used identically by both the write side (here, via
+    /// <see cref="FindMembershipActivationStateAsync"/>) and this eviction
+    /// call, so the two cannot drift independently.
+    /// </remarks>
     private async Task TryEvictByUserAsync(string userId)
     {
         try

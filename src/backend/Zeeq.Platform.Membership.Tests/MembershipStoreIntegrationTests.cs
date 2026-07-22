@@ -426,6 +426,45 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
     }
 
     [Test]
+    public async Task FindMembershipActivationStateAsync_WithHistoricalAndCurrentMembership_ReturnsCurrentActiveState()
+    {
+        var store = CreateStore();
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+
+        // Simulate: the user was removed (row soft-deleted, retained for
+        // audit history) and later re-invited/re-added to the same
+        // organization — a legal state where (OrganizationId, UserId) is no
+        // longer unique across all rows, only across active ones.
+        await store.RemoveMemberAsync(seed.Organization.Id, seed.Owner.Id, CancellationToken.None);
+        _context.OrganizationMemberships.Add(
+            new OrganizationMembership
+            {
+                Id = NewId("mem"),
+                OrganizationId = seed.Organization.Id,
+                UserId = seed.Owner.Id,
+                Role = "member",
+                Status = MembershipStatus.Active,
+                CreatedByUserId = seed.Owner.Id,
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+            }
+        );
+        await _context.SaveChangesAsync();
+
+        // Guards that FindMembershipActivationStateAsync tolerates more
+        // than one row for the pair and prefers the current active
+        // membership instead of throwing (previously used
+        // SingleOrDefaultAsync, which would fail here).
+        var state = await store.FindMembershipActivationStateAsync(
+            seed.Organization.Id,
+            seed.Owner.Id,
+            CancellationToken.None
+        );
+
+        await Assert.That(state).IsNotNull();
+        await Assert.That(state!.IsActive).IsTrue();
+    }
+
+    [Test]
     public async Task FindMembershipActivationStateAsync_WithNoMembershipRow_ReturnsNull()
     {
         var store = CreateStore();

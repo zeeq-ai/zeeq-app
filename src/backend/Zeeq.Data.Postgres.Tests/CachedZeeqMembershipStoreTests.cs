@@ -176,6 +176,39 @@ public sealed class CachedZeeqMembershipStoreTests
     }
 
     [Test]
+    public async Task AcceptInvitationAsync_OnSuccess_EvictsCachedStateAcrossAllOrgsForUser()
+    {
+        var inner = new CountingMembershipStore(
+            new MembershipActivationState("org_1", "user_1", MembershipStatus.Active, false),
+            acceptResult: true
+        );
+        var cache = new TestHybridCache();
+        var store = CreateStore(inner, cache);
+
+        // Prime cached entries for the same user across two different
+        // organizations.
+        await store.FindMembershipActivationStateAsync("org_1", "user_1", CancellationToken.None);
+        await store.FindMembershipActivationStateAsync("org_2", "user_1", CancellationToken.None);
+        await Assert.That(inner.ActivationLookupCount).IsEqualTo(2);
+
+        var accepted = await store.AcceptInvitationAsync(
+            "membership_1",
+            "user_1",
+            CancellationToken.None
+        );
+
+        // Guards that accepting an invitation for one organization evicts
+        // the user's cached activation state for every organization, not
+        // just the one just joined — both cached entries must re-hit the
+        // store rather than serve their stale cached values.
+        await store.FindMembershipActivationStateAsync("org_1", "user_1", CancellationToken.None);
+        await store.FindMembershipActivationStateAsync("org_2", "user_1", CancellationToken.None);
+
+        await Assert.That(accepted).IsTrue();
+        await Assert.That(inner.ActivationLookupCount).IsEqualTo(4);
+    }
+
+    [Test]
     public async Task AcceptInvitationAsync_OnFailure_DoesNotEvictCache()
     {
         var inner = new CountingMembershipStore(

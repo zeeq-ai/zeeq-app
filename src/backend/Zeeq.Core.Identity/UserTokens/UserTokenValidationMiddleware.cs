@@ -43,8 +43,17 @@ public static partial class UserTokenValidationMiddleware
     /// Long-lived user tokens must have an active local metadata row on every request
     /// so revocation and last-used tracking work even for self-contained access tokens.
     /// </remarks>
-    public static IApplicationBuilder UseUserTokenValidation(this IApplicationBuilder app) =>
-        app.Use(
+    public static IApplicationBuilder UseUserTokenValidation(this IApplicationBuilder app)
+    {
+        // Resolved once at pipeline-build time (ILoggerFactory is a
+        // singleton) rather than per-request, so the rejection path has no
+        // RequestServices dependency and does not do a service lookup on
+        // every rejected request.
+        var logger = app
+            .ApplicationServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger(typeof(UserTokenValidationMiddleware).FullName!);
+
+        return app.Use(
             async (context, next) =>
             {
                 var tokenId = context.User.FindFirst(AuthClaims.UserTokenId)?.Value;
@@ -90,7 +99,7 @@ public static partial class UserTokenValidationMiddleware
 
                 if (membershipState is null || !membershipState.IsActive)
                 {
-                    RejectInactiveMembership(context, tokenId, token);
+                    RejectInactiveMembership(context, tokenId, token, logger);
                     return;
                 }
 
@@ -104,6 +113,7 @@ public static partial class UserTokenValidationMiddleware
                 await next(context);
             }
         );
+    }
 
     /// <summary>
     /// Logs and rejects a request whose token is otherwise valid but whose
@@ -112,12 +122,10 @@ public static partial class UserTokenValidationMiddleware
     private static void RejectInactiveMembership(
         HttpContext context,
         string tokenId,
-        UserToken token
+        UserToken token,
+        ILogger logger
     )
     {
-        var logger = context
-            .RequestServices.GetRequiredService<ILoggerFactory>()
-            .CreateLogger(typeof(UserTokenValidationMiddleware).FullName!);
         LogMembershipInactive(logger, tokenId, token.OrganizationId, token.OwnerUserId);
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
     }
