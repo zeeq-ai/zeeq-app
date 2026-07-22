@@ -9,5 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="ToonSharp" />
   </ItemGroup>
 </Project>
