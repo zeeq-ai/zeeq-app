@@ -18,14 +18,14 @@ import type { NavigationMenuItem } from "@nuxt/ui";
 const links: NavigationMenuItem[][] = [
   [
     {
-      label: "Organizations",
-      icon: "i-hugeicons-building-03",
-      to: "/system/organizations",
-    },
-    {
       label: "Diagnostics",
       icon: "i-hugeicons-activity-02",
       to: "/system/diagnostics",
+    },
+    {
+      label: "Organizations",
+      icon: "i-hugeicons-building-03",
+      to: "/system/organizations",
     },
   ],
 ];

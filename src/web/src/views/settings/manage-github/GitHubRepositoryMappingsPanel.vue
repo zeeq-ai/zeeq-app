@@ -235,6 +235,8 @@
           v-model:page="page"
           :items-per-page="pageSize"
           :total="filteredRows.length"
+          variant="soft"
+          active-variant="soft"
         />
       </div>
     </div>

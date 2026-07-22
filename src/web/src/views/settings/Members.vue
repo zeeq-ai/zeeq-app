@@ -20,21 +20,61 @@
       :ui="{
         container: 'p-0 sm:p-0 gap-y-0',
         wrapper: 'items-stretch',
-        header: 'p-4 mb-0 border-b border-default',
+        header: 'p-0 mb-0 border-b border-default',
       }"
     >
       <template #header>
+        <!-- Invite row sits above search so adding members is the primary action. -->
+        <div
+          class="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6"
+        >
+          <div class="flex min-w-0 flex-1 items-center gap-3">
+            <UAvatar icon="i-hugeicons-user-add-02" size="md" />
+            <UInput
+              v-model="inviteEmail"
+              icon="i-hugeicons-mail-01"
+              placeholder="person@example.com"
+              :disabled="!canManageOrganization || saving"
+              class="min-w-0 flex-1"
+            />
+          </div>
+
+          <div class="flex shrink-0 items-center gap-2">
+            <USelect
+              v-model="inviteRole"
+              :items="roleItems"
+              color="neutral"
+              :disabled="!canManageOrganization || saving"
+              class="w-32"
+            />
+            <UTooltip text="Invite member">
+              <UButton
+                aria-label="Invite member"
+                icon="i-hugeicons-mail-send-01"
+                color="neutral"
+                variant="ghost"
+                square
+                :loading="saving"
+                :disabled="!canManageOrganization || !inviteEmail"
+                @click="inviteMember"
+              />
+            </UTooltip>
+          </div>
+        </div>
+      </template>
+
+      <div class="border-b border-default px-4 py-3 sm:px-6">
         <UInput
           v-model="query"
           icon="i-hugeicons-search-01"
           placeholder="Search members"
           class="w-full"
         />
-      </template>
+      </div>
 
       <MembersList
-        :members="filteredMembers"
-        :invitations="filteredOrganizationInvitations"
+        :members="pagedMembers"
+        :invitations="pagedOrganizationInvitations"
         :can-manage="canManageOrganization"
         :saving
         :current-user-id="currentUserId"
@@ -43,56 +83,53 @@
         @cancel-invitation="cancelInvitation"
       />
 
-      <!-- Invite row belongs below the member list and shares the list padding. -->
+      <!-- Pagination applies after search and status filtering across active and invited rows. -->
       <div
-        class="flex items-center justify-between gap-3 border-t border-default px-4 py-3 sm:px-6"
+        v-if="filteredEntryCount > 0"
+        class="flex flex-col gap-3 border-t border-default p-4 sm:flex-row sm:items-center sm:justify-between"
       >
-        <div class="flex min-w-0 flex-1 items-center gap-3">
-          <UAvatar icon="i-hugeicons-user-add-02" size="md" />
-          <UInput
-            v-model="inviteEmail"
-            icon="i-hugeicons-mail-01"
-            placeholder="person@example.com"
-            :disabled="!canManageOrganization || saving"
-            class="min-w-0 flex-1"
-          />
-        </div>
-
-        <div class="flex shrink-0 items-center gap-2">
-          <USelect
-            v-model="inviteRole"
-            :items="roleItems"
-            color="neutral"
-            :disabled="!canManageOrganization || saving"
-            class="w-32"
-          />
-          <UTooltip text="Invite member">
-            <UButton
-              aria-label="Invite member"
-              icon="i-hugeicons-mail-send-01"
-              color="neutral"
-              variant="ghost"
-              square
-              :loading="saving"
-              :disabled="!canManageOrganization || !inviteEmail"
-              @click="inviteMember"
-            />
-          </UTooltip>
-        </div>
+        <p class="text-sm text-muted">{{ pageRangeLabel }}</p>
+        <UPagination
+          v-if="filteredEntryCount > pageSize"
+          v-model:page="page"
+          :items-per-page="pageSize"
+          :total="filteredEntryCount"
+          variant="soft"
+          active-variant="soft"
+        />
       </div>
     </UPageCard>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
+import { useFuse } from "@vueuse/integrations/useFuse";
+import type { InvitationResponse } from "@/api/generated/types/InvitationResponse";
+import type { MemberResponse } from "@/api/generated/types/MemberResponse";
 import MembersList from "./components/MembersList.vue";
 import {
   organizationRoleOptions,
   useOrganizationSettingsStore,
 } from "@/stores/organization-settings-store";
 import { useAppStore } from "@/stores/app-store";
+
+type MemberListEntry =
+  | {
+      kind: "member";
+      member: MemberResponse;
+      displayName: string;
+      email: string;
+      role: string;
+    }
+  | {
+      kind: "invitation";
+      invitation: InvitationResponse;
+      displayName: string;
+      email: string;
+      role: string;
+    };
 
 const toast = useToast();
 const appStore = useAppStore();
@@ -101,7 +138,9 @@ const { user: me } = storeToRefs(appStore);
 const { members, organizationInvitations, saving, canManageOrganization } =
   storeToRefs(settingsStore);
 
+const pageSize = 10;
 const query = ref("");
+const page = ref(1);
 const statusFilter = ref<"all" | "active" | "pending">("all");
 const inviteEmail = ref("");
 const inviteRole = ref<"owner" | "admin" | "member">("member");
@@ -118,47 +157,105 @@ const roleItems = organizationRoleOptions.map((role) => ({
 }));
 
 /**
- * Search is intentionally local because member lists are already scoped to the
- * active organization and expected to stay small for this phase.
+ * Combines active members and pending invitations so search and paging operate
+ * over the same ordered result set the user sees.
  */
-const filteredMembers = computed(() => {
+const memberListEntries = computed<MemberListEntry[]>(() => {
+  const memberEntries: MemberListEntry[] = members.value.map((member) => ({
+    kind: "member",
+    member,
+    displayName: member.displayName,
+    email: member.email ?? "",
+    role: member.role,
+  }));
+
+  const invitationEntries: MemberListEntry[] =
+    organizationInvitations.value.map((invitation) => ({
+      kind: "invitation",
+      invitation,
+      displayName: invitation.invitedEmail ?? "",
+      email: invitation.invitedEmail ?? "",
+      role: invitation.role,
+    }));
+
+  if (statusFilter.value === "active") {
+    return memberEntries;
+  }
+
   if (statusFilter.value === "pending") {
-    return [];
+    return invitationEntries;
   }
 
-  const normalizedQuery = query.value.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return members.value;
-  }
-
-  return members.value.filter((member) => {
-    const values = [member.displayName, member.email ?? "", member.role].map(
-      (value) => value.toLowerCase(),
-    );
-
-    return values.some((value) => value.includes(normalizedQuery));
-  });
+  return [...memberEntries, ...invitationEntries];
 });
 
-const filteredOrganizationInvitations = computed(() => {
-  if (statusFilter.value === "active") {
-    return [];
+const { results: fuseResults } = useFuse(query, memberListEntries, {
+  fuseOptions: {
+    keys: ["displayName", "email", "role"],
+    threshold: 0.35,
+    ignoreLocation: true,
+  },
+});
+
+/** Rows matching the active status filter and Fuse search query. */
+const filteredEntries = computed<MemberListEntry[]>(() => {
+  // NOTE: Status filtering intentionally happens upstream in memberListEntries
+  // before Fuse receives its collection, so counts, search results, and paging
+  // all operate on the same active/pending/all row scope.
+  if (!query.value.trim()) {
+    return memberListEntries.value;
   }
 
-  const normalizedQuery = query.value.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return organizationInvitations.value;
+  return fuseResults.value.map((result) => result.item);
+});
+
+const filteredEntryCount = computed(() => filteredEntries.value.length);
+const pageCount = computed(() =>
+  Math.max(1, Math.ceil(filteredEntryCount.value / pageSize)),
+);
+
+/** Filtered rows sliced to the active client-side page. */
+const pagedEntries = computed(() => {
+  const start = (page.value - 1) * pageSize;
+
+  return filteredEntries.value.slice(start, start + pageSize);
+});
+
+const pagedMembers = computed(() =>
+  pagedEntries.value
+    .filter((entry) => entry.kind === "member")
+    .map((entry) => entry.member),
+);
+
+const pagedOrganizationInvitations = computed(() =>
+  pagedEntries.value
+    .filter((entry) => entry.kind === "invitation")
+    .map((entry) => entry.invitation),
+);
+
+/** Displays the one-based range for the filtered client-side page. */
+const pageRangeLabel = computed(() => {
+  if (filteredEntryCount.value === 0) {
+    return "0 of 0";
   }
 
-  return organizationInvitations.value.filter((invitation) => {
-    const values = [
-      invitation.invitedEmail ?? "",
-      invitation.role,
-      invitation.organizationName ?? "",
-    ].map((value) => value.toLowerCase());
+  const clampedPage = Math.min(page.value, pageCount.value);
+  const start = (clampedPage - 1) * pageSize + 1;
+  const end = Math.min(filteredEntryCount.value, clampedPage * pageSize);
 
-    return values.some((value) => value.includes(normalizedQuery));
-  });
+  return `${start}-${end} of ${filteredEntryCount.value}`;
+});
+
+// Reset to page 1 whenever filters change so stale pages are not shown.
+watch([query, statusFilter], () => {
+  page.value = 1;
+});
+
+// Clamp the active page if filtering or member mutations shrink the result set.
+watch(filteredEntryCount, () => {
+  if (page.value > pageCount.value) {
+    page.value = pageCount.value;
+  }
 });
 
 /** Loads members and sent invitations when the nested settings route opens directly. */

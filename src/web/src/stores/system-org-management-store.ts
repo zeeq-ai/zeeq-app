@@ -16,6 +16,22 @@ export const systemOrganizationTabOptions = [
 export type SystemOrganizationTab =
   (typeof systemOrganizationTabOptions)[number];
 
+/**
+ * Mirrors `Zeeq.Core.Models.OrganizationTier` names accepted by the backend enum parser.
+ *
+ * Kubb does not emit this as a generated enum because the wire contract exposes
+ * `tier` as a string, so the UI keeps the accepted values beside the store that
+ * owns system-organization mutations.
+ */
+export const systemOrganizationTierOptions = [
+  "Default",
+  "Priority",
+  "Low",
+] as const;
+
+export type SystemOrganizationTier =
+  (typeof systemOrganizationTierOptions)[number];
+
 export type SystemOrganizationListQuery = {
   page: number;
   pageSize: number;
@@ -80,8 +96,10 @@ export const useSystemOrgManagementStore = defineStore(
     }
 
     /** Applies route-backed selected organization state. */
-    function setSelectedOrganizationId(orgId: string | null) {
-      if (selectedOrganizationId.value !== orgId) {
+    function setSelectedOrganizationId(orgId: string | null | undefined) {
+      const nextOrganizationId = orgId ?? null;
+
+      if (selectedOrganizationId.value !== nextOrganizationId) {
         organizationRequestId++;
         membersRequestId++;
         loadingOrganization.value = false;
@@ -89,9 +107,10 @@ export const useSystemOrgManagementStore = defineStore(
         selectedOrganization.value = null;
         members.value = [];
         membersTotalCount.value = 0;
+        error.value = null;
       }
 
-      selectedOrganizationId.value = orgId;
+      selectedOrganizationId.value = nextOrganizationId;
     }
 
     /** Applies route-backed slideover tab state. */

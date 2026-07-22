@@ -98,12 +98,23 @@ describe("useSystemOrgManagementStore", () => {
     store.selectedOrganization = organizationDetails("org_1", "Acme");
     store.members = [organizationMember("usr_1")];
     store.membersTotalCount = 1;
+    store.error = "Request failed: 404";
 
     store.setSelectedOrganizationId("org_2");
 
     expect(store.selectedOrganization).toBeNull();
     expect(store.members).toEqual([]);
     expect(store.membersTotalCount).toBe(0);
+    expect(store.error).toBeNull();
+  });
+
+  it("treats undefined selection as no selected organization", () => {
+    const store = useSystemOrgManagementStore();
+
+    store.setSelectedOrganizationId(undefined);
+
+    expect(store.selectedOrganizationId).toBeNull();
+    expect(store.hasSelectedOrganization).toBe(false);
   });
 
   it("uses selection invalidation when loadOrganization switches organizations", async () => {

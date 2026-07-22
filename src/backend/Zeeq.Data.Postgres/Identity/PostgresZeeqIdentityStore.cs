@@ -110,6 +110,7 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
                 CreatedByUserId = userId,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,
+                ActivatedAtUtc = now,
             }
         );
         db.Teams.Add(
