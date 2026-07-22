@@ -35,6 +35,8 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         // Guards that first-login organizations get a stable URL-safe slug while
         // avoiding collisions by suffixing the generated organization id.
         await Assert.That(organization.Slug).IsEqualTo($"my-org-{context.OrganizationId[^8..]}");
+        await Assert.That(organization.ActivatedAtUtc).IsNotNull();
+        await Assert.That(organization.DisabledAtUtc).IsNull();
     }
 
     [Test]
@@ -213,6 +215,9 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
             null,
             CancellationToken.None
         );
+        var organization = await _context.Organizations.SingleAsync();
+        organization.ActivatedAtUtc = null;
+        await _context.SaveChangesAsync();
 
         Func<Task> act = async () =>
             await store.EnsureUserAsync(
@@ -232,7 +237,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     {
         var providerSubject = Guid.NewGuid().ToString("N");
         var store = new PostgresZeeqIdentityStore(_context);
-        await store.EnsureUserAsync(
+        var initialContext = await store.EnsureUserAsync(
             "mock",
             providerSubject,
             "Stale Team User",
@@ -255,6 +260,10 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
                 && membership.OrganizationId == activated.OrganizationId
         );
         organizationMembership.DisabledAtUtc = DateTimeOffset.UtcNow;
+        var initialOrganization = await _context.Organizations.SingleAsync(organization =>
+            organization.Id == initialContext.OrganizationId
+        );
+        initialOrganization.ActivatedAtUtc = null;
         await _context.SaveChangesAsync();
 
         Func<Task> act = async () =>
@@ -271,7 +280,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     }
 
     [Test]
-    public async Task EnsureUserAsync_ExistingIdentity_PrefersActivatedOrganization()
+    public async Task EnsureUserAsync_ExistingIdentity_KeepsInitialActivatedOrganization()
     {
         var providerSubject = Guid.NewGuid().ToString("N");
         var store = new PostgresZeeqIdentityStore(_context);
@@ -301,8 +310,8 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         );
 
         await Assert.That(initialContext.OrganizationId).IsNotEqualTo(activated.OrganizationId);
-        await Assert.That(nextContext.OrganizationId).IsEqualTo(activated.OrganizationId);
-        await Assert.That(nextContext.TeamId).IsEqualTo(activated.TeamId);
+        await Assert.That(nextContext.OrganizationId).IsEqualTo(initialContext.OrganizationId);
+        await Assert.That(nextContext.TeamId).IsEqualTo(initialContext.TeamId);
     }
 
     [Test]
@@ -318,6 +327,11 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
             null,
             CancellationToken.None
         );
+        var initialMembership = await _context.OrganizationMemberships.SingleAsync(membership =>
+            membership.OrganizationId == initialContext.OrganizationId
+        );
+        initialMembership.IsDefault = false;
+        await _context.SaveChangesAsync();
 
         await AddActivatedOrganizationMembershipAsync(
             initialContext.UserId,

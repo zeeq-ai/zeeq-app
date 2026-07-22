@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col gap-4">
+  <div class="mx-auto flex w-full max-w-3xl flex-col gap-4">
     <UPageCard
       title="System Diagnostics"
       description="Run admin-only checks for message delivery and app-level LLM configuration."
