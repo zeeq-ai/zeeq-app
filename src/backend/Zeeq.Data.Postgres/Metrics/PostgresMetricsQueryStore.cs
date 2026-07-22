@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
-using Zeeq.Core.Models;
 using Microsoft.EntityFrameworkCore;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Data.Postgres.Metrics;
 
@@ -34,15 +34,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         var tools = filters.Tools ?? [];
         var libraries = filters.Libraries ?? [];
 
-        var seriesKey = groupBy switch
-        {
-            MetricSeriesGroup.User => "user_email",
-            MetricSeriesGroup.Tool => "tool_name",
-            MetricSeriesGroup.Library => "library",
-            MetricSeriesGroup.UserAgent => "tags->>'user_agent'",
-            MetricSeriesGroup.Model => "tags->>'model'",
-            _ => "NULL::text",
-        };
+        var seriesKey = MetricSeriesKeyExpression(groupBy);
 
         // GROUP BY 1, 2 groups by (bucket, series_key). For the ungrouped case series_key is a
         // constant NULL::text on every row, so grouping collapses to one row per bucket (SeriesKey
@@ -76,6 +68,58 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         return await db
             .Database.SqlQuery<MetricSeriesPoint>(sql)
             .TagWithOperationCallSite("metrics.series")
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<MetricTwoDimensionalSeriesPoint>> GetTwoDimensionalSeriesAsync(
+        string organizationId,
+        string metricType,
+        MetricWindow window,
+        MetricSeriesGroup primaryGroupBy,
+        MetricSeriesGroup secondaryGroupBy,
+        MetricSeriesFilters filters,
+        CancellationToken cancellationToken
+    )
+    {
+        var range = window.ToRange();
+        var windowStart = DateTimeOffset.UtcNow - range.Span;
+        var users = filters.Users ?? [];
+        var tools = filters.Tools ?? [];
+        var libraries = filters.Libraries ?? [];
+        var primarySeriesKey = MetricSeriesKeyExpression(primaryGroupBy);
+        var secondarySeriesKey = MetricSeriesKeyExpression(secondaryGroupBy);
+
+        var format = $$"""
+            SELECT date_bin({0}, created_at_utc, {1}) AS bucket,
+                   {{primarySeriesKey}} AS primary_series_key,
+                   {{secondarySeriesKey}} AS secondary_series_key,
+                   SUM(metric_value) AS value
+            FROM zeeq.zeeq_metric_events
+            WHERE organization_id = {2}
+              AND metric_type = {3}
+              AND created_at_utc >= {1}
+              AND (cardinality({4}) = 0 OR user_email = ANY({4}))
+              AND (cardinality({5}) = 0 OR tool_name = ANY({5}))
+              AND (cardinality({6}) = 0 OR library = ANY({6}))
+            GROUP BY 1, 2, 3
+            ORDER BY 1, 2, 3
+            """;
+
+        var sql = FormattableStringFactory.Create(
+            format,
+            range.Bucket,
+            windowStart,
+            organizationId,
+            metricType,
+            users,
+            tools,
+            libraries
+        );
+
+        return await db
+            .Database.SqlQuery<MetricTwoDimensionalSeriesPoint>(sql)
+            .TagWithOperationCallSite("metrics.series.two_dimensional")
             .ToListAsync(cancellationToken);
     }
 
@@ -537,4 +581,15 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     }
 
     private static string ShortId(string id) => id.Length <= 8 ? id : id[^8..];
+
+    private static string MetricSeriesKeyExpression(MetricSeriesGroup groupBy) =>
+        groupBy switch
+        {
+            MetricSeriesGroup.User => "user_email",
+            MetricSeriesGroup.Tool => "tool_name",
+            MetricSeriesGroup.Library => "library",
+            MetricSeriesGroup.UserAgent => "tags->>'user_agent'",
+            MetricSeriesGroup.Model => "tags->>'model'",
+            _ => "NULL::text",
+        };
 }

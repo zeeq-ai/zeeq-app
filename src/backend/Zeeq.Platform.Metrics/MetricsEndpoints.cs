@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Authorization;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
-using Microsoft.AspNetCore.Authorization;
 
 namespace Zeeq.Platform.Metrics;
 
@@ -89,6 +89,54 @@ public sealed class MetricsEndpoints : IEndpoint
             .WithSummary("Bucketed metric series.")
             .WithDescription(
                 "Returns a bucketed metric_value series for the window, optionally grouped and filtered."
+            )
+            .RequireActiveOrganization();
+
+        // GET /api/v1/orgs/{orgId}/metrics/series/{metricType}/two-dimensional
+        group
+            .MapGet(
+                "/series/{metricType}/two-dimensional",
+                static (
+                    [MaxLength(MaxIdLength)] string orgId,
+                    [AllowedValues(
+                        ToolCall,
+                        UserAgent,
+                        DocumentRead,
+                        SectionRead,
+                        SnippetRead,
+                        AgentTokenUsage,
+                        AgentCostUsd
+                    )]
+                        string metricType,
+                    [FromQuery]
+                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "7d", "14d", "30d")]
+                        string? window,
+                    [FromQuery] MetricSeriesGroup primaryGroupBy,
+                    [FromQuery] MetricSeriesGroup secondaryGroupBy,
+                    [FromQuery, MaxLength(MaxFilterValues)] string[]? users,
+                    [FromQuery, MaxLength(MaxFilterValues)] string[]? tools,
+                    [FromQuery, MaxLength(MaxFilterValues)] string[]? libraries,
+                    [FromServices] GetMetricTwoDimensionalSeriesHandler handler,
+                    CancellationToken ct
+                ) =>
+                    handler.HandleAsync(
+                        orgId,
+                        metricType,
+                        window,
+                        primaryGroupBy,
+                        secondaryGroupBy,
+                        users,
+                        tools,
+                        libraries,
+                        ct
+                    )
+            )
+            .WithName("GetMetricTwoDimensionalSeries")
+            .Produces<MetricTwoDimensionalSeriesPoint[]>()
+            .Produces<MetricsEndpointError>(StatusCodes.Status400BadRequest)
+            .WithSummary("Bucketed metric series grouped by two dimensions.")
+            .WithDescription(
+                "Returns a bucketed metric_value series for the window, grouped by two distinct dimensions and optionally filtered."
             )
             .RequireActiveOrganization();
 

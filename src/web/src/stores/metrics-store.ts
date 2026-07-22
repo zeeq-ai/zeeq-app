@@ -10,6 +10,7 @@ import {
   type MetricScatterPoint,
   type MetricSeriesGroup,
   type MetricSeriesPoint,
+  type MetricTwoDimensionalSeriesPoint,
   type MetricsOverview,
   type MetricsRepositoryOption,
   type ReviewFindingsPoint,
@@ -157,6 +158,9 @@ export const useMetricsStore = defineStore("metrics-store", () => {
   const reviewFindingsByOrigin = ref<ReviewFindingsPoint[]>([]);
   const agentTokenByModelSeries = ref<MetricSeriesPoint[]>([]);
   const agentTokenByUserSeries = ref<MetricSeriesPoint[]>([]);
+  const agentTokenByModelUserSeries = ref<MetricTwoDimensionalSeriesPoint[]>(
+    [],
+  );
   const agentCostUsdSeries = ref<MetricSeriesPoint[]>([]);
   const percentilesByMetric = ref<Record<string, MetricPercentilePoint[]>>({});
   const scatterByMetric = ref<Record<string, MetricScatterPoint[]>>({});
@@ -345,28 +349,37 @@ export const useMetricsStore = defineStore("metrics-store", () => {
    * token usage split by model/user, plus aggregate USD cost over time.
    */
   async function loadAgentUsageSeries() {
-    const [tokensByModel, tokensByUser, costUsd] = await Promise.all([
-      loadSeries(
-        "agentTokenByModelSeries",
-        histogramMetricType.agentTokenUsage,
-        metricSeriesGroupEnum.Model,
-        {},
-      ),
-      loadSeries(
-        "agentTokenByUserSeries",
-        histogramMetricType.agentTokenUsage,
-        metricSeriesGroupEnum.User,
-        {},
-      ),
-      loadSeries(
-        "agentCostUsdSeries",
-        histogramMetricType.agentCostUsd,
-        metricSeriesGroupEnum.None,
-        {},
-      ),
-    ]);
+    const [tokensByModel, tokensByUser, tokensByModelUser, costUsd] =
+      await Promise.all([
+        loadSeries(
+          "agentTokenByModelSeries",
+          histogramMetricType.agentTokenUsage,
+          metricSeriesGroupEnum.Model,
+          {},
+        ),
+        loadSeries(
+          "agentTokenByUserSeries",
+          histogramMetricType.agentTokenUsage,
+          metricSeriesGroupEnum.User,
+          {},
+        ),
+        loadTwoDimensionalSeries(
+          "agentTokenByModelUserSeries",
+          histogramMetricType.agentTokenUsage,
+          metricSeriesGroupEnum.Model,
+          metricSeriesGroupEnum.User,
+          {},
+        ),
+        loadSeries(
+          "agentCostUsdSeries",
+          histogramMetricType.agentCostUsd,
+          metricSeriesGroupEnum.User,
+          {},
+        ),
+      ]);
     agentTokenByModelSeries.value = tokensByModel;
     agentTokenByUserSeries.value = tokensByUser;
+    agentTokenByModelUserSeries.value = tokensByModelUser;
     agentCostUsdSeries.value = costUsd;
   }
 
@@ -415,6 +428,29 @@ export const useMetricsStore = defineStore("metrics-store", () => {
       points = await Metrics.getMetricSeries(orgId, metricType, {
         window: window.value,
         groupBy,
+        users: filters.users,
+        tools: filters.tools,
+        libraries: filters.libraries,
+      });
+    });
+    return points;
+  }
+
+  /** Shared loader for bucketed series grouped by two dimensions. */
+  async function loadTwoDimensionalSeries(
+    key: string,
+    metricType: string,
+    primaryGroupBy: MetricSeriesGroup,
+    secondaryGroupBy: MetricSeriesGroup,
+    filters: { users?: string[]; tools?: string[]; libraries?: string[] },
+  ): Promise<MetricTwoDimensionalSeriesPoint[]> {
+    const orgId = requireOrganizationId();
+    let points: MetricTwoDimensionalSeriesPoint[] = [];
+    await run(key, async () => {
+      points = await Metrics.getMetricTwoDimensionalSeries(orgId, metricType, {
+        window: window.value,
+        primaryGroupBy,
+        secondaryGroupBy,
         users: filters.users,
         tools: filters.tools,
         libraries: filters.libraries,
@@ -488,6 +524,7 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     reviewFindingsByOrigin,
     agentTokenByModelSeries,
     agentTokenByUserSeries,
+    agentTokenByModelUserSeries,
     agentCostUsdSeries,
     percentilesByMetric,
     scatterByMetric,

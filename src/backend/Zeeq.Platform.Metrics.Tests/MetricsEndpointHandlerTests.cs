@@ -1,6 +1,6 @@
-using Zeeq.Core.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.Metrics.Tests;
 
@@ -112,6 +112,110 @@ public sealed class MetricsEndpointHandlerTests
         await Assert.That(ok).IsNotNull();
         await Assert.That(ok!.Value![0].SeriesKey).IsEqualTo("gpt-5-codex");
         await Assert.That(ok.Value[0].Value).IsEqualTo(250d);
+    }
+
+    [Test]
+    public async Task GetMetricTwoDimensionalSeries_ValidRequest_ReturnsStoreData()
+    {
+        var store = new FakeMetricsQueryStore
+        {
+            TwoDimensionalSeries = [new(DateTimeOffset.UtcNow, "gpt-5-codex", "alice@x.com", 250)],
+        };
+        var handler = new GetMetricTwoDimensionalSeriesHandler(store, new MetricsTestHybridCache());
+
+        var result = await handler.HandleAsync(
+            "org_a",
+            "zeeq_agent_token_usage",
+            "1h",
+            MetricSeriesGroup.Model,
+            MetricSeriesGroup.User,
+            null,
+            null,
+            null,
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<MetricTwoDimensionalSeriesPoint[]>;
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(ok!.Value!.Length).IsEqualTo(1);
+        await Assert.That(ok.Value[0].PrimarySeriesKey).IsEqualTo("gpt-5-codex");
+        await Assert.That(ok.Value[0].SecondarySeriesKey).IsEqualTo("alice@x.com");
+        await Assert.That(store.TwoDimensionalSeriesOrganizations).Contains("org_a");
+    }
+
+    [Test]
+    public async Task GetMetricTwoDimensionalSeries_NoneDimension_Returns400()
+    {
+        var handler = new GetMetricTwoDimensionalSeriesHandler(
+            new FakeMetricsQueryStore(),
+            new MetricsTestHybridCache()
+        );
+
+        var result = await handler.HandleAsync(
+            "org_a",
+            "zeeq_agent_token_usage",
+            "1h",
+            MetricSeriesGroup.Model,
+            MetricSeriesGroup.None,
+            null,
+            null,
+            null,
+            CancellationToken.None
+        );
+
+        var badRequest = result.Result as BadRequest<MetricsEndpointError>;
+        await Assert.That(badRequest).IsNotNull();
+        await Assert.That(badRequest!.Value!.Code).IsEqualTo("invalid_group_by");
+    }
+
+    [Test]
+    public async Task GetMetricTwoDimensionalSeries_UndefinedDimension_Returns400()
+    {
+        var handler = new GetMetricTwoDimensionalSeriesHandler(
+            new FakeMetricsQueryStore(),
+            new MetricsTestHybridCache()
+        );
+
+        var result = await handler.HandleAsync(
+            "org_a",
+            "zeeq_agent_token_usage",
+            "1h",
+            MetricSeriesGroup.Model,
+            (MetricSeriesGroup)999,
+            null,
+            null,
+            null,
+            CancellationToken.None
+        );
+
+        var badRequest = result.Result as BadRequest<MetricsEndpointError>;
+        await Assert.That(badRequest).IsNotNull();
+        await Assert.That(badRequest!.Value!.Code).IsEqualTo("invalid_group_by");
+    }
+
+    [Test]
+    public async Task GetMetricTwoDimensionalSeries_DuplicateDimension_Returns400()
+    {
+        var handler = new GetMetricTwoDimensionalSeriesHandler(
+            new FakeMetricsQueryStore(),
+            new MetricsTestHybridCache()
+        );
+
+        var result = await handler.HandleAsync(
+            "org_a",
+            "zeeq_agent_token_usage",
+            "1h",
+            MetricSeriesGroup.Model,
+            MetricSeriesGroup.Model,
+            null,
+            null,
+            null,
+            CancellationToken.None
+        );
+
+        var badRequest = result.Result as BadRequest<MetricsEndpointError>;
+        await Assert.That(badRequest).IsNotNull();
+        await Assert.That(badRequest!.Value!.Code).IsEqualTo("invalid_group_by");
     }
 
     [Test]
@@ -250,8 +354,10 @@ public sealed class MetricsEndpointHandlerTests
     private sealed class FakeMetricsQueryStore : IMetricsQueryStore
     {
         public MetricSeriesPoint[] Series { get; init; } = [];
+        public MetricTwoDimensionalSeriesPoint[] TwoDimensionalSeries { get; init; } = [];
         public MetricsOverview Overview { get; init; } = new(0, 0, 0, 0, 0, 0);
         public List<string> SeriesOrganizations { get; } = [];
+        public List<string> TwoDimensionalSeriesOrganizations { get; } = [];
 
         public Task<IReadOnlyList<MetricSeriesPoint>> GetSeriesAsync(
             string organizationId,
@@ -264,6 +370,22 @@ public sealed class MetricsEndpointHandlerTests
         {
             SeriesOrganizations.Add(organizationId);
             return Task.FromResult<IReadOnlyList<MetricSeriesPoint>>(Series);
+        }
+
+        public Task<IReadOnlyList<MetricTwoDimensionalSeriesPoint>> GetTwoDimensionalSeriesAsync(
+            string organizationId,
+            string metricType,
+            MetricWindow window,
+            MetricSeriesGroup primaryGroupBy,
+            MetricSeriesGroup secondaryGroupBy,
+            MetricSeriesFilters filters,
+            CancellationToken cancellationToken
+        )
+        {
+            TwoDimensionalSeriesOrganizations.Add(organizationId);
+            return Task.FromResult<IReadOnlyList<MetricTwoDimensionalSeriesPoint>>(
+                TwoDimensionalSeries
+            );
         }
 
         public Task<IReadOnlyList<MetricPercentilePoint>> GetPercentileSeriesAsync(
