@@ -6,7 +6,7 @@ namespace Zeeq.Platform.Membership;
 /// Self-service leave. Rejects if the user is the last owner — the org
 /// must have at least one owner at all times.
 /// </summary>
-public sealed partial class LeaveOrgHandler(
+public sealed class LeaveOrgHandler(
     IZeeqMembershipStore store,
     IZeeqIdentityStore identityStore,
     ILogger<LeaveOrgHandler> logger
@@ -46,54 +46,14 @@ public sealed partial class LeaveOrgHandler(
 
         await store.LeaveOrganizationAsync(orgId, userId, ct);
 
-        try
-        {
-            var revokedCount = await identityStore.RevokeUserTokensForOrganizationMemberAsync(
-                orgId,
-                userId,
-                DateTimeOffset.UtcNow,
-                ct
-            );
-            LogTokensRevoked(logger, orgId, userId, revokedCount);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            // Preserve request-abort semantics — only revocation failures
-            // are treated as non-fatal, not a canceled request.
-            throw;
-        }
-        catch (Exception ex)
-        {
-            // Non-fatal: membership leave already succeeded. The cached
-            // membership-status check in UserTokenValidationMiddleware is
-            // the backstop if this revoke is lost.
-            LogTokenRevocationFailed(logger, orgId, userId, ex);
-        }
+        await OrganizationTokenRevocation.RevokeBestEffortAsync(
+            identityStore,
+            orgId,
+            userId,
+            logger,
+            ct
+        );
 
         return TypedResults.NoContent();
     }
-
-    [LoggerMessage(
-        EventId = 1302,
-        Level = LogLevel.Information,
-        Message = "Revoked user tokens after leaving organization. OrganizationId={OrganizationId}, UserId={UserId}, RevokedCount={RevokedCount}"
-    )]
-    private static partial void LogTokensRevoked(
-        ILogger logger,
-        string organizationId,
-        string userId,
-        int revokedCount
-    );
-
-    [LoggerMessage(
-        EventId = 1303,
-        Level = LogLevel.Warning,
-        Message = "Token revocation failed after leaving organization. OrganizationId={OrganizationId}, UserId={UserId}"
-    )]
-    private static partial void LogTokenRevocationFailed(
-        ILogger logger,
-        string organizationId,
-        string userId,
-        Exception exception
-    );
 }
