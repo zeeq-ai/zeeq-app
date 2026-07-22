@@ -54,6 +54,8 @@ const store = useAppStore();
 const router = useRouter();
 const { backendVersion, user: me } = storeToRefs(store);
 
+const githubReleasesUrl = "https://github.com/zeeq-ai/zeeq-app/releases";
+
 const colors = [
   "red",
   "orange",
@@ -112,6 +114,13 @@ const organizationRoleLabel = computed(() => {
   }
 
   return `Role: ${formatRole(role)}`;
+});
+const backendVersionTagUrl = computed(() => {
+  const versionTag = backendVersion.value?.versionTag;
+
+  return versionTag
+    ? `${githubReleasesUrl}/tag/${versionTag}`
+    : githubReleasesUrl;
 });
 
 const items = computed<DropdownMenuItem[][]>(() => [
@@ -248,16 +257,14 @@ const items = computed<DropdownMenuItem[][]>(() => [
     {
       label: backendVersionLabel.value,
       icon: "i-hugeicons-code-circle",
-      onSelect(e: Event) {
-        e.preventDefault();
-      },
+      to: backendVersionTagUrl.value,
+      target: "_blank",
     },
     {
       label: backendVersionDateLabel.value,
       icon: "i-hugeicons-calendar-03",
-      onSelect(e: Event) {
-        e.preventDefault();
-      },
+      to: githubReleasesUrl,
+      target: "_blank",
     },
   ],
   [
