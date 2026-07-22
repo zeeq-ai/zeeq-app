@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Logging.Abstractions;
 using OpenIddict.Abstractions;
 using Zeeq.Core.Common;
 using Zeeq.Core.Identity;
@@ -36,7 +37,11 @@ public sealed class MembershipEndpointHandlerTests
 
         // Guards that the last owner in an org cannot leave — the handler
         // returns ValidationProblem and does not call LeaveOrganizationAsync.
-        var handler = new LeaveOrgHandler(store);
+        var handler = new LeaveOrgHandler(
+            store,
+            new TestIdentityStore(),
+            NullLogger<LeaveOrgHandler>.Instance
+        );
         var result = await handler.HandleAsync(
             "org_target",
             MembershipTestClaims.TestUser("user_1"),
@@ -45,6 +50,171 @@ public sealed class MembershipEndpointHandlerTests
 
         await Assert.That(result.Result is ValidationProblem).IsTrue();
         await Assert.That(store.LeaveOrganizationCalls).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task LeaveOrgHandler_Success_RevokesOrganizationTokens()
+    {
+        var store = new TestMembershipStore();
+        store.Members.Add(
+            new OrganizationMember(
+                "user_1",
+                "Member",
+                "member@test.com",
+                null,
+                "member",
+                DateTimeOffset.UtcNow
+            )
+        );
+        store.Members.Add(
+            new OrganizationMember(
+                "user_2",
+                "Owner",
+                "owner@test.com",
+                null,
+                "owner",
+                DateTimeOffset.UtcNow
+            )
+        );
+        var identityStore = new TestIdentityStore();
+
+        // Guards that a successful leave revokes the leaving member's
+        // organization-scoped tokens.
+        var handler = new LeaveOrgHandler(
+            store,
+            identityStore,
+            NullLogger<LeaveOrgHandler>.Instance
+        );
+        var result = await handler.HandleAsync(
+            "org_target",
+            MembershipTestClaims.TestUser("user_1"),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result is NoContent).IsTrue();
+        await Assert.That(identityStore.RevokeCalls).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task LeaveOrgHandler_TokenRevocationThrows_StillReturnsNoContent()
+    {
+        var store = new TestMembershipStore();
+        store.Members.Add(
+            new OrganizationMember(
+                "user_1",
+                "Member",
+                "member@test.com",
+                null,
+                "member",
+                DateTimeOffset.UtcNow
+            )
+        );
+        store.Members.Add(
+            new OrganizationMember(
+                "user_2",
+                "Owner",
+                "owner@test.com",
+                null,
+                "owner",
+                DateTimeOffset.UtcNow
+            )
+        );
+        var identityStore = new TestIdentityStore { ThrowOnRevoke = true };
+
+        // Guards that a throwing token revocation does not prevent the leave
+        // itself from succeeding — Change 2's cached membership check is the
+        // backstop if this revoke is lost.
+        var handler = new LeaveOrgHandler(
+            store,
+            identityStore,
+            NullLogger<LeaveOrgHandler>.Instance
+        );
+        var result = await handler.HandleAsync(
+            "org_target",
+            MembershipTestClaims.TestUser("user_1"),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result is NoContent).IsTrue();
+        await Assert.That(store.LeaveOrganizationCalls).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task RemoveMemberHandler_Success_RevokesOrganizationTokens()
+    {
+        var store = new TestMembershipStore();
+        store.Memberships.Add(
+            new OrganizationMembership
+            {
+                Id = "membership_1",
+                OrganizationId = "org_target",
+                UserId = "user_1",
+                Role = "member",
+                Status = MembershipStatus.Active,
+                CreatedByUserId = "user_2",
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+            }
+        );
+        var identityStore = new TestIdentityStore();
+
+        // Guards that a successful removal revokes the removed member's
+        // organization-scoped tokens.
+        var handler = new RemoveMemberHandler(
+            store,
+            identityStore,
+            NullLogger<RemoveMemberHandler>.Instance
+        );
+        var result = await handler.HandleAsync("org_target", "user_1", CancellationToken.None);
+
+        await Assert.That(result.Result is NoContent).IsTrue();
+        await Assert.That(identityStore.RevokeCalls).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task RemoveMemberHandler_TokenRevocationThrows_StillReturnsNoContent()
+    {
+        var store = new TestMembershipStore();
+        store.Memberships.Add(
+            new OrganizationMembership
+            {
+                Id = "membership_1",
+                OrganizationId = "org_target",
+                UserId = "user_1",
+                Role = "member",
+                Status = MembershipStatus.Active,
+                CreatedByUserId = "user_2",
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+            }
+        );
+        var identityStore = new TestIdentityStore { ThrowOnRevoke = true };
+
+        // Guards that a throwing token revocation does not prevent the
+        // removal itself from succeeding.
+        var handler = new RemoveMemberHandler(
+            store,
+            identityStore,
+            NullLogger<RemoveMemberHandler>.Instance
+        );
+        var result = await handler.HandleAsync("org_target", "user_1", CancellationToken.None);
+
+        await Assert.That(result.Result is NoContent).IsTrue();
+    }
+
+    [Test]
+    public async Task RemoveMemberHandler_NotAMember_ReturnsNotFoundAndDoesNotRevoke()
+    {
+        var store = new TestMembershipStore();
+        var identityStore = new TestIdentityStore();
+
+        var handler = new RemoveMemberHandler(
+            store,
+            identityStore,
+            NullLogger<RemoveMemberHandler>.Instance
+        );
+        var result = await handler.HandleAsync("org_target", "user_1", CancellationToken.None);
+
+        await Assert.That(result.Result is NotFound).IsTrue();
+        await Assert.That(identityStore.RevokeCalls).IsEqualTo(0);
     }
 
     [Test]

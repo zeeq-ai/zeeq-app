@@ -447,4 +447,148 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
 
         return (organizationId, ownerId);
     }
+
+    [Test]
+    public async Task RevokeUserTokensForOrganizationMemberAsync_RevokesOnlyMatchingActiveTokens()
+    {
+        var store = new PostgresZeeqIdentityStore(_context);
+        var (orgId, teamId, userId) = await SeedOrgUserTeamAsync();
+        var (otherOrgId, otherTeamId, _) = await SeedOrgUserTeamAsync();
+        var (_, _, otherUserId) = await SeedOrgUserTeamAsync();
+
+        var targetToken = NewUserToken(orgId, teamId, userId);
+        var alreadyRevokedToken = NewUserToken(orgId, teamId, userId);
+        alreadyRevokedToken.RevokedAtUtc = DateTimeOffset.UtcNow.AddDays(-1);
+        var otherOrgToken = NewUserToken(otherOrgId, otherTeamId, userId);
+        var otherUserToken = NewUserToken(orgId, teamId, otherUserId);
+
+        _context.UserTokens.AddRange(
+            targetToken,
+            alreadyRevokedToken,
+            otherOrgToken,
+            otherUserToken
+        );
+        await _context.SaveChangesAsync();
+
+        var revokedAt = DateTimeOffset.UtcNow;
+        var revokedCount = await store.RevokeUserTokensForOrganizationMemberAsync(
+            orgId,
+            userId,
+            revokedAt,
+            CancellationToken.None
+        );
+
+        _context.ChangeTracker.Clear();
+
+        // Guards that only the un-revoked token matching (orgId, userId) is
+        // touched — the already-revoked, other-org, and other-user tokens
+        // must be left untouched.
+        await Assert.That(revokedCount).IsEqualTo(1);
+        var reloadedTarget = await _context.UserTokens.SingleAsync(t => t.Id == targetToken.Id);
+        await Assert.That(reloadedTarget.RevokedAtUtc).IsEqualTo(revokedAt);
+        var reloadedOtherOrg = await _context.UserTokens.SingleAsync(t => t.Id == otherOrgToken.Id);
+        await Assert.That(reloadedOtherOrg.RevokedAtUtc).IsNull();
+        var reloadedOtherUser = await _context.UserTokens.SingleAsync(t =>
+            t.Id == otherUserToken.Id
+        );
+        await Assert.That(reloadedOtherUser.RevokedAtUtc).IsNull();
+    }
+
+    [Test]
+    public async Task RevokeUserTokensForOrganizationMemberAsync_IsIdempotentAgainstAlreadyRevokedRows()
+    {
+        var store = new PostgresZeeqIdentityStore(_context);
+        var (orgId, teamId, userId) = await SeedOrgUserTeamAsync();
+        var firstRevokedAt = DateTimeOffset.UtcNow.AddDays(-1);
+        var token = NewUserToken(orgId, teamId, userId);
+        token.RevokedAtUtc = firstRevokedAt;
+
+        _context.UserTokens.Add(token);
+        await _context.SaveChangesAsync();
+
+        var revokedCount = await store.RevokeUserTokensForOrganizationMemberAsync(
+            orgId,
+            userId,
+            DateTimeOffset.UtcNow,
+            CancellationToken.None
+        );
+
+        _context.ChangeTracker.Clear();
+
+        // Guards that re-running the revoke does not touch rows already
+        // revoked (e.g. by a prior, since-lost call) and stamp a new time.
+        await Assert.That(revokedCount).IsEqualTo(0);
+        var reloaded = await _context.UserTokens.SingleAsync(t => t.Id == token.Id);
+        await Assert.That(reloaded.RevokedAtUtc).IsEqualTo(firstRevokedAt);
+    }
+
+    private static UserToken NewUserToken(
+        string organizationId,
+        string teamId,
+        string ownerUserId
+    ) =>
+        new()
+        {
+            Id = "auth_tok_" + Guid.NewGuid().ToString("N"),
+            OwnerUserId = ownerUserId,
+            OrganizationId = organizationId,
+            TeamId = teamId,
+            OwnerProvider = "mock",
+            OwnerProviderSubject = Guid.NewGuid().ToString("N"),
+            DisplayName = "Test Token",
+            SelectedPartitionIdsJson = "[]",
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            ExpiresAtUtc = DateTimeOffset.UtcNow.AddDays(30),
+        };
+
+    /// <summary>
+    /// Seeds a minimal Organization/Team/User row set that satisfies the
+    /// foreign keys on <c>auth_user_tokens</c>, returning the new IDs.
+    /// </summary>
+    private async Task<(string OrganizationId, string TeamId, string UserId)> SeedOrgUserTeamAsync()
+    {
+        var organizationId = "org_" + Guid.NewGuid().ToString("N");
+        var teamId = "team_" + Guid.NewGuid().ToString("N");
+        var userId = "user_" + Guid.NewGuid().ToString("N");
+        var now = DateTimeOffset.UtcNow;
+
+        _context.Users.Add(
+            new User
+            {
+                Id = userId,
+                DisplayName = "Token Test User",
+                Email = $"{userId}@example.com",
+                EmailVerified = true,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+            }
+        );
+        _context.Organizations.Add(
+            new Organization
+            {
+                Id = organizationId,
+                DisplayName = "Token Test Org",
+                CreatedByUserId = userId,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+                ActivatedAtUtc = now,
+            }
+        );
+        _context.Teams.Add(
+            new Team
+            {
+                Id = teamId,
+                OrganizationId = organizationId,
+                DisplayName = "Token Test Root Team",
+                IsRootTeam = true,
+                CreatedByUserId = userId,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+            }
+        );
+
+        await _context.SaveChangesAsync();
+
+        return (organizationId, teamId, userId);
+    }
 }
