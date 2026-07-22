@@ -18,5 +18,6 @@
     <PackageReference Include="OpenIddict.Client.AspNetCore" />
     <PackageReference Include="OpenIddict.EntityFrameworkCore" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+    <PackageReference Include="System.Security.Cryptography.Xml" />
   </ItemGroup>
 </Project>
