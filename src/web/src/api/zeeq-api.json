@@ -130,6 +130,217 @@
         }
       }
     },
+    "/api/v1/admin/organizations": {
+      "get": {
+        "tags": [
+          "SystemOrganizations"
+        ],
+        "summary": "List organizations for system administrators.",
+        "operationId": "ListSystemOrganizations",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 1,
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedResponseOfSystemOrganizationSummaryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/organizations/{orgId}": {
+      "get": {
+        "tags": [
+          "SystemOrganizations"
+        ],
+        "summary": "Get organization details for system administrators.",
+        "operationId": "GetSystemOrganization",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemOrganizationDetailsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "SystemOrganizations"
+        ],
+        "summary": "Update organization activation or tier for system administrators.",
+        "operationId": "UpdateSystemOrganization",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSystemOrganizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemOrganizationDetailsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/organizations/{orgId}/members": {
+      "get": {
+        "tags": [
+          "SystemOrganizations"
+        ],
+        "summary": "List active organization members for system administrators.",
+        "operationId": "ListSystemOrganizationMembers",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 1,
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedResponseOfSystemOrganizationMemberResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/clients": {
       "get": {
         "tags": [
@@ -9552,6 +9763,98 @@
           }
         }
       },
+      "PagedResponseOfSystemOrganizationMemberResponse": {
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "totalCount"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemOrganizationMemberResponse"
+            },
+            "description": "Items returned for the requested page."
+          },
+          "page": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "One-based page number that was requested.",
+            "format": "int32"
+          },
+          "pageSize": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Maximum number of items requested per page.",
+            "format": "int32"
+          },
+          "totalCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Total number of matching items across all pages.",
+            "format": "int32"
+          }
+        },
+        "description": "Generic paged response returned by system organization admin endpoints."
+      },
+      "PagedResponseOfSystemOrganizationSummaryResponse": {
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "totalCount"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemOrganizationSummaryResponse"
+            },
+            "description": "Items returned for the requested page."
+          },
+          "page": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "One-based page number that was requested.",
+            "format": "int32"
+          },
+          "pageSize": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Maximum number of items requested per page.",
+            "format": "int32"
+          },
+          "totalCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Total number of matching items across all pages.",
+            "format": "int32"
+          }
+        },
+        "description": "Generic paged response returned by system organization admin endpoints."
+      },
       "ProblemDetails": {
         "type": "object",
         "properties": {
@@ -10204,6 +10507,330 @@
         },
         "description": "A ranked snippet search hit for the \"Test\" panel's Sections/Code modes."
       },
+      "SystemOrganizationCreatorResponse": {
+        "required": [
+          "userId",
+          "displayName",
+          "email",
+          "pictureUrl"
+        ],
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "Stable local user ID of the organization creator."
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Current display name of the organization creator."
+          },
+          "email": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Current primary email address of the creator, when known."
+          },
+          "pictureUrl": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Current creator avatar URL, when known."
+          }
+        },
+        "description": "Creator profile displayed in system organization admin responses."
+      },
+      "SystemOrganizationDetailsResponse": {
+        "required": [
+          "id",
+          "displayName",
+          "slug",
+          "iconUrl",
+          "creator",
+          "createdAtUtc",
+          "updatedAtUtc",
+          "activatedAtUtc",
+          "disabledAtUtc",
+          "memberCount",
+          "tier",
+          "llmConfiguration"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable organization identifier."
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Human-readable organization name."
+          },
+          "slug": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "URL-safe organization slug, when set."
+          },
+          "iconUrl": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Organization icon URL or data URL, when set."
+          },
+          "creator": {
+            "description": "Creator profile associated with the organization.",
+            "$ref": "#/components/schemas/SystemOrganizationCreatorResponse"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "description": "UTC timestamp when the organization was created.",
+            "format": "date-time"
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "description": "UTC timestamp when the organization was last updated.",
+            "format": "date-time"
+          },
+          "activatedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "UTC timestamp when the organization became active.",
+            "format": "date-time"
+          },
+          "disabledAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "UTC timestamp when the organization was disabled.",
+            "format": "date-time"
+          },
+          "memberCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Number of active organization members.",
+            "format": "int32"
+          },
+          "tier": {
+            "type": "string",
+            "description": "Organization service tier name."
+          },
+          "llmConfiguration": {
+            "description": "View-only LLM configuration summary for the organization.",
+            "$ref": "#/components/schemas/SystemOrganizationLlmConfigurationResponse"
+          }
+        },
+        "description": "Detailed organization response used by the system-admin slideover."
+      },
+      "SystemOrganizationLlmConfigurationResponse": {
+        "required": [
+          "fast",
+          "high",
+          "max"
+        ],
+        "type": "object",
+        "properties": {
+          "fast": {
+            "description": "Configuration used for the fast LLM quality tier.",
+            "$ref": "#/components/schemas/SystemOrganizationLlmTierResponse"
+          },
+          "high": {
+            "description": "Configuration used for the high-quality LLM tier.",
+            "$ref": "#/components/schemas/SystemOrganizationLlmTierResponse"
+          },
+          "max": {
+            "description": "Configuration used for the maximum-quality LLM tier.",
+            "$ref": "#/components/schemas/SystemOrganizationLlmTierResponse"
+          }
+        },
+        "description": "View-only organization LLM configuration for all tiers."
+      },
+      "SystemOrganizationLlmTierResponse": {
+        "required": [
+          "tier",
+          "provider",
+          "model",
+          "endpoint",
+          "usesManagedKey",
+          "keyId"
+        ],
+        "type": "object",
+        "properties": {
+          "tier": {
+            "type": "string",
+            "description": "LLM quality tier label, such as `Fast`, `High`, or `Max`."
+          },
+          "provider": {
+            "type": "string",
+            "description": "LLM provider configured for this tier."
+          },
+          "model": {
+            "type": "string",
+            "description": "Provider-specific model identifier configured for this tier."
+          },
+          "endpoint": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Optional provider endpoint URL configured for this tier."
+          },
+          "usesManagedKey": {
+            "type": "boolean",
+            "description": "Whether this tier uses a tenant-managed encrypted key."
+          },
+          "keyId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Encrypted key metadata ID when UsesManagedKey is true."
+          }
+        },
+        "description": "LLM provider/model/key metadata for one organization tier."
+      },
+      "SystemOrganizationMemberResponse": {
+        "required": [
+          "userId",
+          "displayName",
+          "email",
+          "pictureUrl",
+          "role",
+          "joinedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "Stable local user ID for the active member."
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Current display name from the member profile."
+          },
+          "email": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Current primary email address for the member, when known."
+          },
+          "pictureUrl": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Current member avatar URL, when known."
+          },
+          "role": {
+            "type": "string",
+            "description": "Organization role assigned to the active member."
+          },
+          "joinedAtUtc": {
+            "type": "string",
+            "description": "UTC timestamp when the active membership row was created.",
+            "format": "date-time"
+          }
+        },
+        "description": "Active organization member displayed in the system-admin member table."
+      },
+      "SystemOrganizationSummaryResponse": {
+        "required": [
+          "id",
+          "displayName",
+          "slug",
+          "iconUrl",
+          "creator",
+          "createdAtUtc",
+          "updatedAtUtc",
+          "activatedAtUtc",
+          "disabledAtUtc",
+          "memberCount",
+          "tier",
+          "llmConfiguration"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable organization identifier."
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Human-readable organization name."
+          },
+          "slug": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "URL-safe organization slug, when set."
+          },
+          "iconUrl": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Organization icon URL or data URL, when set."
+          },
+          "creator": {
+            "description": "Creator profile associated with the organization.",
+            "$ref": "#/components/schemas/SystemOrganizationCreatorResponse"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "description": "UTC timestamp when the organization was created.",
+            "format": "date-time"
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "description": "UTC timestamp when the organization was last updated.",
+            "format": "date-time"
+          },
+          "activatedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "UTC timestamp when the organization became active.",
+            "format": "date-time"
+          },
+          "disabledAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "UTC timestamp when the organization was disabled.",
+            "format": "date-time"
+          },
+          "memberCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Number of active organization members.",
+            "format": "int32"
+          },
+          "tier": {
+            "type": "string",
+            "description": "Organization service tier name."
+          },
+          "llmConfiguration": {
+            "description": "View-only LLM configuration summary for the organization.",
+            "$ref": "#/components/schemas/SystemOrganizationLlmConfigurationResponse"
+          }
+        },
+        "description": "Organization row returned by the system-admin list endpoint."
+      },
       "TestLlmSettingsRequest": {
         "required": [
           "tier",
@@ -10432,6 +11059,27 @@
         },
         "description": "Request body for same-domain onboarding settings."
       },
+      "UpdateSystemOrganizationRequest": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": [
+              "null",
+              "boolean"
+            ],
+            "description": "Desired active state. Omit to leave activation unchanged."
+          },
+          "tier": {
+            "maxLength": 32,
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Desired organization tier. Omit to leave tier unchanged."
+          }
+        },
+        "description": "Request body for platform-admin organization activation and tier updates."
+      },
       "UpsertDocumentRequest": {
         "required": [
           "path",
@@ -10535,6 +11183,9 @@
     },
     {
       "name": "Ingest"
+    },
+    {
+      "name": "SystemOrganizations"
     },
     {
       "name": "Auth"
