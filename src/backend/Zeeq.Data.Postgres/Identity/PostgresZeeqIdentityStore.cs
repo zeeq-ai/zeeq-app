@@ -486,6 +486,27 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
         return updated == 1;
     }
 
+    /// <inheritdoc />
+    public async Task<int> RevokeUserTokensForOrganizationMemberAsync(
+        string organizationId,
+        string ownerUserId,
+        DateTimeOffset revokedAtUtc,
+        CancellationToken ct
+    ) =>
+        await db
+            .UserTokens.TagWithOperationCallSite(
+                "identity.user_token.revoke_for_organization_member"
+            )
+            .Where(token =>
+                token.OrganizationId == organizationId
+                && token.OwnerUserId == ownerUserId
+                && token.RevokedAtUtc == null
+            )
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(token => token.RevokedAtUtc, revokedAtUtc),
+                ct
+            );
+
     private async Task<AuthContext> FindActiveContextAsync(
         string userId,
         CancellationToken cancellationToken

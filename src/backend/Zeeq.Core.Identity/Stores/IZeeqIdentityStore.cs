@@ -322,4 +322,25 @@ public interface IZeeqIdentityStore
         DateTimeOffset usedAtUtc,
         CancellationToken cancellationToken
     );
+
+    /// <summary>
+    /// Revokes all of a user's active long-lived tokens scoped to an organization.
+    /// </summary>
+    /// <param name="organizationId">Organization the caller was removed from or left.</param>
+    /// <param name="ownerUserId">Local user ID whose organization-scoped tokens should be revoked.</param>
+    /// <param name="revokedAtUtc">Revocation timestamp to stamp on affected rows.</param>
+    /// <param name="ct">Cancellation token for the database operation.</param>
+    /// <returns>Number of token rows revoked.</returns>
+    /// <remarks>
+    /// Called from membership removal/leave flows so a token issued while the
+    /// user was a member cannot outlive their access to the organization. This
+    /// is a bulk, set-based update — it does not enumerate <see cref="UserToken"/>
+    /// rows individually.
+    /// </remarks>
+    Task<int> RevokeUserTokensForOrganizationMemberAsync(
+        string organizationId,
+        string ownerUserId,
+        DateTimeOffset revokedAtUtc,
+        CancellationToken ct
+    );
 }
