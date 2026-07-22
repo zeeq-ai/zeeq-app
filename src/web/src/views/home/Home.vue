@@ -124,9 +124,13 @@
             <AgentUsageTab
               :agent-token-by-model-series="agentTokenByModelSeries"
               :agent-token-by-user-series="agentTokenByUserSeries"
+              :agent-token-by-model-user-series="agentTokenByModelUserSeries"
               :agent-cost-usd-series="agentCostUsdSeries"
               :loading-token-by-model="
                 loading['agentTokenByModelSeries'] ?? false
+              "
+              :loading-token-by-model-user="
+                loading['agentTokenByModelUserSeries'] ?? false
               "
               :loading-token-by-user="
                 loading['agentTokenByUserSeries'] ?? false
@@ -187,6 +191,7 @@ const {
   reviewFindingsByOrigin,
   agentTokenByModelSeries,
   agentTokenByUserSeries,
+  agentTokenByModelUserSeries,
   agentCostUsdSeries,
   percentilesByMetric,
   scatterByMetric,

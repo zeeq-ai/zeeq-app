@@ -8,6 +8,20 @@ namespace Zeeq.Core.Models;
 /// <param name="Value">Summed metric value for the bucket/series.</param>
 public sealed record MetricSeriesPoint(DateTimeOffset Bucket, string? SeriesKey, double Value);
 
+/// <summary>
+/// One bucketed point in a metric time series grouped by two dimensions.
+/// </summary>
+/// <param name="Bucket">Fixed-width bucket start (from <c>date_bin</c>).</param>
+/// <param name="PrimarySeriesKey">Primary group value (for example model).</param>
+/// <param name="SecondarySeriesKey">Secondary group value (for example user).</param>
+/// <param name="Value">Summed metric value for the bucket/dimension pair.</param>
+public sealed record MetricTwoDimensionalSeriesPoint(
+    DateTimeOffset Bucket,
+    string? PrimarySeriesKey,
+    string? SecondarySeriesKey,
+    double Value
+);
+
 /// <summary>One bucket's p50/p95/p99 for a histogram metric (UI-8/UI-9).</summary>
 public sealed record MetricPercentilePoint(
     DateTimeOffset Bucket,
@@ -132,6 +146,17 @@ public interface IMetricsQueryStore
         string metricType,
         MetricWindow window,
         MetricSeriesGroup groupBy,
+        MetricSeriesFilters filters,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Bucketed <c>SUM(metric_value)</c> series grouped by two dimensions.</summary>
+    Task<IReadOnlyList<MetricTwoDimensionalSeriesPoint>> GetTwoDimensionalSeriesAsync(
+        string organizationId,
+        string metricType,
+        MetricWindow window,
+        MetricSeriesGroup primaryGroupBy,
+        MetricSeriesGroup secondaryGroupBy,
         MetricSeriesFilters filters,
         CancellationToken cancellationToken
     );

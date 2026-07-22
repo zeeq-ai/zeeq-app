@@ -4605,6 +4605,116 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/metrics/series/{metricType}/two-dimensional": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Bucketed metric series grouped by two dimensions.",
+        "description": "Returns a bucketed metric_value series for the window, grouped by two distinct dimensions and optionally filtered.",
+        "operationId": "GetMetricTwoDimensionalSeries",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "name": "metricType",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "primaryGroupBy",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/MetricSeriesGroup"
+            }
+          },
+          {
+            "name": "secondaryGroupBy",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/MetricSeriesGroup"
+            }
+          },
+          {
+            "name": "users",
+            "in": "query",
+            "schema": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "tools",
+            "in": "query",
+            "schema": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "libraries",
+            "in": "query",
+            "schema": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MetricTwoDimensionalSeriesPoint"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsEndpointError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/metrics/percentiles/{metricType}": {
       "get": {
         "tags": [
@@ -9257,6 +9367,46 @@
           }
         },
         "description": "One selectable repository option for the review filters (id + display name)."
+      },
+      "MetricTwoDimensionalSeriesPoint": {
+        "required": [
+          "bucket",
+          "primarySeriesKey",
+          "secondarySeriesKey",
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "bucket": {
+            "type": "string",
+            "description": "Fixed-width bucket start (from `date_bin`).",
+            "format": "date-time"
+          },
+          "primarySeriesKey": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Primary group value (for example model)."
+          },
+          "secondarySeriesKey": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Secondary group value (for example user)."
+          },
+          "value": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "description": "Summed metric value for the bucket/dimension pair.",
+            "format": "double"
+          }
+        },
+        "description": "One bucketed point in a metric time series grouped by two dimensions."
       },
       "OrganizationResponse": {
         "required": [

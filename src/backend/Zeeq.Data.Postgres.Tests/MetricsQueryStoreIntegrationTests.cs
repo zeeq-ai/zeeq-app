@@ -103,6 +103,72 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     }
 
     [Test]
+    public async Task GetTwoDimensionalSeries_GroupByModelAndUser_BucketsAndSums()
+    {
+        await SeedMetricsAsync(
+            AgentMetric(
+                "org_q_model_user",
+                "zeeq_agent_token_usage",
+                100,
+                "gpt-5-codex",
+                "a@x.com"
+            ),
+            AgentMetric("org_q_model_user", "zeeq_agent_token_usage", 50, "gpt-5-codex", "a@x.com"),
+            AgentMetric("org_q_model_user", "zeeq_agent_token_usage", 25, "gpt-5-codex", "b@x.com"),
+            AgentMetric("org_q_model_user", "zeeq_agent_token_usage", 10, "gpt-5-mini", "a@x.com")
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var series = await store.GetTwoDimensionalSeriesAsync(
+            "org_q_model_user",
+            "zeeq_agent_token_usage",
+            MetricWindow.H1,
+            MetricSeriesGroup.Model,
+            MetricSeriesGroup.User,
+            new MetricSeriesFilters(),
+            CancellationToken.None
+        );
+        var actualOrder = series
+            .Select(p => (p.Bucket, p.PrimarySeriesKey, p.SecondarySeriesKey))
+            .ToArray();
+        var expectedOrder = series
+            .OrderBy(p => p.Bucket)
+            .ThenBy(p => p.PrimarySeriesKey, StringComparer.Ordinal)
+            .ThenBy(p => p.SecondarySeriesKey, StringComparer.Ordinal)
+            .Select(p => (p.Bucket, p.PrimarySeriesKey, p.SecondarySeriesKey))
+            .ToArray();
+
+        await Assert.That(actualOrder.SequenceEqual(expectedOrder)).IsTrue();
+        await Assert
+            .That(
+                series
+                    .Where(p =>
+                        p.PrimarySeriesKey == "gpt-5-codex" && p.SecondarySeriesKey == "a@x.com"
+                    )
+                    .Sum(p => p.Value)
+            )
+            .IsEqualTo(150d);
+        await Assert
+            .That(
+                series
+                    .Where(p =>
+                        p.PrimarySeriesKey == "gpt-5-codex" && p.SecondarySeriesKey == "b@x.com"
+                    )
+                    .Sum(p => p.Value)
+            )
+            .IsEqualTo(25d);
+        await Assert
+            .That(
+                series
+                    .Where(p =>
+                        p.PrimarySeriesKey == "gpt-5-mini" && p.SecondarySeriesKey == "a@x.com"
+                    )
+                    .Sum(p => p.Value)
+            )
+            .IsEqualTo(10d);
+    }
+
+    [Test]
     public async Task GetSeries_UserFilter_UsesMultiSelect()
     {
         await SeedMetricsAsync(
