@@ -9,6 +9,47 @@ namespace Zeeq.Platform.Metrics;
 public sealed record MetricsEndpointError(string Code, string Message);
 
 /// <summary>
+/// One review group row in the findings drill-down list (the Critical/Major stat-card slideover).
+/// </summary>
+/// <param name="ReviewId">Latest review record id in the group.</param>
+/// <param name="Title">Pull request title, or the review title for agent (non-PR) reviews.</param>
+/// <param name="OwnerQualifiedRepoName">Provider-qualified repository name, such as owner/repo.</param>
+/// <param name="PullRequestNumber">Provider pull request number; 0 for agent reviews with no PR.</param>
+/// <param name="AuthorLogin">Provider login of the pull request author, or the review's recorded author for agent reviews.</param>
+/// <param name="RequestOrigin">Source that requested the latest review in the group.</param>
+/// <param name="CreatedAtUtc">Latest review's creation timestamp, for relative-time display.</param>
+/// <param name="GroupCriticalFindings">
+/// Sum of critical findings across every review attempt in the group within the window — not just
+/// the latest attempt's own count, so the total across every returned row reconciles with the
+/// headline critical-findings stat card. See <c>FindingReviewGroup</c> remarks for why.
+/// </param>
+/// <param name="GroupMajorFindings">Sum of major findings across every review attempt in the group within the window; see <see cref="GroupCriticalFindings"/>.</param>
+/// <param name="Url">
+/// Absolute link to review the group: the single-PR history view when the group has a pull request,
+/// otherwise the single latest-review view for agent (non-PR) reviews.
+/// </param>
+public sealed record FindingReviewListItemResponse(
+    string ReviewId,
+    string Title,
+    string OwnerQualifiedRepoName,
+    int PullRequestNumber,
+    string AuthorLogin,
+    CodeReviewRequestOrigin RequestOrigin,
+    DateTimeOffset CreatedAtUtc,
+    long GroupCriticalFindings,
+    long GroupMajorFindings,
+    string Url
+);
+
+/// <summary>One page of the findings drill-down list, newest-first.</summary>
+/// <param name="Items">Review groups for this page.</param>
+/// <param name="NextCursor">Opaque cursor to pass back as <c>cursor</c> for the next page, or null when this is the last page.</param>
+public sealed record FindingReviewListResponse(
+    IReadOnlyList<FindingReviewListItemResponse> Items,
+    string? NextCursor
+);
+
+/// <summary>
 /// Parses the closed set of dashboard time windows from their wire tokens (<c>15m</c>, <c>24h</c>,
 /// <c>7d</c>, …). Arbitrary ranges are rejected by construction so query plans stay predictable.
 /// </summary>

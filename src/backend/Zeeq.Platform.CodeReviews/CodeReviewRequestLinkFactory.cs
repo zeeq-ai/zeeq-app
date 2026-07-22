@@ -86,12 +86,50 @@ public sealed class CodeReviewRequestLinkFactory(
     /// just a compact, URL-safe token pairing the partition timestamp with the view mode
     /// (see <see cref="CodeReviewSingleViewToken"/>).
     /// </summary>
-    public string BuildSingleReviewLink(CodeReviewRecord review, CodeReviewSingleViewMode mode)
+    public string BuildSingleReviewLink(CodeReviewRecord review, CodeReviewSingleViewMode mode) =>
+        BuildSingleReviewLink(review.Id, review.CreatedAtUtc, mode);
+
+    /// <summary>
+    /// Overload of <see cref="BuildSingleReviewLink(CodeReviewRecord, CodeReviewSingleViewMode)"/>
+    /// for callers that only have the review's id/timestamp from a projection query, not the full
+    /// loaded entity (for example the findings drill-down list, which selects a handful of columns
+    /// across many rows rather than materializing entities).
+    /// </summary>
+    public string BuildSingleReviewLink(
+        string reviewId,
+        DateTimeOffset reviewCreatedAtUtc,
+        CodeReviewSingleViewMode mode
+    )
     {
         var baseUri = appSettingsOptions.Value.Http.FrontendBaseUri.TrimEnd('/');
-        var token = CodeReviewSingleViewToken.Encode(review.CreatedAtUtc, mode);
+        var token = CodeReviewSingleViewToken.Encode(reviewCreatedAtUtc, mode);
 
-        return $"{baseUri}/code-reviews/reviews/{review.Id}?c={token}";
+        return $"{baseUri}/code-reviews/reviews/{reviewId}?c={token}";
+    }
+
+    /// <summary>
+    /// Builds an absolute frontend URL to the single pull-request view, which renders a PR's full
+    /// review history (every attempt), not just one review row.
+    /// </summary>
+    /// <remarks>
+    /// Takes the raw id/timestamp rather than a loaded <see cref="PullRequestRecord"/> because
+    /// callers (such as the findings drill-down list) often only have these two columns from a
+    /// projection query, not the full entity. The token is keyed by the pull request's own
+    /// <c>CreatedAtUtc</c> (its partition timestamp), not any review's — mirrors the pattern
+    /// <c>CheckRunService.BuildPrViewLink</c> uses for check-run comment links.
+    /// </remarks>
+    public string BuildSinglePullRequestLink(
+        string pullRequestRecordId,
+        DateTimeOffset pullRequestRecordCreatedAtUtc
+    )
+    {
+        var baseUri = appSettingsOptions.Value.Http.FrontendBaseUri.TrimEnd('/');
+        var token = CodeReviewSingleViewToken.Encode(
+            pullRequestRecordCreatedAtUtc,
+            CodeReviewSingleViewMode.Pr
+        );
+
+        return $"{baseUri}/code-reviews/pull-requests/{pullRequestRecordId}/single?c={token}";
     }
 
     private CodeReviewRequestLink BuildLink(

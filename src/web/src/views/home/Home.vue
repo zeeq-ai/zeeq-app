@@ -67,8 +67,14 @@
               :tools="filterTools"
               :tool-items="toolItems"
               :window="window"
+              :finding-review-items="findingReviewItems"
+              :finding-review-next-cursor="findingReviewNextCursor"
+              :finding-reviews-loading="findingReviewsLoading"
+              :finding-reviews-loading-more="findingReviewsLoadingMore"
               @update:users="onUsersChange"
               @update:tools="onToolsChange"
+              @open-finding-reviews="onOpenFindingReviews"
+              @load-more-finding-reviews="onLoadMoreFindingReviews"
             />
           </template>
 
@@ -157,7 +163,10 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
 import { useTimeAgo } from "@vueuse/core";
-import { codeReviewRequestOriginEnum } from "@/api/generated";
+import {
+  codeReviewRequestOriginEnum,
+  type FindingSeverity,
+} from "@/api/generated";
 import { histogramMetricType, useMetricsStore } from "@/stores/metrics-store";
 import { useLibraryStore } from "@/stores/library-store";
 import MetricsWindowSelect from "./MetricsWindowSelect.vue";
@@ -189,6 +198,8 @@ const {
   reviewVolume,
   reviewFindingsByRepo,
   reviewFindingsByOrigin,
+  findingReviewItems,
+  findingReviewNextCursor,
   agentTokenByModelSeries,
   agentTokenByUserSeries,
   agentTokenByModelUserSeries,
@@ -330,6 +341,18 @@ const loadingScatter = computed(
   () => loading.value[`scatter:${durationKey}`] ?? false,
 );
 
+/** First-page loading state for the findings drill-down slideover, keyed by severity. */
+const findingReviewsLoading = computed(() => ({
+  Critical: loading.value["findingReviews:Critical"] ?? false,
+  Major: loading.value["findingReviews:Major"] ?? false,
+}));
+
+/** "Load more" loading state for the findings drill-down slideover, keyed by severity. */
+const findingReviewsLoadingMore = computed(() => ({
+  Critical: loading.value["findingReviews:Critical:more"] ?? false,
+  Major: loading.value["findingReviews:Major:more"] ?? false,
+}));
+
 /** Loads only the panels the active tab shows (re-fetch on tab return is fine). */
 async function loadActiveTab() {
   switch (activeTab.value) {
@@ -416,6 +439,16 @@ function onRepositoriesChange(value: string[]) {
 function onAuthorsChange(value: string[]) {
   filterAuthorLogins.value = value;
   void refreshNow().catch(() => {});
+}
+
+/** Loads the first page of the findings drill-down list when a stat card is opened. */
+function onOpenFindingReviews(severity: FindingSeverity) {
+  void metricsStore.loadFindingReviews(severity).catch(() => {});
+}
+
+/** Loads the next page for the currently open findings drill-down severity. */
+function onLoadMoreFindingReviews(severity: FindingSeverity) {
+  void metricsStore.loadMoreFindingReviews(severity).catch(() => {});
 }
 
 // Load the filter option lists once; failures are non-fatal (dropdowns stay empty).

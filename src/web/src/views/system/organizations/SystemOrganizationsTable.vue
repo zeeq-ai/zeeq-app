@@ -63,7 +63,7 @@
         :data="organizations"
         :columns="columns"
         :loading="loading"
-        class="min-w-[900px]"
+        class="min-w-225"
       >
         <template #organization-cell="{ row }">
           <div class="flex min-w-0 items-center gap-3">

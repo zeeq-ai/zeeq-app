@@ -461,5 +461,17 @@ public sealed class MetricsEndpointHandlerTests
             FilterOptionsOrganizations.Add(organizationId);
             return Task.FromResult(FilterOptions);
         }
+
+        public IReadOnlyList<FindingReviewGroup> FindingReviewGroups { get; init; } = [];
+
+        public Task<IReadOnlyList<FindingReviewGroup>> ListFindingReviewGroupsAsync(
+            string organizationId,
+            MetricWindow window,
+            FindingSeverity severity,
+            DateTimeOffset? cursorCreatedAtUtc,
+            string? cursorId,
+            int limit,
+            CancellationToken cancellationToken
+        ) => Task.FromResult(FindingReviewGroups);
     }
 }
