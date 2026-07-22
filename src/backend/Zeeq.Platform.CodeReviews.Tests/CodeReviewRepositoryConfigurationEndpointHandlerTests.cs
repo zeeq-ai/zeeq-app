@@ -286,6 +286,22 @@ public sealed class CodeReviewRepositoryConfigurationEndpointHandlerTests
             CancellationToken cancellationToken
         ) => throw new NotSupportedException("Provider lookup is not used by these tests.");
 
+        public Task<CodeRepository?> FindActiveForOrganizationByProviderIdentityAsync(
+            string organizationId,
+            string provider,
+            string ownerQualifiedName,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                Repository.OrganizationId == organizationId
+                && Repository.Provider == provider
+                && Repository.OwnerQualifiedName == ownerQualifiedName
+                && Repository.Enabled
+                && Repository.DisabledAtUtc is null
+                    ? Repository
+                    : null
+            );
+
         public Task<IReadOnlyList<CodeRepository>> ListActiveForOrganizationAsync(
             string organizationId,
             CancellationToken cancellationToken

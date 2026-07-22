@@ -1,11 +1,13 @@
 using System.Security.Claims;
-using Zeeq.Core.Common;
-using Zeeq.Core.Identity;
-using Zeeq.Platform.CodeReviews;
+using System.Text;
 using Danom;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
+using Zeeq.Core.Common;
+using Zeeq.Core.Identity;
+using Zeeq.Core.Models;
+using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Mcp.CodeReviews.Tests;
 
@@ -25,9 +27,10 @@ public sealed class CodeReviewMcpToolsTests
         );
 
         await Assert.That(response).Contains("jobId: job_123");
-        await Assert.That(response).Contains("uploadToken: token_123");
+        await Assert.That(response).Contains("uploadToken: see URL `?token=` parameter");
         await Assert.That(response).Contains("maxDiffSizeBytes: 1234");
-        await Assert.That(response).Contains("curl -X PUT --data-binary");
+        await Assert.That(response).Contains("curl -X PUT --data-binary @/tmp/zeeq-review.diff");
+        await Assert.That(response).Contains("?token=token_123");
         await Assert.That(runner.CreateUploadUser).IsNotNull();
     }
 
@@ -123,9 +126,148 @@ public sealed class CodeReviewMcpToolsTests
         );
 
         await Assert.That(runner.RunRequest).IsNotNull();
+        await Assert.That(runner.RunRequest!.Branch).IsEqualTo("feat/branch-first-linking");
+    }
+
+    [Test]
+    public async Task GetReviewFindings_WithPullRequestAndMinimumMajor_ReturnsCriticalAndMajorFindings()
+    {
+        var fixture = ReviewFindingsFixture.Create();
+
+        var response = await CodeReviewMcpTools.GetReviewFindings(
+            fixture.Repositories,
+            fixture.PullRequestLookups,
+            fixture.Reviews,
+            fixture.Artifacts,
+            new CodeReviewXmlOutputValidator(),
+            TestUser(),
+            "zeeq-ai/zeeq",
+            pullRequestNumber: 42,
+            minimumLevel: "MAJOR"
+        );
+
+        await Assert.That(response).Contains("<instruction_for_agents>");
+        await Assert.That(response).Contains("criticality=\"Critical\"");
+        await Assert.That(response).Contains("criticality=\"Major\"");
+        await Assert.That(response).DoesNotContain("criticality=\"Minor\"");
+        await Assert.That(fixture.Reviews.LastPullRequestRecordId).IsEqualTo("pr_123");
+        await Assert.That(fixture.Artifacts.OpenCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task GetReviewFindings_WithBranch_ReturnsNewestCompletedBranchFindings()
+    {
+        var fixture = ReviewFindingsFixture.Create();
+
+        var response = await CodeReviewMcpTools.GetReviewFindings(
+            fixture.Repositories,
+            fixture.PullRequestLookups,
+            fixture.Reviews,
+            fixture.Artifacts,
+            new CodeReviewXmlOutputValidator(),
+            TestUser(),
+            "zeeq-ai/zeeq",
+            branch: "feature/review-findings"
+        );
+
+        await Assert.That(response).Contains("repo=\"zeeq-ai/zeeq\"");
+        await Assert.That(response).Contains("pr=\"42\"");
+        await Assert.That(fixture.Reviews.LastBranch).IsEqualTo("feature/review-findings");
+    }
+
+    [Test]
+    public async Task GetReviewFindings_WithBothPullRequestAndBranch_ReturnsValidationMessage()
+    {
+        var fixture = ReviewFindingsFixture.Create();
+
+        var response = await CodeReviewMcpTools.GetReviewFindings(
+            fixture.Repositories,
+            fixture.PullRequestLookups,
+            fixture.Reviews,
+            fixture.Artifacts,
+            new CodeReviewXmlOutputValidator(),
+            TestUser(),
+            "zeeq-ai/zeeq",
+            pullRequestNumber: 42,
+            branch: "feature/review-findings"
+        );
+
         await Assert
-            .That(runner.RunRequest!.Branch)
-            .IsEqualTo("feat/branch-first-linking");
+            .That(response)
+            .IsEqualTo("Provide either pullRequestNumber or branch, not both.");
+        await Assert.That(fixture.Artifacts.OpenCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task GetReviewFindings_WithNumericMinimumLevel_ReturnsValidationMessage()
+    {
+        var fixture = ReviewFindingsFixture.Create();
+
+        var response = await CodeReviewMcpTools.GetReviewFindings(
+            fixture.Repositories,
+            fixture.PullRequestLookups,
+            fixture.Reviews,
+            fixture.Artifacts,
+            new CodeReviewXmlOutputValidator(),
+            TestUser(),
+            "zeeq-ai/zeeq",
+            pullRequestNumber: 42,
+            minimumLevel: "0"
+        );
+
+        await Assert
+            .That(response)
+            .IsEqualTo(
+                "minimumLevel must be one of CRITICAL, MAJOR, MINOR, SUGGESTION, or COMMENT."
+            );
+        await Assert.That(fixture.Artifacts.OpenCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task GetReviewFindings_WithCommentMinimum_ReturnsAllFindings()
+    {
+        var fixture = ReviewFindingsFixture.Create();
+
+        var response = await CodeReviewMcpTools.GetReviewFindings(
+            fixture.Repositories,
+            fixture.PullRequestLookups,
+            fixture.Reviews,
+            fixture.Artifacts,
+            new CodeReviewXmlOutputValidator(),
+            TestUser(),
+            "zeeq-ai/zeeq",
+            branch: "feature/review-findings",
+            minimumLevel: "COMMENT"
+        );
+
+        await Assert.That(response).Contains("criticality=\"Critical\"");
+        await Assert.That(response).Contains("criticality=\"Major\"");
+        await Assert.That(response).Contains("criticality=\"Minor\"");
+    }
+
+    [Test]
+    public async Task GetReviewFindings_WithStoredFindingsAndZeroCounters_ReturnsStoredFindings()
+    {
+        var fixture = ReviewFindingsFixture.Create();
+        fixture.Reviews.Review.CriticalFindings = 0;
+        fixture.Reviews.Review.MajorFindings = 0;
+        fixture.Reviews.Review.MinorFindings = 0;
+
+        var response = await CodeReviewMcpTools.GetReviewFindings(
+            fixture.Repositories,
+            fixture.PullRequestLookups,
+            fixture.Reviews,
+            fixture.Artifacts,
+            new CodeReviewXmlOutputValidator(),
+            TestUser(),
+            "zeeq-ai/zeeq",
+            pullRequestNumber: 42
+        );
+
+        await Assert.That(response).Contains("criticality=\"Critical\"");
+        await Assert.That(response).Contains("criticality=\"Major\"");
+        await Assert.That(response).Contains("criticality=\"Minor\"");
+        await Assert.That(fixture.Artifacts.OpenCount).IsEqualTo(1);
     }
 
     private static IOptions<AppSettings> Options() =>
@@ -203,4 +345,277 @@ public sealed class CodeReviewMcpToolsTests
             );
         }
     }
+
+    private sealed class ReviewFindingsFixture
+    {
+        private ReviewFindingsFixture() { }
+
+        public TestCodeRepositoryStore Repositories { get; } = new();
+
+        public TestPullRequestLookupStore PullRequestLookups { get; } = new();
+
+        public TestCodeReviewRecordStore Reviews { get; } = new();
+
+        public TestCodeReviewArtifactStore Artifacts { get; } = new();
+
+        public static ReviewFindingsFixture Create()
+        {
+            var fixture = new ReviewFindingsFixture();
+            fixture.Artifacts.StoredXml = ReviewXml();
+
+            return fixture;
+        }
+    }
+
+    private sealed class TestCodeRepositoryStore : ICodeRepositoryStore
+    {
+        public CodeRepository Repository { get; } =
+            new()
+            {
+                Id = "repo_123",
+                OrganizationId = "org_123",
+                Provider = "github",
+                OwnerQualifiedName = "zeeq-ai/zeeq",
+                DisplayName = "zeeq-ai/zeeq",
+                Enabled = true,
+                CreatedAtUtc = DateTimeOffset.UtcNow.AddDays(-1),
+                UpdatedAtUtc = DateTimeOffset.UtcNow.AddDays(-1),
+            };
+
+        public Task<CodeRepository?> FindActiveAsync(
+            string provider,
+            string ownerQualifiedName,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                provider == "github" && ownerQualifiedName == Repository.OwnerQualifiedName
+                    ? (CodeRepository?)Repository
+                    : null
+            );
+
+        public Task<CodeRepository?> FindActiveForOrganizationByProviderIdentityAsync(
+            string organizationId,
+            string provider,
+            string ownerQualifiedName,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                organizationId == Repository.OrganizationId
+                && provider == "github"
+                && ownerQualifiedName == Repository.OwnerQualifiedName
+                && Repository.Enabled
+                && Repository.DisabledAtUtc is null
+                    ? (CodeRepository?)Repository
+                    : null
+            );
+
+        public Task<IReadOnlyList<CodeRepository>> ListActiveForOrganizationAsync(
+            string organizationId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<CodeRepository>> ListConfiguredForOrganizationAsync(
+            string organizationId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<CodeRepository?> FindActiveForOrganizationAsync(
+            string organizationId,
+            string repositoryId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<CodeRepository> UpsertAsync(
+            CodeRepository repository,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<bool> DisableAsync(
+            string organizationId,
+            string repositoryId,
+            DateTimeOffset disabledAtUtc,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+    }
+
+    private sealed class TestPullRequestLookupStore : IPullRequestLookupStore
+    {
+        public Task<PullRequestLookup?> FindAsync(
+            string organizationId,
+            string repositoryId,
+            int pullRequestNumber,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult<PullRequestLookup?>(
+                new()
+                {
+                    OrganizationId = organizationId,
+                    RepositoryId = repositoryId,
+                    OwnerQualifiedRepoName = "zeeq-ai/zeeq",
+                    PullRequestNumber = pullRequestNumber,
+                    PullRequestRecordId = "pr_123",
+                    PullRequestCreatedAtUtc = DateTimeOffset.UtcNow.AddHours(-2),
+                    UpdatedAtUtc = DateTimeOffset.UtcNow.AddHours(-1),
+                }
+            );
+
+        public Task<PullRequestLookup> UpsertAsync(
+            PullRequestLookup lookup,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+    }
+
+    private sealed class TestCodeReviewRecordStore : ICodeReviewRecordStore
+    {
+        public string? LastPullRequestRecordId { get; private set; }
+
+        public string? LastBranch { get; private set; }
+
+        public CodeReviewRecord Review { get; } =
+            new()
+            {
+                Id = "cr_123",
+                OrganizationId = "org_123",
+                TeamId = "team_123",
+                PullRequestRecordId = "pr_123",
+                RepositoryId = "repo_123",
+                OwnerQualifiedRepoName = "zeeq-ai/zeeq",
+                PullRequestNumber = 42,
+                Branch = "feature/review-findings",
+                Title = "Add review findings",
+                AuthorLogin = "octocat",
+                Status = CodeReviewStatus.Completed,
+                RequestOrigin = CodeReviewRequestOrigin.Manual,
+                CriticalFindings = 1,
+                MajorFindings = 1,
+                MinorFindings = 1,
+                FindingsStorageUri = "postgres://code-review-findings/org_123/cr_123/findings.xml",
+                RemainingReviewBudget = 10,
+                CreatedAtUtc = DateTimeOffset.UtcNow.AddHours(-1),
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+            };
+
+        public Task<CodeReviewRecord> AddAsync(
+            CodeReviewRecord review,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<CodeReviewRecord> UpdateAsync(
+            CodeReviewRecord review,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<CodeReviewRecord?> FindAsync(
+            string id,
+            DateTimeOffset createdAtUtc,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<CodeReviewRecord?> FindNewestForPullRequestAsync(
+            string organizationId,
+            string pullRequestRecordId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<CodeReviewRecord?> FindNewestCompletedForPullRequestAsync(
+            string organizationId,
+            string pullRequestRecordId,
+            DateTimeOffset pullRequestCreatedAtUtc,
+            CancellationToken cancellationToken
+        )
+        {
+            LastPullRequestRecordId = pullRequestRecordId;
+
+            return Task.FromResult<CodeReviewRecord?>(Review);
+        }
+
+        public Task<CodeReviewRecord?> FindNewestCompletedForBranchAsync(
+            string organizationId,
+            string repositoryId,
+            string branch,
+            CancellationToken cancellationToken
+        )
+        {
+            LastBranch = branch;
+
+            return Task.FromResult<CodeReviewRecord?>(Review);
+        }
+
+        public Task<CodeReviewStreamPage<CodeReviewRecord>> ListRecentAsync(
+            CodeReviewStreamQuery query,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<CodeReviewStreamPage<CodeReviewRecord>> ListForPullRequestAsync(
+            PullRequestReviewStreamQuery query,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<CodeReviewUpdateStreamPage> ListInboxUpdatesAsync(
+            CodeReviewUpdateStreamQuery query,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<CodeReviewRecord>> ListForAgentAsync(
+            string organizationId,
+            string? agentSessionId,
+            string? reviewGroupId,
+            int maxRecords,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+    }
+
+    private sealed class TestCodeReviewArtifactStore : ICodeReviewArtifactStore
+    {
+        public int OpenCount { get; private set; }
+
+        public string StoredXml { get; set; } = string.Empty;
+
+        public Task<string> WriteFindingsAsync(
+            CodeReviewRecord review,
+            Stream findings,
+            string contentType,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<Stream> OpenFindingsAsync(
+            string findingsStorageUri,
+            CancellationToken cancellationToken
+        )
+        {
+            OpenCount += 1;
+
+            return Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes(StoredXml)));
+        }
+
+        public Task CopyFindingsToAsync(
+            string findingsStorageUri,
+            Stream destination,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+    }
+
+    private static string ReviewXml() =>
+        """
+            <reviews noAgentsActivated="false">
+              <review facet="Security" agent="Security Reviewer">
+                <summary>Security summary</summary>
+                <details>Security details</details>
+                <findings>
+                  <finding level="CRITICAL" file="src/Auth.cs" line="12" side="RIGHT">
+                    <summary>Critical issue</summary>
+                    <details>Critical body</details>
+                  </finding>
+                  <finding level="MAJOR" file="src/Data.cs" line="24" side="RIGHT">
+                    <summary>Major issue</summary>
+                    <details>Major body</details>
+                  </finding>
+                  <finding level="MINOR" file="src/Style.cs" line="36" side="RIGHT">
+                    <summary>Minor issue</summary>
+                    <details>Minor body</details>
+                  </finding>
+                </findings>
+              </review>
+            </reviews>
+            """;
 }

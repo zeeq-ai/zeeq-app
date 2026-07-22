@@ -1,6 +1,6 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Platform.CodeReviews;
-using Microsoft.EntityFrameworkCore;
 
 namespace Zeeq.Data.Postgres.CodeReviews;
 
@@ -96,6 +96,48 @@ internal sealed class PostgresCodeReviewRecordStore(PostgresDbContext db) : ICod
             .Where(review =>
                 review.OrganizationId == organizationId
                 && review.PullRequestRecordId == pullRequestRecordId
+            )
+            .OrderByDescending(review => review.CreatedAtUtc)
+            .ThenByDescending(review => review.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    /// <inheritdoc />
+    public Task<CodeReviewRecord?> FindNewestCompletedForPullRequestAsync(
+        string organizationId,
+        string pullRequestRecordId,
+        DateTimeOffset pullRequestCreatedAtUtc,
+        CancellationToken cancellationToken
+    ) =>
+        db
+            .CodeReviewRecords.TagWithOperationCallSite(
+                "code_review_record.find_newest_completed_for_pull_request"
+            )
+            .Where(review =>
+                review.OrganizationId == organizationId
+                && review.PullRequestRecordId == pullRequestRecordId
+                && review.Status == CodeReviewStatus.Completed
+                && review.CreatedAtUtc >= pullRequestCreatedAtUtc
+            )
+            .OrderByDescending(review => review.CreatedAtUtc)
+            .ThenByDescending(review => review.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    /// <inheritdoc />
+    public Task<CodeReviewRecord?> FindNewestCompletedForBranchAsync(
+        string organizationId,
+        string repositoryId,
+        string branch,
+        CancellationToken cancellationToken
+    ) =>
+        db
+            .CodeReviewRecords.TagWithOperationCallSite(
+                "code_review_record.find_newest_completed_for_branch"
+            )
+            .Where(review =>
+                review.OrganizationId == organizationId
+                && review.RepositoryId == repositoryId
+                && review.Branch == branch
+                && review.Status == CodeReviewStatus.Completed
             )
             .OrderByDescending(review => review.CreatedAtUtc)
             .ThenByDescending(review => review.Id)
