@@ -1707,6 +1707,22 @@ public sealed class DocumentEndpointHandlerTests
             CancellationToken cancellationToken
         ) => throw new NotSupportedException();
 
+        public Task<CodeRepository?> FindActiveForOrganizationByProviderIdentityAsync(
+            string organizationId,
+            string provider,
+            string ownerQualifiedName,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                Repositories.SingleOrDefault(r =>
+                    r.OrganizationId == organizationId
+                    && r.Provider == provider
+                    && r.OwnerQualifiedName == ownerQualifiedName
+                    && r.DisabledAtUtc is null
+                    && r.Enabled
+                )
+            );
+
         public Task<IReadOnlyList<CodeRepository>> ListActiveForOrganizationAsync(
             string organizationId,
             CancellationToken cancellationToken
@@ -1733,6 +1749,13 @@ public sealed class DocumentEndpointHandlerTests
     private sealed class NotSupportedCodeRepositoryStore : ICodeRepositoryStore
     {
         public Task<CodeRepository?> FindActiveAsync(
+            string provider,
+            string ownerQualifiedName,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<CodeRepository?> FindActiveForOrganizationByProviderIdentityAsync(
+            string organizationId,
             string provider,
             string ownerQualifiedName,
             CancellationToken cancellationToken

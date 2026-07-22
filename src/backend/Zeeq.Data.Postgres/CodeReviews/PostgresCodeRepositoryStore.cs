@@ -40,6 +40,29 @@ internal sealed class PostgresCodeRepositoryStore(PostgresDbContext db) : ICodeR
             );
 
     /// <summary>
+    /// Finds an enabled, non-disabled repository mapping by provider identity inside one organization.
+    /// </summary>
+    public Task<CodeRepository?> FindActiveForOrganizationByProviderIdentityAsync(
+        string organizationId,
+        string provider,
+        string ownerQualifiedName,
+        CancellationToken cancellationToken
+    ) =>
+        db
+            .CodeRepositories.TagWithOperationCallSite(
+                "code_repository.find_active_for_organization_by_provider_identity"
+            )
+            .FirstOrDefaultAsync(
+                repository =>
+                    repository.OrganizationId == organizationId
+                    && repository.Provider == provider
+                    && repository.OwnerQualifiedName == ownerQualifiedName
+                    && repository.DisabledAtUtc == null
+                    && repository.Enabled,
+                cancellationToken
+            );
+
+    /// <summary>
     /// Lists enabled repository mappings for one organization.
     /// </summary>
     /// <remarks>

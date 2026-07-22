@@ -1,9 +1,9 @@
 using System.Security.Claims;
 using System.Text;
+using Microsoft.Extensions.Logging.Abstractions;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Models;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Zeeq.Platform.CodeReviews.Tests;
 
@@ -409,6 +409,22 @@ public sealed class CodeReviewRunnerTests
             CancellationToken cancellationToken
         ) => Task.FromResult<CodeRepository?>(Repository);
 
+        public Task<CodeRepository?> FindActiveForOrganizationByProviderIdentityAsync(
+            string organizationId,
+            string provider,
+            string ownerQualifiedName,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                Repository.OrganizationId == organizationId
+                && Repository.Provider == provider
+                && Repository.OwnerQualifiedName == ownerQualifiedName
+                && Repository.Enabled
+                && Repository.DisabledAtUtc is null
+                    ? Repository
+                    : null
+            );
+
         public Task<IReadOnlyList<CodeRepository>> ListActiveForOrganizationAsync(
             string organizationId,
             CancellationToken cancellationToken
@@ -481,9 +497,9 @@ public sealed class CodeReviewRunnerTests
         ) =>
             Task.FromResult(
                 Record.OrganizationId == organizationId
-                    && Record.RepositoryId == repositoryId
-                    && Record.HeadSha == headSha
-                    && Record.CheckRunState != null
+                && Record.RepositoryId == repositoryId
+                && Record.HeadSha == headSha
+                && Record.CheckRunState != null
                     ? Record
                     : null
             );

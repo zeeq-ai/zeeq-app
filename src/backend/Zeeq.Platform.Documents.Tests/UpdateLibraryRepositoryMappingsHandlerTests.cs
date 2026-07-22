@@ -1,9 +1,9 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
 using Zeeq.Platform.CodeReviews;
-using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Zeeq.Platform.Documents.Tests;
 
@@ -404,6 +404,22 @@ public sealed class UpdateLibraryRepositoryMappingsHandlerTests
             string ownerQualifiedName,
             CancellationToken ct
         ) => throw new NotSupportedException();
+
+        public Task<CodeRepository?> FindActiveForOrganizationByProviderIdentityAsync(
+            string organizationId,
+            string provider,
+            string ownerQualifiedName,
+            CancellationToken ct
+        ) =>
+            Task.FromResult(
+                _repos.FirstOrDefault(r =>
+                    r.OrganizationId == organizationId
+                    && r.Provider == provider
+                    && r.OwnerQualifiedName == ownerQualifiedName
+                    && r.DisabledAtUtc is null
+                    && r.Enabled
+                )
+            );
 
         public Task<IReadOnlyList<CodeRepository>> ListActiveForOrganizationAsync(
             string organizationId,

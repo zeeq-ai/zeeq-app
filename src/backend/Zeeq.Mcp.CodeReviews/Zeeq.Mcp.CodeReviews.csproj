@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Zeeq.Platform.CodeReviews\Zeeq.Platform.CodeReviews.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Carts\Zeeq.Platform.Carts.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Danom" />

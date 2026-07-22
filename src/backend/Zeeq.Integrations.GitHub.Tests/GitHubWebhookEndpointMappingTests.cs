@@ -556,6 +556,28 @@ public sealed class GitHubWebhookEndpointMappingTests
                     : null
             );
 
+        public Task<CodeRepository?> FindActiveForOrganizationByProviderIdentityAsync(
+            string organizationId,
+            string provider,
+            string ownerQualifiedName,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                repository
+                    is {
+                        Enabled: true,
+                        DisabledAtUtc: null,
+                        OrganizationId: var actualOrganizationId,
+                        Provider: var actualProvider,
+                        OwnerQualifiedName: var actualName,
+                    }
+                && actualOrganizationId == organizationId
+                && actualProvider == provider
+                && actualName == ownerQualifiedName
+                    ? repository
+                    : null
+            );
+
         public Task<IReadOnlyList<CodeRepository>> ListActiveForOrganizationAsync(
             string organizationId,
             CancellationToken cancellationToken

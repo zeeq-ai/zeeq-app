@@ -713,6 +713,22 @@ public sealed class GitHubRepositoryManagementHandlerTests
                 )
             );
 
+        public Task<CodeRepository?> FindActiveForOrganizationByProviderIdentityAsync(
+            string organizationId,
+            string provider,
+            string ownerQualifiedName,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                Repositories.FirstOrDefault(repository =>
+                    repository.OrganizationId == organizationId
+                    && repository.Provider == provider
+                    && repository.OwnerQualifiedName == ownerQualifiedName
+                    && repository.DisabledAtUtc is null
+                    && repository.Enabled
+                )
+            );
+
         public Task<IReadOnlyList<CodeRepository>> ListActiveForOrganizationAsync(
             string organizationId,
             CancellationToken cancellationToken

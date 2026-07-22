@@ -52,13 +52,13 @@ public static class SetupMcpExtensions
 
                 options.ServerInstructions = """
                     Zeeq provides:
-                    - Canonical documentation to produce high quality code
-                    - Code review tools to run expert code reviews efficiently.
+                    - Search and read canonical documentation to produce high quality code
+                    - Code review tools to run expert code reviews efficiently and retrieve findings
 
-                    Prefer working in known partition to scope tool usage.
+                    Prefer working in known library to scope tool usage.
 
                     <session_bootstrap>
-                    Call `list_documents` once near session start / first research for the compact knowledge index; use `list_libraries` only when library scope is unknown.
+                    Call `list_documents` once near session start / first research for the compact knowledge index; `list_libraries` only when library scope is unknown.
                     </session_bootstrap>
 
                     <research_flow>
@@ -72,7 +72,7 @@ public static class SetupMcpExtensions
                     </research_flow>
 
                     <code_review_usage>
-                    When code changes are ready, use the `expert_code_review` tool to get an expert review grounded in Zeeq documentation
+                    When code changes are ready, use `expert_code_review` to get expert review grounded in docs
                     The tool is context efficient; dump git diffs and upload to a signed URL then trigger a review job
                     Reduce mistakes and blind spots by relying on external reviewers
                     </code_review_usage>

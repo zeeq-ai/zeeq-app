@@ -779,6 +779,28 @@ public sealed class GitHubPullRequestWorkflowHandlerTests
                     : null
             );
 
+        public Task<CodeRepository?> FindActiveForOrganizationByProviderIdentityAsync(
+            string organizationId,
+            string provider,
+            string ownerQualifiedName,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                ActiveRepository
+                    is {
+                        Enabled: true,
+                        DisabledAtUtc: null,
+                        OrganizationId: var activeOrganizationId,
+                        Provider: var activeProvider,
+                        OwnerQualifiedName: var activeOwnerQualifiedName,
+                    }
+                && activeOrganizationId == organizationId
+                && activeProvider == provider
+                && activeOwnerQualifiedName == ownerQualifiedName
+                    ? ActiveRepository
+                    : null
+            );
+
         public Task<IReadOnlyList<CodeRepository>> ListActiveForOrganizationAsync(
             string organizationId,
             CancellationToken cancellationToken
@@ -1004,6 +1026,44 @@ public sealed class GitHubPullRequestWorkflowHandlerTests
                     .Where(record =>
                         record.OrganizationId == organizationId
                         && record.PullRequestRecordId == pullRequestRecordId
+                    )
+                    .OrderByDescending(record => record.CreatedAtUtc)
+                    .ThenByDescending(record => record.Id)
+                    .FirstOrDefault()
+            );
+
+        public Task<CodeReviewRecord?> FindNewestCompletedForPullRequestAsync(
+            string organizationId,
+            string pullRequestRecordId,
+            DateTimeOffset pullRequestCreatedAtUtc,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                Records
+                    .Where(record =>
+                        record.OrganizationId == organizationId
+                        && record.PullRequestRecordId == pullRequestRecordId
+                        && record.Status == CodeReviewStatus.Completed
+                        && record.CreatedAtUtc >= pullRequestCreatedAtUtc
+                    )
+                    .OrderByDescending(record => record.CreatedAtUtc)
+                    .ThenByDescending(record => record.Id)
+                    .FirstOrDefault()
+            );
+
+        public Task<CodeReviewRecord?> FindNewestCompletedForBranchAsync(
+            string organizationId,
+            string repositoryId,
+            string branch,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                Records
+                    .Where(record =>
+                        record.OrganizationId == organizationId
+                        && record.RepositoryId == repositoryId
+                        && record.Branch == branch
+                        && record.Status == CodeReviewStatus.Completed
                     )
                     .OrderByDescending(record => record.CreatedAtUtc)
                     .ThenByDescending(record => record.Id)

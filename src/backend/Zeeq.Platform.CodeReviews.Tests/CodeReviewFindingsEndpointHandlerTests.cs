@@ -324,6 +324,26 @@ public sealed class CodeReviewFindingsEndpointHandlerTests
             CancellationToken cancellationToken
         ) => throw new NotSupportedException("Newest review lookup is not used by these tests.");
 
+        public Task<CodeReviewRecord?> FindNewestCompletedForPullRequestAsync(
+            string organizationId,
+            string pullRequestRecordId,
+            DateTimeOffset pullRequestCreatedAtUtc,
+            CancellationToken cancellationToken
+        ) =>
+            throw new NotSupportedException(
+                "Newest completed PR review lookup is not used by these tests."
+            );
+
+        public Task<CodeReviewRecord?> FindNewestCompletedForBranchAsync(
+            string organizationId,
+            string repositoryId,
+            string branch,
+            CancellationToken cancellationToken
+        ) =>
+            throw new NotSupportedException(
+                "Newest completed branch review lookup is not used by these tests."
+            );
+
         public Task<CodeReviewStreamPage<CodeReviewRecord>> ListRecentAsync(
             CodeReviewStreamQuery query,
             CancellationToken cancellationToken

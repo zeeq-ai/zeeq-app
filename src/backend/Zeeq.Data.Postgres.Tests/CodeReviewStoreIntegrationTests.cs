@@ -276,6 +276,113 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     }
 
     [Test]
+    public async Task CodeReviewRecordStore_FindNewestCompletedForPullRequestAsync_IgnoresRunningReviews()
+    {
+        var (seed, _, pullRequests, reviews) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddCodeRepository()
+            .AddPullRequestRecords(pullRequest =>
+            {
+                pullRequest.PullRequestNumber = 90;
+                pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-10);
+            })
+            .AddCodeReviewRecords(
+                review =>
+                {
+                    review.Status = CodeReviewStatus.Completed;
+                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-3);
+                    review.PersistOnBuild = false;
+                },
+                review =>
+                {
+                    review.Status = CodeReviewStatus.Completed;
+                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2);
+                    review.PersistOnBuild = false;
+                },
+                review =>
+                {
+                    review.Status = CodeReviewStatus.Running;
+                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
+                    review.PersistOnBuild = false;
+                }
+            )
+            .BuildAsync();
+        var pullRequest = pullRequests[0];
+        var olderCompleted = reviews[0];
+        var newerCompleted = reviews[1];
+        var running = reviews[2];
+        var store = new PostgresCodeReviewRecordStore(_context);
+
+        await store.AddAsync(olderCompleted, CancellationToken.None);
+        await store.AddAsync(newerCompleted, CancellationToken.None);
+        await store.AddAsync(running, CancellationToken.None);
+
+        var found = await store.FindNewestCompletedForPullRequestAsync(
+            seed.Organization.Id,
+            pullRequest.Id,
+            pullRequest.CreatedAtUtc,
+            CancellationToken.None
+        );
+
+        await Assert.That(found).IsNotNull();
+        await Assert.That(found!.Id).IsEqualTo(newerCompleted.Id);
+    }
+
+    [Test]
+    public async Task CodeReviewRecordStore_FindNewestCompletedForBranchAsync_FiltersByBranchAndRepository()
+    {
+        var (seed, repository, _, reviews) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddCodeRepository()
+            .AddPullRequestRecords(pullRequest =>
+            {
+                pullRequest.PullRequestNumber = 91;
+                pullRequest.Branch = "feature/target";
+                pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-10);
+            })
+            .AddCodeReviewRecords(
+                review =>
+                {
+                    review.Status = CodeReviewStatus.Completed;
+                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-3);
+                    review.PersistOnBuild = false;
+                },
+                review =>
+                {
+                    review.Status = CodeReviewStatus.Completed;
+                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2);
+                    review.PersistOnBuild = false;
+                },
+                review =>
+                {
+                    review.Status = CodeReviewStatus.Completed;
+                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
+                    review.PersistOnBuild = false;
+                }
+            )
+            .BuildAsync();
+        var olderTarget = reviews[0];
+        var newerTarget = reviews[1];
+        var differentBranch = reviews[2];
+        differentBranch.Branch = "feature/other";
+        var store = new PostgresCodeReviewRecordStore(_context);
+
+        await store.AddAsync(olderTarget, CancellationToken.None);
+        await store.AddAsync(newerTarget, CancellationToken.None);
+        await store.AddAsync(differentBranch, CancellationToken.None);
+
+        var found = await store.FindNewestCompletedForBranchAsync(
+            seed.Organization.Id,
+            repository.Id,
+            "feature/target",
+            CancellationToken.None
+        );
+
+        await Assert.That(found).IsNotNull();
+        await Assert.That(found!.Id).IsEqualTo(newerTarget.Id);
+    }
+
+    [Test]
     public async Task CodeReviewRecordStore_ListInboxUpdatesAsync_UsesUpdatedCursorAndLookupTimestamp()
     {
         var pullRequestCreatedAt = DateTimeOffset
@@ -606,6 +713,32 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         );
 
         await Assert.That(found).IsNull();
+    }
+
+    [Test]
+    public async Task CodeRepositoryStore_FindActiveForOrganizationByProviderIdentityAsync_ScopesByOrganization()
+    {
+        var (_, repository) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddCodeRepository(repository => repository.OwnerQualifiedName = "zeeq-ai/shared")
+            .BuildAsync();
+        var (otherSeed, otherRepository) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddCodeRepository(repository => repository.OwnerQualifiedName = "zeeq-ai/shared")
+            .BuildAsync();
+        var store = new PostgresCodeRepositoryStore(_context);
+
+        _context.ChangeTracker.Clear();
+        var found = await store.FindActiveForOrganizationByProviderIdentityAsync(
+            otherSeed.Organization.Id,
+            otherRepository.Provider,
+            otherRepository.OwnerQualifiedName,
+            CancellationToken.None
+        );
+
+        await Assert.That(found).IsNotNull();
+        await Assert.That(found!.Id).IsEqualTo(otherRepository.Id);
+        await Assert.That(found.Id).IsNotEqualTo(repository.Id);
     }
 
     [Test]

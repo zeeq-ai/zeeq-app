@@ -27,6 +27,22 @@ public interface ICodeRepositoryStore
     );
 
     /// <summary>
+    /// Finds an enabled repository mapping by provider identity inside an organization.
+    /// </summary>
+    /// <remarks>
+    /// User-facing tools and management paths already know the caller's
+    /// organization and should scope provider/name lookups with it. This avoids
+    /// cross-organization ambiguity when the same provider repository is
+    /// configured in more than one organization.
+    /// </remarks>
+    Task<Zeeq.Core.Models.CodeRepository?> FindActiveForOrganizationByProviderIdentityAsync(
+        string organizationId,
+        string provider,
+        string ownerQualifiedName,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// Lists enabled repository mappings for an organization.
     /// </summary>
     /// <remarks>

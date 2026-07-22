@@ -62,6 +62,37 @@ public interface ICodeReviewRecordStore
     );
 
     /// <summary>
+    /// Finds the newest completed review for one pull request.
+    /// </summary>
+    /// <remarks>
+    /// Retrieval surfaces use this when they need the latest completed findings payload,
+    /// not the newest in-progress attempt used by workflow policy. The pull-request
+    /// creation timestamp lets implementations prune review partitions because a review
+    /// cannot predate its parent pull request.
+    /// </remarks>
+    Task<CodeReviewRecord?> FindNewestCompletedForPullRequestAsync(
+        string organizationId,
+        string pullRequestRecordId,
+        DateTimeOffset pullRequestCreatedAtUtc,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Finds the newest completed review for one repository branch.
+    /// </summary>
+    /// <remarks>
+    /// Used by MCP retrieval when a local agent knows the current branch but does not
+    /// know the pull request number. Callers must provide the organization-scoped
+    /// repository id so branch names are never resolved across repositories.
+    /// </remarks>
+    Task<CodeReviewRecord?> FindNewestCompletedForBranchAsync(
+        string organizationId,
+        string repositoryId,
+        string branch,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// Finds the newest completed review in one exact agent review group.
     /// </summary>
     /// <remarks>

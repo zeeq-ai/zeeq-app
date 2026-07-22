@@ -50,7 +50,7 @@ public sealed record ExpertCodeReviewUploadUrlResponse(
             Upload URL created for expert code review.
 
             jobId: {{JobId}}
-            uploadToken: {{UploadToken}}
+            uploadToken: see URL `?token=` parameter
             expiresAtUtc: {{ExpiresAtUtc:O}}
             maxDiffSizeBytes: {{maxDiffSizeBytes}}
 
