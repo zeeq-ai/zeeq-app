@@ -47,16 +47,21 @@
         </UCard>
       </div>
 
-      <!-- Findings drill-down slideover — opened by clicking the Critical/Major cards above. -->
+      <!--
+      Findings drill-down slideover — a single instance opened by either the
+      Critical or Major card's "View" button; it switches severities via its
+      own tabs rather than needing a separate instance per card.
+      -->
       <FindingReviewsSlideover
-        v-if="openSeverity"
         v-model:open="slideoverOpen"
-        :severity="openSeverity"
-        :items="findingReviewItems[openSeverity]"
-        :has-more="!!findingReviewNextCursor[openSeverity]"
-        :loading="findingReviewsLoading[openSeverity]"
-        :loading-more="findingReviewsLoadingMore[openSeverity]"
-        @load-more="emits('loadMoreFindingReviews', openSeverity)"
+        :initial-severity="initialSeverity"
+        :parent-window="window"
+        :items="findingReviewItems"
+        :next-cursor="findingReviewNextCursor"
+        :loading-by-severity="findingReviewsLoading"
+        :loading-more-by-severity="findingReviewsLoadingMore"
+        @load="(severity, windowToken) => emits('loadFindingReviews', severity, windowToken)"
+        @load-more="(severity, windowToken) => emits('loadMoreFindingReviews', severity, windowToken)"
       />
 
       <!-- User + tool multi-select filters scope all four tool-call panels below. -->
@@ -194,27 +199,23 @@ const props = defineProps<{
 const emits = defineEmits<{
   "update:users": [value: string[]];
   "update:tools": [value: string[]];
-  openFindingReviews: [severity: FindingSeverity];
-  loadMoreFindingReviews: [severity: FindingSeverity];
+  loadFindingReviews: [severity: FindingSeverity, window: MetricWindowToken];
+  loadMoreFindingReviews: [
+    severity: FindingSeverity,
+    window: MetricWindowToken,
+  ];
 }>();
 
-/** Which severity's slideover is open, or null when closed. */
-const openSeverity = ref<FindingSeverity | null>(null);
+/** Whether the findings drill-down slideover is open. */
+const slideoverOpen = ref(false);
 
-/** Adapts `openSeverity` to the boolean `v-model:open` the slideover expects. */
-const slideoverOpen = computed<boolean>({
-  get: () => openSeverity.value !== null,
-  set: (value) => {
-    if (!value) {
-      openSeverity.value = null;
-    }
-  },
-});
+/** Severity the slideover resets to each time it opens — set by whichever card was clicked. */
+const initialSeverity = ref<FindingSeverity>(findingSeverityEnum.Critical);
 
-/** Opens the drill-down slideover for a severity and triggers its first page load. */
+/** Opens the drill-down slideover, defaulting its tab to the clicked card's severity. */
 function openFindingReviews(severity: FindingSeverity) {
-  openSeverity.value = severity;
-  emits("openFindingReviews", severity);
+  initialSeverity.value = severity;
+  slideoverOpen.value = true;
 }
 
 /** One headline stat card; `severity` is set only for the two clickable drill-down cards. */
