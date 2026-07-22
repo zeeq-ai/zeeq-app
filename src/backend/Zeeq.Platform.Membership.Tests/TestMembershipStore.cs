@@ -558,4 +558,27 @@ internal sealed class TestMembershipStore : IZeeqMembershipStore
 
         return Task.FromResult(true);
     }
+
+    /// <inheritdoc />
+    public Task<MembershipActivationState?> FindMembershipActivationStateAsync(
+        string orgId,
+        string userId,
+        CancellationToken ct
+    )
+    {
+        var membership = Memberships.SingleOrDefault(m =>
+            m.OrganizationId == orgId && m.UserId == userId
+        );
+
+        return Task.FromResult(
+            membership is null
+                ? null
+                : new MembershipActivationState(
+                    membership.OrganizationId,
+                    userId,
+                    membership.Status,
+                    membership.DisabledAtUtc is not null
+                )
+        );
+    }
 }

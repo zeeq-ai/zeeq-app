@@ -521,6 +521,12 @@ public sealed class LlmSettingsHandlerTests
             string membershipId,
             CancellationToken ct
         ) => throw new NotImplementedException();
+
+        public Task<MembershipActivationState?> FindMembershipActivationStateAsync(
+            string orgId,
+            string userId,
+            CancellationToken ct
+        ) => throw new NotImplementedException();
     }
 
     private sealed class FakeLlmSettingsStore : ILlmSettingsStore

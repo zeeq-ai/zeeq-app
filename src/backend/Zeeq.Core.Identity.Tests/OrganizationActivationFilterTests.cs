@@ -368,6 +368,12 @@ public sealed class OrganizationActivationFilterTests
             string membershipId,
             CancellationToken ct
         ) => throw new NotSupportedException();
+
+        public Task<MembershipActivationState?> FindMembershipActivationStateAsync(
+            string orgId,
+            string userId,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
     }
 
     private sealed class TestHybridCache : HybridCache

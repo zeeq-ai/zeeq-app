@@ -1,8 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Identity;
 using Zeeq.Testing;
 using Zeeq.Testing.EntityGraphs;
-using Microsoft.EntityFrameworkCore;
 
 namespace Zeeq.Platform.Membership.Tests;
 
@@ -386,5 +386,96 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
         }
 
         await Assert.That(saveFailed).IsTrue();
+    }
+
+    [Test]
+    public async Task FindMembershipActivationStateAsync_WithActiveMembership_ReturnsActiveState()
+    {
+        var store = CreateStore();
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+
+        var state = await store.FindMembershipActivationStateAsync(
+            seed.Organization.Id,
+            seed.Owner.Id,
+            CancellationToken.None
+        );
+
+        // Guards that an active, non-disabled membership row reports IsActive.
+        await Assert.That(state).IsNotNull();
+        await Assert.That(state!.IsActive).IsTrue();
+    }
+
+    [Test]
+    public async Task FindMembershipActivationStateAsync_WithDisabledMembership_ReturnsInactiveState()
+    {
+        var store = CreateStore();
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await store.RemoveMemberAsync(seed.Organization.Id, seed.Owner.Id, CancellationToken.None);
+
+        var state = await store.FindMembershipActivationStateAsync(
+            seed.Organization.Id,
+            seed.Owner.Id,
+            CancellationToken.None
+        );
+
+        // Guards that a disabled row is still returned (so the token
+        // middleware can distinguish "missing" from "disabled") but reports
+        // IsActive = false.
+        await Assert.That(state).IsNotNull();
+        await Assert.That(state!.IsActive).IsFalse();
+    }
+
+    [Test]
+    public async Task FindMembershipActivationStateAsync_WithHistoricalAndCurrentMembership_ReturnsCurrentActiveState()
+    {
+        var store = CreateStore();
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+
+        // Simulate: the user was removed (row soft-deleted, retained for
+        // audit history) and later re-invited/re-added to the same
+        // organization — a legal state where (OrganizationId, UserId) is no
+        // longer unique across all rows, only across active ones.
+        await store.RemoveMemberAsync(seed.Organization.Id, seed.Owner.Id, CancellationToken.None);
+        _context.OrganizationMemberships.Add(
+            new OrganizationMembership
+            {
+                Id = NewId("mem"),
+                OrganizationId = seed.Organization.Id,
+                UserId = seed.Owner.Id,
+                Role = "member",
+                Status = MembershipStatus.Active,
+                CreatedByUserId = seed.Owner.Id,
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+            }
+        );
+        await _context.SaveChangesAsync();
+
+        // Guards that FindMembershipActivationStateAsync tolerates more
+        // than one row for the pair and prefers the current active
+        // membership instead of throwing (previously used
+        // SingleOrDefaultAsync, which would fail here).
+        var state = await store.FindMembershipActivationStateAsync(
+            seed.Organization.Id,
+            seed.Owner.Id,
+            CancellationToken.None
+        );
+
+        await Assert.That(state).IsNotNull();
+        await Assert.That(state!.IsActive).IsTrue();
+    }
+
+    [Test]
+    public async Task FindMembershipActivationStateAsync_WithNoMembershipRow_ReturnsNull()
+    {
+        var store = CreateStore();
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+
+        var state = await store.FindMembershipActivationStateAsync(
+            seed.Organization.Id,
+            "user_never_a_member",
+            CancellationToken.None
+        );
+
+        await Assert.That(state).IsNull();
     }
 }
