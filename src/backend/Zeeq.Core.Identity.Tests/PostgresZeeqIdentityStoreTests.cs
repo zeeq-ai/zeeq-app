@@ -470,7 +470,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         );
         await _context.SaveChangesAsync();
 
-        var revokedAt = DateTimeOffset.UtcNow;
+        var revokedAt = DateTimeOffset.UtcNow.TruncateToPostgresPrecision();
         var revokedCount = await store.RevokeUserTokensForOrganizationMemberAsync(
             orgId,
             userId,
@@ -499,7 +499,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     {
         var store = new PostgresZeeqIdentityStore(_context);
         var (orgId, teamId, userId) = await SeedOrgUserTeamAsync();
-        var firstRevokedAt = DateTimeOffset.UtcNow.AddDays(-1);
+        var firstRevokedAt = DateTimeOffset.UtcNow.AddDays(-1).TruncateToPostgresPrecision();
         var token = NewUserToken(orgId, teamId, userId);
         token.RevokedAtUtc = firstRevokedAt;
 
