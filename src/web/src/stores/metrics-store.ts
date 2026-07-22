@@ -5,6 +5,8 @@ import {
   reviewVolumeGroupEnum,
   reviewFindingsGroupEnum,
   type CodeReviewRequestOrigin,
+  type FindingReviewListItemResponse,
+  type FindingSeverity,
   type MetricLeaderboardItem,
   type MetricPercentilePoint,
   type MetricScatterPoint,
@@ -164,6 +166,24 @@ export const useMetricsStore = defineStore("metrics-store", () => {
   const agentCostUsdSeries = ref<MetricSeriesPoint[]>([]);
   const percentilesByMetric = ref<Record<string, MetricPercentilePoint[]>>({});
   const scatterByMetric = ref<Record<string, MetricScatterPoint[]>>({});
+
+  // Findings drill-down list (Critical/Major stat-card slideover), keyed by severity so both
+  // severities can hold independent pages/cursors without one clearing the other.
+  const findingReviewItems = ref<
+    Record<FindingSeverity, FindingReviewListItemResponse[]>
+  >({ Critical: [], Major: [] });
+  const findingReviewNextCursor = ref<Record<FindingSeverity, string | null>>({
+    Critical: null,
+    Major: null,
+  });
+
+  // A loaded page/cursor is only valid for the window it was fetched under — clear both when
+  // the shared window changes so a still-open slideover can't mix rows across windows or send
+  // loadMoreFindingReviews a cursor scoped to the window it no longer matches.
+  watch(window, () => {
+    findingReviewItems.value = { Critical: [], Major: [] };
+    findingReviewNextCursor.value = { Critical: null, Major: null };
+  });
 
   // Filter option lists, populated once from the filter-options endpoint and
   // used to build the per-tab dropdowns (values sourced from the data itself).
@@ -345,6 +365,55 @@ export const useMetricsStore = defineStore("metrics-store", () => {
   }
 
   /**
+   * Loads the first page of the findings drill-down list for a severity (the Critical/Major
+   * stat-card slideover), replacing any previously loaded page for that severity.
+   */
+  async function loadFindingReviews(severity: FindingSeverity) {
+    const orgId = requireOrganizationId();
+    await run(`findingReviews:${severity}`, async () => {
+      const page = await Metrics.listFindingReviews(orgId, {
+        window: window.value,
+        severity,
+      });
+      findingReviewItems.value = {
+        ...findingReviewItems.value,
+        [severity]: page.items,
+      };
+      findingReviewNextCursor.value = {
+        ...findingReviewNextCursor.value,
+        [severity]: page.nextCursor ?? null,
+      };
+    });
+  }
+
+  /**
+   * Appends the next page for a severity using its stored cursor. No-op when there is no next
+   * page (the slideover hides the "Load more" control in that case, but this guards direct calls).
+   */
+  async function loadMoreFindingReviews(severity: FindingSeverity) {
+    const cursor = findingReviewNextCursor.value[severity];
+    if (!cursor) {
+      return;
+    }
+    const orgId = requireOrganizationId();
+    await run(`findingReviews:${severity}:more`, async () => {
+      const page = await Metrics.listFindingReviews(orgId, {
+        window: window.value,
+        severity,
+        cursor,
+      });
+      findingReviewItems.value = {
+        ...findingReviewItems.value,
+        [severity]: [...findingReviewItems.value[severity], ...page.items],
+      };
+      findingReviewNextCursor.value = {
+        ...findingReviewNextCursor.value,
+        [severity]: page.nextCursor ?? null,
+      };
+    });
+  }
+
+  /**
    * Loads the first agent telemetry panels backed by existing emitters:
    * token usage split by model/user, plus aggregate USD cost over time.
    */
@@ -522,6 +591,8 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     reviewVolume,
     reviewFindingsByRepo,
     reviewFindingsByOrigin,
+    findingReviewItems,
+    findingReviewNextCursor,
     agentTokenByModelSeries,
     agentTokenByUserSeries,
     agentTokenByModelUserSeries,
@@ -547,6 +618,8 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     loadSectionLeaderboard,
     loadReviewVolume,
     loadReviewFindings,
+    loadFindingReviews,
+    loadMoreFindingReviews,
     loadAgentUsageSeries,
     loadPercentiles,
     loadScatter,

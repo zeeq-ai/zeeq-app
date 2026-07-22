@@ -17,17 +17,47 @@
 
     <template v-else>
       <div class="grid grid-cols-2 gap-4 md:grid-cols-3">
-        <!-- One card per headline number; values fall back to em dash while loading. -->
+        <!--
+        One card per headline number; values fall back to em dash while loading.
+        Critical/Major cards get a "View" button on their header row (floated
+        right) that opens the findings drill-down slideover, scoped to that
+        severity — an explicit affordance rather than a whole-card click,
+        which read as non-interactive.
+        -->
         <UCard v-for="card in cards" :key="card.label">
-          <div class="flex items-center gap-2 text-sm text-muted">
-            <UIcon :name="card.icon" class="size-4" />
-            {{ card.label }}
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 text-sm text-muted">
+              <UIcon :name="card.icon" class="size-4" />
+              {{ card.label }}
+            </div>
+            <UButton
+              v-if="card.severity"
+              label="View"
+              icon="i-hugeicons-arrow-right-01"
+              trailing
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              @click="openFindingReviews(card.severity)"
+            />
           </div>
           <div class="mt-1 text-2xl font-semibold tabular-nums">
             {{ card.value }}
           </div>
         </UCard>
       </div>
+
+      <!-- Findings drill-down slideover — opened by clicking the Critical/Major cards above. -->
+      <FindingReviewsSlideover
+        v-if="openSeverity"
+        v-model:open="slideoverOpen"
+        :severity="openSeverity"
+        :items="findingReviewItems[openSeverity]"
+        :has-more="!!findingReviewNextCursor[openSeverity]"
+        :loading="findingReviewsLoading[openSeverity]"
+        :loading-more="findingReviewsLoadingMore[openSeverity]"
+        @load-more="emits('loadMoreFindingReviews', openSeverity)"
+      />
 
       <!-- User + tool multi-select filters scope all four tool-call panels below. -->
       <div class="flex flex-wrap justify-end gap-3">
@@ -109,13 +139,20 @@
 
 <script setup lang="ts">
 import { useColorMode } from "@vueuse/core";
-import type { MetricsOverview, MetricSeriesPoint } from "@/api/generated";
+import {
+  findingSeverityEnum,
+  type FindingReviewListItemResponse,
+  type FindingSeverity,
+  type MetricsOverview,
+  type MetricSeriesPoint,
+} from "@/api/generated";
 import {
   metricWindowRangeMs,
   toMetricNumber,
   type MetricWindowToken,
 } from "@/stores/metrics-store";
 import MetricChart from "./MetricChart.vue";
+import FindingReviewsSlideover from "./FindingReviewsSlideover.vue";
 import {
   pivotByBucket,
   timeSeriesOption,
@@ -144,15 +181,52 @@ const props = defineProps<{
   toolItems: { label: string; value: string }[];
   /** Shared dashboard window; fills empty buckets so the x-axis reflects the true cadence. */
   window: MetricWindowToken;
+  /** Findings drill-down pages, keyed by severity — see the metrics store action's comment. */
+  findingReviewItems: Record<FindingSeverity, FindingReviewListItemResponse[]>;
+  /** Next-page cursor per severity, or null when that severity's list is exhausted. */
+  findingReviewNextCursor: Record<FindingSeverity, string | null>;
+  /** True while a severity's first page is loading. */
+  findingReviewsLoading: Record<FindingSeverity, boolean>;
+  /** True while a severity's next page (via "Load more") is loading. */
+  findingReviewsLoadingMore: Record<FindingSeverity, boolean>;
 }>();
 
 const emits = defineEmits<{
   "update:users": [value: string[]];
   "update:tools": [value: string[]];
+  openFindingReviews: [severity: FindingSeverity];
+  loadMoreFindingReviews: [severity: FindingSeverity];
 }>();
 
+/** Which severity's slideover is open, or null when closed. */
+const openSeverity = ref<FindingSeverity | null>(null);
+
+/** Adapts `openSeverity` to the boolean `v-model:open` the slideover expects. */
+const slideoverOpen = computed<boolean>({
+  get: () => openSeverity.value !== null,
+  set: (value) => {
+    if (!value) {
+      openSeverity.value = null;
+    }
+  },
+});
+
+/** Opens the drill-down slideover for a severity and triggers its first page load. */
+function openFindingReviews(severity: FindingSeverity) {
+  openSeverity.value = severity;
+  emits("openFindingReviews", severity);
+}
+
+/** One headline stat card; `severity` is set only for the two clickable drill-down cards. */
+type OverviewCard = {
+  label: string;
+  icon: string;
+  value: string;
+  severity?: FindingSeverity;
+};
+
 /** Card view models projected from the overview DTO (see MVVM note in guidance). */
-const cards = computed(() => {
+const cards = computed<OverviewCard[]>(() => {
   const overview = props.overview;
   return [
     {
@@ -174,11 +248,13 @@ const cards = computed(() => {
       label: "Critical findings",
       icon: "i-hugeicons-alert-02",
       value: formatCount(overview?.criticalFindings),
+      severity: findingSeverityEnum.Critical,
     },
     {
       label: "Major findings",
       icon: "i-hugeicons-alert-01",
       value: formatCount(overview?.majorFindings),
+      severity: findingSeverityEnum.Major,
     },
     {
       label: "p95 review time",

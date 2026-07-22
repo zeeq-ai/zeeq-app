@@ -134,6 +134,57 @@ public enum ReviewFindingsGroup
     Origin,
 }
 
+/// <summary>Severity dimension for the findings drill-down list (the Critical/Major stat-card slideover).</summary>
+public enum FindingSeverity
+{
+    /// <summary>List review groups with at least one critical finding in the window.</summary>
+    Critical,
+
+    /// <summary>List review groups with at least one major finding in the window.</summary>
+    Major,
+}
+
+/// <summary>
+/// One PR (or agent-session) review group surfaced by the findings drill-down list, deduplicated to
+/// its latest review attempt within the window.
+/// </summary>
+/// <remarks>
+/// A pull request can be reviewed multiple times (each push re-triggers a review), and every attempt
+/// is its own <c>code_review_records</c> row sharing one <c>review_group_id</c>. Showing one row per
+/// attempt would both spam the list and go stale the moment a follow-up review fixes something, so
+/// this is pre-grouped by <c>review_group_id</c>: identity fields (<see cref="ReviewId"/>,
+/// <see cref="Title"/>, …) come from the latest attempt, but <see cref="GroupCriticalFindings"/> /
+/// <see cref="GroupMajorFindings"/> sum every attempt in the group within the window — so the sum of
+/// this field across every returned group reconciles exactly with the headline
+/// <see cref="MetricsOverview.CriticalFindings"/> / <see cref="MetricsOverview.MajorFindings"/> count,
+/// which is itself a sum over every review row, not just the latest per PR. See
+/// <c>PostgresMetricsQueryStore.ListFindingReviewGroupsAsync</c> for the query.
+/// </remarks>
+/// <param name="ReviewId">Latest review record id in the group; identifies the review to link to.</param>
+/// <param name="ReviewCreatedAtUtc">Latest review's creation timestamp; also the keyset-pagination cursor value.</param>
+/// <param name="Title">Pull request title, or the review title for agent (non-PR) reviews.</param>
+/// <param name="OwnerQualifiedRepoName">Provider-qualified repository name, such as owner/repo.</param>
+/// <param name="PullRequestNumber">Provider pull request number; 0 for agent reviews with no PR.</param>
+/// <param name="AuthorLogin">Provider login of the pull request author, or the review's recorded author for agent reviews.</param>
+/// <param name="RequestOrigin">Source that requested the latest review in the group.</param>
+/// <param name="PullRequestRecordId">Stable pull request record id, when the group is PR-backed; null for agent reviews with no resolved PR.</param>
+/// <param name="PullRequestRecordCreatedAtUtc">The pull request record's own creation timestamp (its partition key); null when <see cref="PullRequestRecordId"/> is null.</param>
+/// <param name="GroupCriticalFindings">Sum of critical findings across every review attempt in the group within the window.</param>
+/// <param name="GroupMajorFindings">Sum of major findings across every review attempt in the group within the window.</param>
+public sealed record FindingReviewGroup(
+    string ReviewId,
+    DateTimeOffset ReviewCreatedAtUtc,
+    string Title,
+    string OwnerQualifiedRepoName,
+    int PullRequestNumber,
+    string AuthorLogin,
+    CodeReviewRequestOrigin RequestOrigin,
+    string? PullRequestRecordId,
+    DateTimeOffset? PullRequestRecordCreatedAtUtc,
+    long GroupCriticalFindings,
+    long GroupMajorFindings
+);
+
 /// <summary>
 /// Read store for the metrics dashboard. Every query is single-organization, single-table, and
 /// window-scoped (no JOINs on the metric-events path) so it stays partition-pruned and index-covered.
@@ -231,6 +282,31 @@ public interface IMetricsQueryStore
     Task<MetricsOverview> GetOverviewAsync(
         string organizationId,
         MetricWindow window,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Newest-first, keyset-paginated review groups with at least one finding of the given severity
+    /// in the window (drill-down list behind the Critical/Major findings stat cards).
+    /// </summary>
+    /// <param name="organizationId">Tenant scope for the query.</param>
+    /// <param name="window">Dashboard time window.</param>
+    /// <param name="severity">Which finding column gates and sorts the group total (critical or major).</param>
+    /// <param name="cursorCreatedAtUtc">
+    /// Exclusive lower-bound timestamp from a previous page's last item, or null for the first page.
+    /// Must be supplied together with <paramref name="cursorId"/> — see
+    /// <see cref="FindingReviewGroup.ReviewCreatedAtUtc"/>.
+    /// </param>
+    /// <param name="cursorId">Tie-breaker id pairing with <paramref name="cursorCreatedAtUtc"/>, or null for the first page.</param>
+    /// <param name="limit">Maximum rows to return; callers pass page size + 1 to detect a next page.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<IReadOnlyList<FindingReviewGroup>> ListFindingReviewGroupsAsync(
+        string organizationId,
+        MetricWindow window,
+        FindingSeverity severity,
+        DateTimeOffset? cursorCreatedAtUtc,
+        string? cursorId,
+        int limit,
         CancellationToken cancellationToken
     );
 

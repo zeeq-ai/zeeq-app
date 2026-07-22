@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
@@ -454,6 +455,165 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             metricRow.ReviewDurationMs
         );
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// A single scan, window-partitioned twice: <c>SUM(...) OVER (PARTITION BY review_group_id)</c>
+    /// computes each group's window-total findings (this is what the returned
+    /// <see cref="FindingReviewGroup.GroupCriticalFindings"/>/<see cref="FindingReviewGroup.GroupMajorFindings"/>
+    /// report — see the remarks on that type for why the totals, not the latest attempt's own count,
+    /// are what's returned), and <c>ROW_NUMBER() OVER (PARTITION BY review_group_id ORDER BY
+    /// created_at_utc DESC, id DESC)</c> identifies the latest attempt per group so identity fields
+    /// (title, author, …) come from the current state, not a stale one. The <c>id</c> tie-breaker
+    /// matches the outer/cursor ordering (<c>review_created_at_utc DESC, review_id DESC</c>) so the
+    /// selected "latest" row is deterministic even when two attempts in the same group share a
+    /// timestamp — without it, <c>rn = 1</c> could pick either row on different executions.
+    /// <para>
+    /// The window bound (<c>created_at_utc &gt;= windowStart</c>, applied inside the CTE before either
+    /// window function runs) is one-sided — there is no upper bound besides "now" — matching
+    /// <see cref="GetOverviewAsync"/>'s same query shape. This means a group can never have its true
+    /// latest attempt fall outside the window while an earlier attempt falls inside: the true latest
+    /// (by definition the max <c>created_at_utc</c> across the whole group) is always
+    /// &gt;= any single in-window row's timestamp, so if any row qualifies, the true latest also
+    /// qualifies and is present in the scanned set. <c>rn = 1</c> therefore always lands on the actual
+    /// latest attempt, never a stale earlier one — the CTE's window filter and the dedup step can't
+    /// disagree the way they could with a two-sided (start-and-end) window.
+    /// </para>
+    /// <para>
+    /// Both windows run over the same <c>organization_id + created_at_utc</c>-bounded set already used
+    /// by <see cref="GetOverviewAsync"/>, so this stays partition-pruned. The <c>LEFT JOIN</c> to
+    /// <c>code_review_pull_request_records</c> only touches the (already limited) post-filter row set,
+    /// not the windowed scan, and supplies the PR's own <c>created_at_utc</c> — needed because the
+    /// PR-view deep link token is keyed by the pull request's partition timestamp, not the review's
+    /// (see <c>CodeReviewRequestLinkFactory.BuildSingleReviewLink</c> vs the check-run service's
+    /// PR-view link builder).
+    /// </para>
+    /// </remarks>
+    public async Task<IReadOnlyList<FindingReviewGroup>> ListFindingReviewGroupsAsync(
+        string organizationId,
+        MetricWindow window,
+        FindingSeverity severity,
+        DateTimeOffset? cursorCreatedAtUtc,
+        string? cursorId,
+        int limit,
+        CancellationToken cancellationToken
+    )
+    {
+        if (cursorCreatedAtUtc.HasValue != (cursorId is not null))
+        {
+            throw new ArgumentException(
+                $"{nameof(cursorCreatedAtUtc)} and {nameof(cursorId)} must be supplied together."
+            );
+        }
+
+        var range = window.ToRange();
+        var windowStart = DateTimeOffset.UtcNow - range.Span;
+        var hasCursor = cursorCreatedAtUtc.HasValue;
+
+        // Exhaustive by construction: the handler rejects any FindingSeverity outside this closed
+        // enum with a 400 before calling here, so an undefined value can never reach this switch.
+        var severityColumn = severity switch
+        {
+            FindingSeverity.Critical => "group_critical_findings",
+            FindingSeverity.Major => "group_major_findings",
+            _ => throw new UnreachableException(
+                $"{nameof(FindingSeverity)} '{severity}' should have been rejected by the endpoint handler."
+            ),
+        };
+
+        var format = $$"""
+            WITH windowed AS (
+                SELECT
+                    id AS review_id,
+                    created_at_utc AS review_created_at_utc,
+                    title,
+                    owner_qualified_repo_name,
+                    pull_request_number,
+                    author_login,
+                    request_origin,
+                    pull_request_record_id,
+                    SUM(critical_findings) OVER (PARTITION BY review_group_id) AS group_critical_findings,
+                    SUM(major_findings) OVER (PARTITION BY review_group_id) AS group_major_findings,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY review_group_id ORDER BY created_at_utc DESC, id DESC
+                    ) AS rn
+                FROM zeeq.code_review_records
+                WHERE organization_id = {0}
+                  AND created_at_utc >= {1}
+            )
+            SELECT
+                windowed.review_id,
+                windowed.review_created_at_utc,
+                windowed.title,
+                windowed.owner_qualified_repo_name,
+                windowed.pull_request_number,
+                windowed.author_login,
+                windowed.request_origin::text AS request_origin,
+                windowed.pull_request_record_id,
+                windowed.group_critical_findings,
+                windowed.group_major_findings,
+                pr.created_at_utc AS pull_request_record_created_at_utc
+            FROM windowed
+            LEFT JOIN zeeq.code_review_pull_request_records pr
+              ON pr.id = windowed.pull_request_record_id
+            WHERE windowed.rn = 1
+              AND windowed.{{severityColumn}} > 0
+              AND ({2} = false OR (
+                    windowed.review_created_at_utc < {3}
+                    OR (windowed.review_created_at_utc = {3} AND windowed.review_id < {4})
+                  ))
+            ORDER BY windowed.review_created_at_utc DESC, windowed.review_id DESC
+            LIMIT {5}
+            """;
+
+        var sql = FormattableStringFactory.Create(
+            format,
+            organizationId,
+            windowStart,
+            hasCursor,
+            cursorCreatedAtUtc ?? DateTimeOffset.UnixEpoch,
+            cursorId ?? "",
+            limit
+        );
+
+        var rows = await db
+            .Database.SqlQuery<FindingReviewRow>(sql)
+            .TagWithOperationCallSite("metrics.reviews.findings.list")
+            .ToListAsync(cancellationToken);
+
+        return [.. rows.Select(ToFindingReviewGroup)];
+    }
+
+    /// <summary>Maps one raw finding-review-group SQL row to the public store contract, parsing the request-origin text.</summary>
+    private static FindingReviewGroup ToFindingReviewGroup(FindingReviewRow row) =>
+        new(
+            ReviewId: row.ReviewId,
+            ReviewCreatedAtUtc: row.ReviewCreatedAtUtc,
+            Title: row.Title,
+            OwnerQualifiedRepoName: row.OwnerQualifiedRepoName,
+            PullRequestNumber: row.PullRequestNumber,
+            AuthorLogin: row.AuthorLogin,
+            RequestOrigin: Enum.Parse<CodeReviewRequestOrigin>(row.RequestOrigin),
+            PullRequestRecordId: row.PullRequestRecordId,
+            PullRequestRecordCreatedAtUtc: row.PullRequestRecordCreatedAtUtc,
+            GroupCriticalFindings: row.GroupCriticalFindings,
+            GroupMajorFindings: row.GroupMajorFindings
+        );
+
+    /// <summary>Raw SQL projection for <see cref="ListFindingReviewGroupsAsync"/>, before request-origin parsing.</summary>
+    private sealed record FindingReviewRow(
+        string ReviewId,
+        DateTimeOffset ReviewCreatedAtUtc,
+        string Title,
+        string OwnerQualifiedRepoName,
+        int PullRequestNumber,
+        string AuthorLogin,
+        string RequestOrigin,
+        string? PullRequestRecordId,
+        long GroupCriticalFindings,
+        long GroupMajorFindings,
+        DateTimeOffset? PullRequestRecordCreatedAtUtc
+    );
 
     /// <inheritdoc />
     public async Task<MetricsFilterOptions> GetFilterOptionsAsync(

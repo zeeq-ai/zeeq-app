@@ -5425,6 +5425,86 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/metrics/reviews/findings/list": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Findings drill-down list, newest-first and cursor-paginated.",
+        "description": "Returns review groups (deduplicated to the latest attempt per pull request/agent\nsession) with at least one finding of the given severity in the window. Backs the\nCritical/Major findings stat-card slideover — not cached, since it's a paginated,\nclick-to-open list rather than a polled dashboard tile.",
+        "operationId": "ListFindingReviews",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FindingSeverity"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingReviewListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsEndpointError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/metrics/overview": {
       "get": {
         "tags": [
@@ -8146,6 +8226,111 @@
           }
         },
         "description": "A ranked search hit for the \"Test\" panel. `Library` is echoed from the API so each\nrow carries its owning library name independently (D-1)."
+      },
+      "FindingReviewListItemResponse": {
+        "required": [
+          "reviewId",
+          "title",
+          "ownerQualifiedRepoName",
+          "pullRequestNumber",
+          "authorLogin",
+          "requestOrigin",
+          "createdAtUtc",
+          "groupCriticalFindings",
+          "groupMajorFindings",
+          "url"
+        ],
+        "type": "object",
+        "properties": {
+          "reviewId": {
+            "type": "string",
+            "description": "Latest review record id in the group."
+          },
+          "title": {
+            "type": "string",
+            "description": "Pull request title, or the review title for agent (non-PR) reviews."
+          },
+          "ownerQualifiedRepoName": {
+            "type": "string",
+            "description": "Provider-qualified repository name, such as owner/repo."
+          },
+          "pullRequestNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Provider pull request number; 0 for agent reviews with no PR.",
+            "format": "int32"
+          },
+          "authorLogin": {
+            "type": "string",
+            "description": "Provider login of the pull request author, or the review's recorded author for agent reviews."
+          },
+          "requestOrigin": {
+            "description": "Source that requested the latest review in the group.",
+            "$ref": "#/components/schemas/CodeReviewRequestOrigin"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "description": "Latest review's creation timestamp, for relative-time display.",
+            "format": "date-time"
+          },
+          "groupCriticalFindings": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Sum of critical findings across every review attempt in the group within the window — not just\nthe latest attempt's own count, so the total across every returned row reconciles with the\nheadline critical-findings stat card. See `FindingReviewGroup` remarks for why.",
+            "format": "int64"
+          },
+          "groupMajorFindings": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Sum of major findings across every review attempt in the group within the window; see long FindingReviewListItemResponse.GroupCriticalFindings.",
+            "format": "int64"
+          },
+          "url": {
+            "type": "string",
+            "description": "Absolute link to review the group: the single-PR history view when the group has a pull request,\notherwise the single latest-review view for agent (non-PR) reviews."
+          }
+        },
+        "description": "One review group row in the findings drill-down list (the Critical/Major stat-card slideover)."
+      },
+      "FindingReviewListResponse": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FindingReviewListItemResponse"
+            },
+            "description": "Review groups for this page."
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Opaque cursor to pass back as `cursor` for the next page, or null when this is the last page."
+          }
+        },
+        "description": "One page of the findings drill-down list, newest-first."
+      },
+      "FindingSeverity": {
+        "enum": [
+          "Critical",
+          "Major"
+        ],
+        "description": "Severity dimension for the findings drill-down list (the Critical/Major stat-card slideover)."
       },
       "GitHubCreateRepositoryMappingRequest": {
         "required": [

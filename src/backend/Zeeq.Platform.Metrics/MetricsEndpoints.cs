@@ -304,6 +304,36 @@ public sealed class MetricsEndpoints : IEndpoint
             )
             .RequireActiveOrganization();
 
+        // GET /api/v1/orgs/{orgId}/metrics/reviews/findings/list
+        group
+            .MapGet(
+                "/reviews/findings/list",
+                static (
+                    [MaxLength(MaxIdLength)] string orgId,
+                    [FromQuery]
+                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "7d", "14d", "30d")]
+                        string? window,
+                    [FromQuery] FindingSeverity severity,
+                    [FromQuery, MaxLength(MaxIdLength)] string? cursor,
+                    [FromQuery, Range(1, 100)] int? limit,
+                    [FromServices] ListFindingReviewsHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, window, severity, cursor, limit, ct)
+            )
+            .WithName("ListFindingReviews")
+            .Produces<FindingReviewListResponse>()
+            .Produces<MetricsEndpointError>(StatusCodes.Status400BadRequest)
+            .WithSummary("Findings drill-down list, newest-first and cursor-paginated.")
+            .WithDescription(
+                """
+                Returns review groups (deduplicated to the latest attempt per pull request/agent
+                session) with at least one finding of the given severity in the window. Backs the
+                Critical/Major findings stat-card slideover — not cached, since it's a paginated,
+                click-to-open list rather than a polled dashboard tile.
+                """
+            )
+            .RequireActiveOrganization();
+
         // GET /api/v1/orgs/{orgId}/metrics/overview
         group
             .MapGet(
