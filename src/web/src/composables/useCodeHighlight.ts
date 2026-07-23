@@ -1,17 +1,25 @@
 import highlight from "@comark/vue/plugins/highlight";
 import type { LanguageRegistration } from "shiki";
 import csharp from "shiki/dist/langs/csharp.mjs";
+import dart from "shiki/dist/langs/dart.mjs";
 import dockerfile from "shiki/dist/langs/dockerfile.mjs";
+import elixir from "shiki/dist/langs/elixir.mjs";
+import fsharp from "shiki/dist/langs/fsharp.mjs";
 import go from "shiki/dist/langs/go.mjs";
+import ini from "shiki/dist/langs/ini.mjs";
 import java from "shiki/dist/langs/java.mjs";
 import kotlin from "shiki/dist/langs/kotlin.mjs";
+import perl from "shiki/dist/langs/perl.mjs";
 import php from "shiki/dist/langs/php.mjs";
+import powershell from "shiki/dist/langs/powershell.mjs";
 import python from "shiki/dist/langs/python.mjs";
 import ruby from "shiki/dist/langs/ruby.mjs";
 import rust from "shiki/dist/langs/rust.mjs";
+import scala from "shiki/dist/langs/scala.mjs";
 import scss from "shiki/dist/langs/scss.mjs";
 import sql from "shiki/dist/langs/sql.mjs";
 import swift from "shiki/dist/langs/swift.mjs";
+import toml from "shiki/dist/langs/toml.mjs";
 import xml from "shiki/dist/langs/xml.mjs";
 
 /**
@@ -24,17 +32,25 @@ const additionalHighlightLanguages: (
   | LanguageRegistration[]
 )[] = [
   csharp,
+  dart,
   dockerfile,
+  elixir,
+  fsharp,
   go,
+  ini,
   java,
   kotlin,
+  perl,
   php,
+  powershell,
   python,
   ruby,
   rust,
+  scala,
   scss,
   sql,
   swift,
+  toml,
   xml,
 ];
 
