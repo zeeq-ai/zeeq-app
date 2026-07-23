@@ -8,6 +8,11 @@ import { VitePWA } from "vite-plugin-pwa";
 import VueRouter from "unplugin-vue-router/vite";
 import { VueUseComponentsResolver } from "unplugin-vue-components/resolvers";
 
+const viteBase = process.env.VITE_BASE || "/";
+
+const manifestAssetPath = (fileName: string) =>
+  `${viteBase.replace(/\/?$/, "/")}${fileName}`;
+
 /** Shared proxy config for routes that forward to zeeq-server. */
 function backendProxy(): ProxyOptions {
   return {
@@ -19,7 +24,7 @@ function backendProxy(): ProxyOptions {
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: process.env.VITE_BASE || "/",
+  base: viteBase,
   plugins: [
     vue(),
     ui({
@@ -117,12 +122,12 @@ export default defineConfig({
         theme_color: "#ffffff",
         icons: [
           {
-            src: "/android-chrome-192x192.png",
+            src: manifestAssetPath("android-chrome-192x192.png"),
             sizes: "192x192",
             type: "image/png",
           },
           {
-            src: "/android-chrome-512x512.png",
+            src: manifestAssetPath("android-chrome-512x512.png"),
             sizes: "512x512",
             type: "image/png",
           },
