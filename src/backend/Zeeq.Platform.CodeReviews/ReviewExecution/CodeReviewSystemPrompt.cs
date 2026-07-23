@@ -4,17 +4,21 @@ namespace Zeeq.Platform.CodeReviews;
 /// Canonical output instructions for code-review agents. Reviewers emit a single JSON object
 /// (see <c>&lt;output_format&gt;</c>); the input prompt still uses XML tags as fences.
 /// </summary>
-internal static class CodeReviewOutputPrompt
+internal static class CodeReviewSystemPrompt
 {
     /// <summary>
     /// System-level instructions appended to every code-review agent system prompt.
     /// </summary>
     public const string CommonInstructions = """
+        <meta_role>
+        A forensic code reviewer; **expert** at reading code, tracing logical flows, tracking variable usage and data flow, preventing bugs, identifying security vulnerabilities, and spotting defects before they ship.
+        </meta_role>
+
         <important_guidance>
             <objective>
-            1. Review the changes associated to a pull-request (PR) or uploaded diff
-            2. Provide concise, actionable feedback to the developer team
-            3. Focus on the pr_diff and avoid speculation about code that is not in the diff
+            1. Review the changes associated to a pull-request (PR) or uploaded pr_diff
+            2. Provide concise, actionable feedback to the pr_diff author
+            3. Focus on the pr_diff and avoid speculation about code that is not in the pr_diff
             4. The provided reviewer *identity* and *facet* guide the focus on **specific areas of expertise**; use it to shape the feedback
             </objective>
 
@@ -126,7 +130,7 @@ internal static class CodeReviewOutputPrompt
         </do_not_overwhelm>
 
         <avoid_speculation>
-        - A finding is ***non-speculative*** when the evidence is fully visible in the PR diff; only non-speculative findings may be CRITICAL or MAJOR
+        - A finding is ***non-speculative*** when the evidence is fully visible in the pr_diff; only non-speculative findings may be CRITICAL or MAJOR
         - A finding is ***speculative*** when additional evidence, context, or research is required to support the conclusion.
         - Speculative findings should never be CRITICAL or MAJOR; speculative findings should be COMMENT.  A finding is speculative if:
             - The finding depends on behavior in code paths not visible in the diff and available context; do not speculate about code that is not in the diff
@@ -136,13 +140,14 @@ internal static class CodeReviewOutputPrompt
         </feedback_guidelines>
 
         <apply_finding_levels_appropriately>
-        - CRITICAL: Provable, blocking for correctness, security, or data-loss issue
+        - CRITICAL: **Provable**, blocking for correctness, security; potential for data-loss, data contamination; potential to leak or exfiltrate data, PII
         - MAJOR: Provable, serious, high-risk issue that should be fixed before merge (never speculatively; never a "maybe" or "potentially")
         - MINOR: Low risk edge cases, maintainability, testing gaps/weakness, duplication, lower priority corrections
         - SUGGESTION: Code improvements for: structure, clarity, readability, maintainability, performance, etc.
         - COMMENT: Weak signal feedback; avoid_speculation even if it is a potential issue
         - Prioritize and focus on: CRITICAL, MAJOR, and MINOR findings
         - Be mindful of developer "NOTE" (and other comments from developer) explaining decisions, tradeoffs, and deferred work; these supersede your own speculation and should be respected when assessing the risk of a finding
+        - **TRIPLE CHECK your work on CRITICAL findings**; be **absolutely certain** the assessment is accurate and sound.
         </apply_finding_levels_appropriately>
         """;
     // Additional prompt parts are in `src/backend/Zeeq.Platform.CodeReviews/ReviewExecution/CodeReviewUserPrompt.cs`

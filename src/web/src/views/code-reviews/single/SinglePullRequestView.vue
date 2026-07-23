@@ -146,6 +146,7 @@ import type {
 import { useCodeReviewStore } from "@/stores/code-review-store";
 import { useAppStore } from "@/stores/app-store";
 import { useCartStore } from "@/stores/cart-store";
+import { toAbsoluteAppUrl } from "@/router/app-url";
 
 import CodeReviewAccordion from "@/views/code-reviews/pull-requests/CodeReviewAccordion.vue";
 
@@ -299,9 +300,9 @@ async function handleToggleCart(
 }
 
 async function copyPullRequestLink(pr: CodeReviewPullRequestDto) {
-  const url =
-    `${location.origin}/code-reviews/pull-requests/${pr.id}/single` +
-    `?c=${pr.singleViewToken}`;
+  const url = toAbsoluteAppUrl(
+    `/code-reviews/pull-requests/${pr.id}/single?c=${pr.singleViewToken}`,
+  );
 
   try {
     await navigator.clipboard.writeText(url);
