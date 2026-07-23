@@ -142,6 +142,8 @@
                 loading['agentTokenByUserSeries'] ?? false
               "
               :loading-cost-usd="loading['agentCostUsdSeries'] ?? false"
+              :members="organizationMembers"
+              :loading-members="membersLoading"
               :window="window"
             />
           </template>
@@ -173,6 +175,7 @@ import {
   type MetricWindowToken,
 } from "@/stores/metrics-store";
 import { useLibraryStore } from "@/stores/library-store";
+import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
 import MetricsWindowSelect from "./MetricsWindowSelect.vue";
 import OverviewTab from "./OverviewTab.vue";
 import CodeReviewsTab from "./CodeReviewsTab.vue";
@@ -232,6 +235,10 @@ const {
 const allFilterValue = "__all__";
 const libraryStore = useLibraryStore();
 const { libraries } = storeToRefs(libraryStore);
+const organizationSettingsStore = useOrganizationSettingsStore();
+const { members: organizationMembers, membersLoading } = storeToRefs(
+  organizationSettingsStore,
+);
 const libraryItems = computed(() => [
   { label: "All libraries", value: allFilterValue },
   ...libraries.value.map((library) => ({
@@ -409,7 +416,10 @@ async function loadActiveTab() {
       ]);
       break;
     case "agents": {
-      await metricsStore.loadAgentUsageSeries();
+      await Promise.all([
+        metricsStore.loadAgentUsageSeries(),
+        organizationSettingsStore.ensureMembersLoaded(),
+      ]);
       const wasSwitch = sessionsTabSwitch;
       sessionsTabSwitch = false;
       if (wasSwitch && isSessionTelemetryEmpty.value) {

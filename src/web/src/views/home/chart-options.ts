@@ -40,6 +40,11 @@ type SeriesLabelOptions = {
   seriesLabel?: (seriesKey: string) => string;
 };
 
+type ValueAxisOptions = {
+  yAxisName?: string;
+  yAxisLabelFormatter?: (value: number) => string;
+};
+
 /** Numeric finding-severity fields on a review-findings point. */
 type SeverityKey = "critical" | "major" | "minor" | "suggestion" | "comment";
 
@@ -193,7 +198,8 @@ export function timeSeriesOption(
   options: {
     maxSeries?: number;
     showLegend?: boolean;
-  } & SeriesLabelOptions = {},
+  } & SeriesLabelOptions &
+    ValueAxisOptions = {},
 ): EChartsOption {
   const capped = capSeries(pivot, options.maxSeries ?? maxStackedSeries);
   const showLegend = options.showLegend ?? true;
@@ -234,7 +240,7 @@ export function timeSeriesOption(
         }
       : { show: false },
     grid: {
-      left: 48,
+      left: options.yAxisName ? 64 : 48,
       right: showLegend ? 168 : 24,
       top: 24,
       bottom: 40,
@@ -245,7 +251,16 @@ export function timeSeriesOption(
       boundaryGap: true,
       data: capped.bucketLabels,
     },
-    yAxis: { type: "value" },
+    yAxis: {
+      type: "value",
+      name: options.yAxisName,
+      nameLocation: options.yAxisName ? "center" : undefined,
+      nameGap: options.yAxisName ? 42 : undefined,
+      nameRotate: options.yAxisName ? 90 : undefined,
+      axisLabel: options.yAxisLabelFormatter
+        ? { formatter: options.yAxisLabelFormatter }
+        : undefined,
+    },
     dataZoom: [
       { id: "inside", type: "inside" },
       { id: "slider", type: "slider", height: 18, bottom: 8 },
