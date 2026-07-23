@@ -53,7 +53,7 @@ public static class CartInstructionsTextBuilder
                     1. Findings and feedback are high level; plan out specific code changes needed finding-by-finding; ground in actual code
                     2. Clear explanation of the identified finding and explain tradeoffs, shortcomings, different angles in the reviewers findings if any (especially with grounding and broader context of the codebase)
                     3. Present the concrete and specific changes needed; user decides which to proceed with; **do not make changes without confirmation**
-                    4. For verified findings, present multiple options for resolution as a pick list with a reasonable recommended default and explanation why
+                    4. For verified findings, present multiple options for resolution as a pick list (pick what to fix + pick options you present) with a reasonable recommended default and explanation why
                     5. ALWAYS ensure there is enough clarity to make the best fix if there is ambiguity or insufficient feedback to confidently implement the change
                     6. ALWAYS get confirmation and acceptance of the proposed fix for each finding before making changes
                     </process>

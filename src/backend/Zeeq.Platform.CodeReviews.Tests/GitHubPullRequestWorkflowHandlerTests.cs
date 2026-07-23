@@ -173,6 +173,29 @@ public sealed class GitHubPullRequestWorkflowHandlerTests
     }
 
     [Test]
+    [Arguments("labeled")]
+    [Arguments("edited")]
+    [Arguments("assigned")]
+    [Arguments("review_requested")]
+    public async Task PullRequestHandler_WithNonTriggeringAction_PublishesNoCommentWrite(
+        string action
+    )
+    {
+        using var fixture = WorkflowFixture.Create();
+
+        await fixture.PullRequestHandler.HandleAsync(
+            PullRequestMessage(action: action),
+            CancellationToken.None
+        );
+
+        await Assert.That(fixture.PullRequests.Records).Count().IsEqualTo(1);
+        await Assert.That(fixture.CodeReviews.Records).IsEmpty();
+        await Assert.That(fixture.ActiveLocks.Locks).IsEmpty();
+        await Assert.That(fixture.Published).IsEmpty();
+        await Assert.That(fixture.Deliveries.ProcessedDeliveryIds).IsEquivalentTo(["delivery_123"]);
+    }
+
+    [Test]
     public async Task PullRequestHandler_WhenReviewBudgetIsExhausted_PublishesAllowanceExhaustedOnly()
     {
         using var fixture = WorkflowFixture.Create();
