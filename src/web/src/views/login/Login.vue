@@ -7,12 +7,14 @@
       icon="i-hugeicons-user"
     >
       <div class="flex flex-col gap-3">
+        <!-- Temporary disable
         <UAlert
           variant="outline"
           description="New org activation currently requires admin action."
           icon="i-hugeicons-information-square"
         >
         </UAlert>
+        -->
 
         <UButton
           v-for="provider in providers"

@@ -183,9 +183,9 @@ const activeTab = ref<"templates" | "repositories">("templates");
 const repositoryId = ref<string | undefined>(undefined);
 
 const tabItems = [
-  { label: "Templates", value: "templates", slot: "templates" as const },
+  { label: "From Template", value: "templates", slot: "templates" as const },
   {
-    label: "Repositories",
+    label: "From Repository",
     value: "repositories",
     slot: "repositories" as const,
   },

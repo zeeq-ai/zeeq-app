@@ -2,7 +2,7 @@
   <!-- Library root dashboard: local window + four equal metric panels scoped to one library. -->
   <div class="flex h-full min-h-0 flex-col overflow-y-auto">
     <div
-      class="flex h-[45px] shrink-0 items-center justify-between gap-3 border-b border-default px-3"
+      class="flex h-11.25 shrink-0 items-center justify-between gap-3 border-b border-default px-3"
     >
       <div class="min-w-0">
         <div class="truncate text-sm font-medium">Library metrics</div>

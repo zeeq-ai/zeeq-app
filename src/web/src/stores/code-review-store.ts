@@ -160,6 +160,10 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
   const editingManagementAgent = ref<CodeReviewerAgentDto | null>(null);
   /** Draft seeded from a template or a copied agent, applied when the create panel next opens. */
   const copiedManagementAgentForm = ref<CodeReviewerAgentForm | null>(null);
+  /** Monotonic trigger for ManageAgents.vue to open create-mode companion UI. */
+  const createManagementAgentRequestId = ref(0);
+  /** Last create-mode companion UI request consumed by ManageAgents.vue. */
+  const handledCreateManagementAgentRequestId = ref(0);
   const loadingRepositories = ref(false);
   const loadingPullRequests = ref(false);
   const loadingSelectedPullRequest = ref(false);
@@ -791,6 +795,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     copiedManagementAgentForm.value = null;
     editingManagementAgent.value = null;
     selectedManagementItemId.value = managementConfigItemId;
+    createManagementAgentRequestId.value += 1;
   }
 
   /**
@@ -1312,6 +1317,8 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     selectedManagementItemId,
     editingManagementAgent,
     copiedManagementAgentForm,
+    createManagementAgentRequestId,
+    handledCreateManagementAgentRequestId,
     hasReachedAgentLimit,
     canCreateManagementAgent,
     newAgentButtonTitle,
