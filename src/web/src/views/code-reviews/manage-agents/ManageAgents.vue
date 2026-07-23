@@ -348,6 +348,8 @@ const {
   selectedManagementItemId,
   editingManagementAgent: editingAgent,
   copiedManagementAgentForm: copiedAgentForm,
+  createManagementAgentRequestId,
+  handledCreateManagementAgentRequestId,
   loadingRepositories,
   loadingAgents,
   savingAgent,
@@ -519,18 +521,30 @@ watch(agents, () => {
 });
 
 /**
- * The "New agent" trigger can now live outside this component (CodeReviews.vue's
- * toolbar), so it can only reset shared store state. Reset this component's local
- * source-library UI state here whenever a fresh create panel opens.
+ * The "New agent" trigger lives in CodeReviews.vue's toolbar. The store emits a
+ * request token so this view can open the source library even when create mode
+ * is already selected and the user clicks the toolbar button again.
  */
 watch(
-  () => [selectedManagementItemId.value, editingAgent.value] as const,
-  ([itemId, agent]) => {
-    if (itemId === managementConfigItemId && !agent) {
-      sourceRepoAgents.value = [];
-      sourceLibraryOpen.value = false;
+  createManagementAgentRequestId,
+  (requestId) => {
+    if (
+      requestId === 0 ||
+      requestId <= handledCreateManagementAgentRequestId.value
+    ) {
+      return;
     }
+
+    handledCreateManagementAgentRequestId.value = requestId;
+
+    if (selectedManagementItemId.value !== managementConfigItemId) {
+      return;
+    }
+
+    sourceRepoAgents.value = [];
+    sourceLibraryOpen.value = true;
   },
+  { immediate: true },
 );
 
 /** Loads repositories, selected repository config, and agent rows. */
