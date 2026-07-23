@@ -573,7 +573,7 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
     {
         var noiceImageUrl = linkFactory.BuildPublicAssetLink("noice.webp");
 
-        if (message.Kind == "draft_prompt")
+        if (message.Kind == GitHubCommentKinds.DraftPrompt)
         {
             var link = linkFactory.BuildInitialReviewLink(
                 message.OrganizationId,
@@ -591,9 +591,9 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
         var viewReviewUrl =
             review is not null
             && message.Kind
-                is "review_completed"
-                    or "stub_review_completed"
-                    or "no_agents_activated"
+                is GitHubCommentKinds.ReviewCompleted
+                    or GitHubCommentKinds.StubReviewCompleted
+                    or GitHubCommentKinds.NoAgentsActivated
                 ? linkFactory.BuildSingleReviewLink(review, CodeReviewSingleViewMode.Pr)
                 : null;
 
@@ -605,10 +605,10 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
         if (
             message.Kind
             is not (
-                "review_completed"
-                or "stub_review_completed"
-                or "review_failed"
-                or "no_agents_activated"
+                GitHubCommentKinds.ReviewCompleted
+                or GitHubCommentKinds.StubReviewCompleted
+                or GitHubCommentKinds.ReviewFailed
+                or GitHubCommentKinds.NoAgentsActivated
             )
         )
         {
@@ -625,7 +625,10 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
     }
 
     private static bool ShouldLoadFindings(string kind) =>
-        kind is "review_completed" or "stub_review_completed" or "no_agents_activated";
+        kind
+            is GitHubCommentKinds.ReviewCompleted
+                or GitHubCommentKinds.StubReviewCompleted
+                or GitHubCommentKinds.NoAgentsActivated;
 
     private static bool ShouldShowNoice(CodeReviewCommentActionLinks actionLinks) =>
         !string.IsNullOrWhiteSpace(actionLinks.NoiceImageUrl) && Random.Shared.NextSingle() >= 0.5;

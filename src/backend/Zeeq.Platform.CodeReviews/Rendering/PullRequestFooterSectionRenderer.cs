@@ -10,12 +10,25 @@ public sealed class PullRequestFooterSectionRenderer(ICodeReviewRuntimeStatistic
     public string SectionKind => GitHubCommentMarkers.PullRequestFooter;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Leaves the footer untouched for <see cref="GitHubCommentKinds.Ignored"/>/
+    /// <see cref="GitHubCommentKinds.AlreadyRunning"/> — these kinds carry no new review
+    /// information, so re-stamping <see cref="CodeReviewCommentRenderContext.RenderedAtUtc"/>
+    /// would make stale findings look freshly checked. Every other kind represents a genuine
+    /// state transition (queued, draft, failed, completed, budget exhausted) and should still
+    /// refresh the timestamp.
+    /// </remarks>
     public GitHubCommentDomPatch? Render(
         string kind,
         CodeReviewCommentRenderContext context,
         GitHubCommentDom currentDom
     )
     {
+        if (IsNoOpKind(kind))
+        {
+            return null;
+        }
+
         return new(
             SectionKind,
             OrderKey: null,
@@ -23,6 +36,9 @@ public sealed class PullRequestFooterSectionRenderer(ICodeReviewRuntimeStatistic
             RenderFooter(context, runtimeStatistics.GetSnapshot())
         );
     }
+
+    private static bool IsNoOpKind(string kind) =>
+        kind is GitHubCommentKinds.Ignored or GitHubCommentKinds.AlreadyRunning;
 
     private static string RenderFooter(
         CodeReviewCommentRenderContext context,

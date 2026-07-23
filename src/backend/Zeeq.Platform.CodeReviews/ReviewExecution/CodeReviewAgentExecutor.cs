@@ -623,12 +623,11 @@ public sealed partial class CodeReviewAgentExecutor(
 
     private const string PreviousReviewsUsageGuidance = """
         - The previous_reviews contain earlier rounds of findings from all reviewer facets
-        - The facet attribute on each review identifies the reviewer facet that produced that group of findings
+        - These are **NOT** current cycle findings!!  **ONLY FOR CONTEXT OF PREVIOUS REVIEW ROUNDS**
         - In the *current* pr_diff, pay attention to `NOTE` comments (e.g. // NOTE: ...,  -- NOTE: ..., /* NOTE: ...*/, idiomatic language comments) that address these previous findings; if present, *consider the finding resolved*
-        - CRITICAL and MAJOR findings **without a nearby NOTE** are considered *unresolved*; re-check the pr_diff for these and re-raise if they still exist
+        - CRITICAL and MAJOR findings **without a nearby NOTE** are considered *unresolved*; re-check the pr_diff for these high risk findings and re-flag if they still exist without a NOTE or comment explaining it
         - For MINOR, SUGGESTION, and COMMENT findings, if the pr_diff does not materially worsen the issue or increase the risk, *consider the finding resolved*
-        - Do not repeat resolved findings in your current review unless the pr_diff **materially increases risk, errors, or regressions without a NOTE** clearly explaining the reasoning
-        - These are **NOT** current cycle findings!!  **ONLY FOR CONTEXT OF PREVIOUS REVIEWS**
+        - **Do not repeat resolved findings in your current review** unless the pr_diff **materially increases risk, errors, or regressions without a NOTE** clearly explaining the reasoning
         """;
 
     [LoggerMessage(

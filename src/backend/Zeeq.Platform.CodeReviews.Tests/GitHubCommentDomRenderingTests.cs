@@ -512,6 +512,34 @@ public sealed class GitHubCommentDomRenderingTests
     }
 
     [Test]
+    [Arguments("ignored")]
+    [Arguments("already_running")]
+    public async Task FooterRenderer_WithNoOpKind_LeavesExistingFooterUntouched(string kind)
+    {
+        var dom = ExistingDom(
+            Section(GitHubCommentMarkers.PullRequestFooter, "zzzzzz", "Stale footer timestamp")
+        );
+        var renderer = new GitHubCommentDomRenderer([
+            new PullRequestFooterSectionRenderer(
+                new StaticCodeReviewRuntimeStatistics(CodeReviewRuntimePercentilesSnapshot.NoData)
+            ),
+        ]);
+        var context = new CodeReviewCommentRenderContext(
+            Review: null,
+            FindingsXml: null,
+            Findings: null,
+            FindingsLoadError: null,
+            ActionLinks: new(),
+            RenderedAtUtc: DateTimeOffset.Parse("2026-06-25T17:19:43Z")
+        );
+
+        var body = renderer.Render(kind: kind, clear: [], context: context, currentDom: dom);
+
+        await Assert.That(body).Contains("Stale footer timestamp");
+        await Assert.That(body).DoesNotContain("2026-06-25 17:19:43");
+    }
+
+    [Test]
     public async Task FooterRenderer_WithoutViewReviewUrl_OmitsLink()
     {
         var renderer = new GitHubCommentDomRenderer([

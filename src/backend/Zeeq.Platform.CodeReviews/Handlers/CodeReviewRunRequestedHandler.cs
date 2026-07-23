@@ -309,7 +309,7 @@ public sealed partial class CodeReviewRunRequestedHandler(
             reachedTerminalState = true;
 
             await publisher.PublishAsync(
-                CreateCommentWriteSignal(message, "review_completed"),
+                CreateCommentWriteSignal(message, GitHubCommentKinds.ReviewCompleted),
                 cancellationToken
             );
             LogCommentSignalPublished(
@@ -318,14 +318,14 @@ public sealed partial class CodeReviewRunRequestedHandler(
                 message.OwnerQualifiedRepoName,
                 message.PullRequestNumber,
                 message.CodeReviewRecordId,
-                "review_completed"
+                GitHubCommentKinds.ReviewCompleted
             );
 
             activity?.AddEvent(
                 [
                     ("organization.id", message.OrganizationId),
                     ("code_review.id", message.CodeReviewRecordId),
-                    ("github.comment.kind", "review_completed"),
+                    ("github.comment.kind", GitHubCommentKinds.ReviewCompleted),
                 ],
                 "code_review.comment_signal_published"
             );
@@ -368,7 +368,7 @@ public sealed partial class CodeReviewRunRequestedHandler(
             reachedTerminalState = true;
 
             await publisher.PublishAsync(
-                CreateCommentWriteSignal(message, "review_failed"),
+                CreateCommentWriteSignal(message, GitHubCommentKinds.ReviewFailed),
                 CancellationToken.None
             );
             LogCommentSignalPublished(
@@ -377,14 +377,14 @@ public sealed partial class CodeReviewRunRequestedHandler(
                 message.OwnerQualifiedRepoName,
                 message.PullRequestNumber,
                 message.CodeReviewRecordId,
-                "review_failed"
+                GitHubCommentKinds.ReviewFailed
             );
 
             activity?.AddEvent(
                 [
                     ("organization.id", message.OrganizationId),
                     ("code_review.id", message.CodeReviewRecordId),
-                    ("github.comment.kind", "review_failed"),
+                    ("github.comment.kind", GitHubCommentKinds.ReviewFailed),
                 ],
                 "code_review.comment_signal_published"
             );
@@ -557,7 +557,7 @@ public sealed partial class CodeReviewRunRequestedHandler(
             await codeReviews.UpdateAsync(review, cancellationToken);
 
             await publisher.PublishAsync(
-                CreateCommentWriteSignal(message, "review_failed"),
+                CreateCommentWriteSignal(message, GitHubCommentKinds.ReviewFailed),
                 cancellationToken
             );
             LogCommentSignalPublished(
@@ -566,7 +566,7 @@ public sealed partial class CodeReviewRunRequestedHandler(
                 message.OwnerQualifiedRepoName,
                 message.PullRequestNumber,
                 message.CodeReviewRecordId,
-                "review_failed"
+                GitHubCommentKinds.ReviewFailed
             );
 
             await ReleaseActiveLockIfOwnedAsync(message, cancellationToken);

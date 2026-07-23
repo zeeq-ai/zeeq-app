@@ -21,7 +21,9 @@ public sealed class PullRequestActionsSectionRenderer : IGitHubCommentSectionRen
         }
 
         var label =
-            kind == "draft_prompt" ? "Request a Zeeq review" : "Request another Zeeq review";
+            kind == GitHubCommentKinds.DraftPrompt
+                ? "Request a Zeeq review"
+                : "Request another Zeeq review";
 
         return new(
             SectionKind,

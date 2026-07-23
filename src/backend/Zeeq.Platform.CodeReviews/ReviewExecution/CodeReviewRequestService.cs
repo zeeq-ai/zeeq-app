@@ -136,13 +136,13 @@ public sealed partial class CodeReviewRequestService(
                 request.TriggerAction,
                 pullRequest.IsDraft,
                 pullRequest.State,
-                "allowance_exhausted"
+                GitHubCommentKinds.AllowanceExhausted
             );
 
             await PublishImmediateCommentAsync(
                 request,
                 pullRequest,
-                "allowance_exhausted",
+                GitHubCommentKinds.AllowanceExhausted,
                 latestReview,
                 cancellationToken
             );
@@ -151,14 +151,14 @@ public sealed partial class CodeReviewRequestService(
                 request.OrganizationId,
                 request.OwnerQualifiedRepoName,
                 pullRequest.PullRequestNumber,
-                "allowance_exhausted",
+                GitHubCommentKinds.AllowanceExhausted,
                 request.SignalId,
                 latestReview.Id
             );
 
             return new(
                 CodeReviewRequestOutcome.BudgetExhausted,
-                "allowance_exhausted",
+                GitHubCommentKinds.AllowanceExhausted,
                 pullRequest,
                 latestReview
             );
@@ -194,13 +194,13 @@ public sealed partial class CodeReviewRequestService(
                 request.TriggerAction,
                 pullRequest.IsDraft,
                 pullRequest.State,
-                "already_running"
+                GitHubCommentKinds.AlreadyRunning
             );
 
             await PublishImmediateCommentAsync(
                 request,
                 pullRequest,
-                "already_running",
+                GitHubCommentKinds.AlreadyRunning,
                 codeReview: null,
                 cancellationToken
             );
@@ -209,14 +209,14 @@ public sealed partial class CodeReviewRequestService(
                 request.OrganizationId,
                 request.OwnerQualifiedRepoName,
                 pullRequest.PullRequestNumber,
-                "already_running",
+                GitHubCommentKinds.AlreadyRunning,
                 request.SignalId,
                 null
             );
 
             return new(
                 CodeReviewRequestOutcome.ActiveReviewAlreadyRunning,
-                "already_running",
+                GitHubCommentKinds.AlreadyRunning,
                 pullRequest,
                 CodeReview: null
             );
@@ -248,7 +248,7 @@ public sealed partial class CodeReviewRequestService(
         await PublishImmediateCommentAsync(
             request,
             pullRequest,
-            "queued",
+            GitHubCommentKinds.Queued,
             review,
             cancellationToken
         );
@@ -257,7 +257,7 @@ public sealed partial class CodeReviewRequestService(
             request.OrganizationId,
             request.OwnerQualifiedRepoName,
             pullRequest.PullRequestNumber,
-            "queued",
+            GitHubCommentKinds.Queued,
             request.SignalId,
             review.Id
         );
@@ -298,7 +298,7 @@ public sealed partial class CodeReviewRequestService(
             }
         }
 
-        return new(CodeReviewRequestOutcome.Queued, "queued", pullRequest, review);
+        return new(CodeReviewRequestOutcome.Queued, GitHubCommentKinds.Queued, pullRequest, review);
     }
 
     /// <summary>
@@ -403,13 +403,20 @@ public sealed partial class CodeReviewRequestService(
     private static string CommandKindForGate(string gateReason) =>
         gateReason switch
         {
-            "draft" => "draft_prompt",
-            "closed" => "closed",
-            _ => "ignored",
+            "draft" => GitHubCommentKinds.DraftPrompt,
+            "closed" => GitHubCommentKinds.Closed,
+            _ => GitHubCommentKinds.Ignored,
         };
 
+    /// <remarks>
+    /// <see cref="GitHubCommentKinds.Ignored"/> is reached only via a <c>pull_request</c> action
+    /// outside <see cref="IsReviewTriggerAction"/> (e.g. labeled, edited, assigned, review_requested)
+    /// — never a real code push, so there is nothing for the comment to reflect and no reason to
+    /// touch GitHub. <see cref="GitHubCommentKinds.AlreadyRunning"/> is kept: it means a real push's
+    /// review was dropped by lock contention, which is worth surfacing.
+    /// </remarks>
     private static bool ShouldPublishImmediateComment(string commandKind) =>
-        commandKind is not "closed";
+        commandKind is not (GitHubCommentKinds.Closed or GitHubCommentKinds.Ignored);
 
     private static bool IsReviewTriggerAction(string action) =>
         action is "opened" or "reopened" or "ready_for_review" or "synchronize";
@@ -512,7 +519,10 @@ public sealed partial class CodeReviewRequestService(
         );
 
     private static IReadOnlyList<string> ClearMarkersFor(string commandKind) =>
-        commandKind is "queued" or "draft_prompt" or "closed"
+        commandKind
+            is GitHubCommentKinds.Queued
+                or GitHubCommentKinds.DraftPrompt
+                or GitHubCommentKinds.Closed
             ?
             [
                 GitHubCommentMarkers.PullRequestStatus,

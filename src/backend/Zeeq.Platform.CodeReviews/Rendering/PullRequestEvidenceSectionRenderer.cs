@@ -15,7 +15,7 @@ public sealed class PullRequestEvidenceSectionRenderer : IGitHubCommentSectionRe
         GitHubCommentDom currentDom
     )
     {
-        if (kind is not ("review_completed" or "stub_review_completed"))
+        if (kind is not (GitHubCommentKinds.ReviewCompleted or GitHubCommentKinds.StubReviewCompleted))
         {
             return null;
         }
@@ -51,16 +51,15 @@ public sealed class PullRequestEvidenceSectionRenderer : IGitHubCommentSectionRe
             <instruction_for_agents>
             The following XML is the raw output from expert code reviewers analyzing the PR.
             - Review each finding in the feedback from the expert reviewers
-            - Evaluate the change in the broader context of the codebase; the reviewer only saw the PR contents and not the broader codebase; determine the veracity of each finding
-            - If a behavior is expected, suggest leaving a comment in the code to explain the rationale to future travelers (agents)
-            - The change proposals are high level; plan out specific code changes needed to implement the feedback, finding by finding
+            - Evaluate the validity of each finding in the broader context of the codebase; the reviewer only saw the PR contents and not the broader codebase; determine the veracity of each finding
+            - The change proposals are high level; plan out **specific code changes** needed to implement the feedback, finding-by-finding
             - ALWAYS get confirmation and acceptance of the proposed fix for each finding before writing code
             - ALWAYS ensure there is enough clarity to make the best fix if there is ambiguity or insufficient feedback to confidently implement the change
             - Call out any tradeoffs or shortcomings in the proposed changes if any (especially in the broader context of the codebase)
             - Present the concrete changes needed and let the user decide which to proceed with; do not make changes without confirmation
             - Use a checklist/todo list to keep track of work against this set of findings; we do not want to wing it here
-            - Review your KB and documentation for guidance on best practices
-            - Add code comment: `NOTE: (Reason to defer or ignore a finding goes here)` to document any rationale for deferring or ignoring a finding
+            - If a behavior is expected or by design, suggest leaving a comment near the code to explain reasoning to future travelers (agents)
+            - Add code comment: "NOTE: (Reason to defer or ignore a finding goes here)" to document any rationale for deferring or ignoring a finding
             </instruction_for_agents>
             -->
 

@@ -18,7 +18,14 @@ public sealed class PullRequestFindingsSectionRenderer : IGitHubCommentSectionRe
         GitHubCommentDom currentDom
     )
     {
-        if (kind is not ("review_completed" or "stub_review_completed" or "no_agents_activated"))
+        if (
+            kind
+            is not (
+                GitHubCommentKinds.ReviewCompleted
+                or GitHubCommentKinds.StubReviewCompleted
+                or GitHubCommentKinds.NoAgentsActivated
+            )
+        )
         {
             return null;
         }

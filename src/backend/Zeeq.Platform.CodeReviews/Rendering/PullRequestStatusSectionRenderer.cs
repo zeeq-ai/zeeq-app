@@ -22,13 +22,17 @@ public sealed class PullRequestStatusSectionRenderer : IGitHubCommentSectionRend
 
         var markdown = kind switch
         {
-            "draft_prompt" => "PR is currently a draft. Zeeq will review it when it is ready.",
-            "ignored" => "This GitHub event did not require a new Zeeq review.",
-            "already_running" => "A Zeeq review is already running for this PR.",
-            "allowance_exhausted" => "The review budget for this PR is exhausted.",
-            "queued" => "Zeeq accepted this PR for review and queued the reviewer workflow.",
-            "review_failed" => RenderFailed(context),
-            "no_agents_activated" => "No configured reviewer agents matched the files in this PR.",
+            GitHubCommentKinds.DraftPrompt =>
+                "PR is currently a draft. Zeeq will review it when it is ready.",
+            GitHubCommentKinds.Ignored => "This GitHub event did not require a new Zeeq review.",
+            GitHubCommentKinds.AlreadyRunning => "A Zeeq review is already running for this PR.",
+            GitHubCommentKinds.AllowanceExhausted =>
+                "The review budget for this PR is exhausted.",
+            GitHubCommentKinds.Queued =>
+                "Zeeq accepted this PR for review and queued the reviewer workflow.",
+            GitHubCommentKinds.ReviewFailed => RenderFailed(context),
+            GitHubCommentKinds.NoAgentsActivated =>
+                "No configured reviewer agents matched the files in this PR.",
             _ when !string.IsNullOrWhiteSpace(context.FindingsLoadError) =>
                 $"Review completed, but Zeeq could not load the findings artifact: {context.FindingsLoadError}",
             _ => null,
@@ -49,7 +53,10 @@ public sealed class PullRequestStatusSectionRenderer : IGitHubCommentSectionRend
     }
 
     private static bool IsCompletedKind(string kind) =>
-        kind is "review_completed" or "stub_review_completed" or "no_agents_activated";
+        kind
+            is GitHubCommentKinds.ReviewCompleted
+                or GitHubCommentKinds.StubReviewCompleted
+                or GitHubCommentKinds.NoAgentsActivated;
 
     private GitHubCommentDomPatch Remove() =>
         new(SectionKind, OrderKey: null, GitHubCommentPatchMode.RemoveSection, Markdown: null);

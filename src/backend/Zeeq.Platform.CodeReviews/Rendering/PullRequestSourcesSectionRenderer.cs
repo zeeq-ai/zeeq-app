@@ -44,7 +44,14 @@ public sealed class PullRequestSourcesSectionRenderer : IGitHubCommentSectionRen
     {
         // Show for any completed review (incl. zero findings / no agents) so readers can see how
         // the conclusion was reached; other kinds (queued/running/failed) leave the section alone.
-        if (kind is not ("review_completed" or "stub_review_completed" or "no_agents_activated"))
+        if (
+            kind
+            is not (
+                GitHubCommentKinds.ReviewCompleted
+                or GitHubCommentKinds.StubReviewCompleted
+                or GitHubCommentKinds.NoAgentsActivated
+            )
+        )
         {
             return null;
         }
