@@ -197,6 +197,78 @@ public sealed class ExpertCodeReviewRunnerTests
     }
 
     [Test]
+    public async Task RunReviewAsync_WithValidExplicitLibrary_ReplacesConfiguredLibraries()
+    {
+        var fixture = Fixture.Create();
+        fixture
+            .Storage.ReadTextAsync(
+                fixture.Path,
+                StorageContainer.CodeReviewDiffs,
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult(Diff("src/App.cs")));
+        fixture
+            .Repositories.FindActiveAsync("github", "owner/repo", Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromResult<CodeRepository?>(
+                    Repository(includeExtension: ".cs", libraryIds: ["lib_configured"])
+                )
+            );
+        fixture
+            .Libraries.ListLibrariesAsync("repo_org", Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromResult<IReadOnlyList<Library>>([
+                    LibraryModel("lib_configured", "repo_org", "configured-library"),
+                    LibraryModel("lib_requested", "repo_org", "requested-library"),
+                ])
+            );
+
+        await fixture.Runner.RunReviewAsync(
+            fixture.Request(libraries: ["requested-library", "not-a-real-library"]),
+            TestUser(),
+            CancellationToken.None
+        );
+
+        await Assert.That(fixture.AgentExecutor.Prompt).Contains("requested-library");
+        await Assert.That(fixture.AgentExecutor.Prompt).DoesNotContain("configured-library");
+    }
+
+    [Test]
+    public async Task RunReviewAsync_WithNoValidExplicitLibraries_FallsBackToConfiguredLibraries()
+    {
+        var fixture = Fixture.Create();
+        fixture
+            .Storage.ReadTextAsync(
+                fixture.Path,
+                StorageContainer.CodeReviewDiffs,
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult(Diff("src/App.cs")));
+        fixture
+            .Repositories.FindActiveAsync("github", "owner/repo", Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromResult<CodeRepository?>(
+                    Repository(includeExtension: ".cs", libraryIds: ["lib_configured"])
+                )
+            );
+        fixture
+            .Libraries.ListLibrariesAsync("repo_org", Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromResult<IReadOnlyList<Library>>([
+                    LibraryModel("lib_configured", "repo_org", "configured-library"),
+                ])
+            );
+
+        await fixture.Runner.RunReviewAsync(
+            fixture.Request(libraries: ["not-a-real-library"]),
+            TestUser(),
+            CancellationToken.None
+        );
+
+        await Assert.That(fixture.AgentExecutor.Prompt).Contains("configured-library");
+    }
+
+    [Test]
     public async Task RunReviewAsync_WithInvalidToken_ReturnsError()
     {
         var fixture = Fixture.Create();
@@ -337,7 +409,8 @@ public sealed class ExpertCodeReviewRunnerTests
 
     private static CodeRepository Repository(
         string includeExtension,
-        string sharedPromptFragment = ""
+        string sharedPromptFragment = "",
+        string[]? libraryIds = null
     ) =>
         new()
         {
@@ -348,6 +421,7 @@ public sealed class ExpertCodeReviewRunnerTests
             OwnerQualifiedName = "owner/repo",
             DisplayName = "owner/repo",
             Enabled = true,
+            LibraryIds = libraryIds ?? [],
             ReviewConfiguration = new()
             {
                 FileFilter = new()
@@ -365,6 +439,16 @@ public sealed class ExpertCodeReviewRunnerTests
             },
             CreatedAtUtc = DateTimeOffset.UtcNow,
             UpdatedAtUtc = DateTimeOffset.UtcNow,
+        };
+
+    private static Library LibraryModel(string id, string organizationId, string name) =>
+        new()
+        {
+            Id = id,
+            OrganizationId = organizationId,
+            Name = name,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
         };
 
     private static CodeReviewerAgent Agent(
@@ -421,13 +505,16 @@ public sealed class ExpertCodeReviewRunnerTests
 
         public ICodeReviewerAgentStore AgentStore { get; private init; } = null!;
 
+        public ILibraryDocumentStore Libraries { get; private init; } = null!;
+
         public TestCodeReviewAgentExecutor AgentExecutor { get; private init; } = null!;
 
         public ExpertCodeReviewRunner Runner { get; private init; } = null!;
 
         public ExpertCodeReviewRunRequest Request(
             string? jobId = null,
-            string? uploadToken = null
+            string? uploadToken = null,
+            IReadOnlyList<string>? libraries = null
         ) =>
             new(
                 jobId ?? JobId,
@@ -437,7 +524,8 @@ public sealed class ExpertCodeReviewRunnerTests
                 "Review the local diff.",
                 Branch: null,
                 AgentSessionId: null,
-                ReviewGroupId: null
+                ReviewGroupId: null,
+                Libraries: libraries
             );
 
         public static Fixture Create(DateTimeOffset? expiresAtUtc = null)
@@ -527,12 +615,18 @@ public sealed class ExpertCodeReviewRunnerTests
                 )
             );
 
+            var libraries = Substitute.For<ILibraryDocumentStore>();
+            libraries
+                .ListLibrariesAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+                .Returns(Task.FromResult<IReadOnlyList<Library>>([]));
+
             var fixture = new Fixture
             {
                 TokenProtector = tokenProtector,
                 Storage = storage,
                 Repositories = repositories,
                 AgentStore = agentStore,
+                Libraries = libraries,
                 AgentExecutor = agentExecutor,
                 Token = tokenProtector.Protect(
                     CodeReviewDiffUploadTokenProtector.CreatePayload(
@@ -553,7 +647,7 @@ public sealed class ExpertCodeReviewRunnerTests
                     ),
                     agentExecutor,
                     new CodeReviewXmlOutputValidator(),
-                    Substitute.For<ILibraryDocumentStore>(),
+                    libraries,
                     new TestHybridCache(),
                     Options.Create(appSettings),
                     codeReviewStore,

@@ -2,12 +2,12 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Security.Claims;
-using Zeeq.Core.Common;
-using Zeeq.Core.Identity;
-using Zeeq.Platform.CodeReviews;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
+using Zeeq.Core.Common;
+using Zeeq.Core.Identity;
+using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Mcp.CodeReviews;
 
@@ -109,6 +109,12 @@ public sealed partial class CodeReviewMcpTools
             "Optional for `run_review`; MUST pass back known review group ID from a previous `expert_code_review` pass to load related reviews for follow up reviews."
         )]
             string? reviewGroupId = null,
+        [Description(
+            """
+                Optional for `run_review`; leave empty to use default libraries configured; use explicit only to override defaults when instructed.
+                """
+        )]
+            string[]? libraries = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -137,6 +143,7 @@ public sealed partial class CodeReviewMcpTools
                     activeOrPlannedBranchName,
                     agentSessionId,
                     reviewGroupId,
+                    libraries,
                     user,
                     cancellationToken
                 ),
@@ -208,6 +215,7 @@ public sealed partial class CodeReviewMcpTools
         string? branch,
         string? agentSessionId,
         string? reviewGroupId,
+        string[]? libraries,
         ClaimsPrincipal? user,
         CancellationToken cancellationToken
     ) =>
@@ -219,7 +227,8 @@ public sealed partial class CodeReviewMcpTools
             description,
             agentSessionId,
             reviewGroupId,
-            branch
+            branch,
+            libraries
         )
             .ToRequest()
             .Match(
