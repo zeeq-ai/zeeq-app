@@ -1,4 +1,5 @@
 import { defineStore, acceptHMRUpdate } from "pinia";
+import { useStorage } from "@vueuse/core";
 import {
   Metrics,
   metricSeriesGroupEnum,
@@ -73,6 +74,10 @@ export function metricWindowRangeMs(
   return metricWindowRangesMs[token];
 }
 export const defaultMetricWindow: MetricWindowToken = "24h";
+export const sharedMetricWindow = useStorage<MetricWindowToken>(
+  "zeeq:metrics-window",
+  defaultMetricWindow,
+);
 
 /** Counter metric types backing the bucketed series panels (UI-1, UI-2, UI-6). */
 export const counterMetricType = {
@@ -126,8 +131,8 @@ export const metricWindowItems = metricWindowTokens.map((token) => ({
 export const useMetricsStore = defineStore("metrics-store", () => {
   const appStore = useAppStore();
 
-  // Shared window across every panel.
-  const window = ref<MetricWindowToken>(defaultMetricWindow);
+  // Shared window across metrics surfaces.
+  const window = sharedMetricWindow;
 
   // Filters are scoped per tab: MCP uses users/tools, Knowledge uses a single
   // library, Code Reviews uses repos/authors/origin, Performance uses facet/repo.
