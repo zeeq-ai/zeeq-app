@@ -100,7 +100,6 @@
 </template>
 
 <script setup lang="ts">
-import { useColorMode } from "@vueuse/core";
 import type { MetricLeaderboardItem, MetricSeriesPoint } from "@/api/generated";
 import {
   metricWindowRangeMs,
@@ -136,9 +135,6 @@ const emits = defineEmits<{
   "update:window": [value: MetricWindowToken];
 }>();
 
-const colorMode = useColorMode();
-const isDark = computed(() => colorMode.value === "dark");
-
 /** Library-scoped read counters are projected into read-type series for the trend chart. */
 const readTypeSeries = computed<MetricSeriesPoint[]>(() => [
   ...withSeriesLabel(props.documentReadSeries, "Documents"),
@@ -172,13 +168,13 @@ const readsOption = computed(() =>
 );
 
 const leaderboardOption = computed(() =>
-  leaderboardBarOption(props.leaderboard, isDark.value),
+  leaderboardBarOption(props.leaderboard),
 );
 const sectionLeaderboardOption = computed(() =>
-  leaderboardBarOption(props.sectionLeaderboard, isDark.value),
+  leaderboardBarOption(props.sectionLeaderboard),
 );
 const snippetLeaderboardOption = computed(() =>
-  leaderboardBarOption(props.snippetLeaderboard, isDark.value),
+  leaderboardBarOption(props.snippetLeaderboard),
 );
 
 function withSeriesLabel(
