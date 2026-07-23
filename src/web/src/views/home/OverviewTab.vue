@@ -267,7 +267,9 @@ const cards = computed<OverviewCard[]>(() => {
 
 /** UI-1: stacked bar of tool calls, one band per user. */
 const toolCallOption = computed(() =>
-  timeSeriesOption(pivot(props.toolCallSeries, emailLocalPart)),
+  timeSeriesOption(pivot(props.toolCallSeries, emailLocalPart), {
+    maxSeries: 50,
+  }),
 );
 
 /** UI-2: stacked bar of tool calls, one band per connecting agent. */
