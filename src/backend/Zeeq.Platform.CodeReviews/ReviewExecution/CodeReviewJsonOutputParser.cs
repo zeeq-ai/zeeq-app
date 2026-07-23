@@ -6,7 +6,7 @@ namespace Zeeq.Platform.CodeReviews;
 /// Parses a reviewer agent's JSON output into the canonical <see cref="CodeReviewFacetOutput"/> model.
 /// </summary>
 /// <remarks>
-/// The reviewer LLM emits JSON per <see cref="CodeReviewOutputPrompt"/>. This parser is
+/// The reviewer LLM emits JSON per <see cref="CodeReviewSystemPrompt"/>. This parser is
 /// intentionally tolerant of surrounding prose or markdown fences (it slices the first
 /// <c>{</c> through the last <c>}</c>), then validates the same field-level invariants the
 /// XML validator enforces before mapping onto the XML output model.

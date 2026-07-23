@@ -138,6 +138,7 @@ import type {
   CodeReviewRecordDto,
   CodeReviewReviewerFindingsDto,
 } from "@/api/generated";
+import { toAbsoluteAppUrl } from "@/router/app-url";
 
 import CodeReviewAccordion from "./CodeReviewAccordion.vue";
 
@@ -181,9 +182,9 @@ const emits = defineEmits<{
  * so the raw token avoids the precision loss that caused 404s on the partition lookup.
  */
 async function copyPullRequestLink(pr: CodeReviewPullRequestDto) {
-  const url =
-    `${location.origin}/code-reviews/pull-requests/${pr.id}/single` +
-    `?c=${pr.singleViewToken}`;
+  const url = toAbsoluteAppUrl(
+    `/code-reviews/pull-requests/${pr.id}/single?c=${pr.singleViewToken}`,
+  );
 
   try {
     await navigator.clipboard.writeText(url);

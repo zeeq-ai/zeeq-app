@@ -424,7 +424,7 @@ public sealed partial class CodeReviewAgentExecutor(
     /// <returns>The static agent system-prompt string.</returns>
     internal static string BuildAgentSystemInstructions(CodeReviewerRuntimeAgent reviewer) =>
         $"""
-            {CodeReviewOutputPrompt.CommonInstructions}
+            {CodeReviewSystemPrompt.CommonInstructions}
 
             ---
 

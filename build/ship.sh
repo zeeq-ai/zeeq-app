@@ -23,13 +23,13 @@ gcloud run deploy zeeq-runtime \
   --allow-unauthenticated \
   --add-cloudsql-instances="${ZEEQ_CLOUDSQL_INSTANCE}" \
   --min-instances=0 \
-  --max-instances=4 \
+  --max-instances=2 \
   --timeout=15m \
   --region="${REGION}" \
   --cpu-boost \
   --cpu=2 \
   --memory=2Gi \
-  --concurrency=250 \
+  --concurrency=500 \
   --use-http2 \
   --project="${PROJECT_ID}" \
   --set-secrets="$(join_by_comma "${ZEEQ_RUNTIME_WEB_SECRETS[@]}")" \
