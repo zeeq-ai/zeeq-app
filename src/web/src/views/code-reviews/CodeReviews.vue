@@ -127,6 +127,7 @@ const repositoriesLoadAttempted = ref(false);
 const bodyClass = computed(() =>
   route.name === "CodeReviewPullRequests" ||
   route.name === "ManageAgents" ||
+  route.name === "ManageAgent" ||
   route.name === "CodeReviewSingle" ||
   route.name === "CodeReviewPullRequestSingle"
     ? "gap-0 sm:gap-0 overflow-hidden p-0 sm:p-0"
@@ -178,6 +179,7 @@ const links = computed<NavigationMenuItem[][]>(() => {
     {
       label: "Manage Agents",
       to: "/code-reviews/manage-agents",
+      active: route.name === "ManageAgents" || route.name === "ManageAgent",
     },
   ];
 
@@ -250,7 +252,7 @@ async function saveSharedPromptFragment(sharedPromptFragment: string) {
 /** Changes the shared repository and reloads whichever tab is active. */
 async function changeRepository(repositoryId: string) {
   try {
-    if (route.name === "ManageAgents") {
+    if (route.name === "ManageAgents" || route.name === "ManageAgent") {
       await codeReviewStore.setSelectedRepository(repositoryId);
       return;
     }

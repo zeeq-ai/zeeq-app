@@ -166,6 +166,11 @@ internal sealed class PostgresPullRequestRecordStore(PostgresDbContext db) : IPu
             rows = rows.Where(record => record.ClaimStatus == query.ClaimStatus);
         }
 
+        if (query.SubjectUserId is not null)
+        {
+            rows = rows.Where(record => record.ClaimedByUserId == query.SubjectUserId);
+        }
+
         if (query.Cursor is { } cursor)
         {
             // Seek pagination: continue strictly older than the last rendered row.

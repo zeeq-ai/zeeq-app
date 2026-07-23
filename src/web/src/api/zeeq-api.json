@@ -1106,6 +1106,13 @@
             }
           },
           {
+            "name": "scope",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/CodeReviewInboxScope"
+            }
+          },
+          {
             "name": "cursorCreatedAtUtc",
             "in": "query",
             "schema": {
@@ -1751,6 +1758,62 @@
           },
           "required": true
         },
+        "responses": {
+          "404": {
+            "description": "Not Found"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewerAgentResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/agents/{agentId}": {
+      "get": {
+        "tags": [
+          "Code Reviews"
+        ],
+        "summary": "Get a reviewer agent.",
+        "description": "Returns one persisted reviewer agent (`agentId`) within the route `orgId`.\nThe response includes the agent's repository id so direct links can select\nthe correct repository without scanning every configured repository.\n\nRestricted to organization owners and admins (`403` otherwise).",
+        "operationId": "GetCodeReviewerAgent",
+        "parameters": [
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "404": {
             "description": "Not Found"

@@ -26,6 +26,7 @@ public sealed class ListCodeReviewPullRequestsEndpointHandlerTests
             teamId: null,
             repositoryId: "repo_123",
             claimStatus: null,
+            scope: null,
             cursorCreatedAtUtc: null,
             cursorId: null,
             pageSize: null,
@@ -62,6 +63,59 @@ public sealed class ListCodeReviewPullRequestsEndpointHandlerTests
         await Assert.That(parsedCursor!.UpdatedAtUtc).IsEqualTo(cursor.UpdatedAtUtc);
     }
 
+    [Test]
+    public async Task ListCodeReviewPullRequests_WithMineScope_ReturnsSubjectScopedReviewUpdateCursor()
+    {
+        var fixture = Fixture.Create();
+
+        var result = await fixture.Handler.HandleAsync(
+            "org_123",
+            teamId: null,
+            repositoryId: "repo_123",
+            claimStatus: null,
+            scope: CodeReviewInboxScope.Mine,
+            cursorCreatedAtUtc: null,
+            cursorId: null,
+            pageSize: null,
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<CodeReviewPullRequestListResponse>;
+        var cursor = ok!.Value!.ReviewUpdatesCursor;
+
+        await Assert.That(cursor).IsNotNull();
+        await Assert.That(cursor!.Scope).IsEqualTo(CodeReviewInboxScope.Mine);
+        await Assert.That(cursor.SubjectUserId).IsEqualTo("usr_123");
+        await Assert.That(fixture.PullRequests.LastQuery).IsNotNull();
+        await Assert.That(fixture.PullRequests.LastQuery!.SubjectUserId).IsEqualTo("usr_123");
+    }
+
+    [Test]
+    public async Task ListCodeReviewPullRequests_WithMineScopeAndMissingSubject_ReturnsBadRequest()
+    {
+        var fixture = Fixture.Create();
+
+        var result = await fixture.Handler.HandleAsync(
+            "org_123",
+            teamId: null,
+            repositoryId: "repo_123",
+            claimStatus: null,
+            scope: CodeReviewInboxScope.Mine,
+            cursorCreatedAtUtc: null,
+            cursorId: null,
+            pageSize: null,
+            NoSubjectUser(),
+            CancellationToken.None
+        );
+
+        var badRequest = result.Result as BadRequest<CodeReviewEndpointError>;
+
+        await Assert.That(badRequest).IsNotNull();
+        await Assert.That(badRequest!.Value!.Code).IsEqualTo("missing_subject");
+        await Assert.That(fixture.PullRequests.LastQuery).IsNull();
+    }
+
     private static ClaimsPrincipal TestUser() =>
         new(
             new ClaimsIdentity(
@@ -69,6 +123,9 @@ public sealed class ListCodeReviewPullRequestsEndpointHandlerTests
                 authenticationType: "test"
             )
         );
+
+    private static ClaimsPrincipal NoSubjectUser() =>
+        new(new ClaimsIdentity(authenticationType: "test"));
 
     private sealed class Fixture
     {

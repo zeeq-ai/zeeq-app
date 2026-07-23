@@ -74,6 +74,7 @@ public sealed record PullRequestStreamQuery(
     string? TeamId = null,
     string? RepositoryId = null,
     PullRequestClaimStatus? ClaimStatus = null,
+    string? SubjectUserId = null,
     CodeReviewStreamCursor? Cursor = null,
     int PageSize = 50
 );

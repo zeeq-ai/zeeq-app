@@ -14,6 +14,17 @@
         </div>
 
         <div class="flex shrink-0 items-center gap-1">
+          <UTabs
+            :model-value="inboxScope"
+            :items="inboxScopeItems"
+            :content="false"
+            color="neutral"
+            variant="pill"
+            size="xs"
+            class="shrink-0"
+            :ui="compactTabsUi"
+            @update:model-value="handleScopeUpdate"
+          />
           <!-- PR number lookup: resolves a repo-scoped number directly into the inbox. -->
           <UTooltip
             :text="
@@ -177,7 +188,12 @@
 
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import type { CodeReviewPullRequestDto } from "@/api/generated";
+import type { TabsItem } from "@nuxt/ui";
+import {
+  codeReviewInboxScopeEnum,
+  type CodeReviewInboxScope,
+  type CodeReviewPullRequestDto,
+} from "@/api/generated";
 import type { CodeReviewInboxUpdateDto } from "@/api/generated";
 import type { PullRequestInboxUiState } from "@/stores/code-review-store";
 
@@ -189,6 +205,9 @@ const props = defineProps<{
   loading: boolean;
   hasUnreadUpdates: boolean;
   hasNextPage: boolean;
+  /** Ownership scope for the inbox rows and update cursor. */
+  inboxScope: CodeReviewInboxScope;
+  inboxScopeItems: TabsItem[];
   /** Controlled value for the PR number lookup input (string for v-model). */
   pullRequestNumberFilter: string;
   /** True when a repository is selected; PR numbers are repo-scoped and require it. */
@@ -199,6 +218,7 @@ const props = defineProps<{
 
 const emits = defineEmits<{
   select: [pullRequest: CodeReviewPullRequestDto];
+  changeScope: [scope: CodeReviewInboxScope];
   refresh: [];
   markRead: [];
   loadMore: [];
@@ -208,6 +228,10 @@ const emits = defineEmits<{
 
 /** Local buffer so the input is free-typed; parent prop resets it on clear/error. */
 const localNumberValue = ref(props.pullRequestNumberFilter ?? "");
+const compactTabsUi = {
+  list: "h-7 w-auto p-0.5",
+  trigger: "h-6 grow-0 px-2 py-0 text-xs",
+};
 
 watch(
   () => props.pullRequestNumberFilter,
@@ -237,6 +261,15 @@ function handleNumberKeydown(event: KeyboardEvent) {
 function handleClear() {
   localNumberValue.value = "";
   emits("filterByNumber", null);
+}
+
+function handleScopeUpdate(value: string | number) {
+  if (
+    value === codeReviewInboxScopeEnum.Mine ||
+    value === codeReviewInboxScopeEnum.All
+  ) {
+    emits("changeScope", value);
+  }
 }
 
 /** Formats API timestamps compactly for dense inbox rows. */

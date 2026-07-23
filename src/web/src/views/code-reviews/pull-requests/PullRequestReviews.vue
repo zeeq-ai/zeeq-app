@@ -40,11 +40,14 @@
         :loading="loadingPullRequests"
         :has-unread-updates="hasUnreadPullRequestUpdates"
         :has-next-page="pullRequestNextCursor !== null"
+        :inbox-scope
+        :inbox-scope-items
         :pull-request-number-filter="prNumberFilterInput"
         :can-filter-by-number="canFilterByNumber"
         :finding-pull-request="loadingSelectedPullRequest"
         @select="selectPullRequest"
         @refresh="refreshInbox"
+        @change-scope="handleInboxScopeChange"
         @mark-read="markInboxRead"
         @load-more="loadNextPage"
         @filter-by-number="handlePrNumberFilter"
@@ -107,7 +110,9 @@ import { useRoute } from "vue-router";
 import { breakpointsTailwind, useBreakpoints } from "@vueuse/core";
 import {
   CodeReviews,
+  codeReviewInboxScopeEnum,
   codeReviewStatusEnum,
+  type CodeReviewInboxScope,
   type CodeReviewFindingsResponse,
   type CodeReviewPullRequestDto,
   type CodeReviewRecordDto,
@@ -151,6 +156,7 @@ const appStore = useAppStore();
 const { cartContentHashes } = storeToRefs(cartStore);
 const {
   pullRequests,
+  inboxScope,
   pullRequestNextCursor,
   selectedPullRequest,
   selectedPullRequestReviews,
@@ -169,6 +175,11 @@ const {
   hasConfiguredRepositories,
   hasUnreadPullRequestUpdates,
 } = storeToRefs(codeReviewStore);
+
+const inboxScopeItems = [
+  { label: "Mine", value: codeReviewInboxScopeEnum.Mine },
+  { label: "All", value: codeReviewInboxScopeEnum.All },
+];
 
 /** Controlled value for the PR number lookup input (Mode 2 deep-link). */
 const prNumberFilterInput = ref("");
@@ -282,6 +293,15 @@ async function refreshInbox() {
     await codeReviewStore.loadInbox();
   } catch (err: unknown) {
     showError("Could not load PR inbox", err);
+  }
+}
+
+/** Applies the ownership scope and reloads so polling resumes from a matching cursor. */
+async function handleInboxScopeChange(scope: CodeReviewInboxScope) {
+  try {
+    await codeReviewStore.setInboxScope(scope);
+  } catch (err: unknown) {
+    showError("Could not update inbox scope", err);
   }
 }
 
