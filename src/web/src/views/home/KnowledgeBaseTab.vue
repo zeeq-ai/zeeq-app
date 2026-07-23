@@ -133,6 +133,7 @@ const readsOption = computed(() =>
       (point) => toMetricNumber(point.value),
       metricWindowRangeMs(props.window),
     ),
+    { maxSeries: 50 },
   ),
 );
 
