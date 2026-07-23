@@ -350,7 +350,7 @@ function donutOptionFromTotals(
       id: "main",
       type: "pie",
       radius: ["45%", "70%"],
-      itemStyle: { borderRadius: 4, borderWidth: 2 },
+      itemStyle: { borderRadius: 0, borderWidth: 0 },
       // Without an explicit color, ECharts' outer labels default to
       // `outsideFill: 'auto'` — it auto-toggles black-fill/white-stroke vs.
       // white-fill/black-stroke per label to guarantee contrast against an
@@ -550,8 +550,11 @@ export function leaderboardBarOption(
       id: "main",
       type: "bar",
       data: values,
-      barWidth: "60%",
-      itemStyle: { borderRadius: 3 },
+      barWidth: "75%",
+      // Explicit desaturated teal rather than the theme's palette[0] (#06b6d4):
+      // the label text is drawn in white directly on top of the bar fill, and
+      // the fully-saturated cyan doesn't give it enough contrast to read well.
+      itemStyle: { borderRadius: 4, color: "oklch(60.9% 0.126 221.723)" },
       label: {
         show: true,
         position: "insideLeft",
