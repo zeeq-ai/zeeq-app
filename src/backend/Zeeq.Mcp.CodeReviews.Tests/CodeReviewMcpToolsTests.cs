@@ -130,6 +130,49 @@ public sealed class CodeReviewMcpToolsTests
     }
 
     [Test]
+    public async Task RunReview_RunReviewWithLibraries_ThreadsLibrariesToRunner()
+    {
+        var runner = new TestExpertCodeReviewRunner();
+
+        await CodeReviewMcpTools.RunReview(
+            runner,
+            Options(),
+            LoggerFactory.Create(_ => { }),
+            TestUser(),
+            "run_review",
+            jobId: "job_123",
+            uploadToken: "token_123",
+            remoteRepoNameUsingGit: "owner/repo",
+            libraries: ["zeeq-app", "zeeq-docs"]
+        );
+
+        await Assert.That(runner.RunRequest).IsNotNull();
+        await Assert
+            .That(runner.RunRequest!.Libraries)
+            .IsEquivalentTo(["zeeq-app", "zeeq-docs"]);
+    }
+
+    [Test]
+    public async Task RunReview_RunReviewWithoutLibraries_ThreadsEmptyLibrariesToRunner()
+    {
+        var runner = new TestExpertCodeReviewRunner();
+
+        await CodeReviewMcpTools.RunReview(
+            runner,
+            Options(),
+            LoggerFactory.Create(_ => { }),
+            TestUser(),
+            "run_review",
+            jobId: "job_123",
+            uploadToken: "token_123",
+            remoteRepoNameUsingGit: "owner/repo"
+        );
+
+        await Assert.That(runner.RunRequest).IsNotNull();
+        await Assert.That(runner.RunRequest!.Libraries).IsEmpty();
+    }
+
+    [Test]
     public async Task GetReviewFindings_WithPullRequestAndMinimumMajor_ReturnsCriticalAndMajorFindings()
     {
         var fixture = ReviewFindingsFixture.Create();

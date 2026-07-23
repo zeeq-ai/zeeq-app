@@ -80,6 +80,10 @@ public sealed record ExpertCodeReviewUploadUrlResponse(
 /// reviews. Minted when absent.
 /// </param>
 /// <param name="Branch">Optional active or planned git branch for PR-workstream association.</param>
+/// <param name="Libraries">
+/// Optional explicit list of library names to use for this review, replacing the repository's
+/// configured libraries when at least one name is valid for the organization.
+/// </param>
 public sealed record ExpertCodeReviewRunInput(
     string? JobId,
     string? UploadToken,
@@ -88,7 +92,8 @@ public sealed record ExpertCodeReviewRunInput(
     string? Description,
     string? AgentSessionId = null,
     string? ReviewGroupId = null,
-    string? Branch = null
+    string? Branch = null,
+    IReadOnlyList<string>? Libraries = null
 )
 {
     /// <summary>
@@ -126,7 +131,8 @@ public sealed record ExpertCodeReviewRunInput(
                 Description,
                 AgentSessionId,
                 ReviewGroupId,
-                Branch
+                Branch,
+                Libraries ?? []
             )
         );
     }
@@ -143,6 +149,10 @@ public sealed record ExpertCodeReviewRunInput(
 /// <param name="AgentSessionId">Optional stable coding-agent session id for chaining reviews.</param>
 /// <param name="ReviewGroupId">Optional review group id for chaining reviews; minted when absent.</param>
 /// <param name="Branch">Optional active or planned git branch for PR-workstream association.</param>
+/// <param name="Libraries">
+/// Optional explicit list of library names to use for this review, replacing the repository's
+/// configured libraries when at least one name is valid for the organization.
+/// </param>
 public sealed record ExpertCodeReviewRunRequest(
     string JobId,
     string UploadToken,
@@ -151,7 +161,8 @@ public sealed record ExpertCodeReviewRunRequest(
     string? Description,
     string? AgentSessionId,
     string? ReviewGroupId,
-    string? Branch
+    string? Branch,
+    IReadOnlyList<string>? Libraries = null
 );
 
 /// <summary>

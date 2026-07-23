@@ -40,5 +40,43 @@ internal static class ILibraryDocumentStoreExtensions
 
             return [.. all.Where(l => libraryIds.Contains(l.Id)).Select(l => l.Name)];
         }
+
+        /// <summary>
+        /// Filters <paramref name="requestedLibraryNames"/> down to the names that exist for
+        /// <paramref name="organizationId"/>, using <paramref name="cache"/> to avoid a round-trip
+        /// on every review when the org's library list has not changed.
+        /// Returns an empty array when <paramref name="requestedLibraryNames"/> is null or empty.
+        /// </summary>
+        public async Task<string[]> ResolveExistingLibraryNamesAsync(
+            string organizationId,
+            IReadOnlyList<string>? requestedLibraryNames,
+            HybridCache cache,
+            CancellationToken ct
+        )
+        {
+            if (requestedLibraryNames is not { Count: > 0 })
+                return [];
+
+            // T must be a concrete array — HybridCache cannot deserialize interface types from L2.
+            var all = await cache.GetOrCreateAsync<Library[]>(
+                $"libs:list:{organizationId}",
+                async cancellationToken =>
+                    [.. await store.ListLibrariesAsync(organizationId, cancellationToken)],
+                LibraryListCacheOptions,
+                cancellationToken: ct
+            );
+
+            var existingNames = new HashSet<string>(
+                all.Select(l => l.Name),
+                StringComparer.Ordinal
+            );
+
+            return [
+                .. requestedLibraryNames
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Select(name => name.Trim())
+                    .Where(existingNames.Contains),
+            ];
+        }
     }
 }

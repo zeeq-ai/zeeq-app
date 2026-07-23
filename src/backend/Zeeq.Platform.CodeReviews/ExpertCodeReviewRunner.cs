@@ -168,12 +168,24 @@ public sealed partial class ExpertCodeReviewRunner(
                 cancellationToken
             );
 
-            var mappedLibraryNames = await libraries.ResolveMappedLibraryNamesAsync(
+            // Explicit caller-specified libraries are validated against the organization's library
+            // list and, when at least one is valid, replace the repository's configured libraries
+            // entirely — this is an explicit request for a specific set of libraries.
+            var requestedLibraryNames = await libraries.ResolveExistingLibraryNamesAsync(
                 reviewContext.OrganizationId,
-                repository?.LibraryIds,
+                request.Libraries,
                 cache,
                 cancellationToken
             );
+
+            var libraryNames = requestedLibraryNames.Length > 0
+                ? requestedLibraryNames
+                : await libraries.ResolveMappedLibraryNamesAsync(
+                    reviewContext.OrganizationId,
+                    repository?.LibraryIds,
+                    cache,
+                    cancellationToken
+                );
 
             var prompt = CodeReviewUserPrompt.From(
                 new(
@@ -182,7 +194,7 @@ public sealed partial class ExpertCodeReviewRunner(
                     [],
                     reviewContext.InScopeFiles,
                     reviewContext.OutOfScopeFiles,
-                    mappedLibraryNames,
+                    libraryNames,
                     repository?.ReviewConfiguration.SharedPromptFragment ?? string.Empty
                 )
             );
