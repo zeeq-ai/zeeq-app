@@ -653,6 +653,13 @@ export function toMetricNumber(value: number | string | null): number {
   return typeof value === "number" ? value : Number(value) || 0;
 }
 
+/** Formats high-volume token counts in millions for compact chart axes. */
+export function formatMetricMillions(value: number | string | null): string {
+  const millions = toMetricNumber(value) / 1_000_000;
+
+  return Number.isInteger(millions) ? millions.toString() : millions.toFixed(1);
+}
+
 /** Drops empty multi-select arrays so they never widen the request/cache key. */
 function emptyToUndefined(values: string[]): string[] | undefined {
   return values.length > 0 ? values : undefined;

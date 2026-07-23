@@ -10,7 +10,10 @@
         <template #header>
           <div class="flex items-center justify-between gap-3">
             <span class="min-w-0 truncate font-medium">
-              Token usage by model (aggregate)
+              Token usage by model
+              <span class="font-light text-dimmed">
+                (aggregate; all tokens)
+              </span>
             </span>
             <UTabs
               v-model="tokenModelMode"
@@ -20,10 +23,7 @@
               variant="pill"
               size="xs"
               class="shrink-0"
-              :ui="{
-                list: 'h-7 w-auto p-0.5',
-                trigger: 'h-6 grow-0 px-2 py-0 text-xs',
-              }"
+              :ui="compactTabsUi"
             />
           </div>
         </template>
@@ -36,18 +36,88 @@
 
       <UCard :ui="{ body: 'p-0 sm:p-0' }">
         <template #header>
-          <span class="font-medium">Token usage by user (aggregate)</span>
+          <div class="flex items-center justify-between gap-3">
+            <span class="min-w-0 truncate font-medium"
+              >Token usage by user
+              <span class="font-light text-dimmed">
+                (aggregate; all tokens, API rates)
+              </span>
+            </span>
+            <UTabs
+              v-model="tokenUserPanel"
+              :items="tokenUserPanelItems"
+              :content="false"
+              color="neutral"
+              variant="pill"
+              size="xs"
+              class="shrink-0"
+              :ui="compactTabsUi"
+            />
+          </div>
         </template>
         <MetricChart
+          v-if="tokenUserPanel === 'chart'"
           :option="tokenByUserOption"
           :loading="loadingTokenByUser"
           :empty="agentTokenByUserSeries.length === 0"
         />
+        <div v-else class="h-96">
+          <UListbox
+            v-model="selectedMemberEmail"
+            value-key="value"
+            :items="memberUsageItems"
+            :loading="loadingMembers"
+            :filter="{
+              placeholder: 'Filter members...',
+              icon: 'i-hugeicons-search-01',
+            }"
+            :filter-fields="['label']"
+            class="size-full"
+            :ui="{
+              root: 'ring-0 rounded-none',
+              input: 'border-b border-default px-4',
+              content: 'max-h-none',
+              group: 'p-0',
+              item: 'px-4 py-1.5',
+            }"
+          >
+            <template #item-trailing="{ item }">
+              <span v-if="!item.hasData" class="text-xs text-muted">
+                (no data)
+              </span>
+              <div v-else class="flex items-center gap-3">
+                <span class="w-24 text-right font-mono text-xs text-muted">
+                  {{ formatCompactTokens(item.totalTokens) }}
+                </span>
+                <span class="w-16 text-right font-mono text-xs text-muted">
+                  {{ formatUsd(item.totalCostUsd) }}
+                </span>
+                <UProgress
+                  :model-value="item.progressValue"
+                  :max="100"
+                  inverted
+                  color="neutral"
+                  size="sm"
+                  class="w-48"
+                  :get-value-label="
+                    () => `${formatWholeNumber(item.totalTokens)} tokens`
+                  "
+                  :get-value-text="
+                    () => `${formatWholeNumber(item.totalTokens)} tokens`
+                  "
+                />
+              </div>
+            </template>
+          </UListbox>
+        </div>
       </UCard>
 
       <UCard :ui="{ body: 'p-0 sm:p-0' }" class="xl:col-span-2">
         <template #header>
           <span class="font-medium">Aggregate cost by user over time</span>
+          <span class="font-light text-xm text-muted">
+            (approximated based on reported token usage and API pricing)</span
+          >
         </template>
         <MetricChart
           :option="costUsdOption"
@@ -60,11 +130,14 @@
 </template>
 
 <script setup lang="ts">
+import type { ListboxItem, TabsItem } from "@nuxt/ui";
 import type {
+  MemberResponse,
   MetricSeriesPoint,
   MetricTwoDimensionalSeriesPoint,
 } from "@/api/generated";
 import {
+  formatMetricMillions,
   metricWindowRangeMs,
   toMetricNumber,
   type MetricWindowToken,
@@ -77,18 +150,41 @@ const props = defineProps<{
   agentTokenByUserSeries: MetricSeriesPoint[];
   agentTokenByModelUserSeries: MetricTwoDimensionalSeriesPoint[];
   agentCostUsdSeries: MetricSeriesPoint[];
+  members: MemberResponse[];
   loadingTokenByModel: boolean;
   loadingTokenByModelUser: boolean;
   loadingTokenByUser: boolean;
   loadingCostUsd: boolean;
+  loadingMembers: boolean;
   window: MetricWindowToken;
 }>();
 
-const tokenModelMode = ref<"total" | "byUser">("total");
-const tokenModelModeItems = [
-  { label: "Total", value: "total" },
-  { label: "By User", value: "byUser" },
+type TokenUserPanel = "chart" | "members";
+
+type MemberUsageItem = ListboxItem & {
+  value: string;
+  hasData: boolean;
+  totalTokens: number;
+  totalCostUsd: number;
+  progressValue: number;
+};
+
+const tokenUserPanel = ref<TokenUserPanel>("members");
+const tokenModelMode = ref<"total" | "byUser">("byUser");
+const selectedMemberEmail = ref<string | undefined>();
+
+const tokenUserPanelItems: TabsItem[] = [
+  { label: "Members", value: "members" },
+  { label: "Chart", value: "chart" },
 ];
+const tokenModelModeItems: TabsItem[] = [
+  { label: "By User", value: "byUser" },
+  { label: "Total", value: "total" },
+];
+const compactTabsUi = {
+  list: "h-7 w-auto p-0.5",
+  trigger: "h-6 grow-0 px-2 py-0 text-xs",
+};
 
 // NOTE: Empty/loading state is intentionally mode-local: if the user selects "By User" and the
 // two-dimensional series has no points, the chart should show empty even when the total series has data.
@@ -103,20 +199,92 @@ const loadingActiveTokenByModel = computed(() =>
     : props.loadingTokenByModel,
 );
 
+const tokenTotalsByEmail = computed(() => {
+  const totals = new Map<string, number>();
+  for (const point of props.agentTokenByUserSeries) {
+    const email = point.seriesKey;
+    if (!email) {
+      continue;
+    }
+
+    totals.set(email, (totals.get(email) ?? 0) + toMetricNumber(point.value));
+  }
+
+  return totals;
+});
+
+const costTotalsByEmail = computed(() => {
+  const totals = new Map<string, number>();
+  for (const point of props.agentCostUsdSeries) {
+    const email = point.seriesKey;
+    if (!email) {
+      continue;
+    }
+
+    totals.set(email, (totals.get(email) ?? 0) + toMetricNumber(point.value));
+  }
+
+  return totals;
+});
+
+const memberUsageItems = computed<MemberUsageItem[]>(() => {
+  const totals = tokenTotalsByEmail.value;
+  const costs = costTotalsByEmail.value;
+  const maxTokens = Math.max(0, ...Array.from(totals.values()));
+
+  return props.members
+    .map((member) => {
+      const usageKey = member.email ?? member.userId;
+      const totalTokens = member.email ? (totals.get(member.email) ?? 0) : 0;
+      const totalCostUsd = member.email ? (costs.get(member.email) ?? 0) : 0;
+      const hasData = totalTokens > 0;
+
+      return {
+        label: member.displayName || member.email || member.userId,
+        value: usageKey,
+        avatar: {
+          src: member.pictureUrl || undefined,
+          alt: member.displayName || member.email || member.userId,
+        },
+        hasData,
+        totalTokens,
+        totalCostUsd,
+        progressValue:
+          hasData && maxTokens > 0 ? (totalTokens / maxTokens) * 100 : 0,
+      };
+    })
+    .sort((left, right) => {
+      if (right.totalTokens !== left.totalTokens) {
+        return right.totalTokens - left.totalTokens;
+      }
+
+      return (left.label ?? "").localeCompare(right.label ?? "");
+    });
+});
+
+/** Token charts use millions on the value axis so 1M+ usage remains scannable. */
+const tokenMillionAxisOptions = {
+  yAxisName: "Tokens (M)",
+  yAxisLabelFormatter: formatMetricMillions,
+};
+
 /** Token totals grouped by model, using the model tag emitted by agent telemetry. */
 const tokenByModelOption = computed(() =>
   tokenModelMode.value === "byUser"
     ? timeSeriesOption(
         pivotAgentTwoDimensionalSeries(props.agentTokenByModelUserSeries),
-        { maxSeries: 100 },
+        { maxSeries: 100, ...tokenMillionAxisOptions },
       )
-    : timeSeriesOption(pivotAgentSeries(props.agentTokenByModelSeries)),
+    : timeSeriesOption(pivotAgentSeries(props.agentTokenByModelSeries), {
+        ...tokenMillionAxisOptions,
+      }),
 );
 
 /** Token totals grouped by user_email for cost attribution and noisy-user detection. */
 const tokenByUserOption = computed(() =>
   timeSeriesOption(
     pivotAgentSeries(props.agentTokenByUserSeries, emailLocalPartLabel),
+    tokenMillionAxisOptions,
   ),
 );
 
@@ -125,7 +293,7 @@ const costUsdOption = computed(() =>
   timeSeriesOption(
     pivotAgentSeries(props.agentCostUsdSeries, emailIdentityLabel),
     // NOTE: The dashboard intentionally allows up to 100 user cost series for this telemetry view.
-    { maxSeries: 100 },
+    { maxSeries: 100, yAxisName: "USD" },
   ),
 );
 
@@ -166,7 +334,7 @@ function modelUserLabel(
   const userLabel = emailIdentityLabel(userEmail) ?? "Unknown user";
   // NOTE: Keep the model first because this chart lives under the model usage card; the user hash
   // preserves full-email uniqueness when local parts collide across domains.
-  return `${modelLabel} / ${userLabel}`;
+  return `${modelLabel}\n${userLabel}`;
 }
 
 /** Default series label passthrough for non-email dimensions. */
@@ -191,6 +359,22 @@ function emailIdentityLabel(value: string | null): string | null {
 /** Keeps a non-empty email local-part when the backend grouped by full email. */
 function emailLocalPart(value: string): string {
   return value.split("@", 1)[0] || value;
+}
+
+function formatWholeNumber(value: number): string {
+  return Math.round(value).toLocaleString();
+}
+
+function formatCompactTokens(value: number): string {
+  return `${formatMetricMillions(value)}M`;
+}
+
+function formatUsd(value: number): string {
+  return value.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  });
 }
 
 /** Deterministic non-cryptographic 24-bit label hash for chart legends. */

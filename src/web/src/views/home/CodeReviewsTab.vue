@@ -40,7 +40,10 @@
     <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
       <UCard :ui="{ body: 'p-0 sm:p-0' }">
         <template #header>
-          <span class="font-medium">Findings by severity (by repository)</span>
+          <span class="font-medium"
+            >Findings by severity
+            <span class="font-light text-dimmed"> (by repository) </span>
+          </span>
         </template>
         <MetricChart
           :option="findingsByRepoOption"
@@ -51,7 +54,10 @@
 
       <UCard :ui="{ body: 'p-0 sm:p-0' }">
         <template #header>
-          <span class="font-medium">Findings by severity (by origin)</span>
+          <span class="font-medium"
+            >Findings by severity
+            <span class="font-light text-dimmed"> (by origin) </span>
+          </span>
         </template>
         <MetricChart
           :option="findingsByOriginOption"
@@ -62,7 +68,12 @@
 
       <UCard :ui="{ body: 'p-0 sm:p-0' }">
         <template #header>
-          <span class="font-medium">Review volume</span>
+          <span class="font-medium"
+            >Review volume
+            <span class="font-light text-dimmed">
+              (over time, by repository)
+            </span>
+          </span>
         </template>
         <MetricChart
           :option="volumeOption"
@@ -73,7 +84,10 @@
 
       <UCard :ui="{ body: 'p-0 sm:p-0' }">
         <template #header>
-          <span class="font-medium">Review mix</span>
+          <span class="font-medium"
+            >Review mix
+            <span class="font-light text-dimmed"> (by repository) </span></span
+          >
         </template>
         <MetricChart
           :option="donutOption"

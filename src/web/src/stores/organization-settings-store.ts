@@ -35,11 +35,14 @@ export const useOrganizationSettingsStore = defineStore(
 
     const organization = ref<OrganizationResponse | null>(null);
     const members = ref<MemberResponse[]>([]);
+    const membersLoadedOrganizationId = ref<string | null>(null);
     const invitations = ref<InvitationResponse[]>([]);
     const organizationInvitations = ref<InvitationResponse[]>([]);
     const loading = ref(false);
+    const membersLoading = ref(false);
     const saving = ref(false);
     const error = ref<string | null>(null);
+    let membersRequestId = 0;
 
     const currentOrganizationId = computed(
       () => me.value?.organizationId ?? null,
@@ -70,12 +73,48 @@ export const useOrganizationSettingsStore = defineStore(
     async function loadMembers() {
       if (!currentOrganizationId.value) {
         members.value = [];
+        membersLoadedOrganizationId.value = null;
         return;
       }
 
-      members.value = await Organizations.listMembers(
-        currentOrganizationId.value,
-      );
+      const organizationId = currentOrganizationId.value;
+      const requestId = ++membersRequestId;
+      membersLoading.value = true;
+
+      try {
+        const loadedMembers = await Organizations.listMembers(organizationId);
+        if (
+          currentOrganizationId.value !== organizationId ||
+          requestId !== membersRequestId
+        ) {
+          return;
+        }
+
+        members.value = loadedMembers;
+        membersLoadedOrganizationId.value = organizationId;
+      } finally {
+        if (requestId === membersRequestId) {
+          membersLoading.value = false;
+        }
+      }
+    }
+
+    /**
+     * Loads active members once per organization for non-settings surfaces.
+     */
+    async function ensureMembersLoaded() {
+      const organizationId = currentOrganizationId.value;
+      if (!organizationId) {
+        members.value = [];
+        membersLoadedOrganizationId.value = null;
+        return;
+      }
+
+      if (membersLoadedOrganizationId.value === organizationId) {
+        return;
+      }
+
+      await loadMembers();
     }
 
     /**
@@ -309,6 +348,7 @@ export const useOrganizationSettingsStore = defineStore(
 
         organization.value = null;
         members.value = [];
+        membersLoadedOrganizationId.value = null;
         organizationInvitations.value = [];
         await loadInvitations();
       } catch (err: unknown) {
@@ -407,6 +447,7 @@ export const useOrganizationSettingsStore = defineStore(
       invitations,
       organizationInvitations,
       loading,
+      membersLoading,
       saving,
       error,
       currentOrganizationId,
@@ -415,6 +456,7 @@ export const useOrganizationSettingsStore = defineStore(
       loadSettings,
       loadCurrentOrganization,
       loadMembers,
+      ensureMembersLoaded,
       loadOrganizationInvitations,
       loadInvitations,
       updateOrganization,
