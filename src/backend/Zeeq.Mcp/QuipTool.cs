@@ -1,8 +1,9 @@
 using System.ComponentModel;
 using System.Security.Claims;
-using Zeeq.Core.Identity;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
+using Zeeq.Core.Common;
+using Zeeq.Core.Identity;
 
 namespace Zeeq.Mcp;
 
@@ -15,10 +16,13 @@ public class QuipTool
     /// <summary>
     /// Returns a random short quip.
     /// </summary>
-    [McpServerTool, Description("Get a short quip.")]
+    [
+        McpServerTool(Name = "get_quip", Title = "Get Quip"),
+        Description("Get a short quip or a joke from Zeeq.")
+    ]
     public static string GetQuip(ILogger<QuipTool> logger, ClaimsPrincipal? user)
     {
-        var identity = user?.AuthenticatedUser()?.Email ?? "unknown";
+        var identity = user?.AuthenticatedUser()?.Sub.AsHashedHexString() ?? "unknown";
 
         logger.LogInformation("GetQuip called by user: {User}", identity);
 
