@@ -77,7 +77,6 @@
 </template>
 
 <script setup lang="ts">
-import { useColorMode } from "@vueuse/core";
 import type { MetricLeaderboardItem, MetricSeriesPoint } from "@/api/generated";
 import {
   metricWindowRangeMs,
@@ -90,9 +89,6 @@ import {
   pivotByBucket,
   timeSeriesOption,
 } from "./chart-options";
-
-const colorMode = useColorMode();
-const isDark = computed(() => colorMode.value === "dark");
 
 const props = defineProps<{
   documentReadSeries: MetricSeriesPoint[];
@@ -142,16 +138,16 @@ const readsOption = computed(() =>
 
 /** UI-7: ranked horizontal bar of the most-read paths (document-level). */
 const leaderboardOption = computed(() =>
-  leaderboardBarOption(props.leaderboard, isDark.value),
+  leaderboardBarOption(props.leaderboard),
 );
 
 /** Ranked horizontal bar of the most-read sections (path + heading, prose only). */
 const sectionLeaderboardOption = computed(() =>
-  leaderboardBarOption(props.sectionLeaderboard, isDark.value),
+  leaderboardBarOption(props.sectionLeaderboard),
 );
 
 /** Ranked horizontal bar of the most-read code snippets (path + heading, code only). */
 const snippetLeaderboardOption = computed(() =>
-  leaderboardBarOption(props.snippetLeaderboard, isDark.value),
+  leaderboardBarOption(props.snippetLeaderboard),
 );
 </script>

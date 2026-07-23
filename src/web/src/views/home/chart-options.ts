@@ -524,20 +524,26 @@ export function tokenScatterOption(
 /** Builds a ranked horizontal bar of the most-read paths (UI-7). */
 export function leaderboardBarOption(
   items: MetricLeaderboardItem[],
-  isDark: boolean,
 ): EChartsOption {
   // ECharts draws the first category at the bottom, so reverse to put the
   // highest-ranked path at the top.
   const ordered = [...items].reverse();
   const values = ordered.map((item) => toMetricNumber(item.value));
 
-  // Label sits just past the bar's tip rather than inside it, so it's always
-  // drawn on the plain chart background (never the bar color) — the theme
-  // JSON leaves textStyle empty, so ECharts' own default label color would
-  // otherwise be a fixed black regardless of mode; set explicitly instead.
+  // Label is drawn inside the bar (not trailing it) so it doesn't force a
+  // wide reserved gutter on the right of short/truncated names. Inside a
+  // canvas-rendered chart the label can sit over the bar's cyan fill *or*
+  // spill onto the plain page background (for a bar too short to hold its
+  // own label), and that background flips between white and near-black by
+  // theme — no single fill color reads on all three. A text halo sidesteps
+  // that: a white fill with a dark outline stays legible regardless of what
+  // ends up underneath, so this needs no isDark branching at all.
   // No value label: the count is available on hover via the tooltip.
-  const labelWidth = 180;
-  const labelColor = isDark ? "#999" : "#3f3f46";
+  // insideLeft always starts the label at the axis origin (x=0), independent
+  // of how long the bar itself is, so the usable width is roughly the whole
+  // grid — not just the bar's length. Sized close to a typical panel's grid
+  // width so truncation only kicks in for genuinely long paths.
+  const labelWidth = 420;
 
   const series: BarSeriesOption[] = [
     {
@@ -548,10 +554,12 @@ export function leaderboardBarOption(
       itemStyle: { borderRadius: 3 },
       label: {
         show: true,
-        position: "right",
+        position: "insideLeft",
         overflow: "truncate",
         width: labelWidth,
-        color: labelColor,
+        color: "#fff",
+        textBorderColor: "rgba(30, 30, 30, 0.35)",
+        textBorderWidth: 2,
         formatter: (params) =>
           ordered[(params as { dataIndex: number }).dataIndex]?.item ?? "",
       },
@@ -560,12 +568,9 @@ export function leaderboardBarOption(
 
   return {
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
-    // right reserves room for the outside label: without it, bars near the
-    // axis max leave the label nowhere to draw and it gets crushed against
-    // the chart edge instead of trailing the bar.
     grid: {
       left: 8,
-      right: labelWidth + 16,
+      right: 8,
       top: 8,
       bottom: 8,
       containLabel: true,
