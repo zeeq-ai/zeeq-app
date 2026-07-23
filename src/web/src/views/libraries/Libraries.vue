@@ -42,7 +42,27 @@
       />
 
       <!-- Editor panel (fills remaining space) -->
+      <LibraryMetricsPanel
+        v-if="showLibraryMetrics"
+        class="min-w-0 flex-1"
+        :window="libraryMetricsWindow"
+        :document-read-series="documentReadSeries"
+        :section-read-series="sectionReadSeries"
+        :snippet-read-series="snippetReadSeries"
+        :leaderboard="leaderboard"
+        :section-leaderboard="sectionLeaderboard"
+        :snippet-leaderboard="snippetLeaderboard"
+        :loading-reads="loadingReads"
+        :loading-leaderboard="loadingLeaderboard"
+        :loading-section-leaderboard="loadingSectionLeaderboard"
+        :loading-snippet-leaderboard="loadingSnippetLeaderboard"
+        :refreshing="refreshingLibraryMetrics"
+        :error="libraryMetricsError"
+        @update:window="onLibraryMetricsWindowChange"
+        @refresh="onRefreshLibraryMetrics"
+      />
       <DocumentEditorPanel
+        v-else
         ref="editorPanelRef"
         class="min-w-0 flex-1"
         :document="loadedDocument"
@@ -121,7 +141,9 @@
 import { storeToRefs } from "pinia";
 import { useIntervalFn } from "@vueuse/core";
 import { useLibraryStore } from "@/stores/library-store";
+import { useLibraryMetricsStore } from "@/stores/library-metrics-store";
 import { useGitHubSettingsStore } from "@/stores/github-settings-store";
+import type { MetricWindowToken } from "@/stores/metrics-store";
 import type { LibraryResponse } from "@/api/generated/types/LibraryResponse";
 import type { IngestRunPageResponse } from "@/api/generated/types/IngestRunPageResponse";
 import LibrarySelector from "./LibrarySelector.vue";
@@ -132,12 +154,14 @@ import DocumentDiffDrawer from "./DocumentDiffDrawer.vue";
 import DocumentSearchPanel from "./DocumentSearchPanel.vue";
 import DocumentParsePreviewSlideover from "./DocumentParsePreviewSlideover.vue";
 import DocumentRenameSlideover from "./DocumentRenameSlideover.vue";
+import LibraryMetricsPanel from "./LibraryMetricsPanel.vue";
 
 type DocumentEditorPanelInstance = InstanceType<typeof DocumentEditorPanel>;
 type DocumentDiffDrawerInstance = InstanceType<typeof DocumentDiffDrawer>;
 
 const toast = useToast();
 const store = useLibraryStore();
+const libraryMetricsStore = useLibraryMetricsStore();
 const githubStore = useGitHubSettingsStore();
 const route = useRoute();
 const router = useRouter();
@@ -159,6 +183,23 @@ const {
   documentPaths,
 } = storeToRefs(store);
 
+const {
+  window: libraryMetricsWindow,
+  documentReadSeries,
+  sectionReadSeries,
+  snippetReadSeries,
+  leaderboard,
+  sectionLeaderboard,
+  snippetLeaderboard,
+  error: libraryMetricsError,
+  loadingReads,
+  loadingLeaderboard,
+  loadingSectionLeaderboard,
+  loadingSnippetLeaderboard,
+  refreshing: refreshingLibraryMetrics,
+  activeOrganizationId: libraryMetricsOrganizationId,
+} = storeToRefs(libraryMetricsStore);
+
 const { configuredRepositories, librarySourceRepositories } =
   storeToRefs(githubStore);
 
@@ -166,6 +207,8 @@ const editorPanelRef = ref<DocumentEditorPanelInstance | null>(null);
 const diffDrawerRef = ref<DocumentDiffDrawerInstance | null>(null);
 
 const librarySelectionLoading = ref(false);
+const pendingNewDocumentFolder = ref("/");
+const selectedFolderPath = ref<string | null>(null);
 const editorLoading = computed(
   () =>
     librarySelectionLoading.value ||
@@ -173,6 +216,42 @@ const editorLoading = computed(
     loadingDocuments.value ||
     loadingDocument.value,
 );
+
+const showLibraryMetrics = computed(
+  () =>
+    !!activeLibraryName.value &&
+    selectedFolderPath.value === "/" &&
+    documents.value.length > 0,
+);
+
+watch(
+  [
+    showLibraryMetrics,
+    activeLibraryName,
+    libraryMetricsWindow,
+    libraryMetricsOrganizationId,
+  ],
+  () => {
+    if (showLibraryMetrics.value) {
+      void libraryMetricsStore.loadMetrics(activeLibraryName.value);
+    } else {
+      libraryMetricsStore.clearMetrics();
+    }
+  },
+  { immediate: true },
+);
+
+function onLibraryMetricsWindowChange(value: MetricWindowToken) {
+  libraryMetricsWindow.value = value;
+}
+
+function onRefreshLibraryMetrics() {
+  if (refreshingLibraryMetrics.value) {
+    return;
+  }
+
+  void libraryMetricsStore.loadMetrics(activeLibraryName.value);
+}
 
 // ── Library form state ──────────────────────────────────────────────────
 
@@ -522,9 +601,6 @@ async function onOpenDocument(path: string) {
   }
 }
 
-const pendingNewDocumentFolder = ref("/");
-const selectedFolderPath = ref<string | null>(null);
-
 function onSelectFolder(path: string) {
   selectedFolderPath.value = path;
 }
@@ -767,6 +843,7 @@ function selectRootOnFirstLoad() {
     selectedFolderPath.value = "/";
   } else {
     // Empty library → show new document form
+    selectedFolderPath.value = null;
     store.newDocument();
   }
 }
