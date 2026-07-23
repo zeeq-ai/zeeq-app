@@ -36,13 +36,7 @@ export const useLibraryMetricsStore = defineStore(
       () =>
         appStore.currentOrganization?.id ?? appStore.user?.organizationId ?? "",
     );
-    const loadingReads = computed(
-      () =>
-        loading.value.documentReads ||
-        loading.value.sectionReads ||
-        loading.value.snippetReads ||
-        false,
-    );
+    const loadingReads = computed(() => loading.value.reads ?? false);
     const loadingLeaderboard = computed(
       () => loading.value.leaderboard ?? false,
     );
@@ -68,27 +62,7 @@ export const useLibraryMetricsStore = defineStore(
 
       resetMetricData();
       await Promise.all([
-        loadSeries(
-          "documentReads",
-          counterMetricType.documentRead,
-          orgId,
-          libraryName,
-          requestId,
-        ),
-        loadSeries(
-          "sectionReads",
-          counterMetricType.sectionRead,
-          orgId,
-          libraryName,
-          requestId,
-        ),
-        loadSeries(
-          "snippetReads",
-          counterMetricType.snippetRead,
-          orgId,
-          libraryName,
-          requestId,
-        ),
+        loadReadSeries(orgId, libraryName, requestId),
         loadLeaderboard(orgId, libraryName, requestId),
         loadSectionLeaderboard(
           "sectionLeaderboard",
@@ -123,24 +97,47 @@ export const useLibraryMetricsStore = defineStore(
       error.value = null;
     }
 
-    async function loadSeries(
-      key: "documentReads" | "sectionReads" | "snippetReads",
-      metricType: string,
+    /**
+     * Loads the document/section/snippet read series together and assigns all
+     * three refs in one atomic step. The three counter types are independent
+     * requests, so gathering them via `Promise.all` before writing any ref
+     * (rather than each request writing its own ref the instant it resolves)
+     * prevents the "Reads over time" chart from ever rendering a transient
+     * state where only 1-2 of the 3 series have arrived.
+     */
+    async function loadReadSeries(
       orgId: string,
       libraryName: string,
       requestId: number,
     ) {
-      await run(key, requestId, async () => {
-        const series = await Metrics.getMetricSeries(orgId, metricType, {
+      await run("reads", requestId, async () => {
+        const seriesFilters = {
           window: window.value,
           groupBy: metricSeriesGroupEnum.None,
           libraries: [libraryName],
-        });
+        };
+        const [documents, sections, snippets] = await Promise.all([
+          Metrics.getMetricSeries(
+            orgId,
+            counterMetricType.documentRead,
+            seriesFilters,
+          ),
+          Metrics.getMetricSeries(
+            orgId,
+            counterMetricType.sectionRead,
+            seriesFilters,
+          ),
+          Metrics.getMetricSeries(
+            orgId,
+            counterMetricType.snippetRead,
+            seriesFilters,
+          ),
+        ]);
 
         if (requestId !== loadRequestId) return;
-        if (key === "documentReads") documentReadSeries.value = series;
-        if (key === "sectionReads") sectionReadSeries.value = series;
-        if (key === "snippetReads") snippetReadSeries.value = series;
+        documentReadSeries.value = documents;
+        sectionReadSeries.value = sections;
+        snippetReadSeries.value = snippets;
       });
     }
 
