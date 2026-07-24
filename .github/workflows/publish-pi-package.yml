@@ -2,34 +2,46 @@
 # Packages npm package. The package root is src/plugins/pi, while the GitHub
 # package name intentionally follows the repository path: @zeeq-ai/zeeq-app.
 #
-# Versioning and publishing are driven by Changesets (https://github.com/changesets/changesets),
-# not by hand-picked version numbers or manually pushed tags:
+# Versioning and publishing are driven by semantic-release
+# (https://semantic-release.gitbook.io), scoped to this one package via
+# semantic-release-monorepo (https://github.com/pmowrer/semantic-release-monorepo):
 #
-#   1. A PR touching src/plugins/pi includes a changeset (`yarn changeset`),
-#      committed alongside the change.
-#   2. On merge to main, this workflow finds the pending changeset(s) and opens
-#      (or updates) a "Version Packages" PR that bumps package.json and the
-#      changelog. Nothing is published yet.
-#   3. Merging that PR removes the changeset(s); the next run of this workflow
-#      finds none pending, so it publishes instead — running `npm publish` from
-#      src/plugins/pi (honoring its own `publishConfig`) and pushing a git tag
-#      in Changesets' default `<package-name>@<version>` format.
+#   1. semantic-release-monorepo filters the commit history down to only
+#      commits that touched src/plugins/pi (relative to the last
+#      @zeeq-ai/zeeq-app-pi-telemetry@<version> tag) before analyzing them —
+#      an unrelated feat/fix commit elsewhere in the repo never triggers a
+#      release here, and this workflow's own `paths` filter below means it
+#      never even runs for those commits.
+#   2. The next version is inferred entirely from conventional-commit
+#      prefixes on those filtered commits (feat -> minor, fix -> patch,
+#      BREAKING CHANGE/! -> major) — there is no `yarn changeset` step and no
+#      per-PR changeset file to author.
+#   3. On a release, semantic-release publishes to GitHub Packages and pushes
+#      a `@zeeq-ai/zeeq-app-pi-telemetry@<version>` git tag plus a GitHub
+#      Release with generated notes. It does NOT commit or open a PR: the
+#      version bump written into package.json happens only in this job's
+#      ephemeral checkout, immediately before `npm publish`, and is never
+#      pushed back to a branch. The tag and the registry are the source of
+#      truth for what's actually published — the version checked into
+#      src/plugins/pi/package.json is a static placeholder.
 #
-# This repo has only one publishable package under src/plugins/** today, but
-# the same workflow scales to future ones without per-package tag prefixes or
-# workflow changes — each gets its own changeset entries and its own tag
-# namespace for free.
+# This repo has only one publishable package under src/plugins/** today. A
+# future second package would get its own .releaserc.json (own tagFormat) and
+# its own `paths` filter/job here.
 
 name: Publish Pi Package
 
 on:
-  # Changesets is self-gating: pushes to main with no pending changeset and no
-  # unpublished version bump are a cheap no-op.
+  # semantic-release is self-gating (a run with no releasable commits since
+  # the last tag is a no-op), but the paths filter avoids even starting the
+  # job for pushes that never touched this package.
   push:
     branches:
       - main
+    paths:
+      - "src/plugins/pi/**"
 
-  # Allow maintainers to re-run after package-registry or workflow issues.
+  # Allow maintainers to re-run after a registry or workflow failure.
   workflow_dispatch:
 
 concurrency:
@@ -42,14 +54,13 @@ permissions:
 
 jobs:
   release:
-    name: Version or publish src/plugins/pi
+    name: Release src/plugins/pi
     runs-on: ubuntu-latest
     permissions:
-      # changesets/action pushes the "Version Packages" branch/commit and the
-      # release tag once publishing succeeds.
+      # semantic-release pushes the release tag and creates the GitHub
+      # Release. No pull-requests permission is needed -- this workflow never
+      # opens a PR.
       contents: write
-      # changesets/action opens and updates the "Version Packages" PR.
-      pull-requests: write
       # npm publish uses GITHUB_TOKEN to write to GitHub Packages.
       packages: write
 
@@ -60,7 +71,7 @@ jobs:
           fetch-depth: 0
 
       # Configure npm for GitHub Packages. setup-node writes the auth-aware
-      # .npmrc that npm publish (invoked by changesets) uses with
+      # .npmrc that @semantic-release/npm's `npm publish` uses with
       # NODE_AUTH_TOKEN below.
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -75,12 +86,9 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
-      # Opens/updates the "Version Packages" PR when changesets are pending;
-      # runs the publish command instead once that PR has been merged.
-      - name: Create Version Packages PR or publish
-        uses: changesets/action@v1
-        with:
-          publish: yarn changeset publish
+      - name: Release
+        working-directory: src/plugins/pi
+        run: npx semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

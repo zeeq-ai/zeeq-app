@@ -1,6 +1,6 @@
 {
   "name": "@zeeq-ai/zeeq-app-pi-telemetry",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "Pi lifecycle telemetry extension for Zeeq App.",
   "license": "MIT",
   "type": "module",
