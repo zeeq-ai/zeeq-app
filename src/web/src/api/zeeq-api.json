@@ -484,6 +484,98 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/me/aliases": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Get my organization-scoped aliases.",
+        "description": "Returns aliases owned by the signed-in user in the active organization.\nEmail aliases match agent telemetry owner emails; GitHub aliases match\nprovider logins on pull requests and code review records.",
+        "operationId": "GetUserAliases",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAliasesResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Update my organization-scoped aliases.",
+        "description": "Replaces the signed-in user's aliases in the active organization.\nAliases are organization-scoped so the same raw identity can be mapped\ndifferently in different organizations when needed.",
+        "operationId": "UpdateUserAliases",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserAliasesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityEndpointError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityEndpointError"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAliasesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/tokens": {
       "get": {
         "tags": [
@@ -8555,6 +8647,21 @@
         },
         "description": "A ProblemDetails for validation errors."
       },
+      "IdentityEndpointError": {
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
       "IFormFile": {
         "type": [
           "null",
@@ -9465,6 +9572,7 @@
           "organizationRole",
           "organizationSlug",
           "organizations",
+          "aliases",
           "isSystemAdmin"
         ],
         "type": "object",
@@ -9542,6 +9650,12 @@
             ],
             "items": {
               "$ref": "#/components/schemas/OrgSummary"
+            }
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserAliasDto"
             }
           },
           "isSystemAdmin": {
@@ -11328,6 +11442,29 @@
         },
         "description": "Request body for platform-admin organization activation and tier updates."
       },
+      "UpdateUserAliasesRequest": {
+        "required": [
+          "emailAliases",
+          "gitHubAliases"
+        ],
+        "type": "object",
+        "properties": {
+          "emailAliases": {
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gitHubAliases": {
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "UpsertDocumentRequest": {
         "required": [
           "path",
@@ -11347,6 +11484,58 @@
           }
         },
         "description": "Request body for writing a markdown document into a library."
+      },
+      "UserAliasDto": {
+        "required": [
+          "id",
+          "kind",
+          "value",
+          "normalizedValue",
+          "verifiedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/UserAliasKind"
+          },
+          "value": {
+            "type": "string"
+          },
+          "normalizedValue": {
+            "type": "string"
+          },
+          "verifiedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "UserAliasesResponse": {
+        "required": [
+          "aliases"
+        ],
+        "type": "object",
+        "properties": {
+          "aliases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserAliasDto"
+            }
+          }
+        }
+      },
+      "UserAliasKind": {
+        "enum": [
+          "email",
+          "github"
+        ],
+        "description": "Supported user alias namespaces."
       },
       "UserTokenCreateRequest": {
         "required": [

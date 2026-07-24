@@ -14,17 +14,39 @@
         </div>
 
         <div class="flex shrink-0 items-center gap-1">
-          <UTabs
-            :model-value="inboxScope"
-            :items="inboxScopeItems"
-            :content="false"
-            color="neutral"
-            variant="pill"
-            size="xs"
-            class="shrink-0"
-            :ui="compactTabsUi"
-            @update:model-value="handleScopeUpdate"
-          />
+          <!-- Popover to direct the user set up an alias -->
+          <UPopover
+            mode="hover"
+            :enable-touch="!hasGitHubAlias"
+            :open-delay="aliasPopoverOpenDelay"
+            :close-delay="150"
+            :content="{ side: 'bottom', align: 'center', sideOffset: 8 }"
+            :ui="{ content: 'w-96 max-w-[calc(100vw-2rem)]' }"
+          >
+            <UTabs
+              v-model="inboxScopeModel"
+              :items="inboxScopeItems"
+              :content="false"
+              color="neutral"
+              variant="pill"
+              size="xs"
+              class="shrink-0"
+              :ui="compactTabsUi"
+            />
+
+            <template #content>
+              <UAlert
+                title="Set an alias"
+                description="'Mine' includes PRs claimed by you and PRs authored by your GitHub aliases. Add an alias if your GitHub login differs from your sign-in identity."
+                icon="i-hugeicons-user-id-verification"
+                color="neutral"
+                variant="soft"
+                orientation="horizontal"
+                :actions="aliasAlertActions"
+                :ui="aliasAlertUi"
+              />
+            </template>
+          </UPopover>
           <!-- PR number lookup: resolves a repo-scoped number directly into the inbox. -->
           <UTooltip
             :text="
@@ -187,7 +209,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
+import { storeToRefs } from "pinia";
 import type { TabsItem } from "@nuxt/ui";
 import {
   codeReviewInboxScopeEnum,
@@ -196,6 +219,7 @@ import {
 } from "@/api/generated";
 import type { CodeReviewInboxUpdateDto } from "@/api/generated";
 import type { PullRequestInboxUiState } from "@/stores/code-review-store";
+import { useAppStore } from "@/stores/app-store";
 
 const props = defineProps<{
   pullRequests: CodeReviewPullRequestDto[];
@@ -226,12 +250,45 @@ const emits = defineEmits<{
   filterByNumber: [value: number | null];
 }>();
 
+const appStore = useAppStore();
+const { user: me } = storeToRefs(appStore);
+
 /** Local buffer so the input is free-typed; parent prop resets it on clear/error. */
 const localNumberValue = ref(props.pullRequestNumberFilter ?? "");
+
 const compactTabsUi = {
   list: "h-7 w-auto p-0.5",
   trigger: "h-6 grow-0 px-2 py-0 text-xs",
 };
+
+const aliasAlertActions = [
+  {
+    label: "Set alias",
+    icon: "i-hugeicons-arrow-right-02",
+    color: "neutral" as const,
+    variant: "ghost" as const,
+    to: "/settings/me",
+  },
+];
+
+const aliasAlertUi = {
+  root: "rounded-md",
+  title: "text-sm",
+  description: "text-xs",
+};
+
+const inboxScopeModel = computed({
+  get: () => props.inboxScope,
+  set: handleScopeUpdate,
+});
+
+const hasGitHubAlias = computed(
+  () => me.value?.aliases?.some((alias) => alias.kind === "github") === true,
+);
+
+const aliasPopoverOpenDelay = computed(() =>
+  hasGitHubAlias.value ? 2_147_483_647 : 300,
+);
 
 watch(
   () => props.pullRequestNumberFilter,

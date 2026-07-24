@@ -13,12 +13,24 @@ namespace Zeeq.Data.Postgres.Metrics;
 /// <c>organization_id + metric_type + created_at_utc</c> predicate matches the partial indexes on
 /// <c>zeeq_metric_events</c> (partition-pruned by <c>created_at_utc</c>), and the review
 /// aggregates hit the <c>(organization_id, repository_id|author_login, created_at_utc)</c> indexes
-/// on <c>code_review_records</c>. No JOINs on the metric-events path (Read-4). Interpolated
+/// on <c>code_review_records</c>. Interpolated
 /// <c>Database.SqlQuery&lt;T&gt;</c> parameterizes every value; the only literal SQL fragments are
 /// group-by column names chosen from closed enums (never caller input).
 /// </remarks>
 internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetricsQueryStore
 {
+    // NOTE: Alias resolution is intentionally SQL-local here. These queries
+    // aggregate directly over raw metric rows, so the equivalent trim/lower
+    // normalization must remain SQL-translatable rather than calling the C#
+    // UserAliasNormalizer. The active alias unique index on (organization_id,
+    // kind, normalized_value) guarantees at most one active email alias match
+    // per metric row, so the left join does not multiply metric values.
+    // NOTE: User filters are canonical metric user keys from GetFilterOptionsAsync,
+    // not raw telemetry owner emails; alias owner emails roll up before filtering.
+    private const string ResolvedMetricUserKeySql =
+        "COALESCE(alias_user.email, user_email_alias.user_id, metric.user_email)";
+    private const string NormalizedMetricUserEmailSql = "lower(btrim(metric.user_email))";
+
     /// <inheritdoc />
     public async Task<IReadOnlyList<MetricSeriesPoint>> GetSeriesAsync(
         string organizationId,
@@ -35,22 +47,30 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         var tools = filters.Tools ?? [];
         var libraries = filters.Libraries ?? [];
 
-        var seriesKey = MetricSeriesKeyExpression(groupBy);
+        var seriesKey = MetricSeriesKeyExpression(groupBy, "metric");
+        var userFilterKey = MetricSeriesKeyExpression(MetricSeriesGroup.User, "metric");
 
         // GROUP BY 1, 2 groups by (bucket, series_key). For the ungrouped case series_key is a
         // constant NULL::text on every row, so grouping collapses to one row per bucket (SeriesKey
         // null) — the intended single-aggregate-series shape. Verified by the None-group test.
         var format = $$"""
-            SELECT date_bin({0}, created_at_utc, {1}) AS bucket,
+            SELECT date_bin({0}, metric.created_at_utc, {1}) AS bucket,
                    {{seriesKey}} AS series_key,
-                   SUM(metric_value) AS value
-            FROM zeeq.zeeq_metric_events
-            WHERE organization_id = {2}
-              AND metric_type = {3}
-              AND created_at_utc >= {1}
-              AND (cardinality({4}) = 0 OR user_email = ANY({4}))
-              AND (cardinality({5}) = 0 OR tool_name = ANY({5}))
-              AND (cardinality({6}) = 0 OR library = ANY({6}))
+                   SUM(metric.metric_value) AS value
+            FROM zeeq.zeeq_metric_events metric
+            LEFT JOIN zeeq.core_user_aliases user_email_alias
+             ON user_email_alias.organization_id = metric.organization_id
+             AND user_email_alias.kind = 'Email'
+             AND user_email_alias.normalized_value = {{NormalizedMetricUserEmailSql}}
+             AND user_email_alias.disabled_at_utc IS NULL
+            LEFT JOIN zeeq.core_users alias_user
+              ON alias_user.id = user_email_alias.user_id
+            WHERE metric.organization_id = {2}
+              AND metric.metric_type = {3}
+              AND metric.created_at_utc >= {1}
+              AND (cardinality({4}) = 0 OR {{userFilterKey}} = ANY({4}))
+              AND (cardinality({5}) = 0 OR metric.tool_name = ANY({5}))
+              AND (cardinality({6}) = 0 OR metric.library = ANY({6}))
             GROUP BY 1, 2
             ORDER BY 1
             """;
@@ -88,21 +108,29 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         var users = filters.Users ?? [];
         var tools = filters.Tools ?? [];
         var libraries = filters.Libraries ?? [];
-        var primarySeriesKey = MetricSeriesKeyExpression(primaryGroupBy);
-        var secondarySeriesKey = MetricSeriesKeyExpression(secondaryGroupBy);
+        var primarySeriesKey = MetricSeriesKeyExpression(primaryGroupBy, "metric");
+        var secondarySeriesKey = MetricSeriesKeyExpression(secondaryGroupBy, "metric");
+        var userFilterKey = MetricSeriesKeyExpression(MetricSeriesGroup.User, "metric");
 
         var format = $$"""
-            SELECT date_bin({0}, created_at_utc, {1}) AS bucket,
+            SELECT date_bin({0}, metric.created_at_utc, {1}) AS bucket,
                    {{primarySeriesKey}} AS primary_series_key,
                    {{secondarySeriesKey}} AS secondary_series_key,
-                   SUM(metric_value) AS value
-            FROM zeeq.zeeq_metric_events
-            WHERE organization_id = {2}
-              AND metric_type = {3}
-              AND created_at_utc >= {1}
-              AND (cardinality({4}) = 0 OR user_email = ANY({4}))
-              AND (cardinality({5}) = 0 OR tool_name = ANY({5}))
-              AND (cardinality({6}) = 0 OR library = ANY({6}))
+                   SUM(metric.metric_value) AS value
+            FROM zeeq.zeeq_metric_events metric
+            LEFT JOIN zeeq.core_user_aliases user_email_alias
+             ON user_email_alias.organization_id = metric.organization_id
+             AND user_email_alias.kind = 'Email'
+             AND user_email_alias.normalized_value = {{NormalizedMetricUserEmailSql}}
+             AND user_email_alias.disabled_at_utc IS NULL
+            LEFT JOIN zeeq.core_users alias_user
+              ON alias_user.id = user_email_alias.user_id
+            WHERE metric.organization_id = {2}
+              AND metric.metric_type = {3}
+              AND metric.created_at_utc >= {1}
+              AND (cardinality({4}) = 0 OR {{userFilterKey}} = ANY({4}))
+              AND (cardinality({5}) = 0 OR metric.tool_name = ANY({5}))
+              AND (cardinality({6}) = 0 OR metric.library = ANY({6}))
             GROUP BY 1, 2, 3
             ORDER BY 1, 2, 3
             """;
@@ -627,12 +655,23 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         // NOTE: DisplayName is returned raw; duplicate repo display names are disambiguated at the
         // presentation layer (the web Home view suffixes a short id) so this endpoint stays a pure
         // data source. All four reads are AsNoTracking projections, single-table, endpoint-cached.
+        FormattableString usersSql = $"""
+            SELECT DISTINCT COALESCE(alias_user.email, user_email_alias.user_id, metric.user_email) AS "Value"
+            FROM zeeq.zeeq_metric_events metric
+            LEFT JOIN zeeq.core_user_aliases user_email_alias
+             ON user_email_alias.organization_id = metric.organization_id
+             AND user_email_alias.kind = 'Email'
+             AND user_email_alias.normalized_value = lower(btrim(metric.user_email))
+             AND user_email_alias.disabled_at_utc IS NULL
+            LEFT JOIN zeeq.core_users alias_user
+              ON alias_user.id = user_email_alias.user_id
+            WHERE metric.organization_id = {organizationId}
+              AND metric.user_email IS NOT NULL
+            ORDER BY 1
+            """;
+
         var users = await db
-            .MetricEvents.AsNoTracking()
-            .Where(e => e.OrganizationId == organizationId && e.UserEmail != null)
-            .Select(e => e.UserEmail!)
-            .Distinct()
-            .OrderBy(value => value)
+            .Database.SqlQuery<string>(usersSql)
             .TagWithOperationCallSite("metrics.options.users")
             .ToListAsync(cancellationToken);
 
@@ -742,14 +781,14 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
 
     private static string ShortId(string id) => id.Length <= 8 ? id : id[^8..];
 
-    private static string MetricSeriesKeyExpression(MetricSeriesGroup groupBy) =>
+    private static string MetricSeriesKeyExpression(MetricSeriesGroup groupBy, string tableAlias) =>
         groupBy switch
         {
-            MetricSeriesGroup.User => "user_email",
-            MetricSeriesGroup.Tool => "tool_name",
-            MetricSeriesGroup.Library => "library",
-            MetricSeriesGroup.UserAgent => "tags->>'user_agent'",
-            MetricSeriesGroup.Model => "tags->>'model'",
+            MetricSeriesGroup.User => ResolvedMetricUserKeySql,
+            MetricSeriesGroup.Tool => $"{tableAlias}.tool_name",
+            MetricSeriesGroup.Library => $"{tableAlias}.library",
+            MetricSeriesGroup.UserAgent => $"{tableAlias}.tags->>'user_agent'",
+            MetricSeriesGroup.Model => $"{tableAlias}.tags->>'model'",
             _ => "NULL::text",
         };
 }

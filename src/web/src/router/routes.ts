@@ -175,6 +175,12 @@ export const routes: Array<RouteRecordRaw> = [
             meta: { title: "My Memberships" },
           },
           {
+            path: "me",
+            name: "SettingsMe",
+            component: () => import("@/views/settings/Me.vue"),
+            meta: { title: "Me" },
+          },
+          {
             path: "credentials",
             name: "SettingsCredentials",
             component: () =>

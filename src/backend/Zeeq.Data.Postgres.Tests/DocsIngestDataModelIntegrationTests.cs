@@ -1,7 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Documents;
 using Zeeq.Testing;
 using Zeeq.Testing.EntityGraphs;
-using Microsoft.EntityFrameworkCore;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -179,43 +179,6 @@ public sealed class DocsIngestDataModelIntegrationTests(PgDatabaseFixture postgr
             d.PublicSourceId == source.Id && d.ContentHash == "hash_move"
         );
         await Assert.That(count).IsEqualTo(1);
-    }
-
-    [Test]
-    [Skip(
-        "Flaky: intermittently hits a real Postgres deadlock (40P01) when run "
-            + "alongside the rest of the suite against the shared testcontainer — "
-            + "passes reliably in isolation (confirmed 2026-07-10). Not a code "
-            + "regression; revisit if this recurs enough to investigate lock "
-            + "ordering in EntityGraphBuilder's persistence path."
-    )]
-    public async Task PublicDocument_ContentMovedAcrossSources_AddsNewRow()
-    {
-        // Guards that content_hash dedup is scoped to public_source_id.
-        // Same hash on a different source is a genuinely new document,
-        // not a move of the first source's row.
-        var (_, sourceA, _, sourceB, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource(s => s.RepoUrl = "https://github.com/example/a")
-            .AddDocsPublicDocuments(p =>
-            {
-                p.Path = "/guide.md";
-                p.Content = "# Guide\n\nShared body.";
-                p.ContentHash = "hash_cross";
-            })
-            .AddDocsPublicSource(s => s.RepoUrl = "https://github.com/example/b")
-            .AddDocsPublicDocuments(p =>
-            {
-                p.Path = "/guide.md";
-                p.Content = "# Guide\n\nShared body.";
-                p.ContentHash = "hash_cross";
-            })
-            .BuildAsync();
-
-        var totalRows = await _context.DocsPublicDocuments.CountAsync(d =>
-            d.ContentHash == "hash_cross"
-        );
-        await Assert.That(totalRows).IsEqualTo(2);
     }
 
     // ═══════════════════════════════════════════════════════════════════

@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Reflection;
 using System.Security.Claims;
+using System.Text.Json;
 using OpenIddict.Abstractions;
 using Zeeq.Core.Common;
 using Zeeq.Core.Models;
@@ -91,6 +92,66 @@ public sealed class GetMeHandlerTests
         await Assert.That(GetProperty<bool>(response, "IsSystemAdmin")).IsFalse();
     }
 
+    [Test]
+    public async Task HandleAsync_WithUserAliases_ReturnsActiveOrganizationAliases()
+    {
+        var org = TestOrganization();
+        var membershipStore = new TestMembershipStore([org], [ActiveMembership(org.Id, "usr_123")]);
+        var identityStore = new TestIdentityStore([
+            new UserAlias
+            {
+                Id = "alias_123",
+                OrganizationId = org.Id,
+                UserId = "usr_123",
+                Kind = UserAliasKind.Email,
+                DisplayValue = "personal@example.com",
+                NormalizedValue = "personal@example.com",
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+            },
+        ]);
+        var handler = CreateHandler(membershipStore, identityStore: identityStore);
+
+        var result = await InvokeHandleAsync(
+            handler,
+            TestPrincipal("usr_123", org.Id),
+            CancellationToken.None
+        );
+        var response = GetOkValue(result);
+        var aliases = GetProperty<IEnumerable>(response, "Aliases").Cast<object>().ToArray();
+
+        await Assert.That(aliases).HasSingleItem();
+        await Assert
+            .That(GetProperty<UserAliasKind>(aliases[0], "Kind"))
+            .IsEqualTo(UserAliasKind.Email);
+        await Assert
+            .That(GetProperty<string>(aliases[0], "Value"))
+            .IsEqualTo("personal@example.com");
+    }
+
+    [Test]
+    public async Task UserAliasEndpointMapping_SerializesKindWithCustomWireName()
+    {
+        var alias = new UserAlias
+        {
+            Id = "alias_123",
+            OrganizationId = "org_123",
+            UserId = "usr_123",
+            Kind = UserAliasKind.GitHub,
+            DisplayValue = "alias",
+            NormalizedValue = "alias",
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            UpdatedAtUtc = DateTimeOffset.UtcNow,
+        };
+
+        var json = JsonSerializer.Serialize(
+            UserAliasEndpointMapping.ToDto(alias),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        );
+
+        await Assert.That(json).Contains("\"kind\":\"github\"");
+    }
+
     private static async Task<object> InvokeHandleAsync(
         GetMeHandler handler,
         ClaimsPrincipal user,
@@ -132,10 +193,12 @@ public sealed class GetMeHandlerTests
 
     private static GetMeHandler CreateHandler(
         IZeeqMembershipStore store,
-        string[]? systemAdminSubjects = null
+        string[]? systemAdminSubjects = null,
+        IZeeqIdentityStore? identityStore = null
     ) =>
         new(
             store,
+            identityStore ?? new TestIdentityStore([]),
             new SystemAdminEvaluator(
                 new AppSettings
                 {
@@ -365,6 +428,116 @@ public sealed class GetMeHandlerTests
         public Task<MembershipActivationState?> FindMembershipActivationStateAsync(
             string orgId,
             string userId,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+    }
+
+    private sealed class TestIdentityStore(IReadOnlyList<UserAlias> aliases) : IZeeqIdentityStore
+    {
+        public Task<AuthContext> EnsureUserAsync(
+            string provider,
+            string providerSubject,
+            string? displayName,
+            string? email,
+            string? pictureUrl,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<UserAlias>> ListUserAliasesAsync(
+            string organizationId,
+            string userId,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult<IReadOnlyList<UserAlias>>(
+                aliases
+                    .Where(alias =>
+                        alias.OrganizationId == organizationId && alias.UserId == userId
+                    )
+                    .ToArray()
+            );
+
+        public Task<IReadOnlyList<UserAlias>> ReplaceUserAliasesAsync(
+            string organizationId,
+            string userId,
+            IReadOnlyList<UserAliasWrite> aliases,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task CreatePendingDcrSetupAsync(
+            DcrClientSetup setup,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<DcrClientSetup?> FindDcrSetupAsync(
+            string clientId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task MarkDcrSetupExpiredAsync(
+            string clientId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task ClaimDcrSetupAsync(
+            string clientId,
+            OwnerContext owner,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<ClientCredential>> ListClientCredentialsAsync(
+            string ownerUserId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task AddClientCredentialAsync(
+            ClientCredential credential,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<ClientCredential?> FindClientCredentialAsync(
+            string clientId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<bool> DeleteClientCredentialAsync(
+            string clientId,
+            string ownerUserId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<UserToken>> ListUserTokensAsync(
+            string ownerUserId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task AddUserTokenAsync(UserToken token, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task RemoveUserTokenAsync(string tokenId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<UserToken?> FindUserTokenAsync(
+            string tokenId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<bool> DeleteUserTokenAsync(
+            string tokenId,
+            string ownerUserId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<bool> MarkUserTokenUsedAsync(
+            string tokenId,
+            string ownerUserId,
+            DateTimeOffset usedAtUtc,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<int> RevokeUserTokensForOrganizationMemberAsync(
+            string organizationId,
+            string ownerUserId,
+            DateTimeOffset revokedAtUtc,
             CancellationToken ct
         ) => throw new NotSupportedException();
     }

@@ -45,6 +45,11 @@ public class PostgresDbContext(DbContextOptions<PostgresDbContext> options)
     public DbSet<ExternalUserIdentity> ExternalUserIdentities => Set<ExternalUserIdentity>();
 
     /// <summary>
+    /// Organization-scoped user identity aliases.
+    /// </summary>
+    public DbSet<UserAlias> UserAliases => Set<UserAlias>();
+
+    /// <summary>
     /// Organization tenant records.
     /// </summary>
     public DbSet<Organization> Organizations => Set<Organization>();

@@ -43,16 +43,49 @@
                 (aggregate; all tokens, API rates)
               </span>
             </span>
-            <UTabs
-              v-model="tokenUserPanel"
-              :items="tokenUserPanelItems"
-              :content="false"
-              color="neutral"
-              variant="pill"
-              size="xs"
-              class="shrink-0"
-              :ui="compactTabsUi"
-            />
+            <div class="flex shrink-0 items-center gap-1">
+              <UPopover
+                mode="hover"
+                enable-touch
+                :open-delay="300"
+                :close-delay="150"
+                :content="{ side: 'bottom', align: 'end', sideOffset: 8 }"
+                :ui="{ content: 'w-96 max-w-[calc(100vw-2rem)]' }"
+              >
+                <UButton
+                  icon="i-hugeicons-information-circle"
+                  aria-label="Telemetry alias matching"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  square
+                />
+
+                <template #content>
+                  <UAlert
+                    title="Email alias matching"
+                    description="Member usage matches telemetry owner emails. Add an email alias only if your model provider account uses a different email than your Zeeq sign-in identity."
+                    icon="i-hugeicons-user-id-verification"
+                    color="neutral"
+                    variant="soft"
+                    orientation="horizontal"
+                    :actions="aliasAlertActions"
+                    :ui="aliasAlertUi"
+                  />
+                </template>
+              </UPopover>
+
+              <UTabs
+                v-model="tokenUserPanel"
+                :items="tokenUserPanelItems"
+                :content="false"
+                color="neutral"
+                variant="pill"
+                size="xs"
+                class="shrink-0"
+                :ui="compactTabsUi"
+              />
+            </div>
           </div>
         </template>
         <MetricChart
@@ -185,6 +218,20 @@ const compactTabsUi = {
   list: "h-7 w-auto p-0.5",
   trigger: "h-6 grow-0 px-2 py-0 text-xs",
 };
+const aliasAlertActions = [
+  {
+    label: "Set alias",
+    icon: "i-hugeicons-arrow-right-02",
+    color: "neutral" as const,
+    variant: "ghost" as const,
+    to: "/settings/me",
+  },
+];
+const aliasAlertUi = {
+  root: "rounded-md",
+  title: "text-sm",
+  description: "text-xs",
+};
 
 // NOTE: Empty/loading state is intentionally mode-local: if the user selects "By User" and the
 // two-dimensional series has no points, the chart should show empty even when the total series has data.
@@ -235,8 +282,8 @@ const memberUsageItems = computed<MemberUsageItem[]>(() => {
   return props.members
     .map((member) => {
       const usageKey = member.email ?? member.userId;
-      const totalTokens = member.email ? (totals.get(member.email) ?? 0) : 0;
-      const totalCostUsd = member.email ? (costs.get(member.email) ?? 0) : 0;
+      const totalTokens = totals.get(usageKey) ?? 0;
+      const totalCostUsd = costs.get(usageKey) ?? 0;
       const hasData = totalTokens > 0;
 
       return {

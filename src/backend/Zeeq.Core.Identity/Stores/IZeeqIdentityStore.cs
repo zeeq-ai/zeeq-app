@@ -31,6 +31,18 @@ public sealed record OwnerContext(
 );
 
 /// <summary>
+/// Validated alias value to persist for a user in one organization.
+/// </summary>
+/// <param name="Kind">Alias namespace.</param>
+/// <param name="DisplayValue">User-facing value after trimming.</param>
+/// <param name="NormalizedValue">Canonical lookup value.</param>
+public sealed record UserAliasWrite(
+    UserAliasKind Kind,
+    string DisplayValue,
+    string NormalizedValue
+);
+
+/// <summary>
 /// Persistence contract for all local identity artifacts: users, DCR client setups,
 /// client credentials, and long-lived user tokens.
 /// </summary>
@@ -74,6 +86,25 @@ public interface IZeeqIdentityStore
         string? displayName,
         string? email,
         string? pictureUrl,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Lists aliases owned by one user in one organization.
+    /// </summary>
+    Task<IReadOnlyList<UserAlias>> ListUserAliasesAsync(
+        string organizationId,
+        string userId,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Replaces aliases owned by one user in one organization.
+    /// </summary>
+    Task<IReadOnlyList<UserAlias>> ReplaceUserAliasesAsync(
+        string organizationId,
+        string userId,
+        IReadOnlyList<UserAliasWrite> aliases,
         CancellationToken cancellationToken
     );
 

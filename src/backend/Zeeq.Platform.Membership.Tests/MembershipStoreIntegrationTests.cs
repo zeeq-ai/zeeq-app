@@ -306,6 +306,35 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
     }
 
     [Test]
+    public async Task RemoveMemberAsync_WithUserAlias_PreservesAlias()
+    {
+        // Org-scoped aliases are attribution keys for historical PRs and
+        // telemetry, so removing a member must not delete or disable aliases.
+        var store = CreateStore();
+        var (seed, aliases) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddUserAliases(alias =>
+            {
+                alias.Kind = UserAliasKind.GitHub;
+                alias.DisplayValue = "CharlieDigital";
+                alias.NormalizedValue = "charliedigital";
+            })
+            .BuildAsync();
+        var alias = aliases[0];
+
+        await store.RemoveMemberAsync(seed.Organization.Id, seed.Owner.Id, CancellationToken.None);
+
+        var persisted = await _context.UserAliases.SingleAsync(
+            row => row.Id == alias.Id,
+            CancellationToken.None
+        );
+
+        await Assert.That(persisted.OrganizationId).IsEqualTo(seed.Organization.Id);
+        await Assert.That(persisted.UserId).IsEqualTo(seed.Owner.Id);
+        await Assert.That(persisted.DisabledAtUtc).IsNull();
+    }
+
+    [Test]
     public async Task UpdateMemberRoleAsync_WithExistingMember_UpdatesRoleToAdmin()
     {
         // Guards that role changes are persisted atomically via ExecuteUpdateAsync

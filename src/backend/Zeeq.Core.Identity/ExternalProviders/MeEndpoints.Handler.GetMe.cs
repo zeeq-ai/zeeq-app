@@ -1,9 +1,9 @@
 using System.Security.Claims;
-using Zeeq.Core.Common.AspNetCore.Contracts;
-using Zeeq.Core.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using OpenIddict.Abstractions;
+using Zeeq.Core.Common.AspNetCore.Contracts;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Core.Identity;
 
@@ -31,6 +31,7 @@ namespace Zeeq.Core.Identity;
 /// </remarks>
 public sealed class GetMeHandler(
     IZeeqMembershipStore membershipStore,
+    IZeeqIdentityStore identityStore,
     SystemAdminEvaluator systemAdminEvaluator
 ) : IEndpointHandler
 {
@@ -64,8 +65,14 @@ public sealed class GetMeHandler(
             .Concat(pending.Select(p => p.OrganizationId))
             .Distinct()
             .ToArray();
+
         var orgs = await membershipStore.FindOrganizationsByIdsAsync(orgIds, ct);
         var orgMap = orgs.ToDictionary(o => o.Id);
+
+        var aliases =
+            !string.IsNullOrWhiteSpace(orgId) && !string.IsNullOrWhiteSpace(userId)
+                ? await identityStore.ListUserAliasesAsync(orgId, userId, ct)
+                : [];
 
         // Build combined org list: active first, then pending
         var orgSummaries = new List<OrgSummary>(memberships.Count + pending.Count);
@@ -122,6 +129,7 @@ public sealed class GetMeHandler(
                 OrganizationRole: currentMembership?.Role,
                 OrganizationSlug: identity.OrganizationSlug,
                 Organizations: orgSummaries,
+                Aliases: [.. aliases.Select(UserAliasEndpointMapping.ToDto)],
                 IsSystemAdmin: systemAdminEvaluator.IsSystemAdmin(user)
             )
         );

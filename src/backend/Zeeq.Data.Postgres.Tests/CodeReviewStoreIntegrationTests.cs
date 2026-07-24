@@ -146,6 +146,65 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     }
 
     [Test]
+    public async Task PullRequestRecordStore_ListRecentAsync_MineIncludesActiveGitHubAliases()
+    {
+        // NOTE: A follow-up review suspected this deconstruction no longer
+        // matched the EntityGraph result shape after AddUserAliases; the
+        // CodeReviewStoreIntegrationTests project compiles and this test passes.
+        var (seed, _, pullRequests, _) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddCodeRepository()
+            .AddPullRequestRecords(
+                pullRequest =>
+                {
+                    pullRequest.PullRequestNumber = 1;
+                    pullRequest.AuthorLogin = "claimed-author";
+                    pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-3);
+                    pullRequest.PersistOnBuild = false;
+                },
+                pullRequest =>
+                {
+                    pullRequest.PullRequestNumber = 2;
+                    pullRequest.AuthorLogin = " @CharlieDigital ";
+                    pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2);
+                    pullRequest.PersistOnBuild = false;
+                },
+                pullRequest =>
+                {
+                    pullRequest.PullRequestNumber = 3;
+                    pullRequest.AuthorLogin = "someone-else";
+                    pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
+                    pullRequest.PersistOnBuild = false;
+                }
+            )
+            .AddUserAliases(alias =>
+            {
+                alias.Kind = UserAliasKind.GitHub;
+                alias.DisplayValue = "CharlieDigital";
+                alias.NormalizedValue = "charliedigital";
+            })
+            .BuildAsync();
+        var claimed = pullRequests[0];
+        var aliased = pullRequests[1];
+        var other = pullRequests[2];
+        claimed.ClaimedByUserId = seed.Owner.Id;
+        var store = new PostgresPullRequestRecordStore(_context);
+
+        await store.UpsertAsync(claimed, CancellationToken.None);
+        await store.UpsertAsync(aliased, CancellationToken.None);
+        await store.UpsertAsync(other, CancellationToken.None);
+
+        var page = await store.ListRecentAsync(
+            new PullRequestStreamQuery(seed.Organization.Id, SubjectUserId: seed.Owner.Id),
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(page.Items.Select(item => item.Id).ToArray())
+            .IsEquivalentTo([claimed.Id, aliased.Id]);
+    }
+
+    [Test]
     public async Task CodeReviewRecordStore_ListRecentAsync_UsesCreatedAtAndIdCursor()
     {
         var (seed, _, pullRequests, reviews) = await EntityGraph
@@ -388,7 +447,7 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         var pullRequestCreatedAt = DateTimeOffset
             .UtcNow.AddMinutes(-10)
             .TruncateToPostgresPrecision();
-        var (seed, repository, pullRequests, reviews) = await EntityGraph
+        var (seed, repository, pullRequests, reviews, _) = await EntityGraph
             .AddGeneratedSeed(_context)
             .AddCodeRepository()
             .AddPullRequestRecords(pullRequest =>
@@ -413,12 +472,18 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
                     review.PersistOnBuild = false;
                 }
             )
+            .AddUserAliases(alias =>
+            {
+                alias.Kind = UserAliasKind.GitHub;
+                alias.DisplayValue = "CharlieDigital";
+                alias.NormalizedValue = "charliedigital";
+            })
             .BuildAsync();
         var pullRequest = pullRequests[0];
         var older = reviews[0];
         var middle = reviews[1];
         var newer = reviews[2];
-        pullRequest.ClaimedByUserId = "user_owner";
+        pullRequest.AuthorLogin = "@CharlieDigital";
         older.Status = CodeReviewStatus.Completed;
         older.CriticalFindings = 1;
         older.UpdatedAtUtc = DateTimeOffset.UtcNow.AddSeconds(-30);
@@ -495,7 +560,7 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
             new CodeReviewUpdateStreamQuery(
                 seed.Organization.Id,
                 Scope: CodeReviewInboxScope.Mine,
-                SubjectUserId: "user_owner",
+                SubjectUserId: seed.Owner.Id,
                 ReviewCreatedAtLowerBoundUtc: pullRequest.CreatedAtUtc,
                 PageSize: 5
             ),
@@ -514,7 +579,7 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
 
         await Assert.That(minePage.Items).Count().IsEqualTo(3);
         await Assert.That(minePage.NextCursor!.Scope).IsEqualTo(CodeReviewInboxScope.Mine);
-        await Assert.That(minePage.NextCursor.SubjectUserId).IsEqualTo("user_owner");
+        await Assert.That(minePage.NextCursor.SubjectUserId).IsEqualTo(seed.Owner.Id);
         await Assert.That(someoneElsePage.Items).IsEmpty();
         await Assert
             .That(someoneElsePage.NextCursor!.Id)

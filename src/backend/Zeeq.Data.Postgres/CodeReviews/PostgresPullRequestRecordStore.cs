@@ -168,7 +168,19 @@ internal sealed class PostgresPullRequestRecordStore(PostgresDbContext db) : IPu
 
         if (query.SubjectUserId is not null)
         {
-            rows = rows.Where(record => record.ClaimedByUserId == query.SubjectUserId);
+            var githubAliases = db
+                .UserAliases.Where(alias =>
+                    alias.OrganizationId == query.OrganizationId
+                    && alias.UserId == query.SubjectUserId
+                    && alias.Kind == UserAliasKind.GitHub
+                    && alias.DisabledAtUtc == null
+                )
+                .Select(alias => alias.NormalizedValue);
+
+            rows = rows.Where(record =>
+                record.ClaimedByUserId == query.SubjectUserId
+                || githubAliases.Contains(record.AuthorLogin.Trim().TrimStart('@').ToLower())
+            );
         }
 
         if (query.Cursor is { } cursor)

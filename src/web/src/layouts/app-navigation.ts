@@ -78,6 +78,10 @@ const settingsSection: AppNavigationSection = {
       to: "/settings/memberships",
     },
     {
+      label: "Me",
+      to: "/settings/me",
+    },
+    {
       label: "Credentials",
       to: "/settings/credentials",
     },

@@ -98,6 +98,19 @@ internal sealed class TestIdentityStore : IZeeqIdentityStore
         CancellationToken cancellationToken
     ) => throw new NotImplementedException();
 
+    public Task<IReadOnlyList<UserAlias>> ListUserAliasesAsync(
+        string organizationId,
+        string userId,
+        CancellationToken cancellationToken
+    ) => throw new NotImplementedException();
+
+    public Task<IReadOnlyList<UserAlias>> ReplaceUserAliasesAsync(
+        string organizationId,
+        string userId,
+        IReadOnlyList<UserAliasWrite> aliases,
+        CancellationToken cancellationToken
+    ) => throw new NotImplementedException();
+
     public Task<IReadOnlyList<UserToken>> ListUserTokensAsync(
         string ownerUserId,
         CancellationToken cancellationToken

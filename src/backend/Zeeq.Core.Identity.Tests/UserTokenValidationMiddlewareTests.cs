@@ -181,6 +181,19 @@ public sealed class UserTokenValidationMiddlewareTests
             CancellationToken cancellationToken
         ) => throw new NotSupportedException();
 
+        public Task<IReadOnlyList<UserAlias>> ListUserAliasesAsync(
+            string organizationId,
+            string userId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<UserAlias>> ReplaceUserAliasesAsync(
+            string organizationId,
+            string userId,
+            IReadOnlyList<UserAliasWrite> aliases,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
         public Task CreatePendingDcrSetupAsync(
             DcrClientSetup setup,
             CancellationToken cancellationToken
