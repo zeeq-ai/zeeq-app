@@ -179,6 +179,16 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
     }
 
     /// <inheritdoc />
+    public async Task<string?> FindUserEmailAsync(string userId, CancellationToken cancellationToken)
+    {
+        return await db
+            .Users.TagWithOperationCallSite("identity.user.find_email")
+            .Where(user => user.Id == userId)
+            .Select(user => user.Email)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<UserAlias>> ListUserAliasesAsync(
         string organizationId,
         string userId,

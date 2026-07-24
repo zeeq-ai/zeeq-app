@@ -58,6 +58,9 @@ internal sealed class TestIdentityStore : IZeeqIdentityStore
         CancellationToken cancellationToken
     ) => throw new NotImplementedException();
 
+    public Task<string?> FindUserEmailAsync(string userId, CancellationToken cancellationToken) =>
+        throw new NotImplementedException();
+
     public Task CreatePendingDcrSetupAsync(
         DcrClientSetup setup,
         CancellationToken cancellationToken

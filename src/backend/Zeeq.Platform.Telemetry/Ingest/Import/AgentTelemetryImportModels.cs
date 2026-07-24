@@ -50,7 +50,11 @@ public sealed record AgentTelemetryImportRequest(
 /// <param name="OutputTokens">Output token count for completion events.</param>
 /// <param name="ReasoningTokens">Reasoning token count for completion events.</param>
 /// <param name="CostUsd">Reported completion cost in USD.</param>
-/// <param name="UserEmail">Observed source user email. This does not authorize the request.</param>
+/// <param name="UserEmail">
+/// Client-reported user email. Ignored: <see cref="AgentTelemetryImportHandler"/> always
+/// overwrites this with the authenticated ingest principal's own <c>email</c> claim before
+/// mapping to OTLP, so a client value here has no effect.
+/// </param>
 /// <param name="OrganizationId">Observed source organization id. This does not authorize the request.</param>
 public sealed record ImportedAgentEvent(
     [property: JsonPropertyName("kind")] AgentEventKind Kind,

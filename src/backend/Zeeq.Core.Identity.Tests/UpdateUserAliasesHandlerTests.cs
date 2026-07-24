@@ -54,6 +54,9 @@ public sealed class UpdateUserAliasesHandlerTests
             CancellationToken cancellationToken
         ) => throw new NotSupportedException();
 
+        public Task<string?> FindUserEmailAsync(string userId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<UserAlias>> ListUserAliasesAsync(
             string organizationId,
             string userId,
