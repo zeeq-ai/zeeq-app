@@ -162,6 +162,7 @@ import {
   pivotByBucket,
   timeSeriesOption,
   toolCallDonutOption,
+  truncateAgentLabel,
 } from "./chart-options";
 
 const colorMode = useColorMode();
@@ -274,7 +275,9 @@ const toolCallOption = computed(() =>
 
 /** UI-2: stacked bar of tool calls, one band per connecting agent. */
 const userAgentOption = computed(() =>
-  timeSeriesOption(pivot(props.userAgentSeries)),
+  timeSeriesOption(pivot(props.userAgentSeries), {
+    seriesLabel: truncateAgentLabel,
+  }),
 );
 
 /** Donut of total tool calls by tool name (aggregate mix, no time dimension). */

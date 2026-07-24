@@ -1,4 +1,5 @@
 [tools]
+dotnet = "10.0.201"
 cloud-sql-proxy = "latest"
 "dotnet:CSharpRepl" = "0.9.2"
 node = "26"

@@ -463,6 +463,24 @@ function identitySeriesLabel(seriesKey: string): string {
   return seriesKey;
 }
 
+/** Max chars kept before middle-truncating a legend label (fits the 140px vertical legend). */
+const maxAgentLabelLength = 26;
+/** Chars kept from each end when a label exceeds `maxAgentLabelLength`. */
+const agentLabelEdgeLength = 12;
+
+/**
+ * Truncates long connecting-agent identifiers (e.g.
+ * `claude-code/2.1.218 (sdk-ts, agent-sdk/0.3.216)`) for the legend, keeping
+ * both the version prefix and the distinguishing suffix (cli/sdk tag) rather
+ * than clipping from one end.
+ */
+export function truncateAgentLabel(seriesKey: string): string {
+  if (seriesKey.length <= maxAgentLabelLength) {
+    return seriesKey;
+  }
+  return `${seriesKey.slice(0, agentLabelEdgeLength)}…${seriesKey.slice(-agentLabelEdgeLength)}`;
+}
+
 /** Builds the p50/p95/p99 line option for a histogram metric (UI-8/9). */
 export function percentileLinesOption(
   points: MetricPercentilePoint[],
