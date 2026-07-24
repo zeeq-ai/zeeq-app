@@ -69,6 +69,17 @@ export const routes: Array<RouteRecordRaw> = [
             meta: { title: "Code Reviews" },
           },
           {
+            path: "manage-agents/:orgId/agents/:agentId",
+            name: "ManageAgent",
+            component: () =>
+              import("@/views/code-reviews/manage-agents/ManageAgents.vue"),
+            meta: { title: "Code Reviews" },
+            props: (route) => ({
+              orgId: (route.params.orgId as string) || undefined,
+              agentId: (route.params.agentId as string) || undefined,
+            }),
+          },
+          {
             path: "reviews/:reviewId",
             name: "CodeReviewSingle",
             component: () =>

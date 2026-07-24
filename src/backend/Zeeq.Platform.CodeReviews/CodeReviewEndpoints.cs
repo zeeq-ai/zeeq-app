@@ -31,6 +31,7 @@ public sealed class CodeReviewEndpoints : IEndpoint
                     [FromQuery] string? teamId,
                     [FromQuery] string? repositoryId,
                     [FromQuery] PullRequestClaimStatus? claimStatus,
+                    [FromQuery] CodeReviewInboxScope? scope,
                     [FromQuery] DateTimeOffset? cursorCreatedAtUtc,
                     [FromQuery] string? cursorId,
                     [FromQuery] int? pageSize,
@@ -43,6 +44,7 @@ public sealed class CodeReviewEndpoints : IEndpoint
                         teamId,
                         repositoryId,
                         claimStatus,
+                        scope,
                         cursorCreatedAtUtc,
                         cursorId,
                         pageSize,
@@ -374,6 +376,34 @@ public sealed class CodeReviewEndpoints : IEndpoint
                 Returns the reviewer agents configured for the repository (`repositoryId`)
                 within the route `orgId`. Reviewer agents are the persisted personas/configurations that
                 perform automated reviews for that repository.
+                """
+            );
+
+        // GET /api/v1/orgs/{orgId}/code-reviews/agents/{agentId}
+        group
+            .MapGet(
+                "/agents/{agentId}",
+                static (
+                    string agentId,
+                    string orgId,
+                    ClaimsPrincipal user,
+                    [FromServices] GetCodeReviewerAgentHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, agentId, user, ct)
+            )
+            .WithName("GetCodeReviewerAgent")
+            .Produces<CodeReviewerAgentResponse>()
+            .Produces<CodeReviewEndpointError>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("Get a reviewer agent.")
+            .WithDescription(
+                """
+                Returns one persisted reviewer agent (`agentId`) within the route `orgId`.
+                The response includes the agent's repository id so direct links can select
+                the correct repository without scanning every configured repository.
+
+                Restricted to organization owners and admins (`403` otherwise).
                 """
             );
 

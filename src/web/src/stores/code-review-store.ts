@@ -5,6 +5,7 @@ import {
   codeReviewFileNameMatchTypeEnum,
   codeReviewInboxScopeEnum,
   codeReviewModelTierEnum,
+  type CodeReviewInboxScope,
   type CodeReviewFileFilterDto,
   type CodeReviewFileMatchCriteriaDto,
   type CodeReviewFindingsResponse,
@@ -128,6 +129,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     },
   });
   const pullRequests = ref<CodeReviewPullRequestDto[]>([]);
+  const inboxScope = ref<CodeReviewInboxScope>(codeReviewInboxScopeEnum.Mine);
   const pullRequestNextCursor = ref<CodeReviewStreamCursorDto | null>(null);
   const pullRequestPollCursor = ref<CodeReviewStreamCursorDto | null>(null);
   const pullRequestPollingInitialized = ref(false);
@@ -288,6 +290,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
       const cursor = options.reset ? null : pullRequestNextCursor.value;
       const response = await CodeReviews.listCodeReviewPullRequests(orgId, {
         repositoryId: selectedRepositoryId.value ?? undefined,
+        scope: inboxScope.value,
         cursorCreatedAtUtc: cursor?.createdAtUtc,
         cursorId: cursor?.id,
         pageSize: 25,
@@ -628,6 +631,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     try {
       const response = await CodeReviews.listCodeReviewPullRequests(orgId, {
         repositoryId: selectedRepositoryId.value ?? undefined,
+        scope: inboxScope.value,
         pageSize: 50,
       });
 
@@ -663,7 +667,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     pollingReviewUpdates.value = true;
 
     try {
-      const scope = codeReviewInboxScopeEnum.All;
+      const scope = inboxScope.value;
       const cursorForScope = cursor.scope === scope ? cursor : null;
       const response = await CodeReviews.listCodeReviewInboxUpdates(orgId, {
         repositoryId: selectedRepositoryId.value ?? undefined,
@@ -751,6 +755,14 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     } finally {
       loadingAgents.value = false;
     }
+  }
+
+  /** Loads one reviewer agent directly for route deep-link resolution. */
+  async function getAgent(agentId: string): Promise<CodeReviewerAgentDto> {
+    const orgId = requireOrganizationId();
+    const response = await CodeReviews.getCodeReviewerAgent(agentId, orgId);
+
+    return response.agent;
   }
 
   /**
@@ -963,6 +975,18 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
   /** Resets the PR list when the repository filter changes. */
   async function setInboxRepositoryFilter(repositoryId: string | null) {
     selectedRepositoryId.value = repositoryId;
+    selectedPullRequest.value = null;
+    selectedPullRequestReviews.value = [];
+    await loadPullRequests({ reset: true });
+  }
+
+  /** Resets the PR list and update cursor when the inbox ownership scope changes. */
+  async function setInboxScope(scope: CodeReviewInboxScope) {
+    if (inboxScope.value === scope) {
+      return;
+    }
+
+    inboxScope.value = scope;
     selectedPullRequest.value = null;
     selectedPullRequestReviews.value = [];
     await loadPullRequests({ reset: true });
@@ -1300,6 +1324,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
 
   return {
     selectedRepositoryId,
+    inboxScope,
     pullRequests,
     pullRequestNextCursor,
     pullRequestPollCursor,
@@ -1358,6 +1383,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     pollInboxUpdates,
     pollSinglePullRequestReviews,
     loadAgentManagement,
+    getAgent,
     setSelectedRepository,
     loadSelectedRepositoryManagement,
     saveRepositoryFileFilter,
@@ -1372,6 +1398,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     disableAgent,
     deleteAgent,
     setInboxRepositoryFilter,
+    setInboxScope,
     loadSingleReview,
     loadSinglePullRequest,
     findAndSelectPullRequestByNumber,

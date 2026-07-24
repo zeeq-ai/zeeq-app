@@ -71,6 +71,18 @@ public sealed class ListCodeReviewInboxUpdatesHandler(
             effectiveScope == CodeReviewInboxScope.Mine
                 ? user.FindFirstValue(OpenIddictConstants.Claims.Subject)
                 : null;
+        if (
+            effectiveScope == CodeReviewInboxScope.Mine
+            && string.IsNullOrWhiteSpace(effectiveSubjectUserId)
+        )
+        {
+            return TypedResults.BadRequest(
+                new CodeReviewEndpointError(
+                    "missing_subject",
+                    "Mine scope requires an authenticated user subject."
+                )
+            );
+        }
 
         if (
             cursor is not null

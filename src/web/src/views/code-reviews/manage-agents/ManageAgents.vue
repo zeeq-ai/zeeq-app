@@ -121,6 +121,7 @@
 
           <AgentConfigPanel
             v-else-if="selectedManagementItemId === managementConfigItemId"
+            ref="agentConfigPanelRef"
             :agent="editingAgent"
             :saving="savingAgent"
             :disabled="!canManageOrganization || !selectedRepositoryId"
@@ -310,7 +311,8 @@
   details, configuration, or the inlined AgentConfigPanel for create/edit.
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useColorMode } from "@vueuse/core";
 import { MdEditor, type ToolbarNames } from "md-editor-v3";
 import "md-editor-v3/lib/style.css";
@@ -328,6 +330,7 @@ import {
   type CodeReviewerAgentForm,
   useCodeReviewStore,
 } from "@/stores/code-review-store";
+import { useAppStore } from "@/stores/app-store";
 import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
 import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 
@@ -335,8 +338,16 @@ import AgentConfigPanel from "./AgentConfigPanel.vue";
 import AgentSourceLibrarySlideover from "./AgentSourceLibrarySlideover.vue";
 import FileFiltersPanel from "./FileFiltersPanel.vue";
 
+const props = defineProps<{
+  orgId?: string;
+  agentId?: string;
+}>();
+
 const toast = useToast();
 const colorMode = useColorMode();
+const route = useRoute();
+const router = useRouter();
+const appStore = useAppStore();
 const codeReviewStore = useCodeReviewStore();
 const organizationSettingsStore = useOrganizationSettingsStore();
 const { canManageOrganization } = storeToRefs(organizationSettingsStore);
@@ -360,6 +371,9 @@ const {
 } = storeToRefs(codeReviewStore);
 
 const readOnlyPromptToolbars: ToolbarNames[] = ["preview", "previewOnly"];
+const agentConfigPanelRef = ref<InstanceType<typeof AgentConfigPanel> | null>(
+  null,
+);
 const editorTheme = computed<"light" | "dark">(() =>
   colorMode.value === "dark" ? "dark" : "light",
 );
@@ -445,6 +459,8 @@ const originRepoLabel = computed(() => {
 const copyConfirmOpen = ref(false);
 const copyPendingTargetRepoId = ref<string | null>(null);
 const copySelectModel = ref<string | undefined>(undefined);
+let routeSelectionSyncId = 0;
+const routeSelectionApplying = ref(false);
 
 const copyPendingTargetRepoLabel = computed(() => {
   const repo = configuredRepositories.value.find(
@@ -499,15 +515,25 @@ watch(copyConfirmOpen, (isOpen) => {
 
 onMounted(async () => {
   await loadAgentManagement();
+  await applyRouteAgentSelection();
+  window.addEventListener("keydown", handleGlobalKeydown);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleGlobalKeydown);
 });
 
 /** Active organization changes invalidate repository ids and management state. */
 watch(activeOrganizationId, async () => {
   await loadAgentManagement();
+  await applyRouteAgentSelection();
 });
 
 watch(selectedRepositoryId, () => {
   selectedManagementItemId.value = managementFiltersItemId;
+  if (!routeSelectionApplying.value) {
+    void replaceWithManageAgentsRoute();
+  }
 });
 
 watch(agents, () => {
@@ -517,6 +543,19 @@ watch(agents, () => {
     !selectedAgent.value
   ) {
     selectedManagementItemId.value = managementFiltersItemId;
+  }
+});
+
+watch(selectedManagementItemId, (itemId) => {
+  if (routeSelectionApplying.value) {
+    return;
+  }
+
+  if (
+    itemId === managementFiltersItemId ||
+    (itemId === managementConfigItemId && !editingAgent.value)
+  ) {
+    void replaceWithManageAgentsRoute();
   }
 });
 
@@ -547,6 +586,13 @@ watch(
   { immediate: true },
 );
 
+watch(
+  () => [props.orgId, props.agentId] as const,
+  async () => {
+    await applyRouteAgentSelection();
+  },
+);
+
 /** Loads repositories, selected repository config, and agent rows. */
 async function loadAgentManagement() {
   try {
@@ -559,6 +605,7 @@ async function loadAgentManagement() {
 function selectAgent(agent: CodeReviewerAgentDto) {
   editingAgent.value = null;
   selectedManagementItemId.value = agent.id;
+  void replaceWithAgentRoute(agent.id);
 }
 
 /** Persists repository-level filters. */
@@ -594,7 +641,7 @@ function cancelAgentConfig() {
   selectedManagementItemId.value = managementFiltersItemId;
 }
 
-/** Creates or updates an agent, then switches to the saved agent details. */
+/** Creates or updates an agent while keeping the config editor open. */
 async function saveAgent(agentId: string | null, form: CodeReviewerAgentForm) {
   try {
     let savedAgent: CodeReviewerAgentDto;
@@ -605,9 +652,10 @@ async function saveAgent(agentId: string | null, form: CodeReviewerAgentForm) {
       savedAgent = await codeReviewStore.createAgent(form);
     }
 
-    editingAgent.value = null;
+    editingAgent.value = savedAgent;
     copiedAgentForm.value = null;
-    selectedManagementItemId.value = savedAgent.id;
+    selectedManagementItemId.value = managementConfigItemId;
+    await replaceWithAgentRoute(savedAgent.id);
     toast.add({
       title: agentId ? "Reviewer agent saved" : "Reviewer agent created",
       icon: "i-hugeicons-tick-02",
@@ -624,6 +672,7 @@ async function deleteAgent(agent: CodeReviewerAgentDto) {
     await codeReviewStore.deleteAgent(agent.id);
     selectedManagementItemId.value = managementFiltersItemId;
     editingAgent.value = null;
+    await replaceWithManageAgentsRoute();
     toast.add({
       title: "Reviewer agent deleted",
       description: agent.displayName,
@@ -656,6 +705,114 @@ function showError(title: string, err: unknown) {
     icon: "i-hugeicons-alert-02",
     color: "error",
   });
+}
+
+/** Resolves a canonical /manage-agents/:orgId/agents/:agentId link. */
+async function applyRouteAgentSelection() {
+  const syncId = ++routeSelectionSyncId;
+  routeSelectionApplying.value = true;
+
+  const isCurrentSync = () => syncId === routeSelectionSyncId;
+  const finishCurrentSync = () => {
+    if (isCurrentSync()) {
+      routeSelectionApplying.value = false;
+    }
+  };
+
+  // NOTE: Route-driven selection writes repository and item state in stages. Keep
+  // watcher-triggered navigation suppressed until the latest route sync completes.
+  if (!props.orgId || !props.agentId) {
+    editingAgent.value = null;
+    copiedAgentForm.value = null;
+    selectedManagementItemId.value = managementFiltersItemId;
+    finishCurrentSync();
+    return;
+  }
+
+  if (activeOrganizationId.value !== props.orgId) {
+    const canSwitchToRouteOrg = appStore.user?.organizations?.some(
+      (org) => org.id === props.orgId,
+    );
+    if (!canSwitchToRouteOrg) {
+      showError(
+        "Could not load reviewer agent",
+        new Error("Organization is not available."),
+      );
+      finishCurrentSync();
+      return;
+    }
+
+    await appStore.switchOrganization(props.orgId);
+    if (!isCurrentSync()) return;
+
+    finishCurrentSync();
+    return;
+  }
+
+  try {
+    const linkedAgent = await codeReviewStore.getAgent(props.agentId);
+    if (!isCurrentSync()) return;
+
+    if (selectedRepositoryId.value !== linkedAgent.repositoryId) {
+      await codeReviewStore.setSelectedRepository(linkedAgent.repositoryId);
+      if (!isCurrentSync()) return;
+    } else if (agents.value.length === 0) {
+      await codeReviewStore.loadSelectedRepositoryManagement();
+      if (!isCurrentSync()) return;
+    }
+
+    editingAgent.value = null;
+    copiedAgentForm.value = null;
+    selectedManagementItemId.value = linkedAgent.id;
+  } catch (err: unknown) {
+    if (!isCurrentSync()) return;
+
+    showError("Could not load reviewer agent", err);
+    await replaceWithManageAgentsRoute();
+  } finally {
+    finishCurrentSync();
+  }
+}
+
+/** CMD+S / CTRL+S saves the active create/edit panel without opening a confirm flow. */
+function handleGlobalKeydown(event: KeyboardEvent) {
+  if (event.key.toLowerCase() !== "s" || !(event.metaKey || event.ctrlKey)) {
+    return;
+  }
+
+  if (selectedManagementItemId.value !== managementConfigItemId) {
+    return;
+  }
+
+  event.preventDefault();
+  agentConfigPanelRef.value?.triggerSave();
+}
+
+async function replaceWithAgentRoute(agentId: string) {
+  if (!activeOrganizationId.value) {
+    return;
+  }
+
+  if (
+    route.name === "ManageAgent" &&
+    route.params.orgId === activeOrganizationId.value &&
+    route.params.agentId === agentId
+  ) {
+    return;
+  }
+
+  await router.replace({
+    name: "ManageAgent",
+    params: { orgId: activeOrganizationId.value, agentId },
+  });
+}
+
+async function replaceWithManageAgentsRoute() {
+  if (route.name === "ManageAgents") {
+    return;
+  }
+
+  await router.replace({ name: "ManageAgents" });
 }
 </script>
 

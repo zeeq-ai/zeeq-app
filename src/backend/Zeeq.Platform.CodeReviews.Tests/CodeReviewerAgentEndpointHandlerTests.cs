@@ -51,6 +51,42 @@ public sealed class CodeReviewerAgentEndpointHandlerTests
     }
 
     [Test]
+    public async Task GetCodeReviewerAgent_WithAdmin_ReturnsAgent()
+    {
+        var fixture = Fixture.Create(role: "admin");
+        fixture.Agents.Agents.Add(Agent(displayName: "Security Reviewer"));
+
+        var result = await fixture.GetHandler.HandleAsync(
+            "org_123",
+            "agent_123",
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<CodeReviewerAgentResponse>;
+
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(ok!.Value!.Agent.Id).IsEqualTo("agent_123");
+        await Assert.That(ok.Value.Agent.RepositoryId).IsEqualTo("repo_123");
+    }
+
+    [Test]
+    public async Task GetCodeReviewerAgent_WithMember_ReturnsForbid()
+    {
+        var fixture = Fixture.Create(role: "member");
+        fixture.Agents.Agents.Add(Agent(displayName: "Security Reviewer"));
+
+        var result = await fixture.GetHandler.HandleAsync(
+            "org_123",
+            "agent_123",
+            TestUser(),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result is ForbidHttpResult).IsTrue();
+    }
+
+    [Test]
     public async Task CreateRepositoryCodeReviewerAgent_WithAdmin_CreatesRepositoryScopedAgent()
     {
         var fixture = Fixture.Create(role: "owner");
@@ -305,6 +341,8 @@ public sealed class CodeReviewerAgentEndpointHandlerTests
 
         public ListRepositoryCodeReviewerAgentsHandler ListHandler { get; private set; } = null!;
 
+        public GetCodeReviewerAgentHandler GetHandler { get; private set; } = null!;
+
         public CreateRepositoryCodeReviewerAgentHandler CreateHandler { get; private set; } = null!;
 
         public UpdateRepositoryCodeReviewerAgentHandler UpdateHandler { get; private set; } = null!;
@@ -333,6 +371,7 @@ public sealed class CodeReviewerAgentEndpointHandlerTests
             var authorization = new CodeReviewAuthorization(memberships);
 
             fixture.ListHandler = new(authorization, fixture.Repositories, fixture.Agents);
+            fixture.GetHandler = new(authorization, fixture.Agents);
             fixture.CreateHandler = new(authorization, fixture.Repositories, fixture.Agents);
             fixture.UpdateHandler = new(authorization, fixture.Repositories, fixture.Agents);
             fixture.DeleteHandler = new(authorization, fixture.Repositories, fixture.Agents);

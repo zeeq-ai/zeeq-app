@@ -180,6 +180,7 @@ const emits = defineEmits<{
 }>();
 
 const draft = ref<CodeReviewerAgentForm>(defaultAgentForm());
+const savedSnapshot = ref("");
 const colorMode = useColorMode();
 
 const editorTheme = computed<"light" | "dark">(() =>
@@ -241,16 +242,21 @@ const canSave = computed(
     draft.value.reviewFacet.trim().length > 0 &&
     draft.value.prompt.trim().length > 0,
 );
+const formDirty = computed(
+  () => serializeAgentForm(draft.value) !== savedSnapshot.value,
+);
 
 watch(
   () => [props.agent, props.initialForm] as const,
   ([agent, initialForm]) => {
     if (agent) {
       draft.value = agentToForm(agent);
+      savedSnapshot.value = serializeAgentForm(draft.value);
       return;
     }
 
     draft.value = initialForm ?? defaultAgentForm();
+    savedSnapshot.value = serializeAgentForm(draft.value);
   },
   { immediate: true },
 );
@@ -272,6 +278,20 @@ function submit() {
 
   emits("save", props.agent?.id ?? null, draft.value);
 }
+
+function triggerSave() {
+  if (!canSave.value || !formDirty.value) {
+    return;
+  }
+
+  submit();
+}
+
+function serializeAgentForm(form: CodeReviewerAgentForm): string {
+  return JSON.stringify(form);
+}
+
+defineExpose({ triggerSave });
 </script>
 
 <style scoped>

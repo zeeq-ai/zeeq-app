@@ -24,6 +24,7 @@ public sealed class ListCodeReviewPullRequestsHandler(
         string? teamId,
         string? repositoryId,
         PullRequestClaimStatus? claimStatus,
+        CodeReviewInboxScope? scope,
         DateTimeOffset? cursorCreatedAtUtc,
         string? cursorId,
         int? pageSize,
@@ -38,21 +39,40 @@ public sealed class ListCodeReviewPullRequestsHandler(
             );
         }
 
+        var normalizedTeamId = CodeReviewEndpointMapping.NormalizeOptionalFilter(teamId);
+        var normalizedRepositoryId = CodeReviewEndpointMapping.NormalizeOptionalFilter(
+            repositoryId
+        );
+        var effectiveScope = scope ?? CodeReviewInboxScope.All;
+        var effectiveSubjectUserId =
+            effectiveScope == CodeReviewInboxScope.Mine
+                ? user.FindFirstValue(OpenIddictConstants.Claims.Subject)
+                : null;
+        if (
+            effectiveScope == CodeReviewInboxScope.Mine
+            && string.IsNullOrWhiteSpace(effectiveSubjectUserId)
+        )
+        {
+            return TypedResults.BadRequest(
+                new CodeReviewEndpointError(
+                    "missing_subject",
+                    "Mine scope requires an authenticated user subject."
+                )
+            );
+        }
+
         if (await authorization.ResolveAsync(organizationId, user, cancellationToken) is null)
         {
             return TypedResults.NotFound();
         }
 
-        var normalizedTeamId = CodeReviewEndpointMapping.NormalizeOptionalFilter(teamId);
-        var normalizedRepositoryId = CodeReviewEndpointMapping.NormalizeOptionalFilter(
-            repositoryId
-        );
         var page = await pullRequests.ListRecentAsync(
             new PullRequestStreamQuery(
                 OrganizationId: organizationId,
                 TeamId: normalizedTeamId,
                 RepositoryId: normalizedRepositoryId,
                 ClaimStatus: claimStatus,
+                SubjectUserId: effectiveSubjectUserId,
                 Cursor: CodeReviewEndpointMapping.ToStreamCursor(cursorCreatedAtUtc, cursorId),
                 PageSize: pageSize ?? 50
             ),
@@ -61,7 +81,9 @@ public sealed class ListCodeReviewPullRequestsHandler(
         var reviewUpdatesCursor = BuildInitialReviewUpdatesCursor(
             page,
             normalizedTeamId,
-            normalizedRepositoryId
+            normalizedRepositoryId,
+            effectiveScope,
+            effectiveSubjectUserId
         );
 
         return TypedResults.Ok(
@@ -77,7 +99,9 @@ public sealed class ListCodeReviewPullRequestsHandler(
     private static CodeReviewUpdateCursor? BuildInitialReviewUpdatesCursor(
         CodeReviewStreamPage<PullRequestRecord> page,
         string? teamId,
-        string? repositoryId
+        string? repositoryId,
+        CodeReviewInboxScope scope,
+        string? subjectUserId
     )
     {
         if (page.Items.Count == 0)
@@ -96,7 +120,9 @@ public sealed class ListCodeReviewPullRequestsHandler(
             DateTimeOffset.MinValue,
             CodeReviewUpdateCursor.SyntheticHighWaterId,
             teamId,
-            repositoryId
+            repositoryId,
+            scope,
+            subjectUserId
         );
     }
 }
