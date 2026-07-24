@@ -340,7 +340,7 @@ const costUsdOption = computed(() =>
   timeSeriesOption(
     pivotAgentSeries(props.agentCostUsdSeries, emailIdentityLabel),
     // NOTE: The dashboard intentionally allows up to 100 user cost series for this telemetry view.
-    { maxSeries: 100, yAxisName: "USD" },
+    { maxSeries: 100, yAxisName: "USD", yAxisLabelFormatter: formatUsd },
   ),
 );
 

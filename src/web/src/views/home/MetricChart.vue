@@ -14,9 +14,9 @@
     <!-- vue-echarts is imported here only; theme tracks the app color mode. -->
     <VChart
       v-else
-      :option="option"
+      :option="chartOption"
       :theme="theme"
-      :loading="loading"
+      :loading="showLoadingMask"
       :loading-options="loadingOptions"
       autoresize
     />
@@ -30,7 +30,7 @@ import type { EChartsOption } from "echarts";
 // Side-effect: register the renderer/charts/components this dashboard uses.
 import "@/views/home/echarts-setup";
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /** Fully-built ECharts option; panels compute this from store DTOs. */
     option: EChartsOption;
@@ -49,6 +49,38 @@ withDefaults(
 );
 
 const colorMode = useColorMode();
+
+/**
+ * Auto-refresh polls hand vue-echarts a new option object every ~45s-3m;
+ * it merges via `setOption(option, { notMerge: false })`. Each bar's stable
+ * `id`+`name` (chart-options.ts) lets ECharts' differ distinguish "bucket
+ * picked up more value" (update transition, `animationDurationUpdate`) from
+ * "bucket entered/exited the window" (enter/exit, `animationDuration`).
+ * Update duration shortened from ECharts' ~1s default so polls feel snappy;
+ * entrance keeps the default for a proper first-paint reveal.
+ */
+const chartOption = computed<EChartsOption>(() => ({
+  animationDurationUpdate: 300,
+  ...props.option,
+}));
+
+/**
+ * `loading` goes true on every poll, not just the first fetch (store's
+ * `run()` wraps every fetch — metrics-store.ts). ECharts' native loading
+ * mask is only wanted for the first (nothing on screen yet); gate it so
+ * later polls update silently instead of flashing the dim overlay over
+ * already-correct bars — the "Updated Xs ago" label covers that signal.
+ */
+const hasLoadedOnce = ref(false);
+watch(
+  () => props.loading,
+  (isLoading, wasLoading) => {
+    if (wasLoading && !isLoading) {
+      hasLoadedOnce.value = true;
+    }
+  },
+);
+const showLoadingMask = computed(() => props.loading && !hasLoadedOnce.value);
 
 /**
  * "walden" and "walden-dark" are the custom light/dark chart themes registered
