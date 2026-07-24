@@ -21,7 +21,7 @@ export default defineConfig({
   },
   output: {
     path: "./src/api/generated",
-    clean: true,
+    clean: false,
   },
   plugins: [
     pluginOas(),

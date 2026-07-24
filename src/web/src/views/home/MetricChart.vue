@@ -51,56 +51,25 @@ const props = withDefaults(
 const colorMode = useColorMode();
 
 /**
- * Auto-refresh polls rebuild each panel's option (new bucket window, updated
- * totals) and hand it to vue-echarts as a brand-new object every ~45s-3m.
- * vue-echarts merges that in via `setOption(option, { notMerge: false })`
- * (see the `id`-stability note in chart-options.ts) rather than a full
- * replace — confirmed by instrumenting the live chart instance, which is not
- * the culprit here.
- *
- * The actual cause: our bar `series.data` arrays are bare `number[]`, with
- * no stable per-point `name`/`id`. ECharts' data differ tracks identity by
- * `name` (see the transition-animation guide in the ECharts handbook); with
- * none set, it can't match "this bar" across two setOption calls, so it
- * treats every bucket as a brand-new data point each poll — removing the old
- * bar and adding a new one — which plays the *entrance* animation
- * (`animationDuration`, ~1s) on every refresh, not the update transition
- * (`animationDurationUpdate`). Confirmed by sampling canvas pixels across a
- * manual refresh: the bar collapses to ~0 and climbs back over ~950ms,
- * matching `animationDuration`'s default — zeroing only
- * `animationDurationUpdate` (tried first) had no effect on this.
- *
- * Rather than restructure every builder's series data into named points,
- * force zero duration for *both* entrance and update animation from the
- * second render onward — the first paint still gets its entrance animation
- * once, and every poll after that is instant regardless of which animation
- * ECharts thinks it's playing.
+ * Auto-refresh polls hand vue-echarts a new option object every ~45s-3m;
+ * it merges via `setOption(option, { notMerge: false })`. Each bar's stable
+ * `id`+`name` (chart-options.ts) lets ECharts' differ distinguish "bucket
+ * picked up more value" (update transition, `animationDurationUpdate`) from
+ * "bucket entered/exited the window" (enter/exit, `animationDuration`).
+ * Update duration shortened from ECharts' ~1s default so polls feel snappy;
+ * entrance keeps the default for a proper first-paint reveal.
  */
-let hasRenderedOnce = false;
-const chartOption = computed<EChartsOption>(() => {
-  const option: EChartsOption = {
-    animationDurationUpdate: 0,
-    ...props.option,
-  };
-  if (hasRenderedOnce) {
-    option.animationDuration = 0;
-  }
-  hasRenderedOnce = true;
-  return option;
-});
+const chartOption = computed<EChartsOption>(() => ({
+  animationDurationUpdate: 300,
+  ...props.option,
+}));
 
 /**
- * ECharts' native loading mask (spinner + dimmed overlay) is right for the
- * panel's first fetch — there's nothing to show yet. But `loading` also goes
- * true on every background auto-refresh poll (store's `run()` wraps every
- * fetch, first load or not — see metrics-store.ts), and toggling the mask on
- * a chart that already has data flashes the dim overlay over already-correct
- * bars every single poll. At the default 45s cadence it's easy to miss; at a
- * fast interval it reads as a constant flicker. Only the first load has nothing
- * on screen to protect, so gate the mask on that: once the panel's first
- * fetch completes, never show it again — later polls update the chart data
- * silently (the "Updated Xs ago" label is what tells the user a refresh
- * happened).
+ * `loading` goes true on every poll, not just the first fetch (store's
+ * `run()` wraps every fetch — metrics-store.ts). ECharts' native loading
+ * mask is only wanted for the first (nothing on screen yet); gate it so
+ * later polls update silently instead of flashing the dim overlay over
+ * already-correct bars — the "Updated Xs ago" label covers that signal.
  */
 const hasLoadedOnce = ref(false);
 watch(

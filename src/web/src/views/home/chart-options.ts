@@ -27,9 +27,15 @@ import {
   type MetricWindowRangeMs,
 } from "@/stores/metrics-store";
 
-/** A grouped time series pivoted to a shared bucket axis, series ordered by total desc. */
+/**
+ * A grouped time series pivoted to a shared bucket axis, series ordered by total desc.
+ *
+ * `bucketTimesMs` (not formatted label strings) is what `timeSeriesOption` uses as each
+ * bar's x-axis identity — see the comment there for why that distinction matters for
+ * auto-refresh animation.
+ */
 export type PivotedSeries = {
-  bucketLabels: string[];
+  bucketTimesMs: number[];
   series: { name: string; values: number[] }[];
 };
 
@@ -73,21 +79,20 @@ const severityBands: { key: SeverityKey; name: string }[] = [
  * with at least one point, so without this, empty buckets are silently
  * dropped from the x-axis: unrelated non-adjacent buckets end up drawn next
  * to each other with no gap, which looks like grouped/side-by-side bars
- * instead of one (possibly single-segment) stacked bar per bucket. Bucket
- * edges are anchored off an observed point rather than computed independently
- * (the server computes `windowStart = UtcNow - span` fresh per request, so a
- * client-computed origin would drift from the server's by however much time
- * elapsed between the two `now` reads) — since every edge in one response
- * shares the same `date_bin` origin, one observed edge fixes the phase for
- * the whole grid, and points snap to the nearest bucket rather than requiring
- * exact timestamp equality (robust to sub-bucket skew across separate
- * requests, e.g. when multiple metric types are merged into one panel).
+ * instead of one (possibly single-segment) stacked bar per bucket.
  *
- * NOTE: a reviewer flagged anchoring off an observed point (rather than an
- * independently-computed window start) as a possible axis phase-shift risk.
- * This is intentional, not a bug — see above: a client-computed origin would
- * itself drift from the server's per-request `windowStart`, which is what
- * anchoring off a real response edge avoids.
+ * The grid is anchored epoch-aligned (`floor(Date.now() / bucketMs) * bucketMs`),
+ * not off a server response point:
+ * - Server's `date_bin` origin (`windowStart = UtcNow - span`) is recomputed
+ *   per uncached request (`PostgresMetricsQueryStore.GetSeriesAsync`), so
+ *   it's not a stable anchor across requests.
+ * - Exact server-phase match isn't needed anyway — `indexForBucket` snaps
+ *   each point to the *nearest* client bucket, and every bucket width (tens
+ *   of minutes+) dwarfs realistic clock/`windowStart` skew.
+ * - Epoch alignment keeps `bucketTimesMs[index]` identical across separate
+ *   requests for the same logical bucket, which `timeSeriesOption` relies on
+ *   for stable per-bar `id`s (see below) — an anchor derived from response
+ *   data would drift every time `windowStart` does, i.e. on every cache miss.
  */
 export function pivotByBucket<T>(
   points: T[],
@@ -97,7 +102,7 @@ export function pivotByBucket<T>(
   windowRange?: MetricWindowRangeMs,
 ): PivotedSeries {
   if (points.length === 0) {
-    return { bucketLabels: [], series: [] };
+    return { bucketTimesMs: [], series: [] };
   }
 
   // Kubb types `bucket` as `Date`, but the client does not deserialize JSON
@@ -111,11 +116,8 @@ export function pivotByBucket<T>(
 
   if (windowRange) {
     const { spanMs, bucketMs } = windowRange;
-    const anchorMs = bucketTimeOf(points[0]);
-    const latestEdgeMs =
-      anchorMs + Math.floor((Date.now() - anchorMs) / bucketMs) * bucketMs;
-    // floor, not round: every current window preset divides evenly, but floor keeps
-    // the grid deterministic (matching latestEdgeMs's flooring) if that ever changes.
+    // Epoch-aligned, not server-anchored — see the doc comment above for why.
+    const latestEdgeMs = Math.floor(Date.now() / bucketMs) * bucketMs;
     const bucketCount = Math.max(1, Math.floor(spanMs / bucketMs));
     const firstEdgeMs = latestEdgeMs - (bucketCount - 1) * bucketMs;
     bucketTimesMs = Array.from(
@@ -155,12 +157,7 @@ export function pivotByBucket<T>(
     .map(([name, values]) => ({ name, values }))
     .sort((left, right) => sum(right.values) - sum(left.values));
 
-  return {
-    bucketLabels: bucketTimesMs.map((time) =>
-      formatBucketLabel(new Date(time)),
-    ),
-    series,
-  };
+  return { bucketTimesMs, series };
 }
 
 /** Maximum distinct series/slices before the tail folds into a single "Other". */
@@ -183,11 +180,11 @@ export function capSeries(
   }
   const kept = pivot.series.slice(0, maxSeries - 1);
   const tail = pivot.series.slice(maxSeries - 1);
-  const otherValues = pivot.bucketLabels.map((_, index) =>
+  const otherValues = pivot.bucketTimesMs.map((_, index) =>
     tail.reduce((total, entry) => total + entry.values[index], 0),
   );
   return {
-    bucketLabels: pivot.bucketLabels,
+    bucketTimesMs: pivot.bucketTimesMs,
     series: [...kept, { name: otherLabel, values: otherValues }],
   };
 }
@@ -204,21 +201,29 @@ export function timeSeriesOption(
   const capped = capSeries(pivot, options.maxSeries ?? maxStackedSeries);
   const showLegend = options.showLegend ?? true;
   const seriesLabel = options.seriesLabel ?? identitySeriesLabel;
-  // `id` (not just `name`) matters here: vue-echarts inspects each refresh's
-  // series array and forces a replaceMerge on `series` whenever the count
-  // shrinks between updates (e.g. the top-N+"Other" cap or natural user/tool
-  // churn drops the active series count) — see planUpdate/buildSignature in
-  // vue-echarts' ECharts.ts. Replace Merge matches existing components by
-  // `id` only, never `name`, so without a stable `id` every series gets
-  // dropped and recreated on those refreshes instead of animating — looks
-  // like a full redraw. `name` is already unique per chart, so reuse it.
+  // Stable identity, two levels:
+  // - Series: `id: entry.name`. vue-echarts replaceMerges `series` by `id`
+  //   (never `name`) whenever the count shrinks (top-N cap, user/tool churn)
+  //   — see planUpdate/buildSignature in vue-echarts' ECharts.ts.
+  // - Per-bar: `id`+`name` set to the bucket's epoch ms, not array index
+  //   (breaks when the sliding window shifts) or the formatted label (can
+  //   repaint identically at DST edges).
+  // - Both `id` *and* `name` are required on each data point — ECharts' data
+  //   differ needs `id` to treat an unchanged bucket as an update rather than
+  //   a remove+add; `name` alone (the only thing the ECharts dynamic-data
+  //   guide documents: https://echarts.apache.org/handbook/en/how-to/data/dynamic-data)
+  //   is not sufficient.
   const seriesDefs: BarSeriesOption[] = capped.series.map((entry) => ({
     id: entry.name,
     type: "bar",
     name: entry.name,
     stack: "total",
     emphasis: { focus: "series" },
-    data: entry.values,
+    data: entry.values.map((value, index) => ({
+      id: String(capped.bucketTimesMs[index]),
+      name: String(capped.bucketTimesMs[index]),
+      value: [capped.bucketTimesMs[index], value],
+    })),
   }));
 
   return {
@@ -247,9 +252,15 @@ export function timeSeriesOption(
       containLabel: true,
     },
     xAxis: {
-      type: "category",
-      boundaryGap: true,
-      data: capped.bucketLabels,
+      type: "time",
+      axisLabel: {
+        formatter: (value: number) => formatBucketLabel(new Date(value)),
+        // A category axis only ever showed as many ticks as fit (one per
+        // bucket, evenly spaced); a time axis picks its own tick interval
+        // independent of our formatted label's width, so wide labels like
+        // "Jul 23, 04:00 AM" overlap into unreadable text without this.
+        hideOverlap: true,
+      },
     },
     yAxis: {
       type: "value",
