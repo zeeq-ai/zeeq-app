@@ -248,6 +248,49 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     }
 
     [Test]
+    public async Task GetSeries_GroupByUser_FallsBackToTelemetryEmailWhenCanonicalUserHasNoEmail()
+    {
+        // Regression test: User.Email is nullable (e.g. an IdP login that never surfaced an
+        // email claim). When the alias join resolves to such a user, the series key must
+        // fall back to the telemetry-reported email on the metric row itself -- never to
+        // the bare internal user_id, which is meaningless to anyone reading the dashboard.
+        var (seed, _) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddUserAliases(alias =>
+            {
+                alias.DisplayValue = "personal-no-email@example.com";
+                alias.NormalizedValue = "personal-no-email@example.com";
+            })
+            .BuildAsync();
+        var org = seed.Organization.Id;
+        seed.Owner.Email = null;
+
+        await SeedMetricsAsync(
+            AgentMetric(
+                org,
+                "zeeq_agent_token_usage",
+                100,
+                "gpt-5-codex",
+                "personal-no-email@example.com"
+            )
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var series = await store.GetSeriesAsync(
+            org,
+            "zeeq_agent_token_usage",
+            MetricWindow.H1,
+            MetricSeriesGroup.User,
+            new MetricSeriesFilters(),
+            CancellationToken.None
+        );
+
+        await Assert.That(series.Count).IsEqualTo(1);
+        await Assert.That(series[0].SeriesKey).IsEqualTo("personal-no-email@example.com");
+        await Assert.That(series[0].SeriesKey).IsNotEqualTo(seed.Owner.Id);
+    }
+
+    [Test]
     public async Task GetSeries_UserFilter_UsesCanonicalAliasKey()
     {
         var (seed, _) = await EntityGraph

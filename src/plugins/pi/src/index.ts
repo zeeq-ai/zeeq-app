@@ -53,6 +53,8 @@ import { createHash, randomUUID } from "node:crypto";
 //   PI_TELEMETRY_RETRY_MS       default: 30000
 //   PI_TELEMETRY_LOG_ERRORS     true/1/yes logs export failures to stderr
 //   PI_TELEMETRY_DISABLED       true/1/yes disables exporting
+//   ZEEQ_OTEL_OMIT_PROMPT       true/1/yes exports "omit_by_config" for prompt_text
+//   ZEEQ_OTEL_TRUNCATE_PROMPT   min: 16, default/0: no config truncation
 
 type EventKind = "Prompt" | "ToolResult" | "Completion";
 
@@ -112,6 +114,8 @@ const MAX_SNIPPET_CHARS = 4_000;
 const MAX_TOOL_ARGS_CHARS = 4_000;
 const DEFAULT_ZEEQ_BASE_URL = "https://app.zeeq.ai";
 const TELEMETRY_IMPORT_PATH = "/api/v1/telemetry/import";
+const OMITTED_PROMPT_TEXT = "omit_by_config";
+const TRUNCATED_PROMPT_SUFFIX = "...(truncated_by_config)";
 
 type ToolExecution = {
   timestamp: number;
@@ -133,6 +137,8 @@ export default function (pi: ExtensionAPI) {
   const timeoutMs = parsePositiveInt(process.env.PI_TELEMETRY_TIMEOUT_MS, 3000);
   const retryMs = parsePositiveInt(process.env.PI_TELEMETRY_RETRY_MS, 30_000);
   const logExportErrors = /^(1|true|yes)$/i.test(process.env.PI_TELEMETRY_LOG_ERRORS ?? "");
+  const omitPrompt = /^(1|true|yes)$/i.test(process.env.ZEEQ_OTEL_OMIT_PROMPT ?? "");
+  const promptTruncateChars = parsePromptTruncateChars(process.env.ZEEQ_OTEL_TRUNCATE_PROMPT);
   const processSessionId = randomUUID();
 
   let queue: TelemetryEvent[] = [];
@@ -143,6 +149,7 @@ export default function (pi: ExtensionAPI) {
   let headBranch: string | null = null;
   let headSha: string | null = null;
   let lastPrompt: string | null = null;
+  let lastPromptRaw: string | null = null;
   let lastPromptLength: number | null = null;
   const toolExecutions = new Map<string, ToolExecution>();
 
@@ -252,6 +259,7 @@ export default function (pi: ExtensionAPI) {
     const sessionFile = ctx.sessionManager.getSessionFile?.() ?? null;
     conversationId = stableId(sessionFile ?? `${ctx.cwd}:${processSessionId}`);
     lastPrompt = null;
+    lastPromptRaw = null;
     lastPromptLength = null;
     toolExecutions.clear();
 
@@ -263,8 +271,10 @@ export default function (pi: ExtensionAPI) {
 
   // Capture the raw user prompt before Pi expands skills/templates or starts the agent loop.
   pi.on("input", async (event, ctx) => {
-    lastPrompt = truncate(event.text ?? "", MAX_PROMPT_CHARS);
-    lastPromptLength = event.text?.length ?? 0;
+    const prompt = event.text ?? "";
+    lastPromptRaw = prompt;
+    lastPrompt = promptTextForTelemetry(prompt, omitPrompt, promptTruncateChars);
+    lastPromptLength = prompt.length;
     enqueue({
       ...baseEvent("Prompt"),
       prompt_text: lastPrompt,
@@ -276,8 +286,9 @@ export default function (pi: ExtensionAPI) {
   // Keep the latest prompt aligned for programmatic sends that bypass the interactive input event.
   pi.on("before_agent_start", async (event) => {
     // Covers prompts injected by extensions or paths that do not go through interactive input.
-    if (event.prompt && event.prompt !== lastPrompt) {
-      lastPrompt = truncate(event.prompt, MAX_PROMPT_CHARS);
+    if (event.prompt && event.prompt !== lastPromptRaw) {
+      lastPromptRaw = event.prompt;
+      lastPrompt = promptTextForTelemetry(event.prompt, omitPrompt, promptTruncateChars);
       lastPromptLength = event.prompt.length;
     }
   });
@@ -414,6 +425,14 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+/** Parses prompt text privacy truncation where 0 means "do not truncate by config". */
+function parsePromptTruncateChars(value: string | undefined): number | null {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  if (parsed < 16) return 16;
+  return parsed;
+}
+
 /** Creates Zeeq-sized deterministic ids from Pi session paths without storing local paths as ids. */
 function stableId(input: string): string {
   return createHash("sha256").update(input).digest("hex").slice(0, 32);
@@ -441,6 +460,22 @@ function readGitInfo(cwd: string): {
     branch: run(["rev-parse", "--abbrev-ref", "HEAD"]),
     sha: run(["rev-parse", "HEAD"]),
   };
+}
+
+/** Applies prompt-text privacy settings while preserving `prompt_length` as the raw length. */
+function promptTextForTelemetry(
+  value: string | null | undefined,
+  omitPrompt: boolean,
+  configTruncateChars: number | null,
+): string | null {
+  if (value == null) return null;
+  if (omitPrompt) return OMITTED_PROMPT_TEXT;
+  if (configTruncateChars !== null) {
+    return value.length > configTruncateChars
+      ? `${value.slice(0, configTruncateChars)}${TRUNCATED_PROMPT_SUFFIX}`
+      : value;
+  }
+  return truncate(value, MAX_PROMPT_CHARS);
 }
 
 /** Bounds prompt and output fields before they enter the import payload. */
