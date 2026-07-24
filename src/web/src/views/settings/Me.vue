@@ -24,7 +24,7 @@
       <div class="grid gap-5">
         <UFormField
           label="Email aliases"
-          description="Matched against telemetry owner emails for this organization. Up to 3 aliases, 320 characters each."
+          description="Used to match telemetry records when using a different email from your Zeeq organization login."
         >
           <UInputTags
             v-model="emailAliasModel"
@@ -32,6 +32,12 @@
             class="w-full mt-2"
             size="xl"
             maxlength="320"
+            addOnBlur
+            addOnPaste
+            addOnTab
+            delimiter=","
+            icon="i-hugeicons-mail-at-sign-01"
+            :max="3"
             :disabled="savingAliases"
           />
         </UFormField>
@@ -40,7 +46,7 @@
 
         <UFormField
           label="GitHub aliases"
-          description="Matched against pull request and code review author logins for this organization. Up to 3 aliases, 320 characters each."
+          description="Used to filter your PRs in the pull request inbox."
         >
           <UInputTags
             v-model="gitHubAliasModel"
@@ -48,6 +54,12 @@
             class="w-full mt-2"
             size="xl"
             maxlength="320"
+            addOnBlur
+            addOnPaste
+            addOnTab
+            delimiter=","
+            icon="i-hugeicons-github"
+            :max="3"
             :disabled="savingAliases"
           />
         </UFormField>

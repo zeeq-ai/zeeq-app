@@ -49,6 +49,11 @@
             v-model="excludePaths"
             placeholder="/docs/already-read.md"
             class="w-full"
+            addOnBlur
+            addOnPaste
+            addOnTab
+            delimiter=","
+            :max="3"
           />
         </UFormField>
 
