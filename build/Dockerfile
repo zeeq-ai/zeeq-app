@@ -8,8 +8,13 @@ FROM node:24 AS node-deps
 WORKDIR /srcroot
 
 # Copy only Yarn workspace manifests first to maximize install layer caching.
+# Every workspace member's package.json must be present -- the "src/plugins/**"
+# workspaces glob means yarn cannot see (and validate the lockfile against) a
+# member whose manifest isn't copied yet, which makes an --immutable install
+# fail as if the lockfile were out of date.
 COPY ./package.json ./yarn.lock ./.yarnrc.yml ./
 COPY ./src/web/package.json ./src/web/package.json
+COPY --parents ./src/plugins/**/package.json ./
 
 RUN corepack enable && yarn install --immutable
 
