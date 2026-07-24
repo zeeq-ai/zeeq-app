@@ -1,3 +1,6 @@
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
+
 namespace Zeeq.Core.Documents;
 
 /// <summary>
@@ -34,6 +37,13 @@ public class Library
     /// Optional human-readable library description.
     /// </summary>
     public string? Description { get; set; }
+
+    /// <summary>
+    /// The rendered description; either "(no description)" or the actual description text.
+    /// </summary>
+    [NotMapped, JsonIgnore]
+    public string RenderedDescription =>
+        string.IsNullOrWhiteSpace(Description) ? "(no description)" : Description;
 
     // ─── Public source linkage (set when the library subscribes to a public repo) ───
 

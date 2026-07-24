@@ -1,11 +1,12 @@
 using System.ComponentModel;
 using System.Diagnostics.Metrics;
 using System.Security.Claims;
+using System.Text;
+using ModelContextProtocol.Server;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
 using Zeeq.Platform.Documents;
-using ModelContextProtocol.Server;
 
 namespace Zeeq.Mcp.Documents;
 
@@ -58,16 +59,33 @@ public sealed partial class DocumentLibraryMcpTools
 
         var libraries = await store.ListLibrariesAsync(organizationId, cancellationToken);
 
+        var buffer = new StringBuilder();
+
+        buffer.Append(
+            """
+
+            (library_name: library_description)
+            ---
+
+            """
+        );
+
         return RecordToolCall(
             ListLibrariesCounter,
             user,
             "success",
             [("organization", organizationId)],
-            ToJson(
-                libraries.Select(library =>
-                    LibraryEndpointMapping.ToResponse(library, LibraryEndpointMapping.NoPublicSources)
+            libraries
+                .Aggregate(
+                    buffer,
+                    (acc, lib) =>
+                        acc.AppendLine(
+                            $"""
+                            {lib.Name}: "{lib.RenderedDescription}"
+                            """
+                        )
                 )
-            )
+                .ToString()
         );
     }
 }

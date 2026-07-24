@@ -17,8 +17,8 @@ public sealed class DocumentLibraryMcpToolsTests
 
         var response = await DocumentLibraryMcpTools.ListLibraries(store, TestUser());
 
-        await Assert.That(response).Contains("\"name\": \"kb\"");
-        await Assert.That(response).Contains("\"description\": \"Knowledge base\"");
+        await Assert.That(response).Contains("kb");
+        await Assert.That(response).Contains("Knowledge base");
     }
 
     [Test]
