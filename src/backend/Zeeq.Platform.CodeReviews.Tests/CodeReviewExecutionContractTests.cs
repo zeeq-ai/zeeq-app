@@ -302,6 +302,173 @@ public sealed class CodeReviewExecutionContractTests
     }
 
     [Test]
+    public async Task FileFilter_WithBlanketExtensionInclude_DoesNotOverrideBaselineExclusion()
+    {
+        // Regression guard for the front-end "TypeScript" preset, whose IncludedFiles
+        // allowlist is a bare Extension(".json") rule. That's a blanket "all .json
+        // source files" scoping rule, not an explicit opt-in to reviewing
+        // package-lock.json — only a targeted ExactPath/PathPrefix/Glob include should
+        // be able to override a baseline exclusion.
+        var files = new[]
+        {
+            new CodeReviewFileSnapshot(
+                "package-lock.json",
+                null,
+                CodeReviewFileMutationState.Modified,
+                "@@ -1 +1\n+{}"
+            ),
+            new CodeReviewFileSnapshot(
+                "src/config.json",
+                null,
+                CodeReviewFileMutationState.Modified,
+                "@@ -1 +1\n+{}"
+            ),
+        };
+        var filter = new CodeReviewFileFilter
+        {
+            IncludedFiles = [new() { MatchType = CodeReviewFileNameMatchType.Extension, Pattern = ".json" }],
+        };
+
+        var scope = CodeReviewFileFilterEvaluator.Apply(files, filter);
+
+        await Assert
+            .That(scope.InScopeFiles.Select(file => file.Path))
+            .IsEquivalentTo(["src/config.json"]);
+        await Assert
+            .That(scope.OutOfScopeFiles.Select(file => file.Path))
+            .IsEquivalentTo(["package-lock.json"]);
+    }
+
+    [Test]
+    public async Task FileFilter_WithEmptyFilter_ExcludesMobilePlatformNoise()
+    {
+        var files = new[]
+        {
+            new CodeReviewFileSnapshot(
+                "ios/App.xcworkspace/xcuserdata/me.xcuserdatad/state.xcuserstate",
+                null,
+                CodeReviewFileMutationState.Added,
+                "@@ -0 +1\n+binary"
+            ),
+            new CodeReviewFileSnapshot(
+                "android/local.properties",
+                null,
+                CodeReviewFileMutationState.Added,
+                "@@ -0 +1\n+sdk.dir=/Users/me/Library/Android/sdk"
+            ),
+            new CodeReviewFileSnapshot(
+                "android/app/app-release.apk",
+                null,
+                CodeReviewFileMutationState.Added,
+                "@@ -0 +1\n+binary"
+            ),
+            new CodeReviewFileSnapshot(
+                "src/main/kotlin/App.kt",
+                null,
+                CodeReviewFileMutationState.Modified,
+                "@@ -1 +1\n+fun main() {}"
+            ),
+        };
+
+        var scope = CodeReviewFileFilterEvaluator.Apply(files, CodeReviewFileFilter.Empty);
+
+        await Assert
+            .That(scope.InScopeFiles.Select(file => file.Path))
+            .IsEquivalentTo(["src/main/kotlin/App.kt"]);
+        await Assert
+            .That(scope.OutOfScopeFiles.Select(file => file.Path))
+            .IsEquivalentTo([
+                "ios/App.xcworkspace/xcuserdata/me.xcuserdatad/state.xcuserstate",
+                "android/local.properties",
+                "android/app/app-release.apk",
+            ]);
+    }
+
+    [Test]
+    public async Task FileFilter_WithEmptyFilter_ExcludesBinaryMutationStateRegardlessOfExtension()
+    {
+        // The baseline extension list can't enumerate every binary extension in existence
+        // (.webp, .wasm, .so, extensionless binaries, ...) — MutationState.Binary is a
+        // content-based catch-all for whatever the diff/PR source already detected.
+        var files = new[]
+        {
+            new CodeReviewFileSnapshot(
+                "assets/hero.webp",
+                null,
+                CodeReviewFileMutationState.Binary,
+                ""
+            ),
+            new CodeReviewFileSnapshot(
+                "src/backend/Code.cs",
+                null,
+                CodeReviewFileMutationState.Modified,
+                "@@ -1 +1\n+var value = 1;"
+            ),
+        };
+
+        var scope = CodeReviewFileFilterEvaluator.Apply(files, CodeReviewFileFilter.Empty);
+
+        await Assert
+            .That(scope.InScopeFiles.Select(file => file.Path))
+            .IsEquivalentTo(["src/backend/Code.cs"]);
+        await Assert
+            .That(scope.OutOfScopeFiles.Select(file => file.Path))
+            .IsEquivalentTo(["assets/hero.webp"]);
+    }
+
+    [Test]
+    public async Task FileFilter_WithBlanketExtensionInclude_DoesNotOverrideBinaryExclusion()
+    {
+        var files = new[]
+        {
+            new CodeReviewFileSnapshot(
+                "assets/hero.webp",
+                null,
+                CodeReviewFileMutationState.Binary,
+                ""
+            ),
+        };
+        var filter = new CodeReviewFileFilter
+        {
+            IncludedFiles = [new() { MatchType = CodeReviewFileNameMatchType.Extension, Pattern = ".webp" }],
+        };
+
+        var scope = CodeReviewFileFilterEvaluator.Apply(files, filter);
+
+        await Assert.That(scope.InScopeFiles).IsEmpty();
+        await Assert
+            .That(scope.OutOfScopeFiles.Select(file => file.Path))
+            .IsEquivalentTo(["assets/hero.webp"]);
+    }
+
+    [Test]
+    public async Task FileFilter_WithExplicitPathInclude_OverridesBinaryExclusion()
+    {
+        var files = new[]
+        {
+            new CodeReviewFileSnapshot(
+                "assets/hero.webp",
+                null,
+                CodeReviewFileMutationState.Binary,
+                ""
+            ),
+        };
+        var filter = new CodeReviewFileFilter
+        {
+            IncludedFiles =
+            [
+                new() { MatchType = CodeReviewFileNameMatchType.ExactPath, Pattern = "assets/hero.webp" },
+            ],
+        };
+
+        var scope = CodeReviewFileFilterEvaluator.Apply(files, filter);
+
+        await Assert
+            .That(scope.InScopeFiles.Select(file => file.Path))
+            .IsEquivalentTo(["assets/hero.webp"]);
+    }
+
+    [Test]
     public async Task XmlValidator_WithValidReviewsXml_DeserializesOutput()
     {
         var validator = new CodeReviewXmlOutputValidator();

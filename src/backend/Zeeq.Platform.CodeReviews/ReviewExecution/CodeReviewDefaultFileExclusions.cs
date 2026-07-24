@@ -67,6 +67,9 @@ internal static class CodeReviewDefaultFileExclusions
             Glob("**/*.min.css"), // JS/TS
             Glob("**/*.map"), // JS/TS sourcemaps
             Glob("**/.dart_tool/**"), // Dart/Flutter
+            Glob("**/.build/**"), // Swift Package Manager
+            Glob("**/DerivedData/**"), // Xcode (Swift/iOS)
+            Glob("**/.cxx/**"), // Android NDK native build cache (Kotlin/Java)
             // --- Dependency / vendor directories ---
             Glob("**/node_modules/**"), // JS/TS/Node
             Glob("**/vendor/**"), // Go, PHP, Ruby (bundle path alias)
@@ -76,7 +79,8 @@ internal static class CodeReviewDefaultFileExclusions
             Glob("**/.gradle/**"), // Java/Kotlin
             Glob("**/.m2/**"), // Java (Maven)
             Glob("**/.pub-cache/**"), // Dart/Flutter
-            Glob("**/Pods/**"), // CocoaPods (Dart/Flutter iOS interop)
+            Glob("**/Pods/**"), // CocoaPods (Swift/iOS, Dart/Flutter iOS interop)
+            Glob("**/Carthage/**"), // Carthage (Swift/iOS)
             // --- Generated code: source-generator or codegen output, never hand-edited ---
             Glob("**/*.g.cs"), // C# source generators
             Glob("**/*.g.i.cs"), // C# source generators
@@ -86,6 +90,16 @@ internal static class CodeReviewDefaultFileExclusions
             Glob("**/*.pb.cs"), // C# protobuf
             Glob("**/*.g.dart"), // Dart codegen (build_runner)
             Glob("**/*.freezed.dart"), // Dart codegen (freezed)
+            // --- Mobile platform noise (Swift/Xcode, Kotlin/Android) ---
+            Glob("**/*.xcuserstate"), // Xcode per-user window state
+            Glob("**/xcuserdata/**"), // Xcode per-user project state
+            Glob("**/*.xcworkspacedata"), // Xcode workspace scaffolding
+            Glob("**/local.properties"), // Android Studio/Gradle local SDK paths, machine-specific
+            Glob("**/*.iml"), // IntelliJ/Android Studio module files
+            Glob("**/captures/**"), // Android Studio profiler captures
+            Glob("**/*.apk"),
+            Glob("**/*.aab"), // Android App Bundle
+            Glob("**/*.dex"),
             // --- IDE / editor / OS noise ---
             Glob("**/.vs/**"),
             Glob("**/.vscode/**"),

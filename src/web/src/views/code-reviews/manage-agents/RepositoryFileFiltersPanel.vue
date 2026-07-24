@@ -1,5 +1,14 @@
 <template>
   <div class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+    <UAlert
+      class="mb-4"
+      title="Common noise is already excluded"
+      description="Lockfiles, build output, vendored dependencies, generated code, and editor/OS files (e.g. yarn.lock, node_modules/, bin/, obj/, DerivedData/, *.designer.cs) are filtered out of every repository's review scope automatically. The filters below are only for narrowing to this repository's source files or overriding that default."
+      icon="i-hugeicons-information-circle"
+      color="neutral"
+      variant="subtle"
+    />
+
     <AgentActivationFiltersEditor
       :included-files="draft.includedFiles"
       :excluded-files="draft.excludedFiles"
@@ -118,6 +127,19 @@ const filterPresets: FilterPreset[] = [
         extension(".plist"),
         extension(".storyboard"),
         extension(".xib"),
+      ],
+      excludedFiles: [],
+    },
+  },
+  {
+    name: "Kotlin",
+    fileFilter: {
+      includedFiles: [
+        extension(".kt"),
+        extension(".kts"),
+        glob("*build.gradle*"),
+        glob("*AndroidManifest.xml"),
+        extension(".pro"),
       ],
       excludedFiles: [],
     },
