@@ -148,28 +148,24 @@ Pricing changes over time. Before relying on estimated cost for a new model, che
 
 ## Versioning And Publish
 
-Versioning is managed by [Changesets](https://github.com/changesets/changesets), not hand-picked version numbers or manually pushed tags. This keeps the committed `package.json` version, the changelog, and the published npm version from drifting out of sync with each other.
+Versioning is managed by [semantic-release](https://semantic-release.gitbook.io), scoped to this package via [`semantic-release-monorepo`](https://github.com/pmowrer/semantic-release-monorepo) (config: `src/plugins/pi/.releaserc.json`). There is no changeset file to author and no version-bump PR to merge — the next version is inferred directly from conventional-commit prefixes on commits that touched this directory.
 
 ### Contributing a change
 
-If your PR changes `src/plugins/pi`, add a changeset describing it:
+Write your commit message(s) using [Conventional Commits](https://www.conventionalcommits.org/) — `feat: ...` for a minor bump, `fix: ...` for a patch, and a `BREAKING CHANGE:` footer (or `!` after the type) for a major bump. Anything else (`chore:`, `docs:`, `test:`, etc.) doesn't trigger a release on its own. There's nothing else to do — no `yarn changeset` step, no file to commit alongside the change.
 
-```bash
-yarn changeset
-```
-
-Select `@zeeq-ai/zeeq-app-pi-telemetry`, pick a bump type (patch/minor/major), and write a one-line summary. Commit the generated `.changeset/*.md` file with the rest of your PR — it becomes the changelog entry.
-
-Skip this for changes that don't affect the published package (README-only edits, workflow tweaks, etc.).
+> The `version` field in this package's `package.json` is a static placeholder (`0.0.0`). It is **not** the source of truth for what's published — semantic-release computes and publishes the real version without ever committing it back to the repo. Check the latest `@zeeq-ai/zeeq-app-pi-telemetry@*` git tag, the [GitHub Releases](../../../../releases) page, or the registry itself for the actual current version.
 
 ### How publishing happens
 
-Publishing is handled by `.github/workflows/publish-pi-package.yml`, driven by [`changesets/action`](https://github.com/changesets/action). It runs on every push to `main` (and manual `workflow_dispatch` as an escape hatch to re-run after a registry or workflow failure):
+Publishing is handled by `.github/workflows/publish-pi-package.yml`. It runs on every push to `main` that touches `src/plugins/pi/**` (and manual `workflow_dispatch` as an escape hatch to re-run after a registry or workflow failure):
 
-1. If any changesets are pending, the workflow opens (or updates) a **"Version Packages"** PR that bumps `package.json` and the changelog. Nothing is published yet.
-2. Merging that PR removes the pending changesets. The next run of the workflow finds none pending, so it publishes instead: `npm publish` runs from `src/plugins/pi` (honoring its own `publishConfig`), and a git tag is pushed in Changesets' default `<package-name>@<version>` format, e.g. `@zeeq-ai/zeeq-app-pi-telemetry@0.2.0`.
+1. `semantic-release-monorepo` filters the commit history to commits that changed files under `src/plugins/pi`, since the last `@zeeq-ai/zeeq-app-pi-telemetry@<version>` tag.
+2. `@semantic-release/commit-analyzer` inspects those filtered commits to decide whether a release is warranted and what bump it implies.
+3. If a release is warranted, `@semantic-release/npm` writes the computed version into this job's checked-out `package.json` (that write is never pushed anywhere) and runs `npm publish` (honoring `publishConfig`).
+4. `@semantic-release/github` pushes the `@zeeq-ai/zeeq-app-pi-telemetry@<version>` git tag and creates a GitHub Release with generated notes.
 
-There is no manual version-editing or tagging step — merging the bot's "Version Packages" PR is the entire release action.
+Nothing is committed back to `main` and no PR is opened at any point.
 
 ## Pi Package Metadata
 
