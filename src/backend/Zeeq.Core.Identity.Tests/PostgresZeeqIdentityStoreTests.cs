@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Identity;
 using Zeeq.Testing;
+using Zeeq.Testing.EntityGraphs;
 
 namespace Zeeq.Core.Identity.Tests;
 
@@ -357,6 +358,211 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
 
         await Assert.That(nextContext.OrganizationId).IsEqualTo(defaultActivated.OrganizationId);
         await Assert.That(nextContext.TeamId).IsEqualTo(defaultActivated.TeamId);
+    }
+
+    [Test]
+    public async Task ReplaceUserAliasesAsync_EmailAliasMatchingAnotherMemberEmail_ThrowsConflict()
+    {
+        var store = new PostgresZeeqIdentityStore(_context);
+        var seed = await EntityGraph.AddGeneratedSeed(_context, userCount: 2).BuildAsync();
+        var member = seed.Users[1];
+        member.Email = "other@example.com";
+        await _context.SaveChangesAsync();
+
+        Func<Task> act = async () =>
+            await store.ReplaceUserAliasesAsync(
+                seed.Organization.Id,
+                seed.Owner.Id,
+                [new UserAliasWrite(UserAliasKind.Email, "other@example.com", "other@example.com")],
+                CancellationToken.None
+            );
+
+        await Assert.That(act).Throws<InvalidOperationException>();
+        await Assert
+            .That(
+                await _context.UserAliases.AnyAsync(alias =>
+                    alias.OrganizationId == seed.Organization.Id && alias.UserId == member.Id
+                )
+            )
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task ReplaceUserAliasesAsync_EmailAliasMatchingTrimmedMemberEmail_ThrowsConflict()
+    {
+        var store = new PostgresZeeqIdentityStore(_context);
+        var seed = await EntityGraph.AddGeneratedSeed(_context, userCount: 2).BuildAsync();
+        var member = seed.Users[1];
+        member.Email = "  Other@Example.com  ";
+        await _context.SaveChangesAsync();
+
+        Func<Task> act = async () =>
+            await store.ReplaceUserAliasesAsync(
+                seed.Organization.Id,
+                seed.Owner.Id,
+                [new UserAliasWrite(UserAliasKind.Email, "other@example.com", "other@example.com")],
+                CancellationToken.None
+            );
+
+        await Assert.That(act).Throws<InvalidOperationException>();
+    }
+
+    [Test]
+    public async Task ListUserAliasesAsync_IgnoresDisabledAliases()
+    {
+        var store = new PostgresZeeqIdentityStore(_context);
+        var now = DateTimeOffset.UtcNow;
+        var (seed, _) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddUserAliases(
+                alias =>
+                {
+                    alias.DisplayValue = "active@example.com";
+                    alias.NormalizedValue = "active@example.com";
+                    alias.CreatedAtUtc = now;
+                },
+                alias =>
+                {
+                    alias.DisplayValue = "disabled@example.com";
+                    alias.NormalizedValue = "disabled@example.com";
+                    alias.CreatedAtUtc = now;
+                    alias.DisabledAtUtc = now;
+                }
+            )
+            .BuildAsync();
+
+        var aliases = await store.ListUserAliasesAsync(
+            seed.Organization.Id,
+            seed.Owner.Id,
+            CancellationToken.None
+        );
+
+        await Assert.That(aliases).HasSingleItem();
+        await Assert.That(aliases[0].DisplayValue).IsEqualTo("active@example.com");
+    }
+
+    [Test]
+    public async Task ReplaceUserAliasesAsync_ReactivatesRequestedDisabledAlias()
+    {
+        var store = new PostgresZeeqIdentityStore(_context);
+        var now = DateTimeOffset.UtcNow;
+        var (seed, _) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddUserAliases(alias =>
+            {
+                alias.DisplayValue = "old@example.com";
+                alias.NormalizedValue = "reactivate@example.com";
+                alias.CreatedAtUtc = now;
+                alias.DisabledAtUtc = now;
+            })
+            .BuildAsync();
+
+        var aliases = await store.ReplaceUserAliasesAsync(
+            seed.Organization.Id,
+            seed.Owner.Id,
+            [
+                new UserAliasWrite(
+                    UserAliasKind.Email,
+                    "reactivate@example.com",
+                    "reactivate@example.com"
+                ),
+            ],
+            CancellationToken.None
+        );
+
+        await Assert.That(aliases).HasSingleItem();
+        await Assert.That(aliases[0].DisplayValue).IsEqualTo("reactivate@example.com");
+        await Assert.That(aliases[0].DisabledAtUtc).IsNull();
+    }
+
+    [Test]
+    public async Task ReplaceUserAliasesAsync_OmittedAlias_DisablesInsteadOfDeleting()
+    {
+        var store = new PostgresZeeqIdentityStore(_context);
+        var (seed, aliases) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddUserAliases(
+                alias =>
+                {
+                    alias.DisplayValue = "keep@example.com";
+                    alias.NormalizedValue = "keep@example.com";
+                },
+                alias =>
+                {
+                    alias.DisplayValue = "remove@example.com";
+                    alias.NormalizedValue = "remove@example.com";
+                }
+            )
+            .BuildAsync();
+
+        var visibleAliases = await store.ReplaceUserAliasesAsync(
+            seed.Organization.Id,
+            seed.Owner.Id,
+            [new UserAliasWrite(UserAliasKind.Email, "keep@example.com", "keep@example.com")],
+            CancellationToken.None
+        );
+        var omittedAlias = await _context.UserAliases.SingleAsync(
+            alias => alias.Id == aliases[1].Id,
+            CancellationToken.None
+        );
+
+        await Assert.That(visibleAliases).HasSingleItem();
+        await Assert.That(omittedAlias.DisabledAtUtc).IsNotNull();
+    }
+
+    [Test]
+    public async Task ReplaceUserAliasesAsync_WithoutActiveMembership_ThrowsConflict()
+    {
+        var store = new PostgresZeeqIdentityStore(_context);
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        var membership = seed.OrganizationMemberships[0];
+        membership.Status = MembershipStatus.Disabled;
+        membership.DisabledAtUtc = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync();
+
+        Func<Task> act = async () =>
+            await store.ReplaceUserAliasesAsync(
+                seed.Organization.Id,
+                seed.Owner.Id,
+                [new UserAliasWrite(UserAliasKind.GitHub, "CharlieDigital", "charliedigital")],
+                CancellationToken.None
+            );
+
+        await Assert.That(act).Throws<InvalidOperationException>();
+    }
+
+    [Test]
+    public async Task ReplaceUserAliasesAsync_WithMismatchedNormalizedValue_ThrowsArgumentException()
+    {
+        var store = new PostgresZeeqIdentityStore(_context);
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+
+        Func<Task> act = async () =>
+            await store.ReplaceUserAliasesAsync(
+                seed.Organization.Id,
+                seed.Owner.Id,
+                [new UserAliasWrite(UserAliasKind.GitHub, "CharlieDigital", "not-charlie")],
+                CancellationToken.None
+            );
+
+        await Assert.That(act).Throws<ArgumentException>();
+    }
+
+    [Test]
+    public async Task ReplaceUserAliasesAsync_WithUnsupportedAliasKind_ThrowsArgumentOutOfRangeException()
+    {
+        var store = new PostgresZeeqIdentityStore(_context);
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+
+        Func<Task> act = async () =>
+            await store.ReplaceUserAliasesAsync(
+                seed.Organization.Id,
+                seed.Owner.Id,
+                [new UserAliasWrite((UserAliasKind)999, "alias", "alias")],
+                CancellationToken.None
+            );
+
+        await Assert.That(act).Throws<ArgumentOutOfRangeException>();
     }
 
     private async Task<(

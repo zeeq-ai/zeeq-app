@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Zeeq.Core.Models;
@@ -113,6 +114,64 @@ internal sealed record OrgSummary(
 );
 
 /// <summary>
+/// Org-scoped user alias exposed to the browser.
+/// </summary>
+/// <param name="Id">Stable alias row id.</param>
+/// <param name="Kind">Alias namespace, such as <c>email</c> or <c>github</c>.</param>
+/// <param name="Value">User-facing alias value.</param>
+/// <param name="NormalizedValue">Server-normalized lookup value.</param>
+/// <param name="VerifiedAtUtc">Timestamp when this alias was verified, if any.</param>
+internal sealed record UserAliasDto(
+    string Id,
+    UserAliasKind Kind,
+    string Value,
+    string NormalizedValue,
+    DateTimeOffset? VerifiedAtUtc
+);
+
+/// <summary>
+/// Current user's aliases for the active organization.
+/// </summary>
+/// <param name="Aliases">Org-scoped aliases owned by the signed-in user.</param>
+internal sealed record UserAliasesResponse(IReadOnlyList<UserAliasDto> Aliases);
+
+/// <summary>
+/// Replacement payload for the signed-in user's aliases in one organization.
+/// </summary>
+/// <param name="EmailAliases">Email aliases used to match telemetry owner emails.</param>
+/// <param name="GitHubAliases">GitHub login aliases used to match pull requests and reviews.</param>
+internal sealed record UpdateUserAliasesRequest(
+    [property: MaxLength(UserAliasNormalizer.MaxAliasesPerKind)]
+    [property: UserAliasItemMaxLength(UserAliasNormalizer.MaxAliasLength)]
+        IReadOnlyList<string> EmailAliases,
+    [property: MaxLength(UserAliasNormalizer.MaxAliasesPerKind)]
+    [property: UserAliasItemMaxLength(UserAliasNormalizer.MaxAliasLength)]
+        IReadOnlyList<string> GitHubAliases
+);
+
+/// <summary>
+/// Validates that each alias value in a request array is present and bounded.
+/// </summary>
+internal sealed class UserAliasItemMaxLengthAttribute(int maximumLength) : ValidationAttribute
+{
+    protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
+    {
+        if (value is not IEnumerable<string?> aliases)
+        {
+            return ValidationResult.Success;
+        }
+
+        return aliases.Any(alias =>
+            string.IsNullOrWhiteSpace(alias) || alias.Length > maximumLength
+        )
+            ? new ValidationResult(
+                $"Alias values must be non-empty and cannot exceed {maximumLength} characters."
+            )
+            : ValidationResult.Success;
+    }
+}
+
+/// <summary>
 /// Current browser identity response consumed by the web app.
 /// </summary>
 /// <remarks>
@@ -133,5 +192,12 @@ internal sealed record MeResponse(
     string? OrganizationRole,
     string? OrganizationSlug,
     IReadOnlyList<OrgSummary>? Organizations,
+    IReadOnlyList<UserAliasDto> Aliases,
     bool IsSystemAdmin
 );
+
+internal static class UserAliasEndpointMapping
+{
+    public static UserAliasDto ToDto(UserAlias alias) =>
+        new(alias.Id, alias.Kind, alias.DisplayValue, alias.NormalizedValue, alias.VerifiedAtUtc);
+}

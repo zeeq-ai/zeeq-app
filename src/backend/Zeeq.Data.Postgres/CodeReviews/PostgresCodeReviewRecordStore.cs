@@ -335,10 +335,15 @@ internal sealed class PostgresCodeReviewRecordStore(PostgresDbContext db) : ICod
 
         if (query.Scope == CodeReviewInboxScope.Mine)
         {
-            // TODO(code-review-account-mapping): Extend this "Mine" scope to
-            // include provider-authored PRs once Zeeq user/account mappings are
-            // available. For this slice, the existing first-party relationship is
-            // the claimed PR user id stored on PullRequestRecord.
+            var githubAliases = db
+                .UserAliases.Where(alias =>
+                    alias.OrganizationId == query.OrganizationId
+                    && alias.UserId == query.SubjectUserId
+                    && alias.Kind == UserAliasKind.GitHub
+                    && alias.DisabledAtUtc == null
+                )
+                .Select(alias => alias.NormalizedValue);
+
             joined = joined
                 .Join(
                     db.PullRequestRecords.TagWithOperationCallSite(
@@ -362,9 +367,13 @@ internal sealed class PostgresCodeReviewRecordStore(PostgresDbContext db) : ICod
                             row.Review,
                             row.Lookup,
                             pullRequest.ClaimedByUserId,
+                            pullRequest.AuthorLogin,
                         }
                 )
-                .Where(row => row.ClaimedByUserId == query.SubjectUserId)
+                .Where(row =>
+                    row.ClaimedByUserId == query.SubjectUserId
+                    || githubAliases.Contains(row.AuthorLogin.Trim().TrimStart('@').ToLower())
+                )
                 .Select(row => new { row.Review, row.Lookup });
         }
 

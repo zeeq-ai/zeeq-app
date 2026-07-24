@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
@@ -10,6 +11,9 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
 {
     private const string SameDomainAutoInviteIndexName =
         "ix_core_organization_memberships_same_domain_auto_invite";
+    private const string UserAliasUniqueIndexName =
+        "ix_core_user_aliases_organization_id_kind_normalized_value";
+    private const int UserAliasReplacementLockNamespace = 722452;
 
     /// <inheritdoc />
     public async Task<AuthContext> EnsureUserAsync(
@@ -174,6 +178,245 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
         return new AuthContext(userId, organizationId, teamId);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<UserAlias>> ListUserAliasesAsync(
+        string organizationId,
+        string userId,
+        CancellationToken cancellationToken
+    )
+    {
+        return await db
+            .UserAliases.TagWithOperationCallSite("identity.user_aliases.list")
+            .AsNoTracking()
+            .Where(alias => alias.OrganizationId == organizationId && alias.UserId == userId)
+            .Where(alias => alias.DisabledAtUtc == null)
+            .OrderBy(alias => alias.Kind)
+            .ThenBy(alias => alias.NormalizedValue)
+            .ToArrayAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<UserAlias>> ReplaceUserAliasesAsync(
+        string organizationId,
+        string userId,
+        IReadOnlyList<UserAliasWrite> aliases,
+        CancellationToken cancellationToken
+    )
+    {
+        var aliasWrites = aliases.Select(ValidateAliasWrite).ToArray();
+
+        await using var transaction = await BeginTransactionIfNeededAsync(cancellationToken);
+
+        // NOTE: PUT alias replacement is a read-modify-write operation over the user's full
+        // active alias set. Serialize by (organization, user) so concurrent requests cannot
+        // each add different aliases and leave the union active.
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({UserAliasReplacementLockNamespace}, hashtext({organizationId + ":" + userId}))",
+            cancellationToken
+        );
+
+        var isActiveMember = await db
+            .OrganizationMemberships.TagWithOperationCallSite(
+                "identity.user_aliases.replace_active_membership_check"
+            )
+            .AsNoTracking()
+            .AnyAsync(
+                membership =>
+                    membership.OrganizationId == organizationId
+                    && membership.UserId == userId
+                    && membership.Status == MembershipStatus.Active
+                    && membership.DisabledAtUtc == null,
+                cancellationToken
+            );
+
+        if (!isActiveMember)
+        {
+            throw new InvalidOperationException(
+                "The user is not an active member of this organization."
+            );
+        }
+
+        var existing = await db
+            .UserAliases.TagWithOperationCallSite("identity.user_aliases.replace_load_existing")
+            .Where(alias => alias.OrganizationId == organizationId && alias.UserId == userId)
+            .ToArrayAsync(cancellationToken);
+        var requestedKeys = aliasWrites
+            .Select(alias => new AliasKey(alias.Kind, alias.NormalizedValue))
+            .ToHashSet();
+        var requestedEmailAliases = aliasWrites
+            .Where(alias => alias.Kind == UserAliasKind.Email)
+            .Select(alias => alias.NormalizedValue)
+            .ToArray();
+        var requestedGitHubAliases = aliasWrites
+            .Where(alias => alias.Kind == UserAliasKind.GitHub)
+            .Select(alias => alias.NormalizedValue)
+            .ToArray();
+
+        var conflicting = await db
+            .UserAliases.TagWithOperationCallSite("identity.user_aliases.replace_conflict_check")
+            .AsNoTracking()
+            .Where(alias =>
+                alias.OrganizationId == organizationId
+                && alias.UserId != userId
+                && alias.DisabledAtUtc == null
+                && (
+                    (
+                        alias.Kind == UserAliasKind.Email
+                        && requestedEmailAliases.Contains(alias.NormalizedValue)
+                    )
+                    || (
+                        alias.Kind == UserAliasKind.GitHub
+                        && requestedGitHubAliases.Contains(alias.NormalizedValue)
+                    )
+                )
+            )
+            .Select(alias => alias.DisplayValue)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (conflicting is not null)
+        {
+            throw new InvalidOperationException(
+                $"Alias '{conflicting}' already belongs to another member in this organization."
+            );
+        }
+
+        // NOTE: Email has a canonical member identity in core_users.email, so aliases must
+        // not overlap another active member's email. GitHub currently has no separate
+        // canonical member-login column; the org-scoped active alias unique index is the
+        // GitHub identity boundary until that model exists.
+        var conflictingCanonicalEmail = await (
+            from membership in db.OrganizationMemberships.AsNoTracking()
+            join user in db.Users.AsNoTracking() on membership.UserId equals user.Id
+            where membership.OrganizationId == organizationId
+            where membership.Status == MembershipStatus.Active
+            where membership.DisabledAtUtc == null
+            where user.DisabledAtUtc == null
+            where user.Id != userId
+            where user.Email != null
+            where requestedEmailAliases.Contains(user.Email!.Trim().ToLower())
+            select user.Email
+        )
+            .TagWithOperationCallSite("identity.user_aliases.replace_canonical_email_check")
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (conflictingCanonicalEmail is not null)
+        {
+            throw new InvalidOperationException(
+                $"Alias '{conflictingCanonicalEmail}' already belongs to another member in this organization."
+            );
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var existingByKey = existing
+            .GroupBy(alias => new AliasKey(alias.Kind, alias.NormalizedValue))
+            .ToDictionary(
+                group => group.Key,
+                group =>
+                    group
+                        .OrderBy(alias => alias.DisabledAtUtc is not null)
+                        .ThenByDescending(alias => alias.UpdatedAtUtc)
+                        .First()
+            );
+
+        foreach (var alias in existing)
+        {
+            if (!requestedKeys.Contains(new AliasKey(alias.Kind, alias.NormalizedValue)))
+            {
+                alias.DisabledAtUtc ??= now;
+                alias.UpdatedAtUtc = now;
+            }
+        }
+
+        foreach (var alias in aliasWrites)
+        {
+            var key = new AliasKey(alias.Kind, alias.NormalizedValue);
+            if (existingByKey.TryGetValue(key, out var existingAlias))
+            {
+                existingAlias.DisplayValue = alias.DisplayValue;
+                existingAlias.DisabledAtUtc = null;
+                existingAlias.UpdatedAtUtc = now;
+                continue;
+            }
+
+            db.UserAliases.Add(
+                new UserAlias
+                {
+                    Id = "alias_" + Guid.NewGuid().ToString("N"),
+                    OrganizationId = organizationId,
+                    UserId = userId,
+                    Kind = alias.Kind,
+                    DisplayValue = alias.DisplayValue,
+                    NormalizedValue = alias.NormalizedValue,
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now,
+                }
+            );
+        }
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsUserAliasUniqueViolation(exception))
+        {
+            throw new InvalidOperationException(
+                "An alias already belongs to another member in this organization.",
+                exception
+            );
+        }
+
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        return await ListUserAliasesAsync(organizationId, userId, cancellationToken);
+    }
+
+    private readonly record struct AliasKey(UserAliasKind Kind, string NormalizedValue);
+
+    private static UserAliasWrite ValidateAliasWrite(UserAliasWrite alias)
+    {
+        var expectedDisplayValue = alias.Kind switch
+        {
+            UserAliasKind.Email => alias.DisplayValue.Trim(),
+            UserAliasKind.GitHub => alias.DisplayValue.Trim().TrimStart('@'),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(alias),
+                alias.Kind,
+                "Unsupported user alias kind."
+            ),
+        };
+        var expectedNormalizedValue = expectedDisplayValue.ToLowerInvariant();
+
+        if (!string.Equals(alias.DisplayValue, expectedDisplayValue, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "Alias display value must match the normalized display form.",
+                nameof(alias)
+            );
+        }
+
+        if (
+            !string.Equals(alias.NormalizedValue, expectedNormalizedValue, StringComparison.Ordinal)
+        )
+        {
+            throw new ArgumentException(
+                "Alias normalized value must match the display value.",
+                nameof(alias)
+            );
+        }
+
+        return alias;
+    }
+
+    private async ValueTask<IDbContextTransaction?> BeginTransactionIfNeededAsync(
+        CancellationToken cancellationToken
+    ) =>
+        db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
     private async Task<OrganizationMembership?> CreateSameDomainInvitationIfEligibleAsync(
         string personalOrganizationId,
         string userId,
@@ -299,6 +542,14 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
             {
                 SqlState: PostgresErrorCodes.UniqueViolation,
                 ConstraintName: SameDomainAutoInviteIndexName,
+            };
+
+    private static bool IsUserAliasUniqueViolation(DbUpdateException exception) =>
+        exception.InnerException
+            is PostgresException
+            {
+                SqlState: PostgresErrorCodes.UniqueViolation,
+                ConstraintName: UserAliasUniqueIndexName,
             };
 
     /// <inheritdoc />

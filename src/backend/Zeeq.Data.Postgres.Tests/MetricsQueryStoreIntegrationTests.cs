@@ -169,6 +169,182 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     }
 
     [Test]
+    public async Task GetSeries_GroupByUser_ResolvesEmailAliasesToCanonicalMemberEmail()
+    {
+        var (seed, _) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddUserAliases(alias =>
+            {
+                alias.DisplayValue = "personal@example.com";
+                alias.NormalizedValue = "personal@example.com";
+            })
+            .BuildAsync();
+        var org = seed.Organization.Id;
+        seed.Owner.Email = "member@company.com";
+
+        await SeedMetricsAsync(
+            AgentMetric(
+                org,
+                "zeeq_agent_token_usage",
+                100,
+                "gpt-5-codex",
+                "personal@example.com"
+            )
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var series = await store.GetSeriesAsync(
+            org,
+            "zeeq_agent_token_usage",
+            MetricWindow.H1,
+            MetricSeriesGroup.User,
+            new MetricSeriesFilters(),
+            CancellationToken.None
+        );
+
+        await Assert.That(series.Count).IsEqualTo(1);
+        await Assert.That(series[0].SeriesKey).IsEqualTo("member@company.com");
+        await Assert.That(series[0].Value).IsEqualTo(100d);
+    }
+
+    [Test]
+    public async Task GetSeries_GroupByUser_DoesNotResolveDisabledEmailAliases()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var (seed, _) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddUserAliases(alias =>
+            {
+                alias.DisplayValue = "disabled-personal@example.com";
+                alias.NormalizedValue = "disabled-personal@example.com";
+                alias.DisabledAtUtc = now;
+            })
+            .BuildAsync();
+        var org = seed.Organization.Id;
+        seed.Owner.Email = "member@company.com";
+
+        await SeedMetricsAsync(
+            AgentMetric(
+                org,
+                "zeeq_agent_token_usage",
+                100,
+                "gpt-5-codex",
+                "disabled-personal@example.com"
+            )
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var series = await store.GetSeriesAsync(
+            org,
+            "zeeq_agent_token_usage",
+            MetricWindow.H1,
+            MetricSeriesGroup.User,
+            new MetricSeriesFilters(),
+            CancellationToken.None
+        );
+
+        await Assert.That(series.Count).IsEqualTo(1);
+        await Assert.That(series[0].SeriesKey).IsEqualTo("disabled-personal@example.com");
+    }
+
+    [Test]
+    public async Task GetSeries_UserFilter_UsesCanonicalAliasKey()
+    {
+        var (seed, _) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddUserAliases(alias =>
+            {
+                alias.DisplayValue = "personal-filter@example.com";
+                alias.NormalizedValue = "personal-filter@example.com";
+            })
+            .BuildAsync();
+        var org = seed.Organization.Id;
+        seed.Owner.Email = "member-filter@company.com";
+
+        await SeedMetricsAsync(
+            AgentMetric(
+                org,
+                "zeeq_agent_token_usage",
+                100,
+                "gpt-5-codex",
+                "personal-filter@example.com"
+            )
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var canonicalSeries = await store.GetSeriesAsync(
+            org,
+            "zeeq_agent_token_usage",
+            MetricWindow.H1,
+            MetricSeriesGroup.None,
+            new MetricSeriesFilters(Users: ["member-filter@company.com"]),
+            CancellationToken.None
+        );
+        var rawAliasSeries = await store.GetSeriesAsync(
+            org,
+            "zeeq_agent_token_usage",
+            MetricWindow.H1,
+            MetricSeriesGroup.None,
+            new MetricSeriesFilters(Users: ["personal-filter@example.com"]),
+            CancellationToken.None
+        );
+
+        await Assert.That(canonicalSeries.Sum(p => p.Value)).IsEqualTo(100d);
+        await Assert.That(rawAliasSeries.Sum(p => p.Value)).IsEqualTo(0d);
+    }
+
+    [Test]
+    public async Task GetTwoDimensionalSeries_UserFilter_UsesCanonicalAliasKey()
+    {
+        var (seed, _) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddUserAliases(alias =>
+            {
+                alias.DisplayValue = "personal-2d@example.com";
+                alias.NormalizedValue = "personal-2d@example.com";
+            })
+            .BuildAsync();
+        var org = seed.Organization.Id;
+        seed.Owner.Email = "member-2d@company.com";
+
+        await SeedMetricsAsync(
+            AgentMetric(
+                org,
+                "zeeq_agent_token_usage",
+                75,
+                "gpt-5-codex",
+                "personal-2d@example.com"
+            )
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var canonicalSeries = await store.GetTwoDimensionalSeriesAsync(
+            org,
+            "zeeq_agent_token_usage",
+            MetricWindow.H1,
+            MetricSeriesGroup.Model,
+            MetricSeriesGroup.User,
+            new MetricSeriesFilters(Users: ["member-2d@company.com"]),
+            CancellationToken.None
+        );
+        var rawAliasSeries = await store.GetTwoDimensionalSeriesAsync(
+            org,
+            "zeeq_agent_token_usage",
+            MetricWindow.H1,
+            MetricSeriesGroup.Model,
+            MetricSeriesGroup.User,
+            new MetricSeriesFilters(Users: ["personal-2d@example.com"]),
+            CancellationToken.None
+        );
+
+        await Assert.That(canonicalSeries.Sum(p => p.Value)).IsEqualTo(75d);
+        await Assert
+            .That(canonicalSeries.Single().SecondarySeriesKey)
+            .IsEqualTo("member-2d@company.com");
+        await Assert.That(rawAliasSeries.Sum(p => p.Value)).IsEqualTo(0d);
+    }
+
+    [Test]
     public async Task GetSeries_UserFilter_UsesMultiSelect()
     {
         await SeedMetricsAsync(

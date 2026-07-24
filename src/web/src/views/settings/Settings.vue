@@ -38,6 +38,11 @@ const links: NavigationMenuItem[][] = [
       to: "/settings/memberships",
     },
     {
+      label: "Me",
+      icon: "i-hugeicons-user-account",
+      to: "/settings/me",
+    },
+    {
       label: "Credentials",
       icon: "i-hugeicons-key-01",
       to: "/settings/credentials",

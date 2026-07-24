@@ -5,6 +5,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Zeeq.Core.Identity.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Zeeq.Data\Zeeq.Data.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Common.AspNetCore\Zeeq.Core.Common.AspNetCore.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Common\Zeeq.Core.Common.csproj" />

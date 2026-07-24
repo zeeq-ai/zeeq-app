@@ -1,5 +1,5 @@
 import { defineStore, acceptHMRUpdate, storeToRefs } from "pinia";
-import { Invitations, Memberships, Organizations } from "@/api/generated";
+import { Auth, Invitations, Memberships, Organizations } from "@/api/generated";
 import { useAppStore } from "@/stores/app-store";
 import type { ChangeMemberRoleRequest } from "@/api/generated/types/ChangeMemberRoleRequest";
 import type { CreateInvitationRequest } from "@/api/generated/types/CreateInvitationRequest";
@@ -9,6 +9,7 @@ import type { MemberResponse } from "@/api/generated/types/MemberResponse";
 import type { OrganizationResponse } from "@/api/generated/types/OrganizationResponse";
 import type { SameDomainOnboardingStatusResponse } from "@/api/generated/types/SameDomainOnboardingStatusResponse";
 import type { UpdateOrganizationRequest } from "@/api/generated/types/UpdateOrganizationRequest";
+import type { UpdateUserAliasesRequest } from "@/api/generated/types/UpdateUserAliasesRequest";
 import type { UpdateSameDomainOnboardingRequest } from "@/api/generated/types/UpdateSameDomainOnboardingRequest";
 
 /**
@@ -41,6 +42,7 @@ export const useOrganizationSettingsStore = defineStore(
     const loading = ref(false);
     const membersLoading = ref(false);
     const saving = ref(false);
+    const savingAliases = ref(false);
     const error = ref<string | null>(null);
     let membersRequestId = 0;
 
@@ -329,6 +331,33 @@ export const useOrganizationSettingsStore = defineStore(
     }
 
     /**
+     * Replaces the signed-in user's aliases for the active organization, then
+     * refreshes /me because alias state is exposed on the current-user payload.
+     */
+    async function updateUserAliases(request: UpdateUserAliasesRequest) {
+      if (!currentOrganizationId.value) {
+        return;
+      }
+
+      savingAliases.value = true;
+      error.value = null;
+
+      try {
+        const response = await Auth.updateUserAliases(
+          currentOrganizationId.value,
+          request,
+        );
+        await appStore.fetchUser({ force: true });
+        return response;
+      } catch (err: unknown) {
+        error.value = toErrorMessage(err);
+        throw err;
+      } finally {
+        savingAliases.value = false;
+      }
+    }
+
+    /**
      * Leaves an organization from the user's own memberships list.
      */
     async function leaveOrganization(orgId: string) {
@@ -449,6 +478,7 @@ export const useOrganizationSettingsStore = defineStore(
       loading,
       membersLoading,
       saving,
+      savingAliases,
       error,
       currentOrganizationId,
       currentUserRole,
@@ -465,6 +495,7 @@ export const useOrganizationSettingsStore = defineStore(
       createInvitation,
       changeMemberRole,
       removeMember,
+      updateUserAliases,
       leaveOrganization,
       setDefaultOrganization,
       acceptInvitation,

@@ -26,6 +26,45 @@ internal sealed class ExternalUserIdentityConfiguration
     }
 }
 
+internal sealed class UserAliasConfiguration : IEntityTypeConfiguration<UserAlias>
+{
+    public void Configure(EntityTypeBuilder<UserAlias> entity)
+    {
+        entity.ToTable("core_user_aliases");
+        entity.HasKey(alias => alias.Id);
+
+        entity.Property(alias => alias.Id).HasMaxLength(128);
+        entity.Property(alias => alias.OrganizationId).IsRequired().HasMaxLength(128);
+        entity.Property(alias => alias.UserId).IsRequired().HasMaxLength(128);
+        entity.Property(alias => alias.Kind).IsRequired().HasMaxLength(32).HasConversion<string>();
+        entity.Property(alias => alias.DisplayValue).IsRequired().HasMaxLength(320);
+        entity.Property(alias => alias.NormalizedValue).IsRequired().HasMaxLength(320);
+        entity.Property(alias => alias.CreatedAtUtc).IsRequired();
+        entity.Property(alias => alias.UpdatedAtUtc).IsRequired();
+        entity.HasIndex(alias => alias.UserId);
+        entity.HasIndex(alias => new { alias.OrganizationId, alias.UserId, alias.Kind });
+        entity
+            .HasIndex(alias => new
+            {
+                alias.OrganizationId,
+                alias.Kind,
+                alias.NormalizedValue,
+            })
+            .IsUnique()
+            .HasFilter("disabled_at_utc IS NULL");
+        entity
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(alias => alias.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity
+            .HasOne<Organization>()
+            .WithMany()
+            .HasForeignKey(alias => alias.OrganizationId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 internal sealed class ClientCredentialConfiguration : IEntityTypeConfiguration<ClientCredential>
 {
     public void Configure(EntityTypeBuilder<ClientCredential> entity)
