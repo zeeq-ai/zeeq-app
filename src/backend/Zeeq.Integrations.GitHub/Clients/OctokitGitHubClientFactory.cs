@@ -22,11 +22,11 @@ namespace Zeeq.Integrations.GitHub;
 internal sealed partial class OctokitGitHubClientFactory(
     IGitHubInstallationStore installationStore,
     IGitHubInstallationTokenClient tokenClient,
+    GitHubConnectionFactory connectionFactory,
     HybridCache cache,
     ILogger<OctokitGitHubClientFactory> logger
 ) : IGitHubClientFactory
 {
-    private static readonly ProductHeaderValue ProductHeader = new("zeeq");
     internal static readonly TimeSpan InstallationTokenCacheTtl = TimeSpan.FromMinutes(55);
     internal static readonly TimeSpan InstallationTokenLocalCacheTtl = TimeSpan.FromMinutes(5);
 
@@ -79,8 +79,8 @@ internal sealed partial class OctokitGitHubClientFactory(
         );
     }
 
-    private static GitHubClient CreateClient(string token) =>
-        new(ProductHeader) { Credentials = new Credentials(token) };
+    private GitHubClient CreateClient(string token) =>
+        connectionFactory.CreateClient(new Credentials(token));
 
     [LoggerMessage(
         EventId = 3130,

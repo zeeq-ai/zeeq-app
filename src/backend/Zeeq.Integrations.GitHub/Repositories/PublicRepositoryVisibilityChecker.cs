@@ -58,10 +58,10 @@ internal interface IGitHubRepositoryVisibilityClient
     Task<bool> IsPrivateAsync(string owner, string name, CancellationToken cancellationToken);
 }
 
-internal sealed class OctokitGitHubRepositoryVisibilityClient : IGitHubRepositoryVisibilityClient
+internal sealed class OctokitGitHubRepositoryVisibilityClient(
+    GitHubConnectionFactory connectionFactory
+) : IGitHubRepositoryVisibilityClient
 {
-    private static readonly ProductHeaderValue ProductHeader = new("zeeq");
-
     public async Task<bool> IsPrivateAsync(
         string owner,
         string name,
@@ -71,7 +71,7 @@ internal sealed class OctokitGitHubRepositoryVisibilityClient : IGitHubRepositor
         cancellationToken.ThrowIfCancellationRequested();
 
         // Deliberately unauthenticated — see the type's remarks.
-        var client = new GitHubClient(ProductHeader);
+        var client = connectionFactory.CreateAnonymousClient();
         var repository = await client.Repository.Get(owner, name);
 
         return repository.Private;

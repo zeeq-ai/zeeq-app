@@ -43,6 +43,7 @@ internal static class SetupTelemetryExtension
                             ZeeqTelemetry.ActivitySourceName,
                             LlmTelemetry.ActivitySourceName,
                             "Paramore.Brighter",
+                            // "Polly",
                             "System.Net.Http",
                             "Private.InternalDiagnostics.System.Net.Http"
                         )

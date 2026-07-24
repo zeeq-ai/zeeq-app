@@ -37,11 +37,10 @@ internal interface IGitHubInstallationTokenClient
 /// </summary>
 internal sealed partial class OctokitGitHubInstallationTokenClient(
     GitHubAppJwtFactory jwtFactory,
+    GitHubConnectionFactory connectionFactory,
     ILogger<OctokitGitHubInstallationTokenClient> logger
 ) : IGitHubInstallationTokenClient
 {
-    private static readonly ProductHeaderValue ProductHeader = new("zeeq");
-
     /// <inheritdoc />
     public async Task<string> CreateInstallationTokenAsync(
         long installationId,
@@ -50,10 +49,9 @@ internal sealed partial class OctokitGitHubInstallationTokenClient(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var appClient = new GitHubClient(ProductHeader)
-        {
-            Credentials = new Credentials(jwtFactory.CreateJwt(), AuthenticationType.Bearer),
-        };
+        var appClient = connectionFactory.CreateClient(
+            new Credentials(jwtFactory.CreateJwt(), AuthenticationType.Bearer)
+        );
 
         try
         {
