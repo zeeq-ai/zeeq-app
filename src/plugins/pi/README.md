@@ -115,9 +115,13 @@ export PI_TELEMETRY_TIMEOUT_MS="3000"
 export PI_TELEMETRY_RETRY_MS="30000"
 export PI_TELEMETRY_LOG_ERRORS="true"
 export PI_TELEMETRY_DISABLED="true"
+export ZEEQ_OTEL_OMIT_PROMPT="1"
+export ZEEQ_OTEL_TRUNCATE_PROMPT="32"
 ```
 
 `ZEEQ_BASE_URL` can be a full URL or a bare domain. Bare domains are treated as HTTPS. `PI_TELEMETRY_ENDPOINT` takes precedence over `ZEEQ_BASE_URL`.
+
+Prompt privacy settings affect only the exported `prompt_text`; `prompt_length` remains the original character count. Set `ZEEQ_OTEL_OMIT_PROMPT=1` to export `omit_by_config` instead of the prompt text. Set `ZEEQ_OTEL_TRUNCATE_PROMPT=32` to keep only the first 32 characters and append `...(truncated_by_config)`. A value of `0`, an empty value, or an omitted variable disables config truncation. Positive values below `16` are treated as `16`.
 
 There is no user-email setting — `AgentTelemetryImportHandler` always stamps `owner_email` from the bearer token's own `email` claim server-side and ignores anything the client reports, so there is nothing for the extension to configure here. Ownership (`CreatedById`) comes from the same token identity.
 

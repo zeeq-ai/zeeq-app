@@ -27,8 +27,16 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     // per metric row, so the left join does not multiply metric values.
     // NOTE: User filters are canonical metric user keys from GetFilterOptionsAsync,
     // not raw telemetry owner emails; alias owner emails roll up before filtering.
+    // NOTE: alias_user.email can be NULL even when the alias join matches an
+    // existing core_users row -- User.Email is nullable (e.g. a user whose IdP
+    // login never surfaced an email claim). metric.user_email must be tried
+    // before the bare user_id: it's the telemetry-reported email that was used
+    // to find this alias row in the first place, so it's always a real email
+    // when the alias matched at all. user_id is the last resort only for the
+    // (effectively unreachable given the WHERE/JOIN clauses) case where no
+    // email is available anywhere.
     private const string ResolvedMetricUserKeySql =
-        "COALESCE(alias_user.email, user_email_alias.user_id, metric.user_email)";
+        "COALESCE(alias_user.email, metric.user_email, user_email_alias.user_id)";
     private const string NormalizedMetricUserEmailSql = "lower(btrim(metric.user_email))";
 
     /// <inheritdoc />
@@ -655,8 +663,13 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         // NOTE: DisplayName is returned raw; duplicate repo display names are disambiguated at the
         // presentation layer (the web Home view suffixes a short id) so this endpoint stays a pure
         // data source. All four reads are AsNoTracking projections, single-table, endpoint-cached.
-        FormattableString usersSql = $"""
-            SELECT DISTINCT COALESCE(alias_user.email, user_email_alias.user_id, metric.user_email) AS "Value"
+        // ResolvedMetricUserKeySql is a closed, hardcoded column expression, not caller
+        // input -- it must be spliced into the SQL text directly rather than bound as a
+        // query parameter, so this builds a plain format string first (organizationId
+        // left as a "{0}" placeholder) and only turns it into a FormattableString
+        // afterward, the same two-stage pattern GetSeriesAsync uses below.
+        var usersFormat = $$"""
+            SELECT DISTINCT {{ResolvedMetricUserKeySql}} AS "Value"
             FROM zeeq.zeeq_metric_events metric
             LEFT JOIN zeeq.core_user_aliases user_email_alias
              ON user_email_alias.organization_id = metric.organization_id
@@ -665,10 +678,11 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
              AND user_email_alias.disabled_at_utc IS NULL
             LEFT JOIN zeeq.core_users alias_user
               ON alias_user.id = user_email_alias.user_id
-            WHERE metric.organization_id = {organizationId}
+            WHERE metric.organization_id = {0}
               AND metric.user_email IS NOT NULL
             ORDER BY 1
             """;
+        var usersSql = FormattableStringFactory.Create(usersFormat, organizationId);
 
         var users = await db
             .Database.SqlQuery<string>(usersSql)
