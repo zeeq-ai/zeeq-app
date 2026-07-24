@@ -1,5 +1,7 @@
-﻿using Aspire.Hosting.ApplicationModel;
+﻿using System.Security.Cryptography;
+using System.Text;
 using Aspire.Hosting.Yarp;
+using DeviceId;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -217,11 +219,13 @@ docs.WithUrlForEndpoint(
     }
 );
 
-// Add devtunnel proxy to the web app
+// Add devtunnel proxy to the web app; uses user/machine to make a stable tunnel ID
+// for faster connection.  This is required because tunnel IDs are global so either
+// use a random one (unstable) or create one semi-deterministically.
 var tunnel = builder
     .AddDevTunnel(
         "webapp-tunnel",
-        tunnelId: "zeeq-webapp-tunnel",
+        tunnelId: Helpers.MakeDevTunnelId(),
         options: new()
         {
             AllowAnonymous = true,
@@ -347,3 +351,33 @@ var otel = builder
     .WithHttpEndpoint(44320, 4320, name: "otel-http-health");
 
 builder.Build().Run();
+
+public static class Helpers
+{
+    /// <summary>
+    /// Make a device specific tunnel ID for devtunnels since these IDs are global
+    /// so no two users can create the same ID.  This makes the tunnel ID deterministic
+    /// per user/machine.  NOTE: this is not the URL or the sub-domain on the tunnel;
+    /// this is the tunnel's globally unique label only.
+    /// </summary>
+    /// <remarks>
+    /// NOTE: the 8-char SHA256-derived suffix (and the underlying
+    /// username+machine-name identity from DeviceIdBuilder) is a best-effort
+    /// determinism, not a guarantee — reviewed and accepted. It can still churn
+    /// across renamed machines, containerized dev shells, or roaming profiles;
+    /// ZEEQ_DEVTUNNEL_ID is the escape hatch for anyone who needs a stable ID
+    /// independent of machine identity.
+    /// </remarks>
+    public static string MakeDevTunnelId() =>
+        string.Format(
+            "zeeq-webapp-devtunnel-{0}",
+            Environment.GetEnvironmentVariable("ZEEQ_DEVTUNNEL_ID")
+                ?? Convert.ToHexStringLower(
+                    SHA256.HashData(
+                        Encoding.UTF8.GetBytes(
+                            new DeviceIdBuilder().AddUserName().AddMachineName().ToString()
+                        )
+                    )
+                )[..8]
+        );
+}

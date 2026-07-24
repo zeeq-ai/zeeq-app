@@ -27,6 +27,7 @@ public sealed class AgentTelemetryImportTests
             new AgentTelemetryImportValidator(),
             new AgentTelemetryImportOtlpMapper(),
             CreateIngestService(new CapturingRawStore()),
+            new StubIdentityStore(),
             PrincipalAccessor()
         );
 
@@ -48,6 +49,7 @@ public sealed class AgentTelemetryImportTests
             new AgentTelemetryImportValidator(),
             new AgentTelemetryImportOtlpMapper(),
             CreateIngestService(rawStore),
+            new StubIdentityStore(),
             PrincipalAccessor()
         );
 
@@ -144,6 +146,110 @@ public sealed class AgentTelemetryImportTests
             new TelemetryRawLogMetadataExtractor(),
             NullLogger<OtlpLogIngestService>.Instance
         );
+
+    private sealed class StubIdentityStore : IZeeqIdentityStore
+    {
+        public Task<string?> FindUserEmailAsync(string userId, CancellationToken cancellationToken) =>
+            Task.FromResult<string?>(null);
+
+        public Task<AuthContext> EnsureUserAsync(
+            string provider,
+            string providerSubject,
+            string? displayName,
+            string? email,
+            string? pictureUrl,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<UserAlias>> ListUserAliasesAsync(
+            string organizationId,
+            string userId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<UserAlias>> ReplaceUserAliasesAsync(
+            string organizationId,
+            string userId,
+            IReadOnlyList<UserAliasWrite> aliases,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task CreatePendingDcrSetupAsync(
+            DcrClientSetup setup,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<DcrClientSetup?> FindDcrSetupAsync(
+            string clientId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task MarkDcrSetupExpiredAsync(string clientId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task ClaimDcrSetupAsync(
+            string clientId,
+            OwnerContext owner,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<ClientCredential>> ListClientCredentialsAsync(
+            string ownerUserId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task AddClientCredentialAsync(
+            ClientCredential credential,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<ClientCredential?> FindClientCredentialAsync(
+            string clientId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<bool> DeleteClientCredentialAsync(
+            string clientId,
+            string ownerUserId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<UserToken>> ListUserTokensAsync(
+            string ownerUserId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task AddUserTokenAsync(UserToken token, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task RemoveUserTokenAsync(string tokenId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<UserToken?> FindUserTokenAsync(
+            string tokenId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<bool> DeleteUserTokenAsync(
+            string tokenId,
+            string ownerUserId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<bool> MarkUserTokenUsedAsync(
+            string tokenId,
+            string ownerUserId,
+            DateTimeOffset usedAtUtc,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<int> RevokeUserTokensForOrganizationMemberAsync(
+            string organizationId,
+            string ownerUserId,
+            DateTimeOffset revokedAtUtc,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+    }
 
     private sealed class CapturingRawStore : ITelemetryRawRequestStore
     {

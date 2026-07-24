@@ -41,6 +41,10 @@ public sealed class AgentTelemetryCostEnricher : IAgentTelemetryCostEnricher
         {
             "copilot-chat" => EnrichCopilot(evt),
             "codex" => EnrichFromTokens(evt),
+            // JSON-import adapter identity (Pi and any other first-party import
+            // client) — the caller-reported harness lives on the conversation,
+            // not here, so estimate from tokens whenever cost wasn't self-reported.
+            "zeeq-agent" => EnrichFromTokens(evt),
             _ => evt,
         };
     }

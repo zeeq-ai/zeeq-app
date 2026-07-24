@@ -90,6 +90,19 @@ public interface IZeeqIdentityStore
     );
 
     /// <summary>
+    /// Resolves a user's current email by local user id.
+    /// </summary>
+    /// <param name="userId">Local user ID (the OpenIddict <c>sub</c> for user-owned tokens).</param>
+    /// <param name="cancellationToken">Cancellation token for the database operation.</param>
+    /// <returns>The user's email, or <see langword="null"/> if the user or its email is unset.</returns>
+    /// <remarks>
+    /// Used as a fallback when a request's authenticated principal has no <c>email</c>
+    /// claim on the token itself (e.g. some machine-credential flows), so callers can
+    /// still attribute the request to a real email without trusting client input.
+    /// </remarks>
+    Task<string?> FindUserEmailAsync(string userId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Lists aliases owned by one user in one organization.
     /// </summary>
     Task<IReadOnlyList<UserAlias>> ListUserAliasesAsync(

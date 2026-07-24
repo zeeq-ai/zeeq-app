@@ -1,0 +1,86 @@
+# This workflow publishes the Pi lifecycle telemetry extension as a GitHub
+# Packages npm package. The package root is src/plugins/pi, while the GitHub
+# package name intentionally follows the repository path: @zeeq-ai/zeeq-app.
+#
+# Versioning and publishing are driven by Changesets (https://github.com/changesets/changesets),
+# not by hand-picked version numbers or manually pushed tags:
+#
+#   1. A PR touching src/plugins/pi includes a changeset (`yarn changeset`),
+#      committed alongside the change.
+#   2. On merge to main, this workflow finds the pending changeset(s) and opens
+#      (or updates) a "Version Packages" PR that bumps package.json and the
+#      changelog. Nothing is published yet.
+#   3. Merging that PR removes the changeset(s); the next run of this workflow
+#      finds none pending, so it publishes instead — running `npm publish` from
+#      src/plugins/pi (honoring its own `publishConfig`) and pushing a git tag
+#      in Changesets' default `<package-name>@<version>` format.
+#
+# This repo has only one publishable package under src/plugins/** today, but
+# the same workflow scales to future ones without per-package tag prefixes or
+# workflow changes — each gets its own changeset entries and its own tag
+# namespace for free.
+
+name: Publish Pi Package
+
+on:
+  # Changesets is self-gating: pushes to main with no pending changeset and no
+  # unpublished version bump are a cheap no-op.
+  push:
+    branches:
+      - main
+
+  # Allow maintainers to re-run after package-registry or workflow issues.
+  workflow_dispatch:
+
+concurrency:
+  group: publish-pi-package
+  cancel-in-progress: false
+
+permissions:
+  # checkout needs read access to the repository contents.
+  contents: read
+
+jobs:
+  release:
+    name: Version or publish src/plugins/pi
+    runs-on: ubuntu-latest
+    permissions:
+      # changesets/action pushes the "Version Packages" branch/commit and the
+      # release tag once publishing succeeds.
+      contents: write
+      # changesets/action opens and updates the "Version Packages" PR.
+      pull-requests: write
+      # npm publish uses GITHUB_TOKEN to write to GitHub Packages.
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Configure npm for GitHub Packages. setup-node writes the auth-aware
+      # .npmrc that npm publish (invoked by changesets) uses with
+      # NODE_AUTH_TOKEN below.
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+          scope: "@zeeq-ai"
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      # Opens/updates the "Version Packages" PR when changesets are pending;
+      # runs the publish command instead once that PR has been merged.
+      - name: Create Version Packages PR or publish
+        uses: changesets/action@v1
+        with:
+          publish: yarn changeset publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

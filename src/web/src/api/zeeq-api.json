@@ -8821,7 +8821,7 @@
               "null",
               "string"
             ],
-            "description": "Observed source user email. This does not authorize the request."
+            "description": "Client-reported user email. Ignored: AgentTelemetryImportHandler always\noverwrites this with the authenticated ingest principal's own `email` claim before\nmapping to OTLP, so a client value here has no effect."
           },
           "organization_id": {
             "type": [

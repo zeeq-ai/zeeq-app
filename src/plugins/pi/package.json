@@ -1,0 +1,40 @@
+{
+  "name": "@zeeq-ai/zeeq-app-pi-telemetry",
+  "version": "0.1.0",
+  "description": "Pi lifecycle telemetry extension for Zeeq App.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/zeeq-ai/zeeq-app.git",
+    "directory": "src/plugins/pi"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "pack:check": "npm pack --dry-run"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.82.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
