@@ -120,15 +120,23 @@ public sealed class AgentTelemetryCostEnricher : IAgentTelemetryCostEnricher
 /// to cache-read and cache-write tokens combined.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Version-stamped so historical estimates remain traceable. When rates change,
 /// append new entries and bump the version — do not mutate existing entries.
+/// </para>
+/// <para>
+/// Claude Sonnet 5 intro pricing ($2.00/$10.00 per MTok) is scheduled to revert
+/// to standard pricing ($3.00/$15.00) on 2026-09-01 per
+/// https://platform.claude.com/docs/en/about-claude/pricing — bump the version
+/// and update the <c>claude-sonnet-5</c> entry then rather than mutating it now.
+/// </para>
 /// </remarks>
 internal static class PricingCatalog
 {
     /// <summary>
     /// Catalog version for traceability. Bump when rates are updated.
     /// </summary>
-    public const int Version = 1;
+    public const int Version = 2;
 
     /// <summary>
     /// Copilot nano-AIU → USD conversion rate.
@@ -160,8 +168,10 @@ internal static class PricingCatalog
         ["gpt-5.3-codex"] = TokenRates.FromPerMillion(1.75m, 0.175m, 14.00m),
 
         // --- Anthropic models (pricing as of July 2026) ---
-        // Source: https://www.anthropic.com/pricing (API, standard tier)
+        // Source: https://platform.claude.com/docs/en/about-claude/pricing (API, standard tier)
+        ["claude-opus-5"] = TokenRates.FromPerMillion(5.00m, 0.50m, 25.00m),
         ["claude-sonnet-5"] = TokenRates.FromPerMillion(2.00m, 0.20m, 10.00m),
+        ["claude-mythos-5"] = TokenRates.FromPerMillion(10.00m, 1.00m, 50.00m),
         ["claude-haiku-4.5"] = TokenRates.FromPerMillion(1.00m, 0.10m, 5.00m),
         ["claude-opus-4.8"] = TokenRates.FromPerMillion(5.00m, 0.50m, 25.00m),
         ["claude-fable-5"] = TokenRates.FromPerMillion(10.00m, 1.00m, 50.00m),
