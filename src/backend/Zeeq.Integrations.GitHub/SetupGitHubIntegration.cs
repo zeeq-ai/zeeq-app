@@ -41,6 +41,8 @@ public static class SetupGitHubIntegration
             services.AddSingleton(appSettings.GitHub);
             services.AddSingleton(appSettings.Http);
             services.AddMemoryCache();
+            services.AddGitHubResilience();
+            services.AddSingleton<GitHubConnectionFactory>();
             services.AddSingleton<GitHubInstallationStateTokenProtector>();
             services.AddSingleton<GitHubAppJwtFactory>();
             services.AddScoped<

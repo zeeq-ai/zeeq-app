@@ -94,12 +94,15 @@ public sealed class GitHubClientFactoryTests
     {
         var services = new ServiceCollection();
         services.AddHybridCache();
+        services.AddGitHubResilience();
+        services.AddSingleton<GitHubConnectionFactory>();
 
         var serviceProvider = services.BuildServiceProvider();
 
         return new(
             store,
             tokenClient,
+            serviceProvider.GetRequiredService<GitHubConnectionFactory>(),
             serviceProvider.GetRequiredService<HybridCache>(),
             NullLogger<OctokitGitHubClientFactory>.Instance
         );

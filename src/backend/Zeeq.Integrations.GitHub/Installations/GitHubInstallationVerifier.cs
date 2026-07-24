@@ -67,11 +67,10 @@ public sealed record GitHubInstallationVerification(
 /// </remarks>
 internal sealed class OctokitGitHubInstallationVerifier(
     GitHubSettings settings,
-    GitHubAppJwtFactory jwtFactory
+    GitHubAppJwtFactory jwtFactory,
+    GitHubConnectionFactory connectionFactory
 ) : IGitHubInstallationVerifier
 {
-    private static readonly ProductHeaderValue ProductHeader = new("zeeq");
-
     public async Task<GitHubInstallationVerification> VerifyAsync(
         long installationId,
         CancellationToken cancellationToken
@@ -80,10 +79,9 @@ internal sealed class OctokitGitHubInstallationVerifier(
         // GitHub App installation metadata must be fetched with an app JWT, not
         // a user token or installation token. The callback has no user-level
         // GitHub token in this phase.
-        var client = new GitHubClient(ProductHeader)
-        {
-            Credentials = new Credentials(jwtFactory.CreateJwt(), AuthenticationType.Bearer),
-        };
+        var client = connectionFactory.CreateClient(
+            new Credentials(jwtFactory.CreateJwt(), AuthenticationType.Bearer)
+        );
 
         var installation = await client.GitHubApps.GetInstallationForCurrent(installationId);
 
