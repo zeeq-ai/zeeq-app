@@ -151,6 +151,15 @@ jobs:
           git checkout "$TAG_REF" -- .
           npm pkg set version="$TAG_VERSION"
 
+          # The restore above resurrects whatever registry config the tagged
+          # commit carried, and a scoped .npmrc mapping or a publishConfig
+          # registry would silently redirect the publish away from
+          # npmjs.org. Force the intended target regardless of what was
+          # tagged (npm pkg set edits package.json only in this ephemeral
+          # checkout; nothing is committed).
+          rm -f .npmrc
+          npm pkg set publishConfig.registry=https://registry.npmjs.org publishConfig.access=public
+
           # No auth token is configured, so npm uses trusted publishing
           # (OIDC) via the id-token permission granted at job level. The
           # registry and public access come from package.json's
