@@ -397,16 +397,16 @@ function emailLocalPartLabel(value: string | null): string | null {
 }
 
 /**
- * Displays an email as local-part plus a short hash of the full identity, on
- * its own line — the combined form overflows the 140px legend column,
- * especially stacked under the model name in the by-user breakdown.
+ * Displays an email as local-part plus a short hash of the full identity on one
+ * line. The model chart adds its own line break before this label, while the
+ * wider legend columns keep the standalone cost-chart labels unwrapped.
  */
 function emailIdentityLabel(value: string | null): string | null {
   if (!value) {
     return null;
   }
 
-  return `${emailLocalPart(value)}\n(${shortStableHash(value)})`;
+  return `${emailLocalPart(value)} (${shortStableHash(value)})`;
 }
 
 /** Keeps a non-empty email local-part when the backend grouped by full email. */

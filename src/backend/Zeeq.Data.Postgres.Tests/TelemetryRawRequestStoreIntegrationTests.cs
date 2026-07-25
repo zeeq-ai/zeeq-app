@@ -1,12 +1,12 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using Zeeq.Core.Common;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres;
 using Zeeq.Platform.Telemetry.Processing;
 using Zeeq.Testing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Npgsql;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -314,6 +314,80 @@ public sealed class TelemetryRawRequestStoreIntegrationTests(PgDatabaseFixture p
             .IsEqualTo(1);
         await Assert
             .That(await db.Set<TelemetryRawRequest>().AnyAsync(row => row.Id == duplicateRawId))
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task UpsertConversationsEventsAndAcknowledgeRaw_RemovesNulCharactersBeforeJsonbInsert()
+    {
+        await using var provider = CreateProvider(postgres.ConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var rawStore = scope.ServiceProvider.GetRequiredService<ITelemetryRawRequestStore>();
+        var domainStore = scope.ServiceProvider.GetRequiredService<IAgentTelemetryDomainStore>();
+        var db = scope.ServiceProvider.GetRequiredService<PostgresDbContext>();
+        var now = DateTimeOffset.UtcNow;
+        var rawId = await rawStore.StoreLogsAsync(
+            payload: [4, 5, 6],
+            signalType: TelemetrySignalType.Logs,
+            metadata: Metadata(TelemetrySignalType.Logs),
+            ingestUserId: "telemetry-user",
+            ingestOrganizationId: "telemetry-org"
+        );
+        var raw = (await rawStore.ClaimBatchAsync(1_000, TimeSpan.FromMinutes(1))).Single(row =>
+            row.Id == rawId
+        );
+        var conversation = new AgentConversation
+        {
+            Id = "conversation-nul",
+            OrganizationId = "telemetry-org",
+            Harness = "codex",
+            StartedAtUtc = now,
+        };
+        var sessionEvent = new AgentSessionEvent
+        {
+            Id = "event-nul",
+            OrganizationId = conversation.OrganizationId,
+            ConversationId = conversation.Id,
+            OccurredAtUtc = now,
+            EventType = AgentSessionEventType.ToolResult,
+            OutputSnippet = "before\0after",
+            ArgumentsJson = JsonDocument.Parse(
+                "{\"key\\u0000\":\"value\",\"nested\":{\"value\":\"before\\u0000after\",\"items\":[1,true,null]}}"
+            ),
+        };
+
+        var created = await domainStore.UpsertConversationsEventsAndAcknowledgeRawAsync(
+            [conversation],
+            [sessionEvent],
+            [raw],
+            CancellationToken.None
+        );
+        db.ChangeTracker.Clear();
+
+        var persisted = await db.AgentSessionEvents.SingleAsync(row => row.Id == sessionEvent.Id);
+        var arguments = persisted.ArgumentsJson?.RootElement;
+
+        await Assert.That(created.NewEventIds.Contains(sessionEvent.Id)).IsTrue();
+        await Assert.That(persisted.OutputSnippet).IsEqualTo("beforeafter");
+        await Assert.That(arguments?.ValueKind).IsEqualTo(JsonValueKind.Object);
+        await Assert.That(arguments?.GetProperty("key").GetString()).IsEqualTo("value");
+        await Assert
+            .That(arguments?.GetProperty("nested").GetProperty("value").GetString())
+            .IsEqualTo("beforeafter");
+        await Assert
+            .That(arguments?.GetProperty("nested").GetProperty("items").GetArrayLength())
+            .IsEqualTo(3);
+        await Assert
+            .That(arguments?.GetProperty("nested").GetProperty("items")[0].GetInt32())
+            .IsEqualTo(1);
+        await Assert
+            .That(arguments?.GetProperty("nested").GetProperty("items")[1].GetBoolean())
+            .IsTrue();
+        await Assert
+            .That(arguments?.GetProperty("nested").GetProperty("items")[2].ValueKind)
+            .IsEqualTo(JsonValueKind.Null);
+        await Assert
+            .That(await db.Set<TelemetryRawRequest>().AnyAsync(row => row.Id == rawId))
             .IsFalse();
     }
 

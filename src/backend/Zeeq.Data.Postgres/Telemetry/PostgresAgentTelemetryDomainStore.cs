@@ -1,8 +1,9 @@
+using System.Buffers;
 using System.Text.Json;
-using Zeeq.Core.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Data.Postgres.Telemetry;
 
@@ -293,30 +294,30 @@ internal sealed class PostgresAgentTelemetryDomainStore(PostgresDbContext db)
 
     private static AgentSessionEventInsertRow ToInsertRow(AgentSessionEvent e) =>
         new(
-            e.Id,
+            RemoveNulCharactersRequired(e.Id),
             e.OccurredAtUtc,
             e.SourceSequence,
-            e.SourceRecordId,
-            e.OrganizationId,
-            e.ConversationId,
+            RemoveNulCharacters(e.SourceRecordId),
+            RemoveNulCharactersRequired(e.OrganizationId),
+            RemoveNulCharactersRequired(e.ConversationId),
             (byte)e.EventType,
-            e.PromptGroupId,
-            e.ToolCallId,
-            e.ProviderRequestId,
-            e.PromptText,
+            RemoveNulCharacters(e.PromptGroupId),
+            RemoveNulCharacters(e.ToolCallId),
+            RemoveNulCharacters(e.ProviderRequestId),
+            RemoveNulCharacters(e.PromptText),
             e.PromptLength,
-            e.ToolName,
-            e.ToolNameRaw,
-            e.McpServer,
-            e.McpServerOrigin,
-            e.McpServerScope,
-            e.ArgumentsJson?.RootElement.Clone(),
-            e.OutputSnippet,
+            RemoveNulCharacters(e.ToolName),
+            RemoveNulCharacters(e.ToolNameRaw),
+            RemoveNulCharacters(e.McpServer),
+            RemoveNulCharacters(e.McpServerOrigin),
+            RemoveNulCharacters(e.McpServerScope),
+            CloneWithNulCharactersRemoved(e.ArgumentsJson),
+            RemoveNulCharacters(e.OutputSnippet),
             e.Success,
             e.DurationMs,
-            e.Decision,
-            e.DecisionSource,
-            e.Model,
+            RemoveNulCharacters(e.Decision),
+            RemoveNulCharacters(e.DecisionSource),
+            RemoveNulCharacters(e.Model),
             e.InputTokens,
             e.CachedTokens,
             e.OutputTokens,
@@ -325,9 +326,105 @@ internal sealed class PostgresAgentTelemetryDomainStore(PostgresDbContext db)
             e.CostUsd,
             e.CostSource is null ? null : (byte)e.CostSource,
             e.CostUnitsRaw,
-            e.QuerySource,
+            RemoveNulCharacters(e.QuerySource),
             e.IsHousekeeping
         );
+
+    /// <summary>
+    /// Removes NUL characters, which PostgreSQL cannot represent in text values.
+    /// </summary>
+    /// <remarks>
+    /// Telemetry is supplied by external agent processes. The event batch is serialized to JSONB
+    /// before insertion, and PostgreSQL rejects a JSON string containing <c>U+0000</c>. The
+    /// fast path preserves the original string reference for the overwhelmingly common clean case.
+    /// NOTE: Telemetry is time-based observability data, so malformed NUL characters are dropped
+    /// even though exceptionally rare external identifiers or JSON keys could then collide.
+    /// </remarks>
+    private static string? RemoveNulCharacters(string? value) =>
+        value is null || !value.Contains('\0') ? value : value.Replace("\0", string.Empty);
+
+    private static string RemoveNulCharactersRequired(string value) =>
+        value.Contains('\0') ? value.Replace("\0", string.Empty) : value;
+
+    /// <summary>
+    /// Clones JSON arguments after removing NUL characters from object keys and string values.
+    /// </summary>
+    /// <remarks>
+    /// JSONB can contain arbitrary nested tool arguments, so normalizing only top-level event
+    /// fields would still allow one malformed nested string or property name to reject the whole
+    /// insert batch. NUL-bearing property names follow the same intentional collision policy as
+    /// other telemetry strings.
+    /// </remarks>
+    /// <returns>
+    /// <see langword="null"/> when arguments are absent; otherwise, an independently owned
+    /// <see cref="JsonElement"/> safe to use after the source document is disposed.
+    /// </returns>
+    private static JsonElement? CloneWithNulCharactersRemoved(JsonDocument? document)
+    {
+        if (document is null)
+        {
+            return null;
+        }
+
+        var root = document.RootElement;
+        if (!ContainsNulCharacter(root))
+        {
+            return root.Clone();
+        }
+
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            WriteWithoutNulCharacters(writer, root);
+        }
+
+        using var sanitized = JsonDocument.Parse(buffer.WrittenMemory);
+
+        return sanitized.RootElement.Clone();
+    }
+
+    private static bool ContainsNulCharacter(JsonElement element) =>
+        element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString()?.Contains('\0') == true,
+            JsonValueKind.Array => element.EnumerateArray().Any(ContainsNulCharacter),
+            JsonValueKind.Object => element
+                .EnumerateObject()
+                .Any(property =>
+                    property.Name.Contains('\0') || ContainsNulCharacter(property.Value)
+                ),
+            _ => false,
+        };
+
+    private static void WriteWithoutNulCharacters(Utf8JsonWriter writer, JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var property in element.EnumerateObject())
+                {
+                    writer.WritePropertyName(RemoveNulCharactersRequired(property.Name));
+                    WriteWithoutNulCharacters(writer, property.Value);
+                }
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var item in element.EnumerateArray())
+                {
+                    WriteWithoutNulCharacters(writer, item);
+                }
+                writer.WriteEndArray();
+                break;
+            case JsonValueKind.String:
+                writer.WriteStringValue(RemoveNulCharacters(element.GetString()));
+                break;
+            default:
+                element.WriteTo(writer);
+                break;
+        }
+    }
 
     private static void EnsureInsertJsonContract(string rowsJson)
     {
