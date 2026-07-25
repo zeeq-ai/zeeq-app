@@ -30,6 +30,20 @@ import type { EChartsOption } from "echarts";
 // Side-effect: register the renderer/charts/components this dashboard uses.
 import "@/views/home/echarts-setup";
 
+type LegendSize = "sm" | "md" | "lg";
+
+/**
+ * A chart's plot must reserve the same horizontal room as its legend column.
+ * Keep the values centralized so dashboard panels use a consistent rhythm
+ * instead of encoding arbitrary pixel measurements at each call site.
+ */
+const legendLayouts: Record<LegendSize, { width: number; gridRight: number }> =
+  {
+    sm: { width: 140, gridRight: 168 },
+    md: { width: 180, gridRight: 208 },
+    lg: { width: 220, gridRight: 248 },
+  };
+
 const props = withDefaults(
   defineProps<{
     /** Fully-built ECharts option; panels compute this from store DTOs. */
@@ -40,6 +54,8 @@ const props = withDefaults(
     empty?: boolean;
     /** Explicit height — ECharts needs a sized container to render. */
     height?: string;
+    /** Opt-in fixed legend column size for charts with a vertical legend. */
+    legendSize?: LegendSize;
   }>(),
   {
     loading: false,
@@ -59,10 +75,39 @@ const colorMode = useColorMode();
  * Update duration shortened from ECharts' ~1s default so polls feel snappy;
  * entrance keeps the default for a proper first-paint reveal.
  */
-const chartOption = computed<EChartsOption>(() => ({
-  animationDurationUpdate: 300,
-  ...props.option,
-}));
+const chartOption = computed<EChartsOption>(() => {
+  const option = {
+    animationDurationUpdate: 300,
+    ...props.option,
+  };
+  const legendSize = props.legendSize;
+
+  // Multi-grid and multi-legend charts manage their own geometry. The
+  // dashboard's time-series charts use one of each, which this layout keeps
+  // aligned without asking each panel to duplicate pixel values.
+  if (
+    !legendSize ||
+    !props.option.legend ||
+    Array.isArray(props.option.legend) ||
+    Array.isArray(props.option.grid)
+  ) {
+    return option;
+  }
+
+  const layout = legendLayouts[legendSize];
+  return {
+    ...option,
+    legend: {
+      ...props.option.legend,
+      align: "right",
+      width: layout.width,
+    },
+    grid: {
+      ...props.option.grid,
+      right: layout.gridRight,
+    },
+  };
+});
 
 /**
  * `loading` goes true on every poll, not just the first fetch (store's

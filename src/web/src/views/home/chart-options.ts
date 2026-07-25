@@ -241,6 +241,9 @@ export function timeSeriesOption(
           top: 8,
           bottom: 8,
           width: 140,
+          // Align labels to the legend column's inner edge so variable-length
+          // names share one clean vertical rail with their color swatches.
+          align: "right",
           formatter: seriesLabel,
         }
       : { show: false },
@@ -369,6 +372,7 @@ function donutOptionFromTotals(
   entries: { name: string; value: number }[],
   isDark: boolean,
   options: SeriesLabelOptions = {},
+  maxSlices = maxStackedSeries,
 ): EChartsOption {
   const seriesLabel = options.seriesLabel ?? identitySeriesLabel;
   const series: PieSeriesOption[] = [
@@ -388,7 +392,7 @@ function donutOptionFromTotals(
         formatter: (params) =>
           seriesLabel(String((params as { name: string }).name)),
       },
-      data: capPieData(entries),
+      data: capPieData(entries, maxSlices),
     },
   ];
 
@@ -407,6 +411,7 @@ function donutOptionFromTotals(
       top: 8,
       bottom: 8,
       width: 140,
+      align: "right",
       formatter: seriesLabel,
     },
     series,
@@ -448,6 +453,7 @@ export function volumeDonutOption(
 export function toolCallDonutOption(
   points: MetricSeriesPoint[],
   isDark: boolean,
+  maxSlices = maxStackedSeries,
 ): EChartsOption {
   return donutOptionFromTotals(
     totalsBySeriesKey(
@@ -456,6 +462,8 @@ export function toolCallDonutOption(
       (point) => toMetricNumber(point.value),
     ),
     isDark,
+    {},
+    maxSlices,
   );
 }
 
