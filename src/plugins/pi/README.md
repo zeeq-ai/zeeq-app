@@ -2,20 +2,15 @@
 
 This package installs the Pi lifecycle telemetry extension for Zeeq App. It subscribes to Pi session, prompt, agent, model, thinking-level, and tool lifecycle events, then posts normalized telemetry to Zeeq's REST import endpoint.
 
-## Install From This Repository's GitHub Package
+## Install
 
-This package is published to GitHub Packages from the `zeeq-ai/zeeq-app` repository as:
+This package is published to the public npm registry from the `zeeq-ai/zeeq-app` repository as:
 
 ```text
 @zeeq-ai/zeeq-app-pi-telemetry
 ```
 
-Configure npm to read Zeeq packages from GitHub Packages:
-
-```bash
-npm config set @zeeq-ai:registry https://npm.pkg.github.com
-npm config set //npm.pkg.github.com/:_authToken "$(gh auth token)"
-```
+<https://www.npmjs.com/package/@zeeq-ai/zeeq-app-pi-telemetry>
 
 ### Local Project Install (Preferred)
 
@@ -166,8 +161,10 @@ Publishing is handled by `.github/workflows/publish-pi-package.yml`. It runs on 
 
 1. `semantic-release-monorepo` filters the commit history to commits that changed files under `src/plugins/pi`, since the last `@zeeq-ai/zeeq-app-pi-telemetry@<version>` tag.
 2. `@semantic-release/commit-analyzer` inspects those filtered commits to decide whether a release is warranted and what bump it implies.
-3. If a release is warranted, `@semantic-release/npm` writes the computed version into this job's checked-out `package.json` (that write is never pushed anywhere) and runs `npm publish` (honoring `publishConfig`).
-4. `@semantic-release/github` pushes the `@zeeq-ai/zeeq-app-pi-telemetry@<version>` git tag and creates a GitHub Release with generated notes.
+3. If a release is warranted, `@semantic-release/github` pushes the `@zeeq-ai/zeeq-app-pi-telemetry@<version>` git tag and creates a GitHub Release with generated notes. semantic-release does **not** publish to any registry itself — `@semantic-release/npm` is deliberately absent from `.releaserc.json`.
+4. The workflow then resolves the latest `@zeeq-ai/zeeq-app-pi-telemetry@<version>` git tag and checks whether `registry.npmjs.org` already has that version. If not, it restores `src/plugins/pi` from the tagged commit (so a retry publishes the contents that were tagged, not whatever newer commit triggered the rerun), writes the tag's version into `package.json` (overriding the `0.0.0` placeholder), and runs `npm publish`. The publish authenticates via npm's [trusted publishing](https://docs.npmjs.com/trusted-publishers) (GitHub Actions OIDC) rather than a stored token — the `@zeeq-ai` npm org must have this workflow file registered as a trusted publisher for `@zeeq-ai/zeeq-app-pi-telemetry`.
+
+   The publish is intentionally gated on the git tag and the npm registry's actual state, not on whether *this* run released — the tag is pushed before the registry publish is attempted, so a run whose npm publish fails still leaves the tag behind. A later rerun (`workflow_dispatch`, or the next push) sees no new commits and releases nothing, but this step still finds the tagged version missing from npmjs.org and republishes it, closing the gap a plain "did this run's version change" check would miss.
 
 Nothing is committed back to `main` and no PR is opened at any point.
 
