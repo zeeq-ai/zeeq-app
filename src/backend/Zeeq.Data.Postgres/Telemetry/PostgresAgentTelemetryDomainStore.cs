@@ -311,7 +311,7 @@ internal sealed class PostgresAgentTelemetryDomainStore(PostgresDbContext db)
             RemoveNulCharacters(e.McpServer),
             RemoveNulCharacters(e.McpServerOrigin),
             RemoveNulCharacters(e.McpServerScope),
-            RemoveNulCharacters(e.ArgumentsJson),
+            CloneWithNulCharactersRemoved(e.ArgumentsJson),
             RemoveNulCharacters(e.OutputSnippet),
             e.Success,
             e.DurationMs,
@@ -347,7 +347,7 @@ internal sealed class PostgresAgentTelemetryDomainStore(PostgresDbContext db)
         value.Contains('\0') ? value.Replace("\0", string.Empty) : value;
 
     /// <summary>
-    /// Removes NUL characters from JSON object keys and string values.
+    /// Clones JSON arguments after removing NUL characters from object keys and string values.
     /// </summary>
     /// <remarks>
     /// JSONB can contain arbitrary nested tool arguments, so normalizing only top-level event
@@ -355,7 +355,11 @@ internal sealed class PostgresAgentTelemetryDomainStore(PostgresDbContext db)
     /// insert batch. NUL-bearing property names follow the same intentional collision policy as
     /// other telemetry strings.
     /// </remarks>
-    private static JsonElement? RemoveNulCharacters(JsonDocument? document)
+    /// <returns>
+    /// <see langword="null"/> when arguments are absent; otherwise, an independently owned
+    /// <see cref="JsonElement"/> safe to use after the source document is disposed.
+    /// </returns>
+    private static JsonElement? CloneWithNulCharactersRemoved(JsonDocument? document)
     {
         if (document is null)
         {
