@@ -31,6 +31,7 @@
           :option="tokenByModelOption"
           :loading="loadingActiveTokenByModel"
           :empty="activeTokenByModelSeriesLength === 0"
+          legend-size="md"
         />
       </UCard>
 
@@ -156,6 +157,7 @@
           :option="costUsdOption"
           :loading="loadingCostUsd"
           :empty="agentCostUsdSeries.length === 0"
+          legend-size="lg"
         />
       </UCard>
     </div>

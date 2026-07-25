@@ -60,8 +60,14 @@
         :next-cursor="findingReviewNextCursor"
         :loading-by-severity="findingReviewsLoading"
         :loading-more-by-severity="findingReviewsLoadingMore"
-        @load="(severity, windowToken) => emits('loadFindingReviews', severity, windowToken)"
-        @load-more="(severity, windowToken) => emits('loadMoreFindingReviews', severity, windowToken)"
+        @load="
+          (severity, windowToken) =>
+            emits('loadFindingReviews', severity, windowToken)
+        "
+        @load-more="
+          (severity, windowToken) =>
+            emits('loadMoreFindingReviews', severity, windowToken)
+        "
       />
 
       <!-- User + tool multi-select filters scope all four tool-call panels below. -->
@@ -282,7 +288,7 @@ const userAgentOption = computed(() =>
 
 /** Donut of total tool calls by tool name (aggregate mix, no time dimension). */
 const toolCallByToolOption = computed(() =>
-  toolCallDonutOption(props.toolCallByToolSeries, isDark.value),
+  toolCallDonutOption(props.toolCallByToolSeries, isDark.value, 20),
 );
 
 /**
@@ -291,7 +297,7 @@ const toolCallByToolOption = computed(() =>
  * (no separate fetch).
  */
 const toolCallByToolTrendOption = computed(() =>
-  timeSeriesOption(pivot(props.toolCallByToolSeries)),
+  timeSeriesOption(pivot(props.toolCallByToolSeries), { maxSeries: 20 }),
 );
 
 /** Pivots a counter series onto the shared bucket axis, filled across the full window. */
