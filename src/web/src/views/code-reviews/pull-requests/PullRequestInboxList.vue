@@ -129,64 +129,57 @@
     <div v-else class="min-h-0 flex-1 overflow-y-auto divide-y divide-default">
       <!-- PR rows stay button-based so selection is fast and accessible. -->
       <button
-        v-for="pullRequest in pullRequests"
-        :key="pullRequest.id"
+        v-for="row in inboxRows"
+        :key="row.pullRequest.id"
         type="button"
         class="grid w-full cursor-pointer gap-1.5 border-l-2 px-4 py-3 text-left text-sm transition-colors sm:px-6"
-        :class="
-          pullRequest.id === selectedPullRequestId
-            ? 'border-l-primary bg-primary/10'
-            : 'border-l-transparent hover:border-l-primary hover:bg-primary/5'
-        "
-        @click="emits('select', pullRequest)"
+        :class="row.classes"
+        @click="emits('select', row.pullRequest)"
       >
         <div class="flex min-w-0 items-start justify-between gap-3">
           <div class="min-w-0 flex-1 overflow-hidden">
             <div class="flex items-center gap-2">
               <span
                 class="block min-w-0 max-w-full truncate text-[13px] text-highlighted transition-opacity"
-                :class="
-                  hasUnreadState(pullRequest)
-                    ? 'font-bold opacity-100'
-                    : 'font-semibold opacity-60'
-                "
+                :class="row.titleClasses"
               >
-                #{{ pullRequest.pullRequestNumber }}
-                {{ pullRequest.title }}
+                #{{ row.pullRequest.pullRequestNumber }}
+                {{ row.pullRequest.title }}
               </span>
-              <UBadge
-                v-if="pullRequest.isDraft"
-                label="Draft"
-                color="neutral"
-                variant="subtle"
-                size="sm"
-                class="rounded-full"
-              />
             </div>
             <p class="mt-0.5 truncate text-xs leading-4 text-muted">
-              {{ pullRequest.ownerQualifiedRepoName }}
+              {{ row.pullRequest.ownerQualifiedRepoName }}
             </p>
           </div>
 
-          <!--
-          <UBadge
-            :label="pullRequest.claimStatus"
-            :color="
-              pullRequest.claimStatus === 'Claimed' ? 'success' : 'neutral'
-            "
-            size="sm"
-            variant="subtle"
-            class="rounded-full"
-          />
-          -->
+          <div class="flex shrink-0 items-center gap-1">
+            <UBadge
+              v-if="row.pullRequest.isDraft"
+              label="Draft"
+              leading-icon="i-hugeicons-git-pull-request-draft"
+              color="neutral"
+              variant="subtle"
+              size="sm"
+              class="rounded-full"
+            />
+            <UBadge
+              v-if="row.showLifecycleStatus"
+              :label="row.pullRequest.state"
+              :leading-icon="row.lifecycleIcon"
+              color="neutral"
+              variant="subtle"
+              size="sm"
+              class="rounded-full"
+            />
+          </div>
         </div>
 
         <div class="flex min-w-0 items-center justify-between gap-3">
           <p class="truncate text-xs leading-4 text-muted">
-            {{ pullRequest.authorLogin }}
+            {{ row.pullRequest.authorLogin }}
           </p>
           <span class="shrink-0 text-xs leading-4 text-muted">
-            {{ formatDate(pullRequest.updatedAtUtc) }}
+            {{ formatDate(row.pullRequest.updatedAtUtc) }}
           </span>
         </div>
       </button>
@@ -214,6 +207,7 @@ import { storeToRefs } from "pinia";
 import type { TabsItem } from "@nuxt/ui";
 import {
   codeReviewInboxScopeEnum,
+  pullRequestStateEnum,
   type CodeReviewInboxScope,
   type CodeReviewPullRequestDto,
 } from "@/api/generated";
@@ -290,6 +284,52 @@ const aliasPopoverOpenDelay = computed(() =>
   hasGitHubAlias.value ? 2_147_483_647 : 300,
 );
 
+type PullRequestInboxRow = {
+  pullRequest: CodeReviewPullRequestDto;
+  classes: string[];
+  titleClasses: string[];
+  showLifecycleStatus: boolean;
+  lifecycleIcon: string | undefined;
+};
+
+const inactiveTextClasses = [
+  "!text-zinc-700",
+  "[&_*]:!text-zinc-700",
+  "[&_p]:opacity-40",
+  "[&_span]:opacity-50",
+  "dark:!text-zinc-300",
+  "dark:[&_*]:!text-zinc-300",
+];
+
+const inactiveSelectedClasses = [
+  "!border-l-zinc-400",
+  "!bg-zinc-100",
+  "dark:!border-l-zinc-600",
+  "dark:!bg-zinc-800",
+];
+
+const inactiveClasses = ["!bg-zinc-50", "dark:!bg-zinc-850"];
+const inactiveHoverClasses = [
+  "hover:!border-l-zinc-300",
+  "hover:!bg-zinc-100",
+  "dark:hover:!border-l-zinc-700",
+  "dark:hover:!bg-zinc-800",
+];
+
+const activeClasses = ["border-l-primary", "bg-primary/10"];
+const defaultClasses = [
+  "border-l-transparent",
+  "hover:border-l-primary",
+  "hover:bg-primary/5",
+];
+
+/** Cached template-ready projection keeps row state and styling out of the markup. */
+const inboxRows = computed(() =>
+  props.pullRequests.map((pullRequest) =>
+    toInboxRow(pullRequest, props.selectedPullRequestId),
+  ),
+);
+
 watch(
   () => props.pullRequestNumberFilter,
   (val) => {
@@ -347,5 +387,54 @@ function inboxUiState(
 
 function hasUnreadState(pullRequest: CodeReviewPullRequestDto): boolean {
   return inboxUiState(pullRequest)?.unreadAtUtc !== null;
+}
+
+/** Projects API and local inbox state into the compact row shape rendered by the template. */
+function toInboxRow(
+  pullRequest: CodeReviewPullRequestDto,
+  selectedPullRequestId: string | null,
+): PullRequestInboxRow {
+  const isInactive =
+    pullRequest.state !== pullRequestStateEnum.Open && !pullRequest.isDraft;
+  const isSelected = pullRequest.id === selectedPullRequestId;
+  const hasUnread = hasUnreadState(pullRequest);
+  const classes: string[] = [];
+
+  if (isInactive) {
+    classes.push(...inactiveTextClasses);
+
+    if (isSelected) {
+      classes.push(...inactiveSelectedClasses);
+    } else {
+      classes.push(...inactiveClasses, ...inactiveHoverClasses);
+    }
+  } else if (isSelected) {
+    classes.push(...activeClasses);
+  } else {
+    classes.push(...defaultClasses);
+  }
+
+  return {
+    pullRequest,
+    classes,
+    titleClasses: [
+      hasUnread ? "font-bold opacity-100" : "font-semibold opacity-60",
+      ...(isInactive ? ["italic"] : []),
+    ],
+    showLifecycleStatus: pullRequest.state !== pullRequestStateEnum.Open,
+    lifecycleIcon: lifecycleIcon(pullRequest),
+  };
+}
+
+/** Uses provider lifecycle icons to make terminal PR states scannable. */
+function lifecycleIcon(pullRequest: CodeReviewPullRequestDto): string | undefined {
+  switch (pullRequest.state) {
+    case pullRequestStateEnum.Closed:
+      return "i-hugeicons-git-pull-request-closed";
+    case pullRequestStateEnum.Merged:
+      return "i-hugeicons-git-merge";
+    default:
+      return undefined;
+  }
 }
 </script>
