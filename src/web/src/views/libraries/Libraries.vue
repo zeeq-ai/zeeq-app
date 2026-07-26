@@ -38,6 +38,8 @@
         @add="onAddDocumentAt"
         @rename="onRenameDocument"
         @delete="onDeleteDocument"
+        @toggle-review-exclusion="onToggleReviewExclusion"
+        @toggle-scoped-skill="onToggleScopedSkill"
         @refresh="onRefreshDocuments"
       />
 
@@ -78,6 +80,7 @@
         @review="openDiff"
         @preview-parse="onPreviewParse"
         @toggle-review-exclusion="onToggleReviewExclusion"
+        @toggle-scoped-skill="onToggleScopedSkill"
       />
     </div>
 
@@ -146,6 +149,8 @@ import { useGitHubSettingsStore } from "@/stores/github-settings-store";
 import type { MetricWindowToken } from "@/stores/metrics-store";
 import type { LibraryResponse } from "@/api/generated/types/LibraryResponse";
 import type { IngestRunPageResponse } from "@/api/generated/types/IngestRunPageResponse";
+import { libraryDocumentScopedSkillEnum } from "@/api/generated/types/LibraryDocumentScopedSkill";
+import type { LibraryDocumentScopedSkill } from "@/api/generated/types/LibraryDocumentScopedSkill";
 import LibrarySelector from "./LibrarySelector.vue";
 import LibraryFormSlideover from "./LibraryFormSlideover.vue";
 import DocumentTree from "./DocumentTree.vue";
@@ -679,6 +684,28 @@ async function onToggleReviewExclusion(documentId: string, excluded: boolean) {
     toast.add({
       title: "Error updating document",
       description: err?.message ?? "Failed to update code-review exclusion",
+      color: "error",
+    });
+  }
+}
+
+async function onToggleScopedSkill(
+  documentId: string,
+  asScopedSkill: LibraryDocumentScopedSkill,
+) {
+  try {
+    await store.setScopedSkill(documentId, asScopedSkill);
+    toast.add({
+      title:
+        asScopedSkill === libraryDocumentScopedSkillEnum.Organization
+          ? "Organization skill enabled"
+          : "Organization skill removed",
+      color: "success",
+    });
+  } catch (err: any) {
+    toast.add({
+      title: "Error updating document",
+      description: err?.message ?? "Failed to update scoped-skill status",
       color: "error",
     });
   }

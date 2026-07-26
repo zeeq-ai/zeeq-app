@@ -764,6 +764,95 @@ public sealed class DocumentEndpointHandlerTests
         await Assert.That(result.Result is BadRequest<DocumentError>).IsTrue();
     }
 
+    // ── SetDocumentScopedSkillHandler tests ─────────────────────────────
+
+    [Test]
+    public async Task SetScopedSkill_LocalDocument_TogglesOrganizationScope()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(TestDocument());
+        var handler = new SetDocumentScopedSkillHandler(store);
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            new SetDocumentScopedSkillRequest("doc_123", LibraryDocumentScopedSkill.Organization),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<DocumentResponse>;
+
+        await Assert.That(ok).IsNotNull();
+        await Assert
+            .That(ok!.Value!.AsScopedSkill)
+            .IsEqualTo(LibraryDocumentScopedSkill.Organization);
+        await Assert
+            .That(store.Documents.Single().AsScopedSkill)
+            .IsEqualTo(LibraryDocumentScopedSkill.Organization);
+
+        var cleared = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            new SetDocumentScopedSkillRequest("doc_123", LibraryDocumentScopedSkill.None),
+            CancellationToken.None
+        );
+
+        var clearedOk = cleared.Result as Ok<DocumentResponse>;
+
+        await Assert.That(clearedOk).IsNotNull();
+        await Assert
+            .That(clearedOk!.Value!.AsScopedSkill)
+            .IsEqualTo(LibraryDocumentScopedSkill.None);
+        await Assert
+            .That(store.Documents.Single().AsScopedSkill)
+            .IsEqualTo(LibraryDocumentScopedSkill.None);
+    }
+
+    [Test]
+    public async Task SetScopedSkill_SyncedDocument_AllowsOrganizationScope()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(TestDocument(syncRunId: "run_123"));
+        var handler = new SetDocumentScopedSkillHandler(store);
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            new SetDocumentScopedSkillRequest("doc_123", LibraryDocumentScopedSkill.Organization),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<DocumentResponse>;
+
+        await Assert.That(ok).IsNotNull();
+        await Assert
+            .That(ok!.Value!.AsScopedSkill)
+            .IsEqualTo(LibraryDocumentScopedSkill.Organization);
+    }
+
+    [Test]
+    public async Task SetScopedSkill_UnsupportedScope_Returns400()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(TestDocument());
+        var handler = new SetDocumentScopedSkillHandler(store);
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            new SetDocumentScopedSkillRequest("doc_123", LibraryDocumentScopedSkill.Library),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result is BadRequest<DocumentError>).IsTrue();
+        await Assert
+            .That(store.Documents.Single().AsScopedSkill)
+            .IsEqualTo(LibraryDocumentScopedSkill.None);
+    }
+
     // ── Library import/export handler tests ─────────────────────────────
 
     [Test]
@@ -1518,6 +1607,31 @@ public sealed class DocumentEndpointHandlerTests
             }
 
             document.ExcludedFromCodeReviews = excluded;
+            document.UpdatedAt = DateTimeOffset.UtcNow;
+
+            return Task.FromResult<LibraryDocument?>(document);
+        }
+
+        public Task<LibraryDocument?> SetScopedSkillAsync(
+            string organizationId,
+            string libraryId,
+            string documentId,
+            LibraryDocumentScopedSkill scopedSkill,
+            CancellationToken ct
+        )
+        {
+            var document = Documents.FirstOrDefault(row =>
+                row.OrganizationId == organizationId
+                && row.LibraryId == libraryId
+                && row.Id == documentId
+            );
+
+            if (document is null)
+            {
+                return Task.FromResult<LibraryDocument?>(null);
+            }
+
+            document.AsScopedSkill = scopedSkill;
             document.UpdatedAt = DateTimeOffset.UtcNow;
 
             return Task.FromResult<LibraryDocument?>(document);

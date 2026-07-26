@@ -23,6 +23,8 @@ import type { UpdateLibraryRepositoryMappingsRequest } from "@/api/generated/typ
 import type { UpsertDocumentRequest } from "@/api/generated/types/UpsertDocumentRequest";
 import type { RenameDocumentRequest } from "@/api/generated/types/RenameDocumentRequest";
 import type { SetDocumentReviewExclusionRequest } from "@/api/generated/types/SetDocumentReviewExclusionRequest";
+import type { SetDocumentScopedSkillRequest } from "@/api/generated/types/SetDocumentScopedSkillRequest";
+import type { LibraryDocumentScopedSkill } from "@/api/generated/types/LibraryDocumentScopedSkill";
 import type { TriggerIngestRunResponse } from "@/api/generated/types/TriggerIngestRunResponse";
 import type { IngestRunPageResponse } from "@/api/generated/types/IngestRunPageResponse";
 import type { ResetLibraryIngestRunStateResponse } from "@/api/generated/types/ResetLibraryIngestRunStateResponse";
@@ -501,6 +503,34 @@ export const useLibraryStore = defineStore("library", () => {
     }
   }
 
+  /**
+   * Sets or clears a document's scoped-skill status. The current API only allows
+   * None and Organization, but the generated type already reflects the persisted enum.
+   */
+  async function setScopedSkill(
+    documentId: string,
+    asScopedSkill: LibraryDocumentScopedSkill,
+  ) {
+    if (!activeLibraryName.value) {
+      return;
+    }
+
+    const request: SetDocumentScopedSkillRequest = {
+      documentId,
+      asScopedSkill,
+    };
+    await LibraryDocuments.setLibraryDocumentScopedSkill(
+      orgId.value,
+      activeLibraryName.value,
+      request,
+    );
+    await loadDocuments();
+
+    if (loadedDocument.value?.id === documentId) {
+      await openDocument(loadedDocument.value.path);
+    }
+  }
+
   /** Runs a keyword search in the active library for the "Test" panel. */
   async function testSearch(query: string, limit = 10) {
     if (!activeLibraryName.value) {
@@ -630,6 +660,7 @@ export const useLibraryStore = defineStore("library", () => {
     deleteDocument,
     renameDocument,
     setReviewExclusion,
+    setScopedSkill,
     testSearch,
     testSnippetSearch,
     previewDocumentParse,

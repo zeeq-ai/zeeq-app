@@ -189,6 +189,34 @@
             size="xs"
           />
 
+          <UBadge
+            v-if="isOrganizationSkill"
+            label="Organization skill"
+            color="primary"
+            variant="soft"
+            size="xs"
+          />
+
+          <UTooltip
+            v-if="document"
+            :text="
+              isOrganizationSkill
+                ? 'Remove organization skill'
+                : 'Use as organization skill'
+            "
+            :content="{ side: 'bottom' }"
+            :delay-duration="0"
+          >
+            <UButton
+              icon="i-hugeicons-ai-file"
+              size="xs"
+              :color="isOrganizationSkill ? 'primary' : 'neutral'"
+              variant="ghost"
+              aria-label="Toggle organization skill"
+              @click="emits('toggleScopedSkill', document.id, nextScopedSkill)"
+            />
+          </UTooltip>
+
           <!--
           Toggle code-review exclusion (local documents only — synced/remote docs are
           rejected by the API and a sync run owns their lifecycle). Reversible, so no
@@ -291,6 +319,8 @@ import { MdEditor } from "md-editor-v3";
 import "md-editor-v3/lib/style.css";
 import type { CompletionSource } from "@codemirror/autocomplete";
 import type { DocumentContentResponse } from "@/api/generated/types/DocumentContentResponse";
+import { libraryDocumentScopedSkillEnum } from "@/api/generated/types/LibraryDocumentScopedSkill";
+import type { LibraryDocumentScopedSkill } from "@/api/generated/types/LibraryDocumentScopedSkill";
 import { useClipboard } from "@vueuse/core";
 import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 import { useMarkdownEditorTheme } from "@/composables/useMarkdownEditorTheme";
@@ -323,6 +353,11 @@ const emits = defineEmits<{
   previewParse: [path: string];
   /** path + desired exclusion state; API call handled by the root view. */
   toggleReviewExclusion: [documentId: string, excluded: boolean];
+  /** document id + desired scoped-skill state; API call handled by the root view. */
+  toggleScopedSkill: [
+    documentId: string,
+    asScopedSkill: LibraryDocumentScopedSkill,
+  ];
 }>();
 
 const store = useLibraryStore();
@@ -369,6 +404,18 @@ const canReview = computed(
 
 /** Read-only gate: remote documents cannot be edited. */
 const readonly = computed(() => props.document?.origin === "remote");
+
+const isOrganizationSkill = computed(
+  () =>
+    props.document?.asScopedSkill ===
+    libraryDocumentScopedSkillEnum.Organization,
+);
+
+const nextScopedSkill = computed<LibraryDocumentScopedSkill>(() =>
+  isOrganizationSkill.value
+    ? libraryDocumentScopedSkillEnum.None
+    : libraryDocumentScopedSkillEnum.Organization,
+);
 
 // ── New document path inputs ────────────────────────────────────────────
 

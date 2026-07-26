@@ -187,6 +187,30 @@ public sealed class DocumentEndpoints : IEndpoint
                 """
             );
 
+        // POST /api/v1/orgs/{orgId}/libraries/{name}/documents/scoped-skill
+        group
+            .MapPost(
+                "/scoped-skill",
+                static (
+                    string orgId,
+                    string name,
+                    SetDocumentScopedSkillRequest request,
+                    [FromServices] SetDocumentScopedSkillHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, name, request, ct)
+            )
+            .WithName("SetLibraryDocumentScopedSkill")
+            .Produces<DocumentResponse>()
+            .Produces<DocumentError>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("Set scoped skill.")
+            .WithDescription(
+                """
+                Sets or clears a document's organization-scoped skill status. The request is
+                currently a binary toggle and accepts only None or Organization.
+                """
+            );
+
         // POST /api/v1/orgs/{orgId}/libraries/{name}/documents/rename  (D-3)
         group
             .MapPost(

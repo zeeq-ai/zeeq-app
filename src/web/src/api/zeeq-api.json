@@ -2863,6 +2863,69 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/libraries/{name}/documents/scoped-skill": {
+      "post": {
+        "tags": [
+          "Library Documents"
+        ],
+        "summary": "Set scoped skill.",
+        "description": "Sets or clears a document's organization-scoped skill status. The request is\ncurrently a binary toggle and accepts only None or Organization.",
+        "operationId": "SetLibraryDocumentScopedSkill",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDocumentScopedSkillRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/libraries/{name}/documents/rename": {
       "post": {
         "tags": [
@@ -8063,6 +8126,8 @@
           "processingStatus",
           "origin",
           "excludedFromCodeReviews",
+          "asScopedSkill",
+          "metadata",
           "content",
           "createdAt",
           "updatedAt"
@@ -8116,6 +8181,21 @@
             "type": "boolean",
             "description": "True when the document is hidden from list/search results on the code-review execution path.\nDrives the editor's exclusion toggle state; always false for remote documents (v1)."
           },
+          "asScopedSkill": {
+            "description": "Scope at which the document is available as a skill.",
+            "$ref": "#/components/schemas/LibraryDocumentScopedSkill"
+          },
+          "metadata": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "Optional user-authored document metadata.",
+                "$ref": "#/components/schemas/DocumentMetadata"
+              }
+            ]
+          },
           "content": {
             "type": "string",
             "description": "Full markdown body."
@@ -8145,6 +8225,30 @@
           }
         },
         "description": "Error response for document endpoint validation failures."
+      },
+      "DocumentMetadata": {
+        "required": [
+          "description",
+          "titleOverride"
+        ],
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Short description used when the document is presented as a skill."
+          },
+          "titleOverride": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Optional title shown instead of the parsed document title."
+          }
+        },
+        "description": "Optional user-authored metadata associated with a library document."
       },
       "DocumentParsePreviewResponse": {
         "required": [
@@ -8261,6 +8365,8 @@
           "processingStatus",
           "origin",
           "excludedFromCodeReviews",
+          "asScopedSkill",
+          "metadata",
           "createdAt",
           "updatedAt"
         ],
@@ -8312,6 +8418,21 @@
           "excludedFromCodeReviews": {
             "type": "boolean",
             "description": "True when the document is hidden from list/search results on the code-review execution path\n(operational/informational content reviewers must not consult). Always false for remote\ndocuments — v1 scopes exclusion to hand-authored documents."
+          },
+          "asScopedSkill": {
+            "description": "Scope at which the document is available as a skill.",
+            "$ref": "#/components/schemas/LibraryDocumentScopedSkill"
+          },
+          "metadata": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "Optional user-authored document metadata.",
+                "$ref": "#/components/schemas/DocumentMetadata"
+              }
+            ]
           },
           "createdAt": {
             "type": "string",
@@ -9020,6 +9141,16 @@
           }
         },
         "description": "Pending organization invitation returned by membership endpoints."
+      },
+      "LibraryDocumentScopedSkill": {
+        "enum": [
+          "None",
+          "Organization",
+          "Library",
+          "Repository",
+          "User"
+        ],
+        "description": "Scope at which a library document is available as a skill."
       },
       "LibraryError": {
         "required": [
@@ -10769,6 +10900,25 @@
           }
         },
         "description": "Request body to set or clear a document's code-review exclusion flag."
+      },
+      "SetDocumentScopedSkillRequest": {
+        "required": [
+          "documentId",
+          "asScopedSkill"
+        ],
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "maxLength": 128,
+            "type": "string",
+            "description": "Stable document identifier for the loaded document to update."
+          },
+          "asScopedSkill": {
+            "description": "Desired scoped-skill status.",
+            "$ref": "#/components/schemas/LibraryDocumentScopedSkill"
+          }
+        },
+        "description": "Request body to set or clear a document's scoped-skill status."
       },
       "SlugCheckResponse": {
         "required": [

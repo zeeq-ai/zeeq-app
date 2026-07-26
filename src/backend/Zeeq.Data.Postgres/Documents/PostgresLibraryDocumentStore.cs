@@ -959,6 +959,44 @@ internal sealed class PostgresLibraryDocumentStore(
     }
 
     /// <inheritdoc />
+    public async Task<LibraryDocument?> SetScopedSkillAsync(
+        string organizationId,
+        string libraryId,
+        string documentId,
+        LibraryDocumentScopedSkill scopedSkill,
+        CancellationToken ct
+    )
+    {
+        var document = await GetByIdAsync(organizationId, libraryId, documentId, ct);
+        if (document is null)
+        {
+            return null;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await db
+            .LibraryDocuments.TagWithOperationCallSite(
+                "documents.library_document.set_scoped_skill"
+            )
+            .Where(row =>
+                row.OrganizationId == document.OrganizationId
+                && row.LibraryId == document.LibraryId
+                && row.Id == document.Id
+            )
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(row => row.AsScopedSkill, scopedSkill)
+                        .SetProperty(row => row.UpdatedAt, now),
+                ct
+            );
+
+        document.AsScopedSkill = scopedSkill;
+        document.UpdatedAt = now;
+        return document;
+    }
+
+    /// <inheritdoc />
     public async Task<LibraryDocument?> MoveDocumentAsync(
         string organizationId,
         string libraryId,
