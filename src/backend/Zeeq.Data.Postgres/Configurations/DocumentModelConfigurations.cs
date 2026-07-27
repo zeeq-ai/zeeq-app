@@ -129,6 +129,20 @@ internal sealed class LibraryDocumentConfiguration : IEntityTypeConfiguration<Li
             .IsRequired()
             .HasDefaultValue(false);
 
+        entity.OwnsOne(
+            document => document.Metadata,
+            metadata =>
+            {
+                metadata.ToJson("metadata");
+                metadata.Property(value => value.Description).HasMaxLength(4096);
+                metadata.Property(value => value.TitleOverride).HasMaxLength(512);
+            }
+        );
+        entity
+            .Property(document => document.AsScopedSkill)
+            .IsRequired()
+            .HasDefaultValue(LibraryDocumentScopedSkill.None);
+
         entity.Property(document => document.CreatedAt).IsRequired();
         entity.Property(document => document.UpdatedAt).IsRequired();
 
@@ -159,6 +173,13 @@ internal sealed class LibraryDocumentConfiguration : IEntityTypeConfiguration<Li
             document.OrganizationId,
             document.LibraryId,
             document.SyncRunId,
+        });
+
+        entity.HasIndex(document => new
+        {
+            document.OrganizationId,
+            document.AsScopedSkill,
+            document.LibraryId,
         });
 
         // Supports the move-detection hash lookup in UpsertSyncedDocumentAsync

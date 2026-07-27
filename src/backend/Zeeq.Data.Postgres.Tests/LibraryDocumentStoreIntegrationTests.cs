@@ -685,6 +685,90 @@ public sealed class LibraryDocumentStoreIntegrationTests : PgTransactionalTestBa
         await Assert.That(result).IsNull();
     }
 
+    [Test]
+    public async Task SetScopedSkill_TogglesStatusAndPersists()
+    {
+        var (store, organizationId, library) = await CreateStoreWithLibraryAsync();
+        var document = await CreateDocumentAsync(
+            store,
+            organizationId,
+            library.Id,
+            "/guides/skill.md",
+            title: "Skill",
+            content: "Skill guidance."
+        );
+        _context.ChangeTracker.Clear();
+
+        var marked = await store.SetScopedSkillAsync(
+            organizationId,
+            library.Id,
+            document.Id,
+            LibraryDocumentScopedSkill.Organization,
+            default
+        );
+        _context.ChangeTracker.Clear();
+        var reloadedMarked = await store.GetByPathAsync(
+            organizationId,
+            library.Id,
+            document.Path,
+            default
+        );
+
+        await Assert.That(marked?.AsScopedSkill).IsEqualTo(LibraryDocumentScopedSkill.Organization);
+        await Assert
+            .That(reloadedMarked?.AsScopedSkill)
+            .IsEqualTo(LibraryDocumentScopedSkill.Organization);
+
+        var cleared = await store.SetScopedSkillAsync(
+            organizationId,
+            library.Id,
+            document.Id,
+            LibraryDocumentScopedSkill.None,
+            default
+        );
+        _context.ChangeTracker.Clear();
+        var reloadedCleared = await store.GetByPathAsync(
+            organizationId,
+            library.Id,
+            document.Path,
+            default
+        );
+
+        await Assert.That(cleared?.AsScopedSkill).IsEqualTo(LibraryDocumentScopedSkill.None);
+        await Assert
+            .That(reloadedCleared?.AsScopedSkill)
+            .IsEqualTo(LibraryDocumentScopedSkill.None);
+    }
+
+    [Test]
+    public async Task Metadata_RoundTripsAsNullableJson()
+    {
+        var (store, organizationId, library) = await CreateStoreWithLibraryAsync();
+        var document = await CreateDocumentAsync(
+            store,
+            organizationId,
+            library.Id,
+            "/guides/metadata.md",
+            title: "Metadata",
+            content: "Metadata guidance.",
+            metadata: new DocumentMetadata(
+                Description: "Skill description.",
+                TitleOverride: "Custom skill title"
+            )
+        );
+        _context.ChangeTracker.Clear();
+
+        var reloaded = await store.GetByPathAsync(
+            organizationId,
+            library.Id,
+            document.Path,
+            default
+        );
+
+        await Assert.That(reloaded?.Metadata?.Description).IsEqualTo("Skill description.");
+        await Assert.That(reloaded?.Metadata?.TitleOverride).IsEqualTo("Custom skill title");
+    }
+
     /// <summary>
     /// Builds a store whose scope is marked as code-review execution — the same marking
     /// <c>CodeReviewAgentExecutor.MarkCodeReviewExecutionScope</c> applies per tool invocation.
@@ -734,7 +818,8 @@ public sealed class LibraryDocumentStoreIntegrationTests : PgTransactionalTestBa
         string content,
         string? titleNormalized = null,
         string[]? keywords = null,
-        string[]? headings = null
+        string[]? headings = null,
+        DocumentMetadata? metadata = null
     )
     {
         var now = DateTimeOffset.UtcNow;
@@ -753,6 +838,7 @@ public sealed class LibraryDocumentStoreIntegrationTests : PgTransactionalTestBa
                 ProcessingStatus = DocumentProcessingStatus.Pending,
                 TokenCount = content.Length,
                 ContentHash = SeedContext.NewId("hash"),
+                Metadata = metadata,
                 CreatedAt = now,
                 UpdatedAt = now,
             },

@@ -1,5 +1,5 @@
-using Zeeq.Core.Documents;
 using Microsoft.Extensions.Caching.Hybrid;
+using Zeeq.Core.Documents;
 
 namespace Zeeq.Data.Postgres.Documents;
 
@@ -345,6 +345,30 @@ internal sealed class CachedLibraryDocumentStore(ILibraryDocumentStore inner, Hy
             ct
         );
 
+        if (updated is not null)
+        {
+            await cache.RemoveByTagAsync(LibraryPathCacheTag(organizationId, libraryId), ct);
+        }
+
+        return updated;
+    }
+
+    /// <inheritdoc />
+    public async Task<LibraryDocument?> SetScopedSkillAsync(
+        string organizationId,
+        string libraryId,
+        string documentId,
+        LibraryDocumentScopedSkill scopedSkill,
+        CancellationToken ct
+    )
+    {
+        var updated = await inner.SetScopedSkillAsync(
+            organizationId,
+            libraryId,
+            documentId,
+            scopedSkill,
+            ct
+        );
         if (updated is not null)
         {
             await cache.RemoveByTagAsync(LibraryPathCacheTag(organizationId, libraryId), ct);

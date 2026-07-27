@@ -128,6 +128,16 @@ public class LibraryDocument
     public bool ExcludedFromCodeReviews { get; set; }
 
     /// <summary>
+    /// Optional user-authored metadata for presenting this document as a skill.
+    /// </summary>
+    public DocumentMetadata? Metadata { get; set; }
+
+    /// <summary>
+    /// Scope at which this document is available as a skill.
+    /// </summary>
+    public LibraryDocumentScopedSkill AsScopedSkill { get; set; }
+
+    /// <summary>
     /// Timestamp when the document was created.
     /// </summary>
     public DateTimeOffset CreatedAt { get; init; }

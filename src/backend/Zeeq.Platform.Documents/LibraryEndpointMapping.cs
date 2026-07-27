@@ -134,12 +134,14 @@ public static class LibraryEndpointMapping
             document.Id,
             document.Path,
             document.Title,
-            document.Keywords,   // NOTE: non-nullable; LibraryDocument initializes both to []
+            document.Keywords, // NOTE: non-nullable; LibraryDocument initializes both to []
             document.Headings,
             document.TokenCount,
             document.ProcessingStatus.ToString(),
             OriginOf(document),
             document.ExcludedFromCodeReviews,
+            document.AsScopedSkill,
+            document.Metadata,
             document.CreatedAt,
             document.UpdatedAt
         );
@@ -160,6 +162,8 @@ public static class LibraryEndpointMapping
             document.ProcessingStatus.ToString(),
             OriginOf(document),
             document.ExcludedFromCodeReviews,
+            document.AsScopedSkill,
+            document.Metadata,
             document.Content,
             document.CreatedAt,
             document.UpdatedAt
@@ -182,6 +186,8 @@ public static class LibraryEndpointMapping
             // Public documents cannot be review-excluded in v1 — the flag lives on the per-org
             // library document row, and shared public rows have no per-org override.
             ExcludedFromCodeReviews: false,
+            AsScopedSkill: LibraryDocumentScopedSkill.None,
+            Metadata: null,
             document.CreatedAt,
             document.UpdatedAt
         );
@@ -198,6 +204,8 @@ public static class LibraryEndpointMapping
             document.ProcessingStatus.ToString(),
             "remote",
             ExcludedFromCodeReviews: false,
+            AsScopedSkill: LibraryDocumentScopedSkill.None,
+            Metadata: null,
             document.Content,
             document.CreatedAt,
             document.UpdatedAt
@@ -217,8 +225,12 @@ public static class LibraryEndpointMapping
         DocsPublicSource source
     ) =>
         new(
-            library.IncludeFilters.Length > 0 ? library.IncludeFilters : source.DefaultIncludeFilters,
-            library.ExcludeFilters.Length > 0 ? library.ExcludeFilters : source.DefaultExcludeFilters
+            library.IncludeFilters.Length > 0
+                ? library.IncludeFilters
+                : source.DefaultIncludeFilters,
+            library.ExcludeFilters.Length > 0
+                ? library.ExcludeFilters
+                : source.DefaultExcludeFilters
         );
 
     /// <summary>

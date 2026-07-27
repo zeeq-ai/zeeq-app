@@ -335,6 +335,17 @@ public interface ILibraryDocumentStore : IIndexableDocumentStore<LibraryDocument
         bool excluded,
         CancellationToken ct
     );
+
+    /// <summary>
+    /// Sets the scope at which a document is available as a skill.
+    /// </summary>
+    Task<LibraryDocument?> SetScopedSkillAsync(
+        string organizationId,
+        string libraryId,
+        string documentId,
+        LibraryDocumentScopedSkill scopedSkill,
+        CancellationToken ct
+    ) => throw new NotSupportedException();
 }
 
 /// <summary>

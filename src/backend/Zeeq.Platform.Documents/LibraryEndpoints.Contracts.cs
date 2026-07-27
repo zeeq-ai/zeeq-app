@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Zeeq.Core.Documents;
 
 namespace Zeeq.Platform.Documents;
 
@@ -196,6 +197,8 @@ public sealed record LibrarySourceResponse(
 /// (operational/informational content reviewers must not consult). Always false for remote
 /// documents — v1 scopes exclusion to hand-authored documents.
 /// </param>
+/// <param name="AsScopedSkill">Scope at which the document is available as a skill.</param>
+/// <param name="Metadata">Optional user-authored document metadata.</param>
 /// <param name="CreatedAt">Timestamp when the document was created.</param>
 /// <param name="UpdatedAt">Timestamp when the document was last updated.</param>
 public sealed record DocumentResponse(
@@ -208,6 +211,8 @@ public sealed record DocumentResponse(
     string ProcessingStatus,
     string Origin,
     bool ExcludedFromCodeReviews,
+    LibraryDocumentScopedSkill AsScopedSkill,
+    DocumentMetadata? Metadata,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt
 );
@@ -227,6 +232,8 @@ public sealed record DocumentResponse(
 /// True when the document is hidden from list/search results on the code-review execution path.
 /// Drives the editor's exclusion toggle state; always false for remote documents (v1).
 /// </param>
+/// <param name="AsScopedSkill">Scope at which the document is available as a skill.</param>
+/// <param name="Metadata">Optional user-authored document metadata.</param>
 /// <param name="Content">Full markdown body.</param>
 /// <param name="CreatedAt">Timestamp when the document was created.</param>
 /// <param name="UpdatedAt">Timestamp when the document was last updated.</param>
@@ -240,6 +247,8 @@ public sealed record DocumentContentResponse(
     string ProcessingStatus,
     string Origin,
     bool ExcludedFromCodeReviews,
+    LibraryDocumentScopedSkill AsScopedSkill,
+    DocumentMetadata? Metadata,
     string Content,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt
@@ -289,6 +298,21 @@ public sealed record RenameDocumentRequest(
 public sealed record SetDocumentReviewExclusionRequest(
     [property: Required, MaxLength(128)] string DocumentId,
     bool Excluded
+);
+
+/// <summary>
+/// Request body to set or clear a document's scoped-skill status.
+/// </summary>
+/// <remarks>
+/// Only <see cref="LibraryDocumentScopedSkill.None"/> and
+/// <see cref="LibraryDocumentScopedSkill.Organization"/> are accepted for now. The wider enum
+/// shape is persisted up front so lookup and search indexing can grow into the remaining scopes.
+/// </remarks>
+/// <param name="DocumentId">Stable document identifier for the loaded document to update.</param>
+/// <param name="AsScopedSkill">Desired scoped-skill status.</param>
+public sealed record SetDocumentScopedSkillRequest(
+    [property: Required, MaxLength(128)] string DocumentId,
+    LibraryDocumentScopedSkill AsScopedSkill
 );
 
 /// <summary>

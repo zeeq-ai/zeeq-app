@@ -51,21 +51,15 @@
         -->
         <template #item="{ item: node }">
           <div class="flex items-center justify-between w-full gap-1">
-            <div class="flex items-center gap-1.5 min-w-0">
+            <div class="flex min-w-0 items-center gap-1.5">
               <UIcon
-                :name="
-                  node.isRoot
-                    ? 'i-hugeicons-folder-open'
-                    : node.isFolder
-                      ? 'i-hugeicons-folder-01'
-                      : (node as DocNode).origin === 'remote'
-                        ? 'i-hugeicons-file-cloud'
-                        : 'i-hugeicons-file-01'
-                "
+                :name="node.icon"
                 class="size-4 shrink-0 text-neutral-400"
               />
               <span class="truncate text-sm">{{ node.label }}</span>
+            </div>
 
+            <div class="ml-auto flex shrink-0 items-center gap-1">
               <!-- Muted marker: document is excluded from code-review agents -->
               <UTooltip
                 v-if="(node as DocNode).excludedFromCodeReviews"
@@ -78,17 +72,17 @@
                   aria-label="Excluded from code reviews"
                 />
               </UTooltip>
+              <UDropdownMenu :items="(node as DocNode).actions">
+                <UButton
+                  icon="i-hugeicons-more-vertical"
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  aria-label="Actions"
+                  @click.stop
+                />
+              </UDropdownMenu>
             </div>
-            <UDropdownMenu :items="(node as DocNode).actions">
-              <UButton
-                icon="i-hugeicons-more-vertical"
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                aria-label="Actions"
-                @click.stop
-              />
-            </UDropdownMenu>
           </div>
         </template>
       </UTree>
@@ -128,7 +122,9 @@
 
 <script setup lang="ts">
 import { useFuse } from "@vueuse/integrations/useFuse";
+import { libraryDocumentScopedSkillEnum } from "@/api/generated/types/LibraryDocumentScopedSkill";
 import type { DocumentResponse } from "@/api/generated/types/DocumentResponse";
+import type { LibraryDocumentScopedSkill } from "@/api/generated/types/LibraryDocumentScopedSkill";
 
 const props = defineProps<{
   documents: DocumentResponse[];
@@ -143,6 +139,12 @@ const emits = defineEmits<{
   add: [folderPath: string];
   rename: [oldPath: string];
   delete: [path: string];
+  /** Desired inclusion state for a local document. */
+  toggleReviewExclusion: [documentId: string, excluded: boolean];
+  toggleScopedSkill: [
+    documentId: string,
+    asScopedSkill: LibraryDocumentScopedSkill,
+  ];
   refresh: [];
 }>();
 
@@ -183,6 +185,7 @@ type NodeAction = {
 type DocNode = {
   id: string;
   label: string;
+  icon: string;
   isFolder: boolean;
   /** Leaf: the document's full path. Folder: the folder's logical path. */
   path: string;
@@ -194,6 +197,8 @@ type DocNode = {
   origin?: "local" | "remote";
   /** Leaf only: hidden from code-review agents' list/search tools. */
   excludedFromCodeReviews?: boolean;
+  /** Leaf only: scope at which the document is exposed as a skill. */
+  asScopedSkill?: LibraryDocumentScopedSkill;
   children?: DocNode[];
   /** Pre-computed context-menu actions for this node. */
   actions: NodeAction[];
@@ -310,6 +315,7 @@ function makeRootNode(children: DocNode[]): DocNode {
   return {
     id: "/",
     label: "(root)",
+    icon: "i-hugeicons-folder-open",
     isFolder: true,
     isRoot: true,
     defaultExpanded: true,
@@ -325,30 +331,69 @@ function makeRootNode(children: DocNode[]): DocNode {
   };
 }
 
-/** Creates a leaf node with pre-computed actions (add-sibling, delete). */
+/** Creates a leaf node with pre-computed document-only context actions. */
 function makeLeafNode(path: string, doc: DocumentResponse): DocNode {
   const parentPath = path.substring(0, path.lastIndexOf("/")) || "/";
+  const actions: NodeAction[] = [
+    {
+      label: "Add sibling",
+      icon: "i-hugeicons-plus-sign",
+      onSelect: () => emits("add", parentPath),
+    },
+  ];
+
+  // Mirrors the editor control: exclusion is available only for local documents.
+  if (doc.origin === "local") {
+    actions.push({
+      label: doc.excludedFromCodeReviews
+        ? "Include in code reviews"
+        : "Exclude from code reviews",
+      icon: doc.excludedFromCodeReviews
+        ? "i-hugeicons-view"
+        : "i-hugeicons-view-off-slash",
+      onSelect: () =>
+        emits("toggleReviewExclusion", doc.id, !doc.excludedFromCodeReviews),
+    });
+  }
+
+  actions.push({
+    label:
+      doc.asScopedSkill === libraryDocumentScopedSkillEnum.Organization
+        ? "Remove organization skill"
+        : "Use as organization skill",
+    icon: "i-hugeicons-ai-file",
+    onSelect: () =>
+      emits(
+        "toggleScopedSkill",
+        doc.id,
+        doc.asScopedSkill === libraryDocumentScopedSkillEnum.Organization
+          ? libraryDocumentScopedSkillEnum.None
+          : libraryDocumentScopedSkillEnum.Organization,
+      ),
+  });
+
+  actions.push({
+    label: "Delete",
+    icon: "i-hugeicons-delete-02",
+    onSelect: () => emits("delete", path),
+  });
 
   return {
     id: path,
     label: path.split("/").pop()!,
+    icon:
+      doc.asScopedSkill === libraryDocumentScopedSkillEnum.Organization
+        ? "i-hugeicons-ai-file"
+        : doc.origin === "remote"
+          ? "i-hugeicons-file-cloud"
+          : "i-hugeicons-file-01",
     isFolder: false,
     path,
     origin: doc.origin as "local" | "remote",
     excludedFromCodeReviews: doc.excludedFromCodeReviews,
+    asScopedSkill: doc.asScopedSkill,
     children: undefined,
-    actions: [
-      {
-        label: "Add sibling",
-        icon: "i-hugeicons-plus-sign",
-        onSelect: () => emits("add", parentPath),
-      },
-      {
-        label: "Delete",
-        icon: "i-hugeicons-delete-02",
-        onSelect: () => emits("delete", path),
-      },
-    ],
+    actions,
   };
 }
 
@@ -357,6 +402,7 @@ function makeFolderNode(folderPath: string, _parentPath: string): DocNode {
   return {
     id: folderPath,
     label: folderPath.split("/").pop()!,
+    icon: "i-hugeicons-folder-01",
     isFolder: true,
     defaultExpanded: true,
     path: folderPath,
