@@ -41,7 +41,7 @@
 
       <div class="flex min-h-0 flex-1 overflow-hidden">
         <section
-          class="flex min-h-0 basis-full flex-col border-r border-default lg:max-w-[28rem] lg:basis-[28rem]"
+          class="flex min-h-0 basis-full flex-col border-r border-default lg:max-w-96 lg:basis-96"
         >
           <div
             class="flex min-h-16 items-center justify-between gap-3 border-b border-default px-4 py-3 sm:px-6"
@@ -116,126 +116,35 @@
             :file-filter="repositoryConfiguration?.fileFilter ?? null"
             :saving="savingRepositoryConfiguration"
             :disabled="!canManageOrganization || !selectedRepositoryId"
+            :preview-result="fileFilterPreviewResult"
+            :preview-loading="previewingFileFilter"
+            :preview-error="fileFilterPreviewError"
             @save="saveRepositoryFilters"
+            @preview="previewRepositoryFilters"
           />
 
+          <!--
+          The agent panel is always an editor now. Existing agents arrive through
+          selectedAgent, while new/copied drafts use the management config item.
+          -->
           <AgentConfigPanel
-            v-else-if="selectedManagementItemId === managementConfigItemId"
+            v-else-if="
+              selectedManagementItemId === managementConfigItemId ||
+              selectedAgent
+            "
             ref="agentConfigPanelRef"
-            :agent="editingAgent"
+            :agent="selectedAgent"
             :saving="savingAgent"
             :disabled="!canManageOrganization || !selectedRepositoryId"
             :initial-form="copiedAgentForm"
+            :copy-target-repository-items="copyTargetRepositoryItems"
             @cancel="cancelAgentConfig"
             @save="saveAgent"
+            @review="openAgentDiff"
+            @delete="deleteSelectedAgent"
+            @copy-to-repository="openCopyConfirm"
             @open-source-library="openSourceLibrary"
           />
-
-          <template v-else-if="selectedAgent">
-            <div
-              class="flex min-h-24 items-start justify-between gap-4 border-b border-default px-6 py-5"
-            >
-              <div class="min-w-0">
-                <div class="flex min-w-0 flex-wrap items-center gap-2">
-                  <h2 class="truncate text-xl font-semibold text-highlighted">
-                    {{ selectedAgent.displayName }}
-                  </h2>
-                  <UBadge
-                    :label="selectedAgent.reviewFacet"
-                    color="neutral"
-                    variant="outline"
-                    class="rounded-full"
-                  />
-                  <UBadge
-                    :label="selectedAgent.enabled ? 'Enabled' : 'Disabled'"
-                    :color="selectedAgent.enabled ? 'success' : 'neutral'"
-                    variant="subtle"
-                    class="rounded-full"
-                  />
-                </div>
-                <p class="mt-1 text-sm text-muted">
-                  {{ selectedAgent.modelTier }} tier ·
-                  {{ activationSummary(selectedAgent.activationConfiguration) }}
-                </p>
-              </div>
-
-              <div class="flex shrink-0 items-center gap-2">
-                <USelect
-                  v-if="copyTargetRepositoryItems.length > 0"
-                  v-model="copySelectModel"
-                  :items="copyTargetRepositoryItems"
-                  placeholder="Copy to repository"
-                  color="neutral"
-                  size="md"
-                  :disabled="!canManageOrganization || savingAgent"
-                  @update:model-value="openCopyConfirm"
-                />
-                <UFieldGroup>
-                  <UButton
-                    label="Edit"
-                    icon="i-hugeicons-pencil-edit-02"
-                    color="neutral"
-                    variant="subtle"
-                    :disabled="!canManageOrganization"
-                    @click="openEditAgent(selectedAgent)"
-                  />
-                  <ZeeqPopConfirm
-                    title="Delete reviewer agent?"
-                    :body="`Delete ${selectedAgent.displayName} from this repository's reviewer agents?`"
-                    confirm-label="Delete"
-                    label="Delete"
-                    icon="i-hugeicons-delete-02"
-                    color="error"
-                    variant="subtle"
-                    :disabled="!canManageOrganization || savingAgent"
-                    @confirm="deleteAgent(selectedAgent)"
-                  />
-                </UFieldGroup>
-              </div>
-            </div>
-
-            <div class="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-5">
-              <div class="flex min-h-0 flex-1 flex-col gap-5">
-                <section class="grid gap-2">
-                  <h3 class="text-sm font-semibold text-highlighted">
-                    Activation filters
-                  </h3>
-                  <p class="text-sm text-muted">
-                    Included files:
-                    {{
-                      selectedAgent.activationConfiguration.includedFiles.length
-                    }}
-                    · Excluded files:
-                    {{
-                      selectedAgent.activationConfiguration.excludedFiles.length
-                    }}
-                  </p>
-                </section>
-
-                <section class="flex min-h-0 flex-1 flex-col gap-2">
-                  <div
-                    class="agent-prompt-viewer min-h-0 flex-1 overflow-hidden"
-                  >
-                    <MdEditor
-                      :model-value="selectedAgent.prompt"
-                      language="en-US"
-                      preview-theme="github"
-                      :preview="false"
-                      :preview-only="false"
-                      :read-only="true"
-                      :toolbars="readOnlyPromptToolbars"
-                      :footers="[]"
-                      :html-preview="false"
-                      :no-upload-img="true"
-                      :no-mermaid="true"
-                      :no-katex="true"
-                      :theme="editorTheme"
-                    />
-                  </div>
-                </section>
-              </div>
-            </div>
-          </template>
 
           <UEmpty
             v-else
@@ -286,6 +195,46 @@
     </template>
   </UModal>
 
+  <ReviewDiffDrawer
+    ref="agentDiffDrawerRef"
+    v-model:open="agentDiffOpen"
+    title="Review agent changes"
+    confirm-label="Save agent"
+    :original="agentDiffOriginal"
+    :next="agentDiffNext"
+    @confirm="confirmAgentDiffSave"
+  />
+
+  <UModal
+    v-model:open="unsavedAgentChangesOpen"
+    title="Save unsaved changes"
+    :close="false"
+    :dismissible="false"
+  >
+    <template #body>
+      <p class="text-sm text-muted">
+        This reviewer agent has unsaved changes. Save them before leaving?
+      </p>
+    </template>
+
+    <template #footer>
+      <div class="flex w-full justify-end gap-2">
+        <UButton
+          label="Discard"
+          color="neutral"
+          variant="ghost"
+          @click="discardUnsavedAgentChanges"
+        />
+        <UButton
+          label="Save"
+          color="neutral"
+          variant="subtle"
+          @click="saveUnsavedAgentChanges"
+        />
+      </div>
+    </template>
+  </UModal>
+
   <!--
   Source library for seeding a new agent (create panel). Opened by the config
   panel's Copy button; the store owns template and per-repo agent loading and
@@ -313,15 +262,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useColorMode } from "@vueuse/core";
-import { MdEditor, type ToolbarNames } from "md-editor-v3";
-import "md-editor-v3/lib/style.css";
 import { storeToRefs } from "pinia";
 import type {
   CodeReviewFileFilterDto,
-  CodeReviewerActivationConfigurationDto,
   CodeReviewerAgentDto,
   CodeReviewerAgentTemplateDto,
+  PreviewCodeReviewFileFilterResponse,
 } from "@/api/generated";
 import {
   agentToForm,
@@ -332,11 +278,16 @@ import {
 } from "@/stores/code-review-store";
 import { useAppStore } from "@/stores/app-store";
 import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
-import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
+import ReviewDiffDrawer from "@/components/ReviewDiffDrawer.vue";
+import { usePendingChangesGuard } from "@/composables/usePendingChangesGuard";
 
 import AgentConfigPanel from "./AgentConfigPanel.vue";
 import AgentSourceLibrarySlideover from "./AgentSourceLibrarySlideover.vue";
 import FileFiltersPanel from "./FileFiltersPanel.vue";
+import {
+  clearManageAgentsRepositoryChangeGuard,
+  setManageAgentsRepositoryChangeGuard,
+} from "./manage-agents-repository-change-guard";
 
 const props = defineProps<{
   orgId?: string;
@@ -344,7 +295,6 @@ const props = defineProps<{
 }>();
 
 const toast = useToast();
-const colorMode = useColorMode();
 const route = useRoute();
 const router = useRouter();
 const appStore = useAppStore();
@@ -370,12 +320,11 @@ const {
   hasConfiguredRepositories,
 } = storeToRefs(codeReviewStore);
 
-const readOnlyPromptToolbars: ToolbarNames[] = ["preview", "previewOnly"];
 const agentConfigPanelRef = ref<InstanceType<typeof AgentConfigPanel> | null>(
   null,
 );
-const editorTheme = computed<"light" | "dark">(() =>
-  colorMode.value === "dark" ? "dark" : "light",
+const agentDiffDrawerRef = ref<InstanceType<typeof ReviewDiffDrawer> | null>(
+  null,
 );
 
 const selectedAgent = computed(
@@ -458,9 +407,38 @@ const originRepoLabel = computed(() => {
 
 const copyConfirmOpen = ref(false);
 const copyPendingTargetRepoId = ref<string | null>(null);
-const copySelectModel = ref<string | undefined>(undefined);
 let routeSelectionSyncId = 0;
 const routeSelectionApplying = ref(false);
+const agentDiffOpen = ref(false);
+const agentDiffOriginal = ref("");
+const agentDiffNext = ref("");
+const pendingAgentSave = ref<{
+  agentId: string;
+  form: CodeReviewerAgentForm;
+} | null>(null);
+const previewingFileFilter = ref(false);
+const fileFilterPreviewResult = ref<PreviewCodeReviewFileFilterResponse | null>(
+  null,
+);
+const fileFilterPreviewError = ref<string | null>(null);
+
+const agentHasUnsavedChanges = computed(
+  () => agentConfigPanelRef.value?.hasChanges ?? false,
+);
+
+const {
+  open: unsavedAgentChangesOpen,
+  confirmBefore: confirmAgentUnsavedChangesBefore,
+  discardChanges: discardUnsavedAgentChanges,
+  saveChanges: saveUnsavedAgentChanges,
+} = usePendingChangesGuard({
+  hasChanges: agentHasUnsavedChanges,
+  save: triggerAgentSaveAction,
+});
+
+const confirmRepositoryChangeWithUnsavedAgentGuard = (
+  action: () => void | Promise<void>,
+) => confirmAgentUnsavedChangesBefore(action);
 
 const copyPendingTargetRepoLabel = computed(() => {
   const repo = configuredRepositories.value.find(
@@ -477,7 +455,6 @@ function openCopyConfirm(targetRepositoryId: string) {
 
 /** Resets the copy selector and pending state when the user cancels. */
 function cancelCopy() {
-  copySelectModel.value = undefined;
   copyPendingTargetRepoId.value = null;
   copyConfirmOpen.value = false;
 }
@@ -488,7 +465,6 @@ async function confirmCopyAgentTo() {
   copyConfirmOpen.value = false;
 
   await onCopyAgentTo(copyPendingTargetRepoId.value!);
-  copySelectModel.value = undefined;
   copyPendingTargetRepoId.value = null;
 }
 
@@ -508,18 +484,23 @@ async function onCopyAgentTo(targetRepositoryId: string) {
 /** Resets copy state when the confirmation dialog is dismissed without confirming. */
 watch(copyConfirmOpen, (isOpen) => {
   if (!isOpen && copyPendingTargetRepoId.value) {
-    copySelectModel.value = undefined;
     copyPendingTargetRepoId.value = null;
   }
 });
 
 onMounted(async () => {
+  setManageAgentsRepositoryChangeGuard(
+    confirmRepositoryChangeWithUnsavedAgentGuard,
+  );
   await loadAgentManagement();
   await applyRouteAgentSelection();
   window.addEventListener("keydown", handleGlobalKeydown);
 });
 
 onBeforeUnmount(() => {
+  clearManageAgentsRepositoryChangeGuard(
+    confirmRepositoryChangeWithUnsavedAgentGuard,
+  );
   window.removeEventListener("keydown", handleGlobalKeydown);
 });
 
@@ -529,6 +510,7 @@ watch(activeOrganizationId, async () => {
   await applyRouteAgentSelection();
 });
 
+/** Repository changes reset to repo-level filters so stale agent ids never leak across repos. */
 watch(selectedRepositoryId, () => {
   selectedManagementItemId.value = managementFiltersItemId;
   if (!routeSelectionApplying.value) {
@@ -536,6 +518,7 @@ watch(selectedRepositoryId, () => {
   }
 });
 
+/** If the selected agent disappears after reload/delete, fall back to repository filters. */
 watch(agents, () => {
   if (
     selectedManagementItemId.value !== managementFiltersItemId &&
@@ -602,10 +585,12 @@ async function loadAgentManagement() {
   }
 }
 
-function selectAgent(agent: CodeReviewerAgentDto) {
-  editingAgent.value = null;
-  selectedManagementItemId.value = agent.id;
-  void replaceWithAgentRoute(agent.id);
+async function selectAgent(agent: CodeReviewerAgentDto) {
+  await confirmAgentUnsavedChangesBefore(async () => {
+    editingAgent.value = null;
+    selectedManagementItemId.value = agent.id;
+    await replaceWithAgentRoute(agent.id);
+  });
 }
 
 /** Persists repository-level filters. */
@@ -622,21 +607,28 @@ async function saveRepositoryFilters(fileFilter: CodeReviewFileFilterDto) {
   }
 }
 
-/** Opens the right-side config panel for one persisted agent row. */
-function openEditAgent(agent: CodeReviewerAgentDto) {
-  editingAgent.value = agent;
-  selectedManagementItemId.value = managementConfigItemId;
+/** Previews unsaved repository filter rules against sample file paths. */
+async function previewRepositoryFilters(
+  fileFilter: CodeReviewFileFilterDto,
+  filePaths: string[],
+) {
+  previewingFileFilter.value = true;
+  fileFilterPreviewError.value = null;
+
+  try {
+    fileFilterPreviewResult.value =
+      await codeReviewStore.previewRepositoryFileFilter(fileFilter, filePaths);
+  } catch (err: unknown) {
+    fileFilterPreviewResult.value = null;
+    fileFilterPreviewError.value =
+      err instanceof Error ? err.message : "Could not preview file filters.";
+  } finally {
+    previewingFileFilter.value = false;
+  }
 }
 
 function cancelAgentConfig() {
   copiedAgentForm.value = null;
-
-  if (editingAgent.value) {
-    selectedManagementItemId.value = editingAgent.value.id;
-    editingAgent.value = null;
-    return;
-  }
-
   editingAgent.value = null;
   selectedManagementItemId.value = managementFiltersItemId;
 }
@@ -654,7 +646,7 @@ async function saveAgent(agentId: string | null, form: CodeReviewerAgentForm) {
 
     editingAgent.value = savedAgent;
     copiedAgentForm.value = null;
-    selectedManagementItemId.value = managementConfigItemId;
+    selectedManagementItemId.value = savedAgent.id;
     await replaceWithAgentRoute(savedAgent.id);
     toast.add({
       title: agentId ? "Reviewer agent saved" : "Reviewer agent created",
@@ -664,6 +656,47 @@ async function saveAgent(agentId: string | null, form: CodeReviewerAgentForm) {
   } catch (err: unknown) {
     showError("Could not save reviewer agent", err);
   }
+}
+
+function openAgentDiff(
+  agentId: string,
+  original: string,
+  next: string,
+  form: CodeReviewerAgentForm,
+) {
+  // Store the exact reviewed form so the diff drawer save cannot drift from what was shown.
+  agentDiffOriginal.value = original;
+  agentDiffNext.value = next;
+  pendingAgentSave.value = { agentId, form };
+  agentDiffOpen.value = true;
+}
+
+async function confirmAgentDiffSave() {
+  const pending = pendingAgentSave.value;
+  if (!pending) {
+    return;
+  }
+
+  await saveAgent(pending.agentId, pending.form);
+  pendingAgentSave.value = null;
+  agentDiffOpen.value = false;
+}
+
+function triggerAgentSaveAction() {
+  if (agentDiffOpen.value) {
+    agentDiffDrawerRef.value?.triggerSave();
+    return;
+  }
+
+  agentConfigPanelRef.value?.triggerSave();
+}
+
+function deleteSelectedAgent() {
+  if (!selectedAgent.value) {
+    return;
+  }
+
+  void deleteAgent(selectedAgent.value);
 }
 
 /** Deletes an agent from the active list after the backend soft-disables it. */
@@ -682,19 +715,6 @@ async function deleteAgent(agent: CodeReviewerAgentDto) {
   } catch (err: unknown) {
     showError("Could not delete reviewer agent", err);
   }
-}
-
-function activationSummary(
-  configuration: CodeReviewerActivationConfigurationDto,
-): string {
-  const includeCount = configuration.includedFiles.length;
-  const excludeCount = configuration.excludedFiles.length;
-
-  if (includeCount === 0 && excludeCount === 0) {
-    return "all filtered repository files";
-  }
-
-  return `${includeCount} include, ${excludeCount} exclude`;
 }
 
 function showError(title: string, err: unknown) {
@@ -780,12 +800,15 @@ function handleGlobalKeydown(event: KeyboardEvent) {
     return;
   }
 
-  if (selectedManagementItemId.value !== managementConfigItemId) {
+  if (
+    selectedManagementItemId.value !== managementConfigItemId &&
+    !selectedAgent.value
+  ) {
     return;
   }
 
   event.preventDefault();
-  agentConfigPanelRef.value?.triggerSave();
+  triggerAgentSaveAction();
 }
 
 async function replaceWithAgentRoute(agentId: string) {
@@ -815,13 +838,3 @@ async function replaceWithManageAgentsRoute() {
   await router.replace({ name: "ManageAgents" });
 }
 </script>
-
-<style scoped>
-/* MdEditor owns its root element; keep sizing scoped to the read-only prompt viewer. */
-.agent-prompt-viewer :deep(.md-editor) {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  box-sizing: border-box;
-}
-</style>

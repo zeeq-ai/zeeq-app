@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
-using Zeeq.Core.Models;
 using Microsoft.AspNetCore.Authorization;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -631,6 +631,37 @@ public sealed class CodeReviewEndpoints : IEndpoint
                 within the route `orgId`, overriding the organization defaults for this repository only.
 
                 Restricted to organization owners and admins (`403` otherwise).
+                """
+            );
+
+        // POST /api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/review-configuration/file-filter-preview
+        group
+            .MapPost(
+                "/repositories/{repositoryId}/review-configuration/file-filter-preview",
+                static (
+                    string repositoryId,
+                    string orgId,
+                    [FromBody] PreviewCodeReviewFileFilterRequest request,
+                    ClaimsPrincipal user,
+                    [FromServices] PreviewCodeReviewFileFilterHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, repositoryId, request, user, ct)
+            )
+            .RequireActiveOrganization()
+            .WithName("PreviewCodeReviewFileFilter")
+            .Produces<PreviewCodeReviewFileFilterResponse>()
+            .Produces<CodeReviewEndpointError>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("Preview repository file filters.")
+            .WithDescription(
+                """
+                Applies draft repository-level file-filter rules to a caller supplied list of
+                repository-relative paths. The response mirrors the real review runner's file
+                scope behavior, including built-in default exclusions for common noise.
+
+                Restricted to organization owners and admins because callers submit arbitrary
+                draft rules for the selected repository.
                 """
             );
 

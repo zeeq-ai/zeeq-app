@@ -22,6 +22,7 @@ import {
   type CodeReviewerAgentTemplateDto,
   type CodeReviewModelTier,
   type CreateCodeReviewerAgentRequest,
+  type PreviewCodeReviewFileFilterResponse,
   type SaveCodeReviewRepositoryConfigurationRequest,
   type UpdateCodeReviewerAgentRequest,
 } from "@/api/generated";
@@ -778,6 +779,25 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
   }
 
   /**
+   * Evaluates draft repository-level file filters against typed sample paths.
+   *
+   * @param fileFilter - Unsaved or saved rules currently visible in the filters panel.
+   * @param filePaths - Repository-relative paths entered by the user.
+   */
+  async function previewRepositoryFileFilter(
+    fileFilter: CodeReviewFileFilterDto,
+    filePaths: string[],
+  ): Promise<PreviewCodeReviewFileFilterResponse> {
+    const repositoryId = requireRepositoryId();
+    const orgId = requireOrganizationId();
+
+    return await CodeReviews.previewCodeReviewFileFilter(repositoryId, orgId, {
+      fileFilter,
+      filePaths,
+    });
+  }
+
+  /**
    * Persists the repository-level shared prompt fragment injected into every
    * reviewer agent's prompt for this repository.
    *
@@ -1387,6 +1407,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     setSelectedRepository,
     loadSelectedRepositoryManagement,
     saveRepositoryFileFilter,
+    previewRepositoryFileFilter,
     saveSharedPromptFragment,
     saveRepositoryConfiguration,
     selectManagementFilters,
