@@ -639,7 +639,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
                 windowed.title,
                 windowed.owner_qualified_repo_name,
                 windowed.pull_request_number,
-                windowed.author_login,
+                COALESCE(author_user.email, windowed.author_login) AS author_login,
                 windowed.request_origin::text AS request_origin,
                 windowed.pull_request_record_id,
                 windowed.group_critical_findings,
@@ -648,6 +648,13 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             FROM windowed
             LEFT JOIN zeeq.code_review_pull_request_records pr
               ON pr.id = windowed.pull_request_record_id
+            LEFT JOIN zeeq.core_users author_user
+              ON author_user.id = windowed.author_login
+             AND windowed.request_origin = 'Agent'
+             AND (
+                windowed.author_login LIKE 'usr\_%' ESCAPE '\'
+                OR windowed.author_login LIKE 'user\_%' ESCAPE '\'
+             )
             WHERE windowed.rn = 1
               AND windowed.{{severityColumn}} > 0
               AND ({2} = false OR (
@@ -765,12 +772,26 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             .TagWithOperationCallSite("metrics.options.repositories")
             .ToListAsync(cancellationToken);
 
+        var authorsSql = FormattableStringFactory.Create(
+            """
+            SELECT DISTINCT COALESCE(author_user.email, review.author_login) AS "Value"
+            FROM zeeq.code_review_records review
+            LEFT JOIN zeeq.core_users author_user
+              ON author_user.id = review.author_login
+             AND review.request_origin = 'Agent'
+             AND (
+                review.author_login LIKE 'usr\_%' ESCAPE '\'
+                OR review.author_login LIKE 'user\_%' ESCAPE '\'
+             )
+            WHERE review.organization_id = {0}
+              AND review.author_login <> ''
+            ORDER BY 1
+            """,
+            organizationId
+        );
+
         var authors = await db
-            .CodeReviewRecords.AsNoTracking()
-            .Where(r => r.OrganizationId == organizationId && r.AuthorLogin != "")
-            .Select(r => r.AuthorLogin)
-            .Distinct()
-            .OrderBy(value => value)
+            .Database.SqlQuery<string>(authorsSql)
             .TagWithOperationCallSite("metrics.options.authors")
             .ToListAsync(cancellationToken);
 

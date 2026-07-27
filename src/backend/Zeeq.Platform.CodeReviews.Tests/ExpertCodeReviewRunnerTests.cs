@@ -1,13 +1,13 @@
 using System.Security.Claims;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
+using OpenIddict.Abstractions;
 using Zeeq.Core.Common;
 using Zeeq.Core.Common.Storage;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
-using NSubstitute;
-using OpenIddict.Abstractions;
 
 namespace Zeeq.Platform.CodeReviews.Tests;
 
@@ -68,6 +68,31 @@ public sealed class ExpertCodeReviewRunnerTests
         await fixture
             .Storage.Received(1)
             .DeleteAsync(fixture.Path, StorageContainer.CodeReviewDiffs, CancellationToken.None);
+    }
+
+    [Test]
+    public async Task RunReviewAsync_WithAuthenticatedUserEmail_StoresEmailAsAuthorLabel()
+    {
+        var fixture = Fixture.Create();
+        fixture
+            .Storage.ReadTextAsync(
+                fixture.Path,
+                StorageContainer.CodeReviewDiffs,
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult(Diff("src/App.cs")));
+        fixture
+            .Repositories.FindActiveAsync("github", "owner/repo", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<CodeRepository?>(null));
+
+        await fixture.Runner.RunReviewAsync(fixture.Request(), TestUser(), CancellationToken.None);
+
+        await fixture
+            .CodeReviews.Received(1)
+            .AddAsync(
+                Arg.Is<CodeReviewRecord>(review => review.AuthorLogin == "reviewer@example.com"),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Test]
@@ -390,6 +415,7 @@ public sealed class ExpertCodeReviewRunnerTests
             new ClaimsIdentity(
                 [
                     new Claim(OpenIddictConstants.Claims.Subject, "usr_123"),
+                    new Claim(OpenIddictConstants.Claims.Email, "Reviewer@Example.com"),
                     new Claim(AuthClaims.OrganizationId, "org_123"),
                 ],
                 authenticationType: "test"
@@ -506,6 +532,8 @@ public sealed class ExpertCodeReviewRunnerTests
         public ICodeReviewerAgentStore AgentStore { get; private init; } = null!;
 
         public ILibraryDocumentStore Libraries { get; private init; } = null!;
+
+        public ICodeReviewRecordStore CodeReviews { get; private init; } = null!;
 
         public TestCodeReviewAgentExecutor AgentExecutor { get; private init; } = null!;
 
@@ -627,6 +655,7 @@ public sealed class ExpertCodeReviewRunnerTests
                 Repositories = repositories,
                 AgentStore = agentStore,
                 Libraries = libraries,
+                CodeReviews = codeReviewStore,
                 AgentExecutor = agentExecutor,
                 Token = tokenProtector.Protect(
                     CodeReviewDiffUploadTokenProtector.CreatePayload(
