@@ -9,8 +9,8 @@ namespace Zeeq.Core.Documents;
 /// The code-review tool path is the only writer: <c>ScopedServiceAIFunction</c> creates a
 /// fresh child scope per reviewer tool invocation and marks this instance before the tool
 /// runs, so <c>PostgresLibraryDocumentStore</c> and <c>PostgresLibraryDocumentSnippetStore</c>
-/// hide documents flagged <see cref="LibraryDocument.ExcludedFromCodeReviews"/> from list and
-/// search results on that path only.
+/// hide documents flagged <see cref="LibraryDocument.ExcludedFromCodeReviews"/> or exposed as
+/// scoped skills from list and search results on that path only.
 /// <para>
 /// This is deliberately a scoped DI holder rather than an <see cref="AsyncLocal{T}"/> ambient
 /// (the <c>ToolTelemetrySink</c> pattern) because the review path already owns a
@@ -24,8 +24,7 @@ public sealed class DocumentSearchScope
 {
     /// <summary>
     /// True when the current DI scope serves a code-review agent tool invocation; document
-    /// stores then hide <see cref="LibraryDocument.ExcludedFromCodeReviews"/> documents from
-    /// list and search results.
+    /// stores then hide review-excluded documents and scoped skills from list and search results.
     /// </summary>
     public bool ForCodeReviewExecution { get; set; }
 }

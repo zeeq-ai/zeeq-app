@@ -1,7 +1,7 @@
-using Zeeq.Core.Documents;
-using Zeeq.Core.Documents.Snippets;
 using Microsoft.EntityFrameworkCore;
 using Pgvector;
+using Zeeq.Core.Documents;
+using Zeeq.Core.Documents.Snippets;
 
 namespace Zeeq.Data.Postgres.Documents;
 
@@ -16,9 +16,9 @@ namespace Zeeq.Data.Postgres.Documents;
 /// <para>
 /// <paramref name="searchScope"/> gates the code-review exclusion filter in
 /// <see cref="SearchAsync"/>: on the code-review execution path, snippets whose owning document
-/// is flagged <see cref="LibraryDocument.ExcludedFromCodeReviews"/> are filtered in every
-/// retrieval arm (the search SQL already joins <c>docs_library_documents</c>, so no snippet-row
-/// denormalization is needed).
+/// is flagged <see cref="LibraryDocument.ExcludedFromCodeReviews"/> or exposed as a scoped skill
+/// are filtered in every retrieval arm (the search SQL already joins
+/// <c>docs_library_documents</c>, so no snippet-row denormalization is needed).
 /// </para>
 /// </remarks>
 internal sealed class PostgresLibraryDocumentSnippetStore(
@@ -271,8 +271,8 @@ internal sealed class PostgresLibraryDocumentSnippetStore(
         var queryIdentifiers = query.QueryIdentifiers;
 
         // Code-review execution never surfaces snippets of excluded (operational/informational)
-        // documents. Bound as a plain bool parameter inside each retrieval arm so both modes
-        // share one SQL shape; the arms already join the owning document row `d`.
+        // documents or scoped skills. Bound as a plain bool parameter inside each retrieval arm
+        // so both modes share one SQL shape; the arms already join the owning document row `d`.
         var excludeCodeReviewExcluded = searchScope.ForCodeReviewExecution;
 
         // SET LOCAL only scopes to the current transaction, so it and the search SELECT must run
@@ -312,7 +312,7 @@ internal sealed class PostgresLibraryDocumentSnippetStore(
                           AND s.kind = {kind}
                           AND s.embedding IS NOT NULL
                           AND NOT (d.path = ANY({excludedPaths}))
-                          AND (NOT {excludeCodeReviewExcluded} OR NOT d.excluded_from_code_reviews)
+                          AND (NOT {excludeCodeReviewExcluded} OR (NOT d.excluded_from_code_reviews AND d.as_scoped_skill = 0))
                         ORDER BY s.embedding <=> {queryEmbedding}
                         LIMIT {CandidatesPerArm}
                     ),
@@ -333,7 +333,7 @@ internal sealed class PostgresLibraryDocumentSnippetStore(
                           AND s.kind = {kind}
                           AND s.search_vector @@ websearch_to_tsquery('english', {query.QueryText})
                           AND NOT (d.path = ANY({excludedPaths}))
-                          AND (NOT {excludeCodeReviewExcluded} OR NOT d.excluded_from_code_reviews)
+                          AND (NOT {excludeCodeReviewExcluded} OR (NOT d.excluded_from_code_reviews AND d.as_scoped_skill = 0))
                         LIMIT {CandidatesPerArm}
                     )
                     SELECT s.id AS snippet_id, s.document_id, d.path AS document_path,
@@ -383,7 +383,7 @@ internal sealed class PostgresLibraryDocumentSnippetStore(
                           AND s.kind = {kind}
                           AND s.search_vector @@ websearch_to_tsquery('english', {query.QueryText})
                           AND NOT (d.path = ANY({excludedPaths}))
-                          AND (NOT {excludeCodeReviewExcluded} OR NOT d.excluded_from_code_reviews)
+                          AND (NOT {excludeCodeReviewExcluded} OR (NOT d.excluded_from_code_reviews AND d.as_scoped_skill = 0))
                     )
                     SELECT s.id AS snippet_id, s.document_id, d.path AS document_path,
                            d.title AS document_title, s.header, s.heading_path, s.language,

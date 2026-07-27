@@ -683,6 +683,38 @@ public sealed class SnippetStoreIntegrationTests : PgTransactionalTestBase
     }
 
     [Test]
+    public async Task Search_OnCodeReviewPath_HidesSnippetsOfScopedSkillDocuments_FtsArm()
+    {
+        // Skills are exposed through MCP prompts, not as ordinary code-review KB. Their snippets
+        // stay visible interactively, but the code-review scope filters them like manually
+        // review-excluded documents.
+        var (snippetStore, document) = await SeedDocumentAsync();
+        await snippetStore.ReplaceForDocumentAsync(
+            document,
+            [Section("distinctive skill marker", 0)],
+            default
+        );
+        await MarkDocumentScopedSkillAsync(document);
+        _context.ChangeTracker.Clear();
+
+        var reviewStore = CreateCodeReviewScopedSnippetStore();
+
+        var reviewResults = await reviewStore.SearchAsync(
+            FtsQuery(document, "distinctive skill marker"),
+            default
+        );
+        var interactiveResults = await snippetStore.SearchAsync(
+            FtsQuery(document, "distinctive skill marker"),
+            default
+        );
+
+        await Assert.That(reviewResults).IsEmpty();
+        await Assert.That(interactiveResults).Count().IsEqualTo(1);
+        await Assert.That(interactiveResults.Single().DocumentId).IsEqualTo(document.Id);
+        await Assert.That(interactiveResults.Single().TextRank).IsGreaterThan(0);
+    }
+
+    [Test]
     public async Task Search_OnCodeReviewPath_HidesSnippetsOfExcludedDocuments_VectorArm()
     {
         // Same invariant for the hybrid (vector + FTS) query shape: the exclusion predicate is
@@ -751,6 +783,23 @@ public sealed class SnippetStoreIntegrationTests : PgTransactionalTestBase
         );
 
         await Assert.That(updated?.ExcludedFromCodeReviews).IsTrue();
+    }
+
+    /// <summary>Marks the document as an organization skill through the document store.</summary>
+    private async Task MarkDocumentScopedSkillAsync(LibraryDocument document)
+    {
+        var documentStore = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
+        var updated = await documentStore.SetScopedSkillAsync(
+            document.OrganizationId,
+            document.LibraryId,
+            document.Id,
+            LibraryDocumentScopedSkill.Organization,
+            default
+        );
+
+        await Assert
+            .That(updated?.AsScopedSkill)
+            .IsEqualTo(LibraryDocumentScopedSkill.Organization);
     }
 
     /// <summary>

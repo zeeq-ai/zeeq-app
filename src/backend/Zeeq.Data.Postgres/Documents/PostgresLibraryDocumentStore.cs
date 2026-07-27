@@ -12,15 +12,15 @@ namespace Zeeq.Data.Postgres.Documents;
 /// <paramref name="searchScope"/> gates the code-review exclusion filter: when the current DI
 /// scope serves a code-review tool invocation (<see cref="DocumentSearchScope.ForCodeReviewExecution"/>),
 /// <see cref="SearchAsync"/> and <see cref="ListDocumentsAsync"/> hide documents flagged
-/// <see cref="LibraryDocument.ExcludedFromCodeReviews"/>. Path resolution
-/// (<see cref="GetByPathAsync"/>) is intentionally unfiltered — an excluded document must still
-/// resolve when read directly by path.
+/// <see cref="LibraryDocument.ExcludedFromCodeReviews"/> or exposed as scoped skills. Path
+/// resolution (<see cref="GetByPathAsync"/>) is intentionally unfiltered — an excluded document
+/// must still resolve when read directly by path.
 /// <para>
 /// NOTE: the exclusion policy lives in each query's predicate rather than a centralized query
 /// root (code review follow-up, 2026-07-15) — acceptable while only list/search consult it, but
 /// any future list/search-shaped query added to this store (or the snippet store) must apply the
-/// same <c>!ForCodeReviewExecution || !ExcludedFromCodeReviews</c> predicate, or excluded
-/// documents leak back into review results.
+/// same <c>!ForCodeReviewExecution || (!ExcludedFromCodeReviews &amp;&amp; AsScopedSkill == None)</c>
+/// predicate, or excluded documents leak back into review results.
 /// </para>
 /// </remarks>
 internal sealed class PostgresLibraryDocumentStore(
@@ -835,10 +835,18 @@ internal sealed class PostgresLibraryDocumentStore(
                     || EF.Functions.TrigramsAreSimilar(document.TitleNormalized, fuzzyQuery)
                 )
             )
-            // Code-review execution never surfaces excluded (operational/informational) documents.
+            // Code-review execution never surfaces excluded (operational/informational) documents
+            // or scoped skills. Skills are prompt content first, so review agents should not also
+            // retrieve them as ordinary KB documents.
             // `excludeCodeReviewExcluded` is captured before the expression tree so the predicate
             // parameterizes as a plain bool and the query plan stays shared across both modes.
-            .Where(document => !excludeCodeReviewExcluded || !document.ExcludedFromCodeReviews)
+            .Where(document =>
+                !excludeCodeReviewExcluded
+                || (
+                    !document.ExcludedFromCodeReviews
+                    && document.AsScopedSkill == LibraryDocumentScopedSkill.None
+                )
+            )
             // Tiered combiner: a full-text hit (base 1.0) always outranks a fuzzy-only hit; the
             // full-text rank orders within that tier; the trigram score breaks ties and lifts
             // documents that match both signals. ts_rank_cd is 0 for non-full-text rows.
@@ -913,8 +921,17 @@ internal sealed class PostgresLibraryDocumentStore(
             .Where(document =>
                 document.OrganizationId == organizationId && document.LibraryId == libraryId
             )
-            // Code-review execution never lists excluded (operational/informational) documents.
-            .Where(document => !excludeCodeReviewExcluded || !document.ExcludedFromCodeReviews)
+            // Code-review execution never lists excluded (operational/informational) documents
+            // or scoped skills.
+            // NOTE: This intentionally stays inline instead of a shared IQueryable helper for now;
+            // keep this predicate in sync with SearchAsync above.
+            .Where(document =>
+                !excludeCodeReviewExcluded
+                || (
+                    !document.ExcludedFromCodeReviews
+                    && document.AsScopedSkill == LibraryDocumentScopedSkill.None
+                )
+            )
             .OrderBy(document => document.Path)
             .ToArrayAsync(ct);
     }

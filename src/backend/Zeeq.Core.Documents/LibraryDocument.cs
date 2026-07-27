@@ -148,9 +148,10 @@ public class LibraryDocument
     /// The filter applies only when <see cref="DocumentSearchScope.ForCodeReviewExecution"/>
     /// is marked (the reviewer tool call path in <c>CodeReviewAgentExecutor.BuildLibraryTools</c>);
     /// the interactive MCP server and HTTP endpoints see excluded documents normally, and
-    /// direct path resolution (<c>read_document_by_path</c>) always succeeds. V1 scope is
-    /// hand-authored documents only — the API rejects toggling synced documents
-    /// (<see cref="SyncRunId"/> not null) because an ingest run owns their lifecycle.
+    /// direct path resolution (<c>read_document_by_path</c>) always succeeds. This applies to
+    /// all organization/library-owned <see cref="LibraryDocument"/> rows, including private
+    /// repository-sourced documents; shared public-source documents use <c>DocsPublicDocument</c>
+    /// and need a separate per-library override model.
     /// </remarks>
     public bool ExcludedFromCodeReviews { get; set; }
 

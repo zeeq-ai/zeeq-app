@@ -8265,7 +8265,7 @@
           },
           "excludedFromCodeReviews": {
             "type": "boolean",
-            "description": "True when the document is hidden from list/search results on the code-review execution path.\nDrives the editor's exclusion toggle state; always false for remote documents (v1)."
+            "description": "True when the document is hidden from list/search results on the code-review execution path.\nFor public-source remote documents this is always false until per-library public-source\noverrides exist; private-source remote documents are backed by LibraryDocument rows and can\ncarry the flag."
           },
           "asScopedSkill": {
             "description": "Scope at which the document is available as a skill.",

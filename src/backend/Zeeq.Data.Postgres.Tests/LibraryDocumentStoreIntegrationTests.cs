@@ -583,6 +583,76 @@ public sealed class LibraryDocumentStoreIntegrationTests : PgTransactionalTestBa
     }
 
     [Test]
+    public async Task SearchAndList_OnCodeReviewPath_HidesScopedSkillDocuments()
+    {
+        // Scoped skills are prompt content. They stay visible in the library UI/MCP prompt flows,
+        // but review agents must not retrieve them as ordinary KB documents.
+        var (store, organizationId, library) = await CreateStoreWithLibraryAsync();
+        var visible = await CreateDocumentAsync(
+            store,
+            organizationId,
+            library.Id,
+            "/guides/visible.md",
+            title: "Alpha Guide",
+            content: "Alpha implementation guidance."
+        );
+        var skill = await CreateDocumentAsync(
+            store,
+            organizationId,
+            library.Id,
+            "/guides/skill.md",
+            title: "Alpha Skill",
+            content: "Alpha skill prompt."
+        );
+        await store.SetScopedSkillAsync(
+            organizationId,
+            library.Id,
+            skill.Id,
+            LibraryDocumentScopedSkill.Organization,
+            default
+        );
+        _context.ChangeTracker.Clear();
+
+        var reviewStore = CreateCodeReviewScopedStore();
+
+        var reviewResults = await reviewStore.SearchAsync(
+            organizationId,
+            library.Id,
+            "alpha",
+            10,
+            default
+        );
+        var interactiveResults = await store.SearchAsync(
+            organizationId,
+            library.Id,
+            "alpha",
+            10,
+            default
+        );
+        var reviewListing = await reviewStore.ListDocumentsAsync(
+            organizationId,
+            library.Id,
+            default
+        );
+        var interactiveListing = await store.ListDocumentsAsync(
+            organizationId,
+            library.Id,
+            default
+        );
+
+        await Assert
+            .That(reviewResults.Select(match => match.Document.Id).ToArray())
+            .IsEquivalentTo([visible.Id]);
+        await Assert
+            .That(interactiveResults.Select(match => match.Document.Id).ToArray())
+            .IsEquivalentTo([visible.Id, skill.Id]);
+        await Assert.That(reviewListing.Select(d => d.Id).ToArray()).IsEquivalentTo([visible.Id]);
+        await Assert
+            .That(interactiveListing.Select(d => d.Id).ToArray())
+            .IsEquivalentTo([visible.Id, skill.Id]);
+    }
+
+    [Test]
     public async Task GetByPath_OnCodeReviewPath_StillResolvesExcludedDocuments()
     {
         // Locks the read-by-path contract: even on the review path, an excluded document must

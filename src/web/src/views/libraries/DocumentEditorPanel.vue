@@ -4,7 +4,8 @@
   Handles folder browsing, existing documents, and new documents.
 
   Completions (D-5): raw path insertion from the document path list.
-  Save is always reviewed: emits `review(original, next, path)`.
+  Existing-document saves are reviewed via `review(original, next, path)`;
+  new documents emit `save(path, content)` directly because there is no useful baseline diff.
   -->
   <div class="relative flex h-full flex-col" :aria-busy="loading">
     <Transition name="editor-loading-overlay">
@@ -116,145 +117,29 @@
           </UTooltip>
         </template>
 
-        <!-- Existing document: show path -->
-        <span v-else class="font-mono text-sm text-neutral-500 truncate flex-1">
-          {{ document.path }}
-        </span>
+        <!-- Existing document: copy action sits next to the path it copies. -->
+        <template v-else>
+          <UTooltip
+            :text="copied ? 'Copied' : 'Copy Zeeq path'"
+            :content="{ side: 'bottom' }"
+            :delay-duration="0"
+          >
+            <UButton
+              :icon="copied ? 'i-hugeicons-tick-02' : 'i-hugeicons-copy-01'"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              aria-label="Copy Zeeq path"
+              @click="copy(zeeqPath)"
+            />
+          </UTooltip>
 
-        <UTooltip
-          v-if="document"
-          :text="copied ? 'Copied' : 'Copy Zeeq path'"
-          :content="{ side: 'bottom' }"
-          :delay-duration="0"
-        >
-          <UButton
-            :icon="copied ? 'i-hugeicons-tick-02' : 'i-hugeicons-copy-01'"
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            aria-label="Copy Zeeq path"
-            @click="copy(zeeqPath)"
-          />
-        </UTooltip>
-
-        <UTooltip
-          v-if="repoFileUrl"
-          text="View on GitHub"
-          :content="{ side: 'bottom' }"
-          :delay-duration="0"
-        >
-          <UButton
-            icon="i-hugeicons-github"
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            aria-label="View on GitHub"
-            :to="repoFileUrl"
-            target="_blank"
-          />
-        </UTooltip>
-
-        <UTooltip
-          v-if="document"
-          text="Preview parse"
-          :content="{ side: 'bottom' }"
-          :delay-duration="0"
-        >
-          <UButton
-            icon="i-hugeicons-search-list-01"
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            aria-label="Preview parse"
-            @click="emits('previewParse', document.path)"
-          />
-        </UTooltip>
+          <span class="font-mono text-sm text-neutral-500 truncate flex-1">
+            {{ document.path }}
+          </span>
+        </template>
 
         <div class="flex items-center gap-2 ml-auto">
-          <!-- Remote read-only indicator -->
-          <UBadge
-            v-if="readonly"
-            label="Read-only"
-            color="warning"
-            variant="soft"
-            size="xs"
-          />
-
-          <!-- Code-review exclusion state: excluded docs never surface to review agents -->
-          <UBadge
-            v-if="document?.excludedFromCodeReviews"
-            label="Review-excluded"
-            color="warning"
-            variant="soft"
-            size="xs"
-          />
-
-          <UBadge
-            v-if="isOrganizationSkill"
-            label="Organization skill"
-            color="primary"
-            variant="soft"
-            size="xs"
-          />
-
-          <UTooltip
-            v-if="document"
-            :text="
-              isOrganizationSkill
-                ? 'Remove organization skill'
-                : 'Use as organization skill'
-            "
-            :content="{ side: 'bottom' }"
-            :delay-duration="0"
-          >
-            <UButton
-              icon="i-hugeicons-ai-file"
-              size="xs"
-              :color="isOrganizationSkill ? 'primary' : 'neutral'"
-              variant="ghost"
-              aria-label="Toggle organization skill"
-              @click="emits('toggleScopedSkill', document.id, nextScopedSkill)"
-            />
-          </UTooltip>
-
-          <!--
-          Toggle code-review exclusion (local documents only — synced/remote docs are
-          rejected by the API and a sync run owns their lifecycle). Reversible, so no
-          confirmation flow; the root view calls the API and refreshes state.
-          NOTE: `!readonly` IS the remote-origin guard — `readonly` is computed as
-          `document.origin === "remote"`, so this control never renders for remote
-          documents (flagged by code review, 2026-07-15; no separate origin check needed).
-          -->
-          <UTooltip
-            v-if="document && !readonly"
-            :text="
-              document.excludedFromCodeReviews
-                ? 'Include in code reviews'
-                : 'Exclude from code reviews (agents will not consult this document)'
-            "
-            :content="{ side: 'bottom' }"
-            :delay-duration="0"
-          >
-            <UButton
-              :icon="
-                document.excludedFromCodeReviews
-                  ? 'i-hugeicons-view-off-slash'
-                  : 'i-hugeicons-view'
-              "
-              size="xs"
-              :color="document.excludedFromCodeReviews ? 'warning' : 'neutral'"
-              variant="ghost"
-              aria-label="Toggle code-review exclusion"
-              @click="
-                emits(
-                  'toggleReviewExclusion',
-                  document.id,
-                  !document.excludedFromCodeReviews,
-                )
-              "
-            />
-          </UTooltip>
-
           <UButton
             icon="i-hugeicons-gibbous-moon"
             size="xs"
@@ -263,27 +148,17 @@
             aria-label="Toggle editor theme"
             @click="toggleTheme"
           />
-          <ZeeqPopConfirm
-            v-if="document"
-            title="Delete Document"
-            :body="`Delete ${document.path}?`"
-            confirm-label="Delete"
-            icon="i-hugeicons-delete-02"
-            size="xs"
-            color="error"
-            variant="ghost"
-            aria-label="Delete document"
-            @confirm="emits('delete', document.path)"
-          />
           <UButton
-            v-if="!readonly"
-            label="Review and save"
-            icon="i-hugeicons-checkmark-circle-02"
+            :icon="
+              actionsPanelOpen
+                ? 'i-hugeicons-panel-right-close'
+                : 'i-hugeicons-panel-right-open'
+            "
             size="xs"
-            color="primary"
-            variant="subtle"
-            :disabled="!canReview"
-            @click="onReview"
+            color="neutral"
+            variant="ghost"
+            aria-label="Toggle editor actions panel"
+            @click="emits('toggleActionsPanel')"
           />
         </div>
       </div>
@@ -319,14 +194,10 @@ import { MdEditor } from "md-editor-v3";
 import "md-editor-v3/lib/style.css";
 import type { CompletionSource } from "@codemirror/autocomplete";
 import type { DocumentContentResponse } from "@/api/generated/types/DocumentContentResponse";
-import { libraryDocumentScopedSkillEnum } from "@/api/generated/types/LibraryDocumentScopedSkill";
-import type { LibraryDocumentScopedSkill } from "@/api/generated/types/LibraryDocumentScopedSkill";
 import { useClipboard } from "@vueuse/core";
-import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 import { useMarkdownEditorTheme } from "@/composables/useMarkdownEditorTheme";
 import { useLibraryStore } from "@/stores/library-store";
 import { storeToRefs } from "pinia";
-import { toGitHubWebUrl } from "@/utils/githubUrl";
 
 const props = defineProps<{
   /** Null means new-document mode. */
@@ -339,25 +210,21 @@ const props = defineProps<{
   selectedFolderPath: string | null;
   /** Preferred folder when entering new-document mode from the tree. */
   initialFolderPath: string;
-  /** Origin repo clone URL for the active library, if repository-driven. */
-  repoUrl: string | null;
+  /** Whether the editor-side actions panel is expanded. */
+  actionsPanelOpen: boolean;
 }>();
 
 const emits = defineEmits<{
   createLibrary: [];
   /** original markdown, next markdown, save path */
   review: [original: string, next: string, path: string];
+  /** Direct save path for new documents where an empty baseline diff has no review value. */
+  save: [path: string, content: string];
   delete: [path: string];
   selectDocument: [path: string];
   selectFolder: [path: string];
-  previewParse: [path: string];
-  /** path + desired exclusion state; API call handled by the root view. */
-  toggleReviewExclusion: [documentId: string, excluded: boolean];
-  /** document id + desired scoped-skill state; API call handled by the root view. */
-  toggleScopedSkill: [
-    documentId: string,
-    asScopedSkill: LibraryDocumentScopedSkill,
-  ];
+  /** Requests toggling the editor-side actions panel. */
+  toggleActionsPanel: [];
 }>();
 
 const store = useLibraryStore();
@@ -372,18 +239,6 @@ const zeeqPath = computed(() => {
   return `zeeq://${props.document.path.replace(/^\//, "")}`;
 });
 
-/** GitHub blob URL for the loaded document, if its library is repository-driven. */
-const repoFileUrl = computed(() => {
-  if (!props.repoUrl || !props.document?.path) return null;
-
-  const encodedPath = props.document.path
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
-
-  return `${toGitHubWebUrl(props.repoUrl)}/blob/HEAD${encodedPath}`;
-});
-
 // ── Editor text ─────────────────────────────────────────────────────────
 
 const text = ref("");
@@ -394,7 +249,7 @@ const originalText = ref("");
 /** Whether the editor content differs from the original. */
 const hasChanges = computed(() => text.value !== originalText.value);
 
-const canReview = computed(
+const canSave = computed(
   () =>
     !readonly.value &&
     (props.document
@@ -404,18 +259,6 @@ const canReview = computed(
 
 /** Read-only gate: remote documents cannot be edited. */
 const readonly = computed(() => props.document?.origin === "remote");
-
-const isOrganizationSkill = computed(
-  () =>
-    props.document?.asScopedSkill ===
-    libraryDocumentScopedSkillEnum.Organization,
-);
-
-const nextScopedSkill = computed<LibraryDocumentScopedSkill>(() =>
-  isOrganizationSkill.value
-    ? libraryDocumentScopedSkillEnum.None
-    : libraryDocumentScopedSkillEnum.Organization,
-);
 
 // ── New document path inputs ────────────────────────────────────────────
 
@@ -617,14 +460,27 @@ const completions = ref<CompletionSource[]>([
 
 /** Emits the review event with original, current text, and target path. */
 function onReview() {
-  if (!canReview.value) return;
+  if (!canSave.value || !props.document) return;
 
   emits("review", originalText.value, text.value, assembledPath.value);
+}
+
+/** Emits a direct save for new documents, bypassing the diff-review drawer. */
+function onDirectSave() {
+  if (!canSave.value || props.document) return;
+
+  emits("save", assembledPath.value, text.value);
 }
 
 defineExpose({
   /** Triggers the same review flow as the "Review and save" button (no-op if not ready). */
   triggerReview: onReview,
+  /** Triggers the direct new-document save path (no-op outside new-document mode). */
+  triggerDirectSave: onDirectSave,
+  /** Exposes review readiness for controls rendered outside this editor component. */
+  canReview: canSave,
+  /** True when the loaded editor text differs from its current baseline. */
+  hasChanges,
 });
 
 // ── New doc seed template ───────────────────────────────────────────────

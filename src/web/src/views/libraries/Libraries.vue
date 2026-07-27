@@ -33,6 +33,9 @@
         :loading="loadingDocuments"
         :has-library="!!activeLibraryName"
         :active-path="selectedFolderPath ?? loadedDocument?.path ?? null"
+        :allow-remote-review-exclusion="
+          activeLibraryAllowsRemoteDocumentOverrides
+        "
         @select="onOpenDocument"
         @folder-select="onSelectFolder"
         @add="onAddDocumentAt"
@@ -63,25 +66,231 @@
         @update:window="onLibraryMetricsWindowChange"
         @refresh="onRefreshLibraryMetrics"
       />
-      <DocumentEditorPanel
-        v-else
-        ref="editorPanelRef"
-        class="min-w-0 flex-1"
-        :document="loadedDocument"
-        :loading="editorLoading"
-        :paths="documentPaths"
-        :selected-folder-path="selectedFolderPath"
-        :initial-folder-path="pendingNewDocumentFolder"
-        :repo-url="activeLibraryRepoUrl"
-        @create-library="openLibraryForm(null)"
-        @delete="onDeleteDocument"
-        @select-document="onOpenDocument"
-        @select-folder="onSelectFolder"
-        @review="openDiff"
-        @preview-parse="onPreviewParse"
-        @toggle-review-exclusion="onToggleReviewExclusion"
-        @toggle-scoped-skill="onToggleScopedSkill"
-      />
+      <div v-else class="flex min-w-0 flex-1">
+        <DocumentEditorPanel
+          ref="editorPanelRef"
+          class="min-w-0 flex-1"
+          :document="loadedDocument"
+          :loading="editorLoading"
+          :paths="documentPaths"
+          :selected-folder-path="selectedFolderPath"
+          :initial-folder-path="pendingNewDocumentFolder"
+          :actions-panel-open="editorActionsPanelOpen"
+          @create-library="openLibraryForm(null)"
+          @select-document="onOpenDocument"
+          @select-folder="onSelectFolder"
+          @review="openDiff"
+          @save="onDirectSave"
+          @toggle-actions-panel="
+            editorActionsPanelOpen = !editorActionsPanelOpen
+          "
+        />
+
+        <USidebar
+          v-if="activeLibraryName && !selectedFolderPath"
+          v-model:open="editorActionsPanelOpen"
+          side="right"
+          collapsible="icon"
+          :style="{
+            '--sidebar-width': '14.75rem',
+            '--sidebar-width-icon': '3.5rem',
+          }"
+          :ui="{
+            root: 'relative h-full',
+            gap: 'h-full',
+            container: 'absolute inset-y-0 end-0 z-10 flex h-full',
+            inner: 'bg-default divide-transparent',
+            body: 'p-0 sm:p-0',
+          }"
+        >
+          <template #default="{ state }">
+            <div class="flex h-full flex-col gap-2 p-2">
+              <div
+                v-if="selectedDocumentForActions"
+                class="flex flex-col gap-1"
+              >
+                <UTooltip
+                  text="Preview parse"
+                  :content="{ side: 'left' }"
+                  :delay-duration="0"
+                >
+                  <UButton
+                    :label="state === 'expanded' ? 'Preview parse' : undefined"
+                    icon="i-hugeicons-search-list-01"
+                    size="md"
+                    color="neutral"
+                    variant="ghost"
+                    :block="state === 'expanded'"
+                    :ui="editorActionButtonUi(state)"
+                    aria-label="Preview parse"
+                    @click="onPreviewParse(selectedDocumentForActions.path)"
+                  />
+                </UTooltip>
+
+                <UTooltip
+                  v-if="activeDocumentRepoFileUrl"
+                  text="View on GitHub"
+                  :content="{ side: 'left' }"
+                  :delay-duration="0"
+                >
+                  <UButton
+                    :label="state === 'expanded' ? 'View on GitHub' : undefined"
+                    icon="i-hugeicons-github"
+                    size="md"
+                    color="neutral"
+                    variant="ghost"
+                    :block="state === 'expanded'"
+                    :ui="editorActionButtonUi(state)"
+                    aria-label="View on GitHub"
+                    :to="activeDocumentRepoFileUrl"
+                    target="_blank"
+                  />
+                </UTooltip>
+
+                <UPopover
+                  v-if="selectedDocumentForActions"
+                  mode="hover"
+                  enable-touch
+                  :open-delay="300"
+                  :close-delay="150"
+                  :content="{ side: 'left', align: 'start' }"
+                  :ui="{ content: 'w-72' }"
+                >
+                  <UButton
+                    :label="
+                      state === 'expanded'
+                        ? activeDocumentSkillStatusLabel
+                        : undefined
+                    "
+                    :icon="
+                      activeDocumentIsOrganizationSkill
+                        ? 'i-hugeicons-ai-file'
+                        : 'i-hugeicons-file-01'
+                    "
+                    size="md"
+                    :color="
+                      activeDocumentIsOrganizationSkill ? 'primary' : 'neutral'
+                    "
+                    variant="ghost"
+                    :block="state === 'expanded'"
+                    :ui="editorActionButtonUi(state)"
+                    aria-label="Toggle organization skill"
+                    @click="
+                      onToggleScopedSkill(
+                        selectedDocumentForActions.id,
+                        activeDocumentNextScopedSkill,
+                      )
+                    "
+                  />
+                  <template #content>
+                    <div class="p-3 text-sm text-muted">
+                      Toggles whether this document is used as an organization
+                      skill. Skills are exposed as MCP prompts and are excluded
+                      from code-review retrieval.
+                    </div>
+                  </template>
+                </UPopover>
+
+                <UPopover
+                  v-if="activeDocumentCanToggleReviewExclusion"
+                  mode="hover"
+                  enable-touch
+                  :open-delay="300"
+                  :close-delay="150"
+                  :content="{ side: 'left', align: 'start' }"
+                  :ui="{ content: 'w-72' }"
+                >
+                  <UButton
+                    :label="
+                      state === 'expanded'
+                        ? activeDocumentReviewExclusionStatusLabel
+                        : undefined
+                    "
+                    :icon="
+                      activeDocumentReviewExcluded
+                        ? 'i-hugeicons-view-off-slash'
+                        : 'i-hugeicons-view'
+                    "
+                    size="md"
+                    :color="
+                      activeDocumentReviewExcluded ? 'warning' : 'neutral'
+                    "
+                    variant="ghost"
+                    :block="state === 'expanded'"
+                    :ui="editorActionButtonUi(state)"
+                    aria-label="Toggle code-review exclusion"
+                    :disabled="activeDocumentIsOrganizationSkill"
+                    @click="onToggleActiveDocumentReviewExclusion"
+                  />
+                  <template #content>
+                    <div class="p-3 text-sm text-muted">
+                      Toggles whether code-review agents can retrieve this
+                      document from list and search results. Direct reads and
+                      normal library browsing remain available.
+                    </div>
+                  </template>
+                </UPopover>
+              </div>
+
+              <USeparator v-if="selectedDocumentForActions" />
+
+              <UTooltip
+                v-if="!activeDocumentReadonly"
+                :text="activeDocumentPrimarySaveLabel"
+                :content="{ side: 'left' }"
+                :delay-duration="0"
+              >
+                <UButton
+                  :label="
+                    state === 'expanded'
+                      ? activeDocumentPrimarySaveLabel
+                      : undefined
+                  "
+                  :icon="activeDocumentPrimarySaveIcon"
+                  size="md"
+                  color="neutral"
+                  variant="ghost"
+                  :block="state === 'expanded'"
+                  :ui="editorActionButtonUi(state)"
+                  :disabled="!editorCanReview"
+                  :aria-label="activeDocumentPrimarySaveLabel"
+                  @click="triggerEditorSaveAction"
+                />
+              </UTooltip>
+
+              <div class="mt-auto flex flex-col gap-2">
+                <div
+                  v-if="selectedDocumentForActions"
+                  class="flex items-center gap-2 px-2 py-1.5 text-muted"
+                  :class="state === 'expanded' ? 'text-sm' : 'text-xs'"
+                >
+                  <UIcon name="i-hugeicons-coins-01" class="size-5 shrink-0" />
+                  <span v-if="state === 'expanded'" class="truncate">
+                    {{ activeDocumentTokenCountLabel }}
+                  </span>
+                </div>
+
+                <USeparator v-if="selectedDocumentForActions" />
+                <ZeeqPopConfirm
+                  v-if="selectedDocumentForActions"
+                  title="Delete Document"
+                  :body="`Delete ${selectedDocumentForActions.path}?`"
+                  confirm-label="Delete"
+                  icon="i-hugeicons-delete-02"
+                  :label="state === 'expanded' ? 'Delete' : undefined"
+                  size="md"
+                  color="error"
+                  variant="ghost"
+                  :block="state === 'expanded'"
+                  :ui="editorActionButtonUi(state)"
+                  aria-label="Delete document"
+                  @confirm="onDeleteDocument(selectedDocumentForActions.path)"
+                />
+              </div>
+            </div>
+          </template>
+        </USidebar>
+      </div>
     </div>
 
     <!-- Create / rename a library -->
@@ -137,12 +346,42 @@
       :preview="parsePreview"
       :loading="loadingParsePreview"
     />
+
+    <UModal
+      v-model:open="unsavedChangesModalOpen"
+      title="Save unsaved changes"
+      :close="false"
+      :dismissible="false"
+    >
+      <template #body>
+        <p class="text-sm text-muted">
+          This document has unsaved changes. Save them before leaving?
+        </p>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton
+            label="Discard"
+            color="neutral"
+            variant="ghost"
+            @click="discardUnsavedChanges"
+          />
+          <UButton
+            label="Save"
+            color="neutral"
+            variant="subtle"
+            @click="saveUnsavedChanges"
+          />
+        </div>
+      </template>
+    </UModal>
   </ZeeqView>
 </template>
 
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
-import { useIntervalFn } from "@vueuse/core";
+import { useIntervalFn, useStorage } from "@vueuse/core";
 import { useLibraryStore } from "@/stores/library-store";
 import { useLibraryMetricsStore } from "@/stores/library-metrics-store";
 import { useGitHubSettingsStore } from "@/stores/github-settings-store";
@@ -160,6 +399,8 @@ import DocumentSearchPanel from "./DocumentSearchPanel.vue";
 import DocumentParsePreviewSlideover from "./DocumentParsePreviewSlideover.vue";
 import DocumentRenameSlideover from "./DocumentRenameSlideover.vue";
 import LibraryMetricsPanel from "./LibraryMetricsPanel.vue";
+import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
+import { toGitHubWebUrl } from "@/utils/githubUrl";
 
 type DocumentEditorPanelInstance = InstanceType<typeof DocumentEditorPanel>;
 type DocumentDiffDrawerInstance = InstanceType<typeof DocumentDiffDrawer>;
@@ -212,6 +453,14 @@ const editorPanelRef = ref<DocumentEditorPanelInstance | null>(null);
 const diffDrawerRef = ref<DocumentDiffDrawerInstance | null>(null);
 
 const librarySelectionLoading = ref(false);
+const editorActionsPanelOpen = useStorage(
+  "zeeq:libraries:editor-actions-panel-open",
+  false,
+);
+const unsavedChangesModalOpen = ref(false);
+const pendingUnsavedChangesAction = ref<(() => void | Promise<void>) | null>(
+  null,
+);
 const pendingNewDocumentFolder = ref("/");
 const selectedFolderPath = ref<string | null>(null);
 const editorLoading = computed(
@@ -258,6 +507,37 @@ function onRefreshLibraryMetrics() {
   void libraryMetricsStore.loadMetrics(activeLibraryName.value);
 }
 
+/**
+ * Defers navigation-like actions while the active editor has unsaved changes.
+ * The pending callback is replayed only after the user explicitly discards; Save
+ * opens the existing review flow and leaves the user on the current document.
+ */
+async function confirmUnsavedChangesBefore(action: () => void | Promise<void>) {
+  if (!editorHasUnsavedChanges.value) {
+    return false;
+  }
+
+  pendingUnsavedChangesAction.value = action;
+  unsavedChangesModalOpen.value = true;
+  return true;
+}
+
+async function discardUnsavedChanges() {
+  const action = pendingUnsavedChangesAction.value;
+  pendingUnsavedChangesAction.value = null;
+  unsavedChangesModalOpen.value = false;
+
+  if (action) {
+    await action();
+  }
+}
+
+function saveUnsavedChanges() {
+  pendingUnsavedChangesAction.value = null;
+  unsavedChangesModalOpen.value = false;
+  triggerEditorSaveAction();
+}
+
 // ── Library form state ──────────────────────────────────────────────────
 
 const libraryFormOpen = ref(false);
@@ -287,6 +567,150 @@ const activeLibraryRepoUrl = computed(
     libraries.value.find((library) => library.name === activeLibraryName.value)
       ?.source?.repoUrl ?? null,
 );
+
+/**
+ * Remote documents in private-source libraries are still organization/library-owned
+ * LibraryDocument rows, so their code-review exclusion flag is safe to mutate. Public-source
+ * libraries use shared DocsPublicDocument rows and need a separate override model.
+ */
+const activeLibraryAllowsRemoteDocumentOverrides = computed(
+  () =>
+    libraries.value.find((library) => library.name === activeLibraryName.value)
+      ?.source?.kind === "Private",
+);
+
+const editorCanReview = computed(
+  () => editorPanelRef.value?.canReview ?? false,
+);
+
+const editorHasUnsavedChanges = computed(
+  () => editorPanelRef.value?.hasChanges ?? false,
+);
+
+/**
+ * The store keeps the last loaded document while the folder browser is open. Action controls must
+ * follow the visible editor mode, so folder selection intentionally hides document-specific actions.
+ */
+const selectedDocumentForActions = computed(() =>
+  selectedFolderPath.value ? null : loadedDocument.value,
+);
+
+/**
+ * New-document mode has a path/content form but no persisted baseline. Keep the action panel open
+ * and use a direct Save action instead of a diff-review flow.
+ */
+const isCreatingNewDocument = computed(
+  () =>
+    !!activeLibraryName.value &&
+    !selectedFolderPath.value &&
+    !loadedDocument.value,
+);
+
+watch(
+  isCreatingNewDocument,
+  (isCreating) => {
+    if (isCreating) {
+      editorActionsPanelOpen.value = true;
+    }
+  },
+  { immediate: true },
+);
+
+/** Read-only gate for action controls rendered outside DocumentEditorPanel. */
+const activeDocumentReadonly = computed(
+  () => selectedDocumentForActions.value?.origin === "remote",
+);
+
+const activeDocumentIsOrganizationSkill = computed(
+  () =>
+    selectedDocumentForActions.value?.asScopedSkill ===
+    libraryDocumentScopedSkillEnum.Organization,
+);
+
+/**
+ * Skills are also review-excluded. Keep the manual flag distinct, but present one effective
+ * sidebar status that matches review retrieval behavior.
+ */
+const activeDocumentReviewExcluded = computed(
+  () =>
+    Boolean(selectedDocumentForActions.value?.excludedFromCodeReviews) ||
+    activeDocumentIsOrganizationSkill.value,
+);
+
+const activeDocumentCanToggleReviewExclusion = computed(() => {
+  if (!selectedDocumentForActions.value) {
+    return false;
+  }
+
+  return (
+    selectedDocumentForActions.value.origin === "local" ||
+    activeLibraryAllowsRemoteDocumentOverrides.value
+  );
+});
+
+const activeDocumentNextScopedSkill = computed<LibraryDocumentScopedSkill>(
+  () =>
+    activeDocumentIsOrganizationSkill.value
+      ? libraryDocumentScopedSkillEnum.None
+      : libraryDocumentScopedSkillEnum.Organization,
+);
+
+const activeDocumentSkillStatusLabel = computed(() =>
+  activeDocumentIsOrganizationSkill.value ? "Used as skill" : "Used as content",
+);
+
+const activeDocumentReviewExclusionStatusLabel = computed(() =>
+  activeDocumentReviewExcluded.value
+    ? "Excluded from reviews"
+    : "Included in reviews",
+);
+
+const activeDocumentPrimarySaveLabel = computed(() =>
+  isCreatingNewDocument.value ? "Save" : "Review and save",
+);
+
+const activeDocumentPrimarySaveIcon = computed(() =>
+  isCreatingNewDocument.value
+    ? "i-hugeicons-floppy-disk"
+    : "i-hugeicons-checkmark-circle-02",
+);
+
+function editorActionButtonUi(state: "expanded" | "collapsed") {
+  return {
+    base: state === "expanded" ? "justify-start" : "justify-center",
+  };
+}
+
+function onToggleActiveDocumentReviewExclusion() {
+  if (!selectedDocumentForActions.value) {
+    return;
+  }
+
+  void onToggleReviewExclusion(
+    selectedDocumentForActions.value.id,
+    !selectedDocumentForActions.value.excludedFromCodeReviews,
+  );
+}
+
+const activeDocumentTokenCountLabel = computed(() => {
+  const tokenCount = Number(selectedDocumentForActions.value?.tokenCount ?? 0);
+
+  return `${new Intl.NumberFormat().format(tokenCount)} tokens`;
+});
+
+/** GitHub blob URL for the selected document, if its library is repository-driven. */
+const activeDocumentRepoFileUrl = computed(() => {
+  if (!activeLibraryRepoUrl.value || !selectedDocumentForActions.value?.path) {
+    return null;
+  }
+
+  const encodedPath = selectedDocumentForActions.value.path
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+
+  return `${toGitHubWebUrl(activeLibraryRepoUrl.value)}/blob/HEAD${encodedPath}`;
+});
 
 /** Opens the library create/edit slideover. Pass null for create mode. */
 function openLibraryForm(library: LibraryResponse | null) {
@@ -570,6 +994,14 @@ watch(libraryFormOpen, (isOpen) => {
 // ── Library selection ───────────────────────────────────────────────────
 
 async function onSelectLibrary(name: string) {
+  if (await confirmUnsavedChangesBefore(() => performSelectLibrary(name))) {
+    return;
+  }
+
+  await performSelectLibrary(name);
+}
+
+async function performSelectLibrary(name: string) {
   if (routeLibraryName() === name) {
     await selectLibraryAndRoot(name);
     return;
@@ -594,6 +1026,14 @@ async function onRefreshDocuments() {
 }
 
 async function onOpenDocument(path: string) {
+  if (await confirmUnsavedChangesBefore(() => performOpenDocument(path))) {
+    return;
+  }
+
+  await performOpenDocument(path);
+}
+
+async function performOpenDocument(path: string) {
   try {
     selectedFolderPath.value = null;
     await store.openDocument(path);
@@ -606,12 +1046,30 @@ async function onOpenDocument(path: string) {
   }
 }
 
-function onSelectFolder(path: string) {
+async function onSelectFolder(path: string) {
+  if (await confirmUnsavedChangesBefore(() => performSelectFolder(path))) {
+    return;
+  }
+
+  performSelectFolder(path);
+}
+
+function performSelectFolder(path: string) {
   selectedFolderPath.value = path;
 }
 
 /** Opens editor in new-doc mode for a given folder path (or root). */
-function onAddDocumentAt(folderPath: string) {
+async function onAddDocumentAt(folderPath: string) {
+  if (
+    await confirmUnsavedChangesBefore(() => performAddDocumentAt(folderPath))
+  ) {
+    return;
+  }
+
+  performAddDocumentAt(folderPath);
+}
+
+function performAddDocumentAt(folderPath: string) {
   pendingNewDocumentFolder.value = folderPath;
   selectedFolderPath.value = null;
   store.newDocument();
@@ -650,6 +1108,8 @@ async function onSubmitRename(toPath: string) {
 }
 
 async function onDeleteDocument(path: string) {
+  // NOTE: Deletion intentionally bypasses the unsaved-change modal. The delete confirmation is
+  // already the destructive-action guard, and the user explicitly accepted this behavior.
   try {
     await store.deleteDocument(path);
 
@@ -711,6 +1171,15 @@ async function onToggleScopedSkill(
   }
 }
 
+function triggerEditorSaveAction() {
+  if (isCreatingNewDocument.value) {
+    editorPanelRef.value?.triggerDirectSave();
+    return;
+  }
+
+  editorPanelRef.value?.triggerReview();
+}
+
 // ── Diff review flow (D-6) ──────────────────────────────────────────────
 
 const diffOpen = ref(false);
@@ -728,6 +1197,22 @@ function openDiff(original: string, next: string, path: string) {
   diffNext.value = next;
   pendingSavePath.value = path;
   diffOpen.value = true;
+}
+
+/** Saves a new document directly; reviewing an empty-baseline diff adds no useful signal. */
+async function onDirectSave(path: string, content: string) {
+  try {
+    await store.saveDocument(path, content);
+    toast.add({ title: "Document saved", color: "success" });
+    selectedFolderPath.value = null;
+    await store.openDocument(path);
+  } catch (err: any) {
+    toast.add({
+      title: "Error saving document",
+      description: err?.message ?? "Failed to save",
+      color: "error",
+    });
+  }
 }
 
 /** Confirms the reviewed save and closes the drawer. */
@@ -765,7 +1250,7 @@ function handleGlobalKeydown(event: KeyboardEvent) {
   if (diffOpen.value) {
     diffDrawerRef.value?.triggerSave();
   } else {
-    editorPanelRef.value?.triggerReview();
+    triggerEditorSaveAction();
   }
 }
 

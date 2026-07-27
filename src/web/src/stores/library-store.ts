@@ -479,8 +479,8 @@ export const useLibraryStore = defineStore("library", () => {
   /**
    * Sets or clears a document's code-review exclusion flag. Excluded documents never
    * surface to code-review agents via list/search tools (direct reads by path still
-   * resolve); all other callers are unaffected. Local (hand-authored) documents only —
-   * the API rejects synced/remote documents with a 400.
+   * resolve); all other callers are unaffected. This is valid for local documents and
+   * private repository-sourced documents because both are backed by LibraryDocument rows.
    *
    * Refreshes the tree summaries (badge state) and the loaded document (toggle state)
    * so the UI reflects the change immediately.

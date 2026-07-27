@@ -230,7 +230,9 @@ public sealed record DocumentResponse(
 /// <param name="Origin">Document source origin: "local" (owned) or "remote" (ingested).</param>
 /// <param name="ExcludedFromCodeReviews">
 /// True when the document is hidden from list/search results on the code-review execution path.
-/// Drives the editor's exclusion toggle state; always false for remote documents (v1).
+/// For public-source remote documents this is always false until per-library public-source
+/// overrides exist; private-source remote documents are backed by LibraryDocument rows and can
+/// carry the flag.
 /// </param>
 /// <param name="AsScopedSkill">Scope at which the document is available as a skill.</param>
 /// <param name="Metadata">Optional user-authored document metadata.</param>
@@ -289,9 +291,9 @@ public sealed record RenameDocumentRequest(
 /// Request body to set or clear a document's code-review exclusion flag.
 /// </summary>
 /// <remarks>
-/// Only hand-authored documents can be excluded — the handler rejects synced/remote documents
-/// (a sync run owns their lifecycle and would silently fight the flag). The toggle is
-/// reversible, so no confirmation flow is required client-side.
+/// Applies to documents backed by organization/library-owned LibraryDocument rows: hand-authored
+/// documents and private repository-sourced documents. Public repository-source documents are
+/// shared DocsPublicDocument rows and need a separate per-library override model.
 /// </remarks>
 /// <param name="DocumentId">Stable document identifier for the loaded document to update.</param>
 /// <param name="Excluded">True to hide the document from code-review list/search results.</param>
