@@ -23,6 +23,8 @@ public sealed class SnippetComposerTests
             Headings: [],
             Content: string.Empty,
             FrontMatter: string.Empty,
+            ParsedSkillName: null,
+            ParsedSkillDescription: null,
             Sections: sections ?? [],
             Snippets: snippets ?? []
         );
@@ -92,9 +94,7 @@ public sealed class SnippetComposerTests
             Doc(
                 snippets:
                 [
-                    Code(
-                        content: "var result = ComputeRepositoryValue(repositoryUserName);"
-                    ),
+                    Code(content: "var result = ComputeRepositoryValue(repositoryUserName);"),
                 ]
             ),
             Settings

@@ -305,6 +305,30 @@ internal sealed class CachedLibraryDocumentStore(ILibraryDocumentStore inner, Hy
     ) => inner.ListDocumentsAsync(organizationId, libraryId, ct);
 
     /// <inheritdoc />
+    public Task<IReadOnlyList<LibraryScopedSkillDocument>> ListScopedSkillDocumentsAsync(
+        string organizationId,
+        LibraryDocumentScopedSkill scopedSkill,
+        CancellationToken ct
+    ) => inner.ListScopedSkillDocumentsAsync(organizationId, scopedSkill, ct);
+
+    /// <inheritdoc />
+    public Task<LibraryScopedSkillDocument?> ResolveScopedSkillDocumentAsync(
+        string organizationId,
+        string promptName,
+        LibraryDocumentScopedSkill scopedSkill,
+        CancellationToken ct
+    ) => inner.ResolveScopedSkillDocumentAsync(organizationId, promptName, scopedSkill, ct);
+
+    /// <inheritdoc />
+    public Task<LibraryScopedSkillDocument?> GetScopedSkillDocumentAsync(
+        string organizationId,
+        string libraryId,
+        string documentId,
+        LibraryDocumentScopedSkill scopedSkill,
+        CancellationToken ct
+    ) => inner.GetScopedSkillDocumentAsync(organizationId, libraryId, documentId, scopedSkill, ct);
+
+    /// <inheritdoc />
     public async Task<LibraryDocument?> MoveDocumentAsync(
         string organizationId,
         string libraryId,

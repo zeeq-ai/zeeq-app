@@ -64,6 +64,33 @@ public class LibraryDocument
     public string TitleNormalized { get; set; } = null!;
 
     /// <summary>
+    /// User-authored prompt name override used when this document is exposed as a skill.
+    /// </summary>
+    /// <remarks>
+    /// NOTE: Stored as a normalized MCP prompt identifier. Future UI/manual update paths must
+    /// normalize the user's entered name before assigning this field.
+    /// </remarks>
+    public string? ManualSkillName { get; set; }
+
+    /// <summary>
+    /// Prompt name parsed from front-matter <c>name:</c> when this document is exposed as a skill.
+    /// </summary>
+    /// <remarks>
+    /// Stored as a normalized MCP prompt identifier; the raw front-matter value is not preserved.
+    /// </remarks>
+    public string? ParsedSkillName { get; set; }
+
+    /// <summary>
+    /// User-authored prompt description override used when this document is exposed as a skill.
+    /// </summary>
+    public string? ManualSkillDescription { get; set; }
+
+    /// <summary>
+    /// Prompt description parsed from front-matter <c>description:</c>.
+    /// </summary>
+    public string? ParsedSkillDescription { get; set; }
+
+    /// <summary>
     /// Normalized keywords derived from front matter.
     /// </summary>
     public string[] Keywords { get; set; } = [];

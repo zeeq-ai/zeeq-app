@@ -64,6 +64,8 @@ public sealed class LibraryDocumentWriteService(ILibraryDocumentStore store)
 
         document.Title = parsed.Title;
         document.TitleNormalized = DocumentNormalizer.Normalize(parsed.Title);
+        document.ParsedSkillName = NormalizeOptionalPromptName(parsed.ParsedSkillName);
+        document.ParsedSkillDescription = parsed.ParsedSkillDescription;
         document.Keywords = DocumentNormalizer.NormalizeKeywords(parsed.Keywords);
         document.Headings = [.. parsed.Headings];
         document.Content = markdownSource;
@@ -79,6 +81,9 @@ public sealed class LibraryDocumentWriteService(ILibraryDocumentStore store)
         Convert
             .ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(content)))
             .ToLowerInvariant();
+
+    private static string? NormalizeOptionalPromptName(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : DocumentNormalizer.NormalizePromptName(value);
 
     private static string NewId() => $"document_{Guid.CreateVersion7():N}";
 }

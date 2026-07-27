@@ -117,4 +117,20 @@ public sealed class DocumentNormalizerTests
 
         await Assert.That(normalized).IsEquivalentTo(["a"]);
     }
+
+    [Test]
+    public async Task NormalizePromptName_SpacesAndPunctuation_CollapsesToHyphens()
+    {
+        var normalized = DocumentNormalizer.NormalizePromptName("C# Guidance");
+
+        await Assert.That(normalized).IsEqualTo("c-guidance");
+    }
+
+    [Test]
+    public async Task NormalizePromptName_HyphenAndUnderscore_PreservesSeparators()
+    {
+        var normalized = DocumentNormalizer.NormalizePromptName("dotnet-csharp_best-practices");
+
+        await Assert.That(normalized).IsEqualTo("dotnet-csharp_best-practices");
+    }
 }

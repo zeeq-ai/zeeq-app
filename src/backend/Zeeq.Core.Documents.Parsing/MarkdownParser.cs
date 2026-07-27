@@ -68,6 +68,8 @@ public static class MarkdownParser
                 Headings: parser.Headings,
                 Content: content,
                 FrontMatter: parser.FrontMatter.ToString(),
+                ParsedSkillName: OptionalString(parser.SkillName),
+                ParsedSkillDescription: OptionalString(parser.SkillDescription),
                 Sections: sections.AsReadOnly(),
                 Snippets: snippets.AsReadOnly()
             );
@@ -86,4 +88,7 @@ public static class MarkdownParser
 
         return fileName;
     }
+
+    private static string? OptionalString(ReadOnlyMemory<char> value) =>
+        value.IsEmpty ? null : value.ToString();
 }

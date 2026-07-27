@@ -88,6 +88,22 @@ internal sealed class LibraryDocumentConfiguration : IEntityTypeConfiguration<Li
             .HasComputedColumnSql("reverse(path)", stored: true);
         entity.Property(document => document.Title).IsRequired().HasMaxLength(512);
         entity.Property(document => document.TitleNormalized).IsRequired().HasMaxLength(512);
+        entity
+            .Property(document => document.ManualSkillName)
+            .HasColumnName("skill_name_override")
+            .HasMaxLength(512);
+        entity
+            .Property(document => document.ParsedSkillName)
+            .HasColumnName("skill_name")
+            .HasMaxLength(512);
+        entity
+            .Property(document => document.ManualSkillDescription)
+            .HasColumnName("skill_description_override")
+            .HasMaxLength(4096);
+        entity
+            .Property(document => document.ParsedSkillDescription)
+            .HasColumnName("skill_description")
+            .HasMaxLength(4096);
         entity.Property(document => document.Keywords).HasColumnType("text[]");
         entity.Property(document => document.Headings).HasColumnType("text[]");
 
@@ -181,6 +197,24 @@ internal sealed class LibraryDocumentConfiguration : IEntityTypeConfiguration<Li
             document.AsScopedSkill,
             document.LibraryId,
         });
+
+        entity
+            .HasIndex(document => new
+            {
+                document.OrganizationId,
+                document.AsScopedSkill,
+                document.ManualSkillName,
+            })
+            .HasDatabaseName("ix_docs_library_documents_scoped_skill_name_override");
+
+        entity
+            .HasIndex(document => new
+            {
+                document.OrganizationId,
+                document.AsScopedSkill,
+                document.ParsedSkillName,
+            })
+            .HasDatabaseName("ix_docs_library_documents_scoped_skill_name");
 
         // Supports the move-detection hash lookup in UpsertSyncedDocumentAsync
         // (per-file on every private ingest run) — mirrors
