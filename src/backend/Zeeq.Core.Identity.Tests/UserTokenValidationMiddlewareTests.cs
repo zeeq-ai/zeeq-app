@@ -172,7 +172,7 @@ public sealed class UserTokenValidationMiddlewareTests
             return Task.FromResult(markUsedResult);
         }
 
-        public Task<AuthContext> EnsureUserAsync(
+        public Task<AuthContext?> EnsureUserAsync(
             string provider,
             string providerSubject,
             string? displayName,

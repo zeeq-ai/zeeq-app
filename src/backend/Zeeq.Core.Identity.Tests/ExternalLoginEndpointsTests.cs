@@ -1,4 +1,3 @@
-using System.Reflection;
 using Zeeq.Core.Common;
 
 namespace Zeeq.Core.Identity.Tests;
@@ -10,7 +9,7 @@ public sealed class ExternalLoginEndpointsTests
     {
         var settings = new AuthSettings { FrontendBaseUri = "https://app.zeeq.ai/web" };
 
-        var normalized = InvokeNormalizeReturnUrl("/", settings);
+        var normalized = ExternalLoginEndpoints.NormalizeReturnUrl("/", settings);
 
         await Assert.That(normalized).IsEqualTo("https://app.zeeq.ai/web/");
     }
@@ -20,7 +19,7 @@ public sealed class ExternalLoginEndpointsTests
     {
         var settings = new AuthSettings { FrontendBaseUri = "https://app.zeeq.ai/web" };
 
-        var normalized = InvokeNormalizeReturnUrl("/settings/github?tab=app", settings);
+        var normalized = ExternalLoginEndpoints.NormalizeReturnUrl("/settings/github?tab=app", settings);
 
         await Assert
             .That(normalized)
@@ -32,7 +31,7 @@ public sealed class ExternalLoginEndpointsTests
     {
         var settings = new AuthSettings { FrontendBaseUri = "https://app.zeeq.ai/web" };
 
-        var normalized = InvokeNormalizeReturnUrl("/activate-organization", settings);
+        var normalized = ExternalLoginEndpoints.NormalizeReturnUrl("/activate-organization", settings);
 
         await Assert.That(normalized).IsEqualTo("https://app.zeeq.ai/web/");
     }
@@ -42,7 +41,7 @@ public sealed class ExternalLoginEndpointsTests
     {
         var settings = new AuthSettings { FrontendBaseUri = "https://app.zeeq.ai/web" };
 
-        var normalized = InvokeNormalizeReturnUrl(
+        var normalized = ExternalLoginEndpoints.NormalizeReturnUrl(
             "https://app.zeeq.ai/web/activate-organization",
             settings
         );
@@ -55,7 +54,7 @@ public sealed class ExternalLoginEndpointsTests
     {
         var settings = new AuthSettings { FrontendBaseUri = "https://app.zeeq.ai/web" };
 
-        var normalized = InvokeNormalizeReturnUrl("/login?inactiveOrg=true", settings);
+        var normalized = ExternalLoginEndpoints.NormalizeReturnUrl("/login?inactiveOrg=true", settings);
 
         await Assert.That(normalized).IsEqualTo("https://app.zeeq.ai/web/");
     }
@@ -65,7 +64,7 @@ public sealed class ExternalLoginEndpointsTests
     {
         var settings = new AuthSettings { FrontendBaseUri = "https://app.zeeq.ai/web" };
 
-        var normalized = InvokeNormalizeReturnUrl(
+        var normalized = ExternalLoginEndpoints.NormalizeReturnUrl(
             "https://app.zeeq.ai/web/login?inactiveOrg=true",
             settings
         );
@@ -78,7 +77,7 @@ public sealed class ExternalLoginEndpointsTests
     {
         var settings = new AuthSettings { FrontendBaseUri = "https://app.zeeq.ai/web" };
 
-        var normalized = InvokeNormalizeReturnUrl("/activate-account", settings);
+        var normalized = ExternalLoginEndpoints.NormalizeReturnUrl("/activate-account", settings);
 
         await Assert.That(normalized).IsEqualTo("https://app.zeeq.ai/web/");
     }
@@ -88,7 +87,7 @@ public sealed class ExternalLoginEndpointsTests
     {
         var settings = new AuthSettings { FrontendBaseUri = "https://app.zeeq.ai/web" };
 
-        var normalized = InvokeNormalizeReturnUrl(
+        var normalized = ExternalLoginEndpoints.NormalizeReturnUrl(
             "https://app.zeeq.ai/web/activate-account",
             settings
         );
@@ -101,25 +100,43 @@ public sealed class ExternalLoginEndpointsTests
     {
         var settings = new AuthSettings { FrontendBaseUri = "https://app.zeeq.ai/web" };
 
-        var normalized = InvokeNormalizeReturnUrl("https://example.com/phish", settings);
+        var normalized = ExternalLoginEndpoints.NormalizeReturnUrl("https://example.com/phish", settings);
 
         await Assert.That(normalized).IsEqualTo("https://app.zeeq.ai/web/");
     }
 
-    private static string InvokeNormalizeReturnUrl(string? returnUrl, AuthSettings settings)
+    /// <summary>
+    /// Verifies the inactive-organization notice keeps the frontend base path.
+    /// </summary>
+    /// <remarks>
+    /// Production serves the app under <c>/web/</c>, so the callback must redirect to
+    /// <c>https://app.zeeq.ai/web/login?inactiveOrg=true</c> — the same target
+    /// <c>RequireActiveCurrentOrganizationFilter</c> emits. This deliberately bypasses
+    /// <c>NormalizeReturnUrl</c>, which collapses that path to the frontend root.
+    /// </remarks>
+    [Test]
+    public async Task BuildInactiveOrganizationUrl_ResolvesUnderFrontendBasePath()
     {
-        var method =
-            typeof(ExternalLoginEndpoints).GetMethod(
-                "NormalizeReturnUrl",
-                BindingFlags.Static | BindingFlags.NonPublic
-            )
-            ?? throw new InvalidOperationException(
-                "Could not find ExternalLoginEndpoints.NormalizeReturnUrl."
-            );
+        var settings = new AuthSettings { FrontendBaseUri = "https://app.zeeq.ai/web" };
 
-        return (string)(
-            method.Invoke(null, [returnUrl, settings])
-            ?? throw new InvalidOperationException("NormalizeReturnUrl returned null.")
-        );
+        var url = ExternalLoginEndpoints.BuildInactiveOrganizationUrl(settings);
+
+        await Assert.That(url).IsEqualTo("https://app.zeeq.ai/web/login?inactiveOrg=true");
     }
+
+    /// <summary>
+    /// Documents that <c>NormalizeReturnUrl</c> still collapses the notice path, which is
+    /// why the callback must not route the inactive-org redirect through it.
+    /// </summary>
+    [Test]
+    public async Task BuildInactiveOrganizationUrl_DiffersFromNormalizeReturnUrl()
+    {
+        var settings = new AuthSettings { FrontendBaseUri = "https://app.zeeq.ai/web" };
+
+        var built = ExternalLoginEndpoints.BuildInactiveOrganizationUrl(settings);
+        var normalized = ExternalLoginEndpoints.NormalizeReturnUrl("/login?inactiveOrg=true", settings);
+
+        await Assert.That(built).IsNotEqualTo(normalized);
+    }
+
 }

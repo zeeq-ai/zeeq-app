@@ -26,7 +26,12 @@ public sealed class AuthUserStore(IZeeqIdentityStore identityStore)
     /// provider subject into app-owned user/org/team records that cookies and
     /// OpenIddict access tokens can reference consistently.
     /// </remarks>
-    public Task<AuthContext> EnsureUserAsync(
+    /// <returns>
+    /// The resolved context, or <see langword="null"/> when the user has no organization
+    /// membership that can carry a session at all. Callers must treat <see langword="null"/>
+    /// as a failed login and redirect, never as an exception.
+    /// </returns>
+    public Task<AuthContext?> EnsureUserAsync(
         string provider,
         string providerSubject,
         string? displayName,

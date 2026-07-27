@@ -73,14 +73,24 @@ public interface IZeeqIdentityStore
     /// An <see cref="AuthContext"/> carrying the local <c>UserId</c>, <c>OrganizationId</c>,
     /// <c>TeamId</c>, and partition list. A new user, initial organization, and initial team
     /// are provisioned on first call; subsequent calls for the same <c>(provider, providerSubject)</c>
-    /// pair return the existing records.
+    /// pair return the existing records. Returns <see langword="null"/> when an existing user has
+    /// no organization membership able to carry a session.
     /// </returns>
     /// <remarks>
+    /// <para>
     /// Existing disabled users or disabled identities must fail closed: if either the
     /// <c>AuthUser</c> or the <c>AuthUserIdentity</c> row is disabled this method must throw
     /// rather than returning a context that would allow login to proceed.
+    /// </para>
+    /// <para>
+    /// Organization activation is deliberately not enforced here. An unactivated (or disabled)
+    /// organization still yields a context so the login callback can mint a cookie and redirect
+    /// to <c>/login?inactiveOrg=true</c>; <see cref="RequireActiveCurrentOrganizationFilter"/>
+    /// is the single place that enforces activation. Implementations must not throw for this
+    /// case — doing so fails the OAuth callback with a 500 before any cookie exists.
+    /// </para>
     /// </remarks>
-    Task<AuthContext> EnsureUserAsync(
+    Task<AuthContext?> EnsureUserAsync(
         string provider,
         string providerSubject,
         string? displayName,

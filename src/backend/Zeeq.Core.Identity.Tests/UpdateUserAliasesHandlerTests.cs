@@ -45,7 +45,7 @@ public sealed class UpdateUserAliasesHandlerTests
     {
         public bool ReplaceCalled { get; private set; }
 
-        public Task<AuthContext> EnsureUserAsync(
+        public Task<AuthContext?> EnsureUserAsync(
             string provider,
             string providerSubject,
             string? displayName,

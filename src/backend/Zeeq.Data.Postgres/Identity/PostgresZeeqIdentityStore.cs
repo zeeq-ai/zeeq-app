@@ -16,7 +16,7 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
     private const int UserAliasReplacementLockNamespace = 722452;
 
     /// <inheritdoc />
-    public async Task<AuthContext> EnsureUserAsync(
+    public async Task<AuthContext?> EnsureUserAsync(
         string provider,
         string providerSubject,
         string? displayName,
@@ -769,7 +769,7 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
                 ct
             );
 
-    private async Task<AuthContext> FindActiveContextAsync(
+    private async Task<AuthContext?> FindActiveContextAsync(
         string userId,
         CancellationToken cancellationToken
     )
@@ -877,8 +877,62 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
                 teamMembership.OrganizationId,
                 teamMembership.TeamId
             ))
-            .FirstAsync(cancellationToken);
+            .FirstOrDefaultAsync(cancellationToken);
 
-        return fallbackContext;
+        if (fallbackContext is not null)
+        {
+            return fallbackContext;
+        }
+
+        // Last resort: resolve a context even when the organization is not
+        // activated (or was disabled). Activation is deliberately NOT enforced
+        // here — RequireActiveCurrentOrganizationFilter owns that decision and
+        // redirects to /login?inactiveOrg=true. Refusing to resolve a context
+        // would fail the login callback outright, before any cookie exists, so
+        // the user could never reach that redirect (nor use the signed cookie
+        // to accept a pending same-domain invitation).
+        //
+        // NOTE: This tier and the inactive-org redirect in ExternalLoginEndpoints
+        // (CompleteProviderLoginAsync -> IsCurrentOrganizationActiveAsync) are two
+        // halves of one contract: this decides WHICH org/team the cookie is minted
+        // for, that decides WHERE the browser lands. Changing either side to filter
+        // on activation again reintroduces the 500 this replaced. The store half is
+        // pinned by EnsureUserAsync_ExistingIdentityWithOnlyInactiveOrganizations_
+        // ReturnsInactiveContext.
+        //
+        // NOTE: Organizations are deliberately not joined here, so this admits
+        // disabled orgs as well as never-activated ones. Both resolve to
+        // OrganizationActivationState.IsActive == false and get the same notice.
+        // Tiers 1 and 2 above return first whenever an activated org exists, so
+        // this can only ever select among orgs that are already unusable.
+        return await db
+            .OrganizationMemberships.TagWithOperationCallSite(
+                "identity.auth_context.find_inactive_org_membership"
+            )
+            .AsNoTracking()
+            .Where(membership =>
+                membership.UserId == userId
+                && membership.Status == MembershipStatus.Active
+                && membership.DisabledAtUtc == null
+            )
+            .Join(
+                db.TeamMemberships.TagWithOperationCallSite(
+                        "identity.auth_context.find_inactive_org_team"
+                    )
+                    .AsNoTracking()
+                    .Where(membership =>
+                        membership.UserId == userId && membership.DisabledAtUtc == null
+                    ),
+                membership => membership.OrganizationId,
+                teamMembership => teamMembership.OrganizationId,
+                (membership, teamMembership) => teamMembership
+            )
+            .OrderBy(teamMembership => teamMembership.CreatedAtUtc)
+            .Select(teamMembership => new AuthContext(
+                userId,
+                teamMembership.OrganizationId,
+                teamMembership.TeamId
+            ))
+            .FirstOrDefaultAsync(cancellationToken);
     }
 }

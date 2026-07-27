@@ -29,6 +29,14 @@ public static class ExternalLoginEndpoints
     private const string RetiredActivationPath = "/activate-account";
 
     /// <summary>
+    /// Landing page for a session whose organization is not yet activated. Matches the
+    /// target used by <c>RequireActiveOrganizationFilter</c> and
+    /// <c>RequireActiveCurrentOrganizationFilter</c>, and is already recognized as a
+    /// legitimate return target by <see cref="IsActivationTarget"/>.
+    /// </summary>
+    private const string InactiveOrganizationReturnUrl = "/login?inactiveOrg=true";
+
+    /// <summary>
     /// Maps provider discovery, login start, callback, handoff, and logout routes.
     /// </summary>
     public static IEndpointRouteBuilder MapExternalLoginEndpoints(this IEndpointRouteBuilder app)
@@ -194,6 +202,7 @@ public static class ExternalLoginEndpoints
         ExternalLoginStateStore stateStore,
         AuthHandoffStore handoffStore,
         AuthUserStore userStore,
+        IZeeqMembershipStore membershipStore,
         AppSettings appSettings,
         IHttpClientFactory httpClientFactory,
         HttpContext httpContext,
@@ -247,6 +256,30 @@ public static class ExternalLoginEndpoints
             cancellationToken
         );
 
+        if (principal is null)
+        {
+            return Results.Redirect(
+                $"{settings.FrontendBaseUriTrimmed}/login?error={Uri.EscapeDataString("Your account has no organization. Ask an administrator for an invitation.")}"
+            );
+        }
+
+        // An unactivated or disabled organization is a valid session, not a failure: the
+        // user still needs the cookie to accept a pending same-domain invitation from the
+        // login page. Send them straight to the notice instead of the requested return URL,
+        // which RequireActiveCurrentOrganizationFilter would only bounce back anyway.
+        //
+        // NOTE: This is the second half of a contract with the last-resort tier of
+        // PostgresZeeqIdentityStore.FindActiveContextAsync, which deliberately resolves a
+        // context for an inactive org rather than failing. That store tier decides WHICH
+        // org the principal carries; this decides WHERE the browser lands. If that tier is
+        // ever changed to filter on activation again, this branch goes dead and the
+        // callback 500s before any cookie exists.
+        var inactiveOrganization = !await IsCurrentOrganizationActiveAsync(
+            principal,
+            membershipStore,
+            cancellationToken
+        );
+
         if (ShouldUseBrowserHandoff(httpContext, settings, oauthState.ReturnUrl))
         {
             // Google and other real providers may callback to the API host, while
@@ -257,7 +290,8 @@ public static class ExternalLoginEndpoints
                 new AuthHandoff(
                     Principal: principal,
                     ReturnUrl: oauthState.ReturnUrl,
-                    ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(2)
+                    ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(2),
+                    InactiveOrganization: inactiveOrganization
                 ),
                 cancellationToken
             );
@@ -272,7 +306,54 @@ public static class ExternalLoginEndpoints
 
         await httpContext.SignInAsync(SetupIdentityExtension.CookieScheme, principal);
 
-        return Results.Redirect(NormalizeReturnUrl(oauthState.ReturnUrl, settings));
+        return Results.Redirect(
+            inactiveOrganization
+                ? BuildInactiveOrganizationUrl(settings)
+                : NormalizeReturnUrl(oauthState.ReturnUrl, settings)
+        );
+    }
+
+    /// <summary>
+    /// Builds the absolute inactive-organization notice URL, including the frontend base path.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately bypasses <see cref="NormalizeReturnUrl"/>: that method treats
+    /// <c>/login?inactiveOrg=true</c> as an activation target and collapses it to the frontend
+    /// root to stop a post-activation login from bouncing back to the notice. Here the notice
+    /// <i>is</i> the destination, so it is emitted directly — the same way
+    /// <c>RequireActiveCurrentOrganizationFilter</c> does.
+    /// </remarks>
+    internal static string BuildInactiveOrganizationUrl(AuthSettings? settings) =>
+        settings is null
+            ? InactiveOrganizationReturnUrl
+            : settings.FrontendBaseUriTrimmed + InactiveOrganizationReturnUrl;
+
+    /// <summary>
+    /// Resolves whether the organization carried by a freshly minted principal is active.
+    /// </summary>
+    /// <remarks>
+    /// Reads the same <see cref="IZeeqMembershipStore"/> activation state that
+    /// <c>RequireActiveCurrentOrganizationFilter</c> enforces on subsequent requests, so the
+    /// callback and the filter can never disagree about what "active" means.
+    /// </remarks>
+    private static async Task<bool> IsCurrentOrganizationActiveAsync(
+        ClaimsPrincipal principal,
+        IZeeqMembershipStore membershipStore,
+        CancellationToken cancellationToken
+    )
+    {
+        var orgId = principal.FindFirstValue(AuthClaims.OrganizationId);
+        if (string.IsNullOrWhiteSpace(orgId))
+        {
+            return false;
+        }
+
+        var state = await membershipStore.FindOrganizationActivationStateAsync(
+            orgId,
+            cancellationToken
+        );
+
+        return state?.IsActive == true;
     }
 
     private static async Task<IResult> CompleteBrowserHandoffAsync(
@@ -300,7 +381,13 @@ public static class ExternalLoginEndpoints
 
         await httpContext.SignInAsync(SetupIdentityExtension.CookieScheme, handoff.Principal);
 
-        return Results.Redirect(NormalizeReturnUrl(handoff.ReturnUrl, settings));
+        // The cookie is issued on the frontend origin either way; only the landing page
+        // differs when the session's organization is not yet activated.
+        return Results.Redirect(
+            handoff.InactiveOrganization
+                ? BuildInactiveOrganizationUrl(settings)
+                : NormalizeReturnUrl(handoff.ReturnUrl, settings)
+        );
     }
 
     private static async Task<IResult> LogoutAsync(HttpContext httpContext)
@@ -350,7 +437,12 @@ public static class ExternalLoginEndpoints
             ) ?? throw new InvalidOperationException("Provider returned an empty token response.");
     }
 
-    private static async Task<ClaimsPrincipal> CreatePrincipalAsync(
+    /// <remarks>
+    /// Returns <see langword="null"/> when the verified upstream identity resolves to no
+    /// usable organization context, so the caller can redirect instead of failing the
+    /// callback with an unhandled 500.
+    /// </remarks>
+    private static async Task<ClaimsPrincipal?> CreatePrincipalAsync(
         HttpClient http,
         ProviderAuthSettings provider,
         ProviderTokenResponse tokenResponse,
@@ -395,6 +487,11 @@ public static class ExternalLoginEndpoints
                 cancellationToken
             );
 
+            if (authContext is null)
+            {
+                return null;
+            }
+
             return ExternalUserPrincipalFactory.CreateCookiePrincipal(
                 authContext,
                 provider.Name,
@@ -433,6 +530,11 @@ public static class ExternalLoginEndpoints
             fallbackUserInfo.PictureUrl,
             cancellationToken
         );
+
+        if (fallbackAuthContext is null)
+        {
+            return null;
+        }
 
         return ExternalUserPrincipalFactory.CreateCookiePrincipal(
             fallbackAuthContext,
@@ -507,7 +609,14 @@ public static class ExternalLoginEndpoints
         return settings.MockCallbackUri;
     }
 
-    private static string NormalizeReturnUrl(string? returnUrl, AuthSettings? settings)
+    /// <summary>
+    /// Resolves a caller-supplied return URL to a safe absolute URL on the frontend origin.
+    /// </summary>
+    /// <remarks>
+    /// Internal rather than private so the tests can bind to it directly; the assembly grants
+    /// <c>InternalsVisibleTo</c> to <c>Zeeq.Core.Identity.Tests</c>.
+    /// </remarks>
+    internal static string NormalizeReturnUrl(string? returnUrl, AuthSettings? settings)
     {
         if (string.IsNullOrWhiteSpace(returnUrl))
         {
