@@ -56,24 +56,32 @@ public sealed partial class CodeReviewAgentExecutor(
         IReadOnlyList<CodeReviewPreviousReview> previousReviews,
         ClaimsPrincipal callerIdentity,
         CodeReviewTelemetryContext telemetry,
+        CodeReviewExecutionOptions options,
         CancellationToken cancellationToken
     )
     {
-        using var activity = ZeeqTelemetry.Trace(
-            [
-                ("organization.id", organizationId),
-                ("code_review.no_agents_activated", noAgentsActivated),
-                ("code_review.configured_reviewer_count", activeReviewers.Count),
-            ],
-            "code-review.agent.execute"
-        );
+        using var activity = options.EmitDiagnostics
+            ? ZeeqTelemetry.Trace(
+                [
+                    ("organization.id", organizationId),
+                    ("code_review.no_agents_activated", noAgentsActivated),
+                    ("code_review.configured_reviewer_count", activeReviewers.Count),
+                    ("code_review.execution_mode", options.Mode.ToString()),
+                ],
+                "code-review.agent.execute"
+            )
+            : null;
 
         if (noAgentsActivated)
         {
-            activity?.AddEvent(
-                [("organization.id", organizationId)],
-                "code_review.no_agents_activated"
-            );
+            if (options.EmitDiagnostics)
+            {
+                activity?.AddEvent(
+                    [("organization.id", organizationId)],
+                    "code_review.no_agents_activated"
+                );
+            }
+
             LogNoAgentsActivated(_logger, organizationId);
 
             return CodeReviewXmlOutputValidator.Serialize(
@@ -172,20 +180,24 @@ public sealed partial class CodeReviewAgentExecutor(
 
             var reviewerFacets = JoinReviewerFacets(workflowReviewers);
 
-            activity?.AddEvent(
-                [
-                    ("organization.id", organizationId),
-                    ("code_review.reviewer_count", workflowReviewers.Count),
-                    ("code_review.reviewer_facets", reviewerFacets),
-                ],
-                "code_review.reviewers_resolved"
-            );
+            if (options.EmitDiagnostics)
+            {
+                activity?.AddEvent(
+                    [
+                        ("organization.id", organizationId),
+                        ("code_review.reviewer_count", workflowReviewers.Count),
+                        ("code_review.reviewer_facets", reviewerFacets),
+                    ],
+                    "code_review.reviewers_resolved"
+                );
+            }
 
             LogReviewersResolved(_logger, organizationId, workflowReviewers.Count, reviewerFacets);
 
             return await ExecuteWorkflowAsync(
                 workflowReviewers,
                 codeReviewUserPrompt.SharedPullRequestPromptBody,
+                options,
                 cancellationToken
             );
         }
@@ -208,18 +220,22 @@ public sealed partial class CodeReviewAgentExecutor(
     internal async Task<string> ExecuteWorkflowAsync(
         IReadOnlyList<CodeReviewWorkflowReviewer> reviewers,
         string sharedPullRequestPromptBody,
+        CodeReviewExecutionOptions options,
         CancellationToken cancellationToken
     )
     {
         var reviewerFacets = JoinReviewerFacets(reviewers);
 
-        using var activity = ZeeqTelemetry.Trace(
-            [
-                ("code_review.reviewer_count", reviewers.Count),
-                ("code_review.reviewer_facets", reviewerFacets),
-            ],
-            "code-review.workflow.execute"
-        );
+        using var activity = options.EmitDiagnostics
+            ? ZeeqTelemetry.Trace(
+                [
+                    ("code_review.reviewer_count", reviewers.Count),
+                    ("code_review.reviewer_facets", reviewerFacets),
+                    ("code_review.execution_mode", options.Mode.ToString()),
+                ],
+                "code-review.workflow.execute"
+            )
+            : null;
 
         LogWorkflowStarted(
             _logger,
@@ -230,24 +246,28 @@ public sealed partial class CodeReviewAgentExecutor(
 
         try
         {
-            var workflow = workflowFactory.Build(reviewers);
+            var workflow = workflowFactory.Build(reviewers, options);
 
             var aggregateBlocks = await RunWorkflowAsync(
                 workflow,
                 sharedPullRequestPromptBody,
                 _logger,
+                options,
                 cancellationToken
             );
 
-            activity?.AddEvent(
-                [
-                    ("code_review.workflow_output_char_count", aggregateBlocks.Length),
-                    ("code_review.reviewer_count", reviewers.Count),
-                ],
-                "code_review.workflow_output_received"
-            );
+            if (options.EmitDiagnostics)
+            {
+                activity?.AddEvent(
+                    [
+                        ("code_review.workflow_output_char_count", aggregateBlocks.Length),
+                        ("code_review.reviewer_count", reviewers.Count),
+                    ],
+                    "code_review.workflow_output_received"
+                );
+            }
 
-            var xml = ValidateAndSerializeAggregateBlocks(aggregateBlocks);
+            var xml = ValidateAndSerializeAggregateBlocks(aggregateBlocks, options);
             LogWorkflowCompleted(_logger, reviewers.Count, reviewerFacets, aggregateBlocks.Length);
 
             return xml;
@@ -256,15 +276,18 @@ public sealed partial class CodeReviewAgentExecutor(
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
 
-            activity?.AddEvent(
-                [
-                    ("exception.type", ex.GetType().Name),
-                    ("exception.message", ex.Message),
-                    ("code_review.reviewer_count", reviewers.Count),
-                    ("code_review.reviewer_facets", reviewerFacets),
-                ],
-                "code_review.workflow_failed"
-            );
+            if (options.EmitDiagnostics)
+            {
+                activity?.AddEvent(
+                    [
+                        ("exception.type", ex.GetType().Name),
+                        ("exception.message", ex.Message),
+                        ("code_review.reviewer_count", reviewers.Count),
+                        ("code_review.reviewer_facets", reviewerFacets),
+                    ],
+                    "code_review.workflow_failed"
+                );
+            }
             LogWorkflowFailed(_logger, reviewers.Count, reviewerFacets, ex.GetType().Name);
 
             throw;
@@ -279,7 +302,10 @@ public sealed partial class CodeReviewAgentExecutor(
     /// reviewer output, which is a workflow invariant failure rather than a
     /// model-output validation problem.
     /// </remarks>
-    internal string ValidateAndSerializeAggregateBlocks(string aggregateBlocks)
+    internal string ValidateAndSerializeAggregateBlocks(
+        string aggregateBlocks,
+        CodeReviewExecutionOptions options
+    )
     {
         if (string.IsNullOrWhiteSpace(aggregateBlocks))
         {
@@ -299,13 +325,16 @@ public sealed partial class CodeReviewAgentExecutor(
         }
 
         var findingCount = validation.Output.Reviews.Sum(review => review.Findings.Count);
-        ZeeqTelemetry.AddEvent(
-            [
-                ("code_review.review_count", validation.Output.Reviews.Count),
-                ("code_review.finding_count", findingCount),
-            ],
-            "code_review.aggregate_xml_validated"
-        );
+        if (options.EmitDiagnostics)
+        {
+            ZeeqTelemetry.AddEvent(
+                [
+                    ("code_review.review_count", validation.Output.Reviews.Count),
+                    ("code_review.finding_count", findingCount),
+                ],
+                "code_review.aggregate_xml_validated"
+            );
+        }
 
         return CodeReviewXmlOutputValidator.Serialize(validation.Output);
     }
@@ -314,6 +343,7 @@ public sealed partial class CodeReviewAgentExecutor(
         Workflow workflow,
         string sharedPullRequestPromptBody,
         ILogger logger,
+        CodeReviewExecutionOptions options,
         CancellationToken cancellationToken
     )
     {
@@ -338,26 +368,35 @@ public sealed partial class CodeReviewAgentExecutor(
             {
                 case WorkflowOutputEvent outputEvent when outputEvent.Is<string>(out var output):
                     outputs.Add(output);
-                    ZeeqTelemetry.AddEvent(
-                        [
-                            ("code_review.workflow_output_index", outputs.Count),
-                            ("code_review.workflow_output_char_count", output.Length),
-                        ],
-                        "code_review.workflow_stream_output"
-                    );
+                    if (options.EmitDiagnostics)
+                    {
+                        ZeeqTelemetry.AddEvent(
+                            [
+                                ("code_review.workflow_output_index", outputs.Count),
+                                ("code_review.workflow_output_char_count", output.Length),
+                            ],
+                            "code_review.workflow_stream_output"
+                        );
+                    }
                     LogWorkflowStreamOutputReceived(logger, outputs.Count, output.Length);
                     break;
                 case ExecutorFailedEvent executorFailedEvent:
                     workflowException = executorFailedEvent.Data;
                     failedExecutorId = executorFailedEvent.ExecutorId;
-                    ZeeqTelemetry.AddEvent(
-                        [
-                            ("code_review.workflow_executor_id", executorFailedEvent.ExecutorId),
-                            ("exception.type", executorFailedEvent.Data?.GetType().Name),
-                            ("exception.message", executorFailedEvent.Data?.Message),
-                        ],
-                        "code_review.workflow_executor_failed"
-                    );
+                    if (options.EmitDiagnostics)
+                    {
+                        ZeeqTelemetry.AddEvent(
+                            [
+                                (
+                                    "code_review.workflow_executor_id",
+                                    executorFailedEvent.ExecutorId
+                                ),
+                                ("exception.type", executorFailedEvent.Data?.GetType().Name),
+                                ("exception.message", executorFailedEvent.Data?.Message),
+                            ],
+                            "code_review.workflow_executor_failed"
+                        );
+                    }
                     LogWorkflowExecutorFailed(
                         logger,
                         executorFailedEvent.ExecutorId,
@@ -367,13 +406,16 @@ public sealed partial class CodeReviewAgentExecutor(
                     break;
                 case WorkflowErrorEvent workflowErrorEvent:
                     workflowException = workflowErrorEvent.Exception;
-                    ZeeqTelemetry.AddEvent(
-                        [
-                            ("exception.type", workflowErrorEvent.Exception?.GetType().Name),
-                            ("exception.message", workflowErrorEvent.Exception?.Message),
-                        ],
-                        "code_review.workflow_error"
-                    );
+                    if (options.EmitDiagnostics)
+                    {
+                        ZeeqTelemetry.AddEvent(
+                            [
+                                ("exception.type", workflowErrorEvent.Exception?.GetType().Name),
+                                ("exception.message", workflowErrorEvent.Exception?.Message),
+                            ],
+                            "code_review.workflow_error"
+                        );
+                    }
                     LogWorkflowStreamFailed(
                         logger,
                         workflowErrorEvent.Exception?.GetType().Name,

@@ -66,6 +66,9 @@ public sealed class CodeReviewRunnerTests
         await Assert.That(fixture.Artifacts.ContentType).IsEqualTo("application/xml");
         await Assert.That(fixture.Artifacts.StoredXml).IsEqualTo(fixture.AgentExecutor.Xml);
         await Assert
+            .That(fixture.AgentExecutor.Options)
+            .IsEqualTo(CodeReviewExecutionOptions.Durable);
+        await Assert
             .That(fixture.AgentExecutor.ActiveReviewers.Single().Id)
             .IsEqualTo("agent_backend");
         await Assert.That(fixture.AgentExecutor.NoAgentsActivated).IsFalse();
@@ -221,6 +224,101 @@ public sealed class CodeReviewRunnerTests
         await Assert.That(identity.FindFirstValue("sub")).IsEqualTo("system:code-review-agent");
     }
 
+    [Test]
+    public async Task RunAsync_WhenArtifactWriteFails_PreservesSourceTelemetryPayloadOnReview()
+    {
+        var fixture = RunnerFixture.Create();
+        fixture.AgentExecutor.OnExecute = telemetry =>
+        {
+            telemetry.RecordToolInvocation("search_sections", succeeded: true);
+        };
+        fixture.Artifacts.ThrowOnWrite = true;
+
+        Task Act() =>
+            fixture.Runner.RunAsync(fixture.Message, fixture.Review, CancellationToken.None);
+
+        await Assert.That(Act).Throws<InvalidOperationException>();
+        await Assert.That(fixture.Review.SourceTelemetryPayload).Contains("search_sections");
+    }
+
+    [Test]
+    public async Task ExecutionEngine_WithDraftRuntimeAgent_DoesNotWriteArtifactOrLoadPreviousReviews()
+    {
+        var fixture = RunnerFixture.Create();
+        fixture.Review.ReviewGroupId = "group_123";
+        fixture.PreviousReviews.PreviousReviews = [new("Security", "Previous summary", [])];
+        var draftAgent = new CodeReviewerRuntimeAgent(
+            "draft-agent",
+            "Draft reviewer",
+            "Draft",
+            CodeReviewModelTier.High,
+            "Review only the current draft configuration.",
+            new()
+            {
+                IncludedFiles =
+                [
+                    new() { MatchType = CodeReviewFileNameMatchType.Extension, Pattern = ".cs" },
+                ],
+            }
+        );
+
+        var result = await fixture.ExecutionEngine.RunAsync(
+            fixture.Message,
+            fixture.Review,
+            CodeReviewExecutionOptions.Test,
+            runtimeAgentsOverride: [draftAgent],
+            CancellationToken.None
+        );
+
+        await Assert.That(result.ReviewerCount).IsEqualTo(1);
+        await Assert.That(result.NoAgentsActivated).IsFalse();
+        await Assert.That(result.Counts.Critical).IsEqualTo(1);
+        await Assert.That(fixture.Artifacts.WriteCount).IsEqualTo(0);
+        await Assert.That(fixture.PreviousReviews.LoadCount).IsEqualTo(0);
+        await Assert.That(fixture.AgentExecutor.Options).IsEqualTo(CodeReviewExecutionOptions.Test);
+        await Assert
+            .That(fixture.AgentExecutor.ActiveReviewers.Single().Id)
+            .IsEqualTo("draft-agent");
+        await Assert.That(fixture.AgentExecutor.PreviousReviews).IsEmpty();
+    }
+
+    [Test]
+    public async Task ExecutionEngine_WithDraftRuntimeAgentThatDoesNotActivate_ReturnsNoAgentsDocument()
+    {
+        var fixture = RunnerFixture.Create();
+        var draftAgent = new CodeReviewerRuntimeAgent(
+            "draft-agent",
+            "Draft reviewer",
+            "Draft",
+            CodeReviewModelTier.High,
+            "Review only TypeScript files.",
+            new()
+            {
+                IncludedFiles =
+                [
+                    new() { MatchType = CodeReviewFileNameMatchType.Extension, Pattern = ".ts" },
+                ],
+            }
+        );
+        fixture.AgentExecutor.Xml = CodeReviewXmlOutputValidator.Serialize(
+            new() { NoAgentsActivated = true }
+        );
+
+        var result = await fixture.ExecutionEngine.RunAsync(
+            fixture.Message,
+            fixture.Review,
+            CodeReviewExecutionOptions.Test,
+            runtimeAgentsOverride: [draftAgent],
+            CancellationToken.None
+        );
+
+        await Assert.That(result.NoAgentsActivated).IsTrue();
+        await Assert.That(result.ReviewerCount).IsEqualTo(0);
+        await Assert.That(fixture.Artifacts.WriteCount).IsEqualTo(0);
+        await Assert.That(fixture.AgentExecutor.NoAgentsActivated).IsTrue();
+        await Assert.That(fixture.AgentExecutor.ActiveReviewers).IsEmpty();
+    }
+
     private sealed class RunnerFixture
     {
         private readonly DateTimeOffset _createdAt = DateTimeOffset.UtcNow;
@@ -289,7 +387,9 @@ public sealed class CodeReviewRunnerTests
         public TestCodeReviewPullRequestSource PullRequestSource { get; } = new();
         public TestCodeReviewerAgentStore AgentStore { get; } = new();
         public TestCodeReviewAgentExecutor AgentExecutor { get; } = new();
+        public TestCodeReviewPreviousReviewStore PreviousReviews { get; } = new();
         public TestCodeReviewArtifactStore Artifacts { get; } = new();
+        public CodeReviewExecutionEngine ExecutionEngine { get; private set; } = null!;
         public CodeReviewRunner Runner { get; private set; } = null!;
         public CodeReviewRecord Review { get; }
         public PullRequestRecord PullRequest { get; }
@@ -331,17 +431,21 @@ public sealed class CodeReviewRunnerTests
                 []
             );
             fixture.AgentExecutor.Xml = ReviewXml();
-            fixture.Runner = new(
+            fixture.ExecutionEngine = new(
                 fixture.PullRequestSource,
                 fixture.Repositories,
                 fixture.PullRequests,
                 new(fixture.AgentStore, NullLogger<CodeReviewerAgentResolver>.Instance),
                 fixture.AgentExecutor,
-                new TestCodeReviewPreviousReviewStore(),
+                fixture.PreviousReviews,
                 new(),
-                fixture.Artifacts,
                 fixture.Libraries,
                 new TestHybridCache(),
+                NullLogger<CodeReviewExecutionEngine>.Instance
+            );
+            fixture.Runner = new(
+                fixture.ExecutionEngine,
+                fixture.Artifacts,
                 NullLogger<CodeReviewRunner>.Instance
             );
 
@@ -367,6 +471,7 @@ public sealed class CodeReviewRunnerTests
         public string StoredXml { get; private set; } = string.Empty;
         public string ContentType { get; private set; } = string.Empty;
         public int WriteCount { get; private set; }
+        public bool ThrowOnWrite { get; set; }
 
         public async Task<string> WriteFindingsAsync(
             CodeReviewRecord review,
@@ -379,6 +484,10 @@ public sealed class CodeReviewRunnerTests
             StoredXml = await reader.ReadToEndAsync(cancellationToken);
             ContentType = contentType;
             WriteCount++;
+            if (ThrowOnWrite)
+            {
+                throw new InvalidOperationException("Artifact write failed.");
+            }
 
             return StorageUri;
         }
@@ -582,6 +691,7 @@ public sealed class CodeReviewRunnerTests
     private sealed class TestCodeReviewPreviousReviewStore : ICodeReviewPreviousReviewStore
     {
         public IReadOnlyList<CodeReviewPreviousReview> PreviousReviews { get; set; } = [];
+        public int LoadCount { get; private set; }
 
         public Task<IReadOnlyList<CodeReviewPreviousReview>> LoadAsync(
             string organizationId,
@@ -591,7 +701,12 @@ public sealed class CodeReviewRunnerTests
             string excludeReviewId,
             int maxRecords = 3,
             CancellationToken cancellationToken = default
-        ) => Task.FromResult(PreviousReviews);
+        )
+        {
+            LoadCount++;
+
+            return Task.FromResult(PreviousReviews);
+        }
 
         public Task<IReadOnlyList<CodeReviewPreviousReview>> LoadForAgentAsync(
             string organizationId,

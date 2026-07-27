@@ -226,6 +226,7 @@ public sealed partial class ExpertCodeReviewRunner(
                 previousReviews,
                 user,
                 telemetry,
+                options: CodeReviewExecutionOptions.Durable,
                 cancellationToken
             );
 

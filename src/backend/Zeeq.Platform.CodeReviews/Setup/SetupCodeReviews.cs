@@ -1,5 +1,5 @@
-using Zeeq.Core.Common;
 using Microsoft.Extensions.DependencyInjection;
+using Zeeq.Core.Common;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -47,6 +47,7 @@ public static class SetupCodeReviews
             services.AddScoped<IGitHubCommentSectionRenderer, PullRequestActionsSectionRenderer>();
             services.AddScoped<IGitHubCommentSectionRenderer, PullRequestFooterSectionRenderer>();
             services.AddScoped<CodeReviewerAgentResolver>();
+            services.AddScoped<CodeReviewExecutionEngine>();
             services.AddScoped<CodeReviewLlmTierResolver>();
             services.AddSingleton<CodeReviewXmlOutputValidator>();
             services.AddScoped<CodeReviewWorkflowFactory>();

@@ -15,6 +15,7 @@
   <!-- Shows the clean completed state when there are no findings to review. -->
   <UAlert
     v-else-if="
+      !hasSourceTelemetryContent &&
       review.status === codeReviewStatusEnum.Completed &&
       totalFindings(review) === 0
     "
@@ -27,7 +28,7 @@
 
   <!-- Shows the pending state before findings are available from the review artifact. -->
   <UAlert
-    v-else-if="totalFindings(review) === 0"
+    v-else-if="!hasSourceTelemetryContent && totalFindings(review) === 0"
     title="Review pending"
     :description="`This code review is ${review.status.toLowerCase()}; findings will appear after it completes.`"
     icon="i-hugeicons-clock-01"
@@ -71,7 +72,14 @@
     >
       <!-- Renders each tab header with the severity label and a non-zero finding count. -->
       <template #default="{ item }">
-        <span v-if="item.count" class="px-2"
+        <span
+          v-if="item.value === sourcesTabValue"
+          class="px-2"
+          :class="{ 'font-light': item.disabled }"
+        >
+          {{ item.label }}
+        </span>
+        <span v-else-if="item.count" class="px-2"
           >{{ item.label }}
 
           <UBadge
@@ -87,9 +95,14 @@
 
       <!-- Renders the selected severity tab content for its reviewer findings bucket. -->
       <template #content="{ item }">
+        <CodeReviewSourceTelemetryAccordion
+          v-if="item.value === sourcesTabValue"
+          :source-telemetry="sourceTelemetry"
+        />
+
         <!-- Shows an empty severity bucket with the count and explanatory description. -->
         <div
-          v-if="reviewerSectionsByLevel[item.level].length === 0"
+          v-else-if="reviewerSectionsByLevel[item.level].length === 0"
           class="grid gap-3 rounded-md bg-elevated/30 p-4"
         >
           <div class="flex flex-wrap items-center gap-2">
@@ -295,10 +308,13 @@ import {
   type CodeReviewFindingsResponse,
   type CodeReviewRecordDto,
   type CodeReviewReviewerFindingsDto,
+  type CodeReviewSourceTelemetryDto,
 } from "@/api/generated";
 import AddToCartButton from "@/views/code-reviews/pull-requests/AddToCartButton.vue";
 import { computeFindingContentHash } from "@/composables/useFindingContentHash";
 import { useCodeHighlight } from "@/composables/useCodeHighlight";
+import { buildSourceTelemetryAccordionItems } from "../shared/source-telemetry-view-models";
+import CodeReviewSourceTelemetryAccordion from "../shared/CodeReviewSourceTelemetryAccordion.vue";
 
 type SeverityItem = {
   label: string;
@@ -322,6 +338,7 @@ type ReviewerFindingSection = {
 const props = defineProps<{
   review: CodeReviewRecordDto;
   findings: CodeReviewFindingsResponse | null;
+  sourceTelemetry: CodeReviewSourceTelemetryDto | null | undefined;
   loading: boolean;
   error: string | null;
   cartContentHashes: Set<string>;
@@ -338,6 +355,8 @@ const emits = defineEmits<{
 
 /** Tracks controlled UCollapsible state per severity/reviewer section. */
 const reviewerSectionOpenByKey = ref<Record<string, boolean>>({});
+
+const sourcesTabValue = "sources";
 
 /** Clipboard helper used by the reviewer-section copy buttons. */
 const { copied, copy } = useClipboard({ copiedDuring: 1500, legacy: true });
@@ -430,56 +449,72 @@ const reviewerSectionsByLevel = computed<
  * Builds the severity tab model used by UTabs, including counts, colors, and
  * empty-state descriptions for each tab. Empty tabs are disabled.
  */
-const items = computed<SeverityItem[]>(() => [
-  {
-    label: "Critical",
-    value: "critical",
-    level: codeReviewFindingLevelEnum.Critical,
-    count: countForLevel(codeReviewFindingLevelEnum.Critical),
-    color: "error",
-    disabled: countForLevel(codeReviewFindingLevelEnum.Critical) === 0,
-    description:
-      "Blocking correctness or safety issues that require immediate attention.",
-  },
-  {
-    label: "Major",
-    value: "major",
-    level: codeReviewFindingLevelEnum.Major,
-    count: countForLevel(codeReviewFindingLevelEnum.Major),
-    color: "warning",
-    disabled: countForLevel(codeReviewFindingLevelEnum.Major) === 0,
-    description:
-      "High-confidence defects or design problems that should be addressed before merge.",
-  },
-  {
-    label: "Minor",
-    value: "minor",
-    level: codeReviewFindingLevelEnum.Minor,
-    count: countForLevel(codeReviewFindingLevelEnum.Minor),
-    color: "neutral",
-    disabled: countForLevel(codeReviewFindingLevelEnum.Minor) === 0,
-    description: "Low-risk issues, maintainability nits, or focused test gaps.",
-  },
-  {
-    label: "Suggestions",
-    value: "suggestions",
-    level: codeReviewFindingLevelEnum.Suggestion,
-    count: countForLevel(codeReviewFindingLevelEnum.Suggestion),
-    color: "info",
-    disabled: countForLevel(codeReviewFindingLevelEnum.Suggestion) === 0,
-    description:
-      "Optional improvements that may make the change easier to maintain.",
-  },
-  {
-    label: "Comments",
-    value: "comments",
-    level: codeReviewFindingLevelEnum.Comment,
-    count: countForLevel(codeReviewFindingLevelEnum.Comment),
-    color: "tertiary",
-    disabled: countForLevel(codeReviewFindingLevelEnum.Comment) === 0,
-    description: "Informational notes preserved from the reviewer output.",
-  },
-]);
+const items = computed<SeverityItem[]>(() => {
+  const severityItems: SeverityItem[] = [
+    {
+      label: "Critical",
+      value: "critical",
+      level: codeReviewFindingLevelEnum.Critical,
+      count: countForLevel(codeReviewFindingLevelEnum.Critical),
+      color: "error",
+      disabled: countForLevel(codeReviewFindingLevelEnum.Critical) === 0,
+      description:
+        "Blocking correctness or safety issues that require immediate attention.",
+    },
+    {
+      label: "Major",
+      value: "major",
+      level: codeReviewFindingLevelEnum.Major,
+      count: countForLevel(codeReviewFindingLevelEnum.Major),
+      color: "warning",
+      disabled: countForLevel(codeReviewFindingLevelEnum.Major) === 0,
+      description:
+        "High-confidence defects or design problems that should be addressed before merge.",
+    },
+    {
+      label: "Minor",
+      value: "minor",
+      level: codeReviewFindingLevelEnum.Minor,
+      count: countForLevel(codeReviewFindingLevelEnum.Minor),
+      color: "neutral",
+      disabled: countForLevel(codeReviewFindingLevelEnum.Minor) === 0,
+      description:
+        "Low-risk issues, maintainability nits, or focused test gaps.",
+    },
+    {
+      label: "Suggestions",
+      value: "suggestions",
+      level: codeReviewFindingLevelEnum.Suggestion,
+      count: countForLevel(codeReviewFindingLevelEnum.Suggestion),
+      color: "info",
+      disabled: countForLevel(codeReviewFindingLevelEnum.Suggestion) === 0,
+      description:
+        "Optional improvements that may make the change easier to maintain.",
+    },
+    {
+      label: "Comments",
+      value: "comments",
+      level: codeReviewFindingLevelEnum.Comment,
+      count: countForLevel(codeReviewFindingLevelEnum.Comment),
+      color: "tertiary",
+      disabled: countForLevel(codeReviewFindingLevelEnum.Comment) === 0,
+      description: "Informational notes preserved from the reviewer output.",
+    },
+  ];
+
+  return [
+    ...severityItems,
+    {
+      label: "Sources",
+      value: sourcesTabValue,
+      level: codeReviewFindingLevelEnum.Critical,
+      count: 0,
+      color: "neutral",
+      disabled: !hasSourceTelemetryContent.value,
+      description: "",
+    },
+  ];
+});
 
 /**
  * Selects the first severity tab that has findings so the active tab always
@@ -491,8 +526,20 @@ const items = computed<SeverityItem[]>(() => [
  * findings refetch while the tabs are already mounted.
  */
 const defaultTabValue = computed(() => {
-  return items.value.find((item) => !item.disabled)?.value ?? "critical";
+  return items.value.find((item) => !item.disabled)?.value ?? sourcesTabValue;
 });
+
+const sourceTelemetrySections = computed(() =>
+  buildSourceTelemetryAccordionItems(props.sourceTelemetry),
+);
+
+const sourceTelemetrySectionCount = computed(
+  () => sourceTelemetrySections.value.length,
+);
+
+const hasSourceTelemetryContent = computed(
+  () => sourceTelemetrySectionCount.value > 0,
+);
 
 /** Picks a random celebration emoji for the completed-review banner. */
 const celebrationEmoji = ref(

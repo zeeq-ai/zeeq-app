@@ -1,5 +1,5 @@
-using Zeeq.Core.Models;
 using Microsoft.Extensions.Logging;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -98,7 +98,15 @@ public sealed partial class CodeReviewerAgentResolver(
             agent.ActivationConfiguration
         );
 
-    private static bool IsActivated(
+    /// <summary>
+    /// Determines whether a runtime reviewer should participate for the current file scope.
+    /// </summary>
+    /// <remarks>
+    /// Draft test runs pass an unsaved <see cref="CodeReviewerRuntimeAgent"/> and must use the
+    /// same activation behavior as persisted agents. Keeping this predicate here avoids a second
+    /// implementation of include/exclude matching in the synthetic test path.
+    /// </remarks>
+    public static bool IsActivated(
         CodeReviewerActivationConfiguration configuration,
         IReadOnlyList<CodeReviewFileSnapshot> inScopeFiles
     )

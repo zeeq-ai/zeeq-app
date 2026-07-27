@@ -28,6 +28,7 @@ public interface ICodeReviewAgentExecutor
         IReadOnlyList<CodeReviewPreviousReview> previousReviews,
         ClaimsPrincipal callerIdentity,
         CodeReviewTelemetryContext telemetry,
+        CodeReviewExecutionOptions options,
         CancellationToken cancellationToken
     );
 }

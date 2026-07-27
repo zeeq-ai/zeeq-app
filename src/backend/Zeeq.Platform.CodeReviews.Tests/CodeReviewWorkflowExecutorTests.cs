@@ -1,10 +1,10 @@
 using System.Runtime.CompilerServices;
-using Zeeq.Core.Models;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews.Tests;
 
@@ -124,6 +124,7 @@ public sealed class CodeReviewWorkflowExecutorTests
         var xml = await executor.ExecuteWorkflowAsync(
             reviewers,
             "Review this PR.",
+            CodeReviewExecutionOptions.Durable,
             CancellationToken.None
         );
         var validation = _xmlValidator.Validate(xml);
@@ -155,6 +156,7 @@ public sealed class CodeReviewWorkflowExecutorTests
         var xml = await executor.ExecuteWorkflowAsync(
             reviewers,
             "Review this PR.",
+            CodeReviewExecutionOptions.Durable,
             CancellationToken.None
         );
         var validation = _xmlValidator.Validate(xml);
@@ -174,7 +176,9 @@ public sealed class CodeReviewWorkflowExecutorTests
         var executor = CreateExecutor();
 
         await Assert
-            .That(() => executor.ValidateAndSerializeAggregateBlocks(""))
+            .That(() =>
+                executor.ValidateAndSerializeAggregateBlocks("", CodeReviewExecutionOptions.Durable)
+            )
             .Throws<InvalidOperationException>()
             .WithMessage("Code-review workflow completed without any reviewer outputs.");
     }
@@ -221,6 +225,7 @@ public sealed class CodeReviewWorkflowExecutorTests
         var execution = executor.ExecuteWorkflowAsync(
             reviewers,
             "Review this PR.",
+            CodeReviewExecutionOptions.Durable,
             CancellationToken.None
         );
         await Task.WhenAll(
@@ -255,6 +260,7 @@ public sealed class CodeReviewWorkflowExecutorTests
             previousReviews: [],
             callerIdentity: new System.Security.Claims.ClaimsPrincipal(),
             telemetry: new CodeReviewTelemetryContext(),
+            options: CodeReviewExecutionOptions.Durable,
             CancellationToken.None
         );
         var validation = _xmlValidator.Validate(xml);

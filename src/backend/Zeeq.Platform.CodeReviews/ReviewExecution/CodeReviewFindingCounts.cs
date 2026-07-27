@@ -9,7 +9,7 @@ namespace Zeeq.Platform.CodeReviews;
 /// aggregate counts from a <see cref="CodeReviewOutputDocument"/> without duplicating
 /// the counting logic.
 /// </remarks>
-internal sealed record CodeReviewFindingCounts(
+public sealed record CodeReviewFindingCounts(
     int Critical = 0,
     int Major = 0,
     int Minor = 0,

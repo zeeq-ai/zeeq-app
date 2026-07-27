@@ -56,6 +56,7 @@
         :key="`${item.reviewKey}:${facetTabsResetKey}`"
         :review="item.review"
         :findings="item.findings"
+        :source-telemetry="item.findings?.sourceTelemetry"
         :loading="item.loadingFindings"
         :error="item.findingsError"
         :cart-content-hashes="cartContentHashes"
@@ -63,13 +64,6 @@
           (finding, reviewer, review, annotation) =>
             emits('toggleCart', finding, reviewer, review, annotation)
         "
-      />
-
-      <!-- Documents/snippets the reviewers consulted; renders below the facet tabs
-           for every open review, including clean ones with telemetry but no findings. -->
-      <CodeReviewSourcesPanel
-        v-if="open && item.findings?.sourceTelemetry"
-        :source-telemetry="item.findings.sourceTelemetry"
       />
     </template>
   </UAccordion>
@@ -85,15 +79,9 @@ import type {
 import { reviewFindingsKey } from "@/stores/code-review-store";
 
 import CodeReviewFacetTabs from "./CodeReviewFacetTabs.vue";
-import CodeReviewSourcesPanel from "./CodeReviewSourcesPanel.vue";
 
 type CodeReviewStatusColor =
-  | "success"
-  | "warning"
-  | "error"
-  | "neutral"
-  | "info"
-  | "tertiary";
+  "success" | "warning" | "error" | "neutral" | "info" | "tertiary";
 
 type CodeReviewAccordionItemViewModel = {
   label: string;

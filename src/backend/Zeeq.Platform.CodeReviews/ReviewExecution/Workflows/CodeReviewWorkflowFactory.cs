@@ -33,8 +33,13 @@ public sealed class CodeReviewWorkflowFactory(
     /// <summary>
     /// Builds a workflow for the supplied reviewer agents.
     /// </summary>
-    public Workflow Build(IReadOnlyList<CodeReviewWorkflowReviewer> reviewers)
+    public Workflow Build(
+        IReadOnlyList<CodeReviewWorkflowReviewer> reviewers,
+        CodeReviewExecutionOptions? options = null
+    )
     {
+        options ??= CodeReviewExecutionOptions.Durable;
+
         if (reviewers.Count == 0)
         {
             throw new ArgumentException("At least one reviewer is required.", nameof(reviewers));
@@ -63,7 +68,8 @@ public sealed class CodeReviewWorkflowFactory(
                             reviewer.Provider,
                             reviewer.Model,
                             loggerFactory,
-                            reviewer.Telemetry
+                            reviewer.Telemetry,
+                            options
                         )
                     )
             ),
