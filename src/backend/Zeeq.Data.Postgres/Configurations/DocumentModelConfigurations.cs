@@ -91,19 +91,19 @@ internal sealed class LibraryDocumentConfiguration : IEntityTypeConfiguration<Li
         entity
             .Property(document => document.ManualSkillName)
             .HasColumnName("skill_name_override")
-            .HasMaxLength(512);
+            .HasMaxLength(DocumentNormalizer.MaxSkillNameLength);
         entity
             .Property(document => document.ParsedSkillName)
             .HasColumnName("skill_name")
-            .HasMaxLength(512);
+            .HasMaxLength(DocumentNormalizer.MaxSkillNameLength);
         entity
             .Property(document => document.ManualSkillDescription)
             .HasColumnName("skill_description_override")
-            .HasMaxLength(4096);
+            .HasMaxLength(DocumentNormalizer.MaxSkillDescriptionLength);
         entity
             .Property(document => document.ParsedSkillDescription)
             .HasColumnName("skill_description")
-            .HasMaxLength(4096);
+            .HasMaxLength(DocumentNormalizer.MaxSkillDescriptionLength);
         entity.Property(document => document.Keywords).HasColumnType("text[]");
         entity.Property(document => document.Headings).HasColumnType("text[]");
 

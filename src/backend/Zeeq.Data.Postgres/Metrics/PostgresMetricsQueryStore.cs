@@ -300,6 +300,62 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     }
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<MetricLeaderboardItem>> GetPromptLeaderboardAsync(
+        string organizationId,
+        MetricWindow window,
+        string[]? users,
+        string? library,
+        int top,
+        CancellationToken cancellationToken
+    )
+    {
+        var range = window.ToRange();
+        var windowStart = DateTimeOffset.UtcNow - range.Span;
+        var userFilter = users ?? [];
+        var userFilterKey = MetricSeriesKeyExpression(MetricSeriesGroup.User, "metric");
+
+        // Prompt names are user-facing aliases, not stable document identity. Rank by the actual
+        // document path scoped with its library so same-named prompts from different files do not
+        // collapse into one leaderboard row. Item intentionally displays as `library:/path.md`.
+        var format = $$"""
+            SELECT concat(coalesce(metric.library, 'unknown-library'), ':', metric.tags->>'document_path') AS item,
+                   metric.library AS library,
+                   SUM(metric.metric_value) AS value
+            FROM zeeq.zeeq_metric_events metric
+            LEFT JOIN zeeq.core_user_aliases user_email_alias
+             ON user_email_alias.organization_id = metric.organization_id
+             AND user_email_alias.kind = 'Email'
+             AND user_email_alias.normalized_value = {{NormalizedMetricUserEmailSql}}
+             AND user_email_alias.disabled_at_utc IS NULL
+            LEFT JOIN zeeq.core_users alias_user
+              ON alias_user.id = user_email_alias.user_id
+            WHERE metric.organization_id = {0}
+              AND metric.metric_type = 'zeeq_prompt_get_counter'
+              AND metric.created_at_utc >= {1}
+              AND metric.tags->>'document_path' IS NOT NULL
+              AND (cardinality({2}) = 0 OR {{userFilterKey}} = ANY({2}))
+              AND ({3}::text IS NULL OR metric.library = {3}::text)
+            GROUP BY metric.library, metric.tags->>'document_path'
+            ORDER BY 3 DESC
+            LIMIT {4}
+            """;
+
+        var sql = FormattableStringFactory.Create(
+            format,
+            organizationId,
+            windowStart,
+            userFilter,
+            library,
+            top
+        );
+
+        return await db
+            .Database.SqlQuery<MetricLeaderboardItem>(sql)
+            .TagWithOperationCallSite("metrics.leaderboard.prompts")
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<ReviewVolumePoint>> GetReviewVolumeSeriesAsync(
         string organizationId,
         MetricWindow window,

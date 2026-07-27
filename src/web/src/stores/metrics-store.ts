@@ -86,6 +86,7 @@ export const counterMetricType = {
   documentRead: "zeeq_document_read_counter",
   sectionRead: "zeeq_section_read_counter",
   snippetRead: "zeeq_snippet_read_counter",
+  promptGet: "zeeq_prompt_get_counter",
 } as const;
 
 /** Histogram metric types backing the percentile/scatter panels (UI-8, UI-9). */
@@ -144,6 +145,8 @@ export const useMetricsStore = defineStore("metrics-store", () => {
   const filterAuthorLogins = ref<string[]>([]);
   const filterOrigin = ref<CodeReviewRequestOrigin | undefined>(undefined);
   const knowledgeLibrary = ref<string | null>(null);
+  const promptFilterUsers = ref<string[]>([]);
+  const promptLibrary = ref<string | null>(null);
   const performanceFacet = ref<string | undefined>(undefined);
   const performanceRepositoryId = ref<string | undefined>(undefined);
 
@@ -163,6 +166,10 @@ export const useMetricsStore = defineStore("metrics-store", () => {
   const leaderboard = ref<MetricLeaderboardItem[]>([]);
   const sectionLeaderboard = ref<MetricLeaderboardItem[]>([]);
   const snippetLeaderboard = ref<MetricLeaderboardItem[]>([]);
+  const promptGetByUserSeries = ref<MetricSeriesPoint[]>([]);
+  const promptGetByLibrarySeries = ref<MetricSeriesPoint[]>([]);
+  const promptGetByUserAgentSeries = ref<MetricSeriesPoint[]>([]);
+  const promptLeaderboard = ref<MetricLeaderboardItem[]>([]);
   const reviewVolume = ref<ReviewVolumePoint[]>([]);
   const reviewFindingsByRepo = ref<ReviewFindingsPoint[]>([]);
   const reviewFindingsByOrigin = ref<ReviewFindingsPoint[]>([]);
@@ -327,6 +334,47 @@ export const useMetricsStore = defineStore("metrics-store", () => {
         );
       }),
     ]);
+  }
+
+  /** Loads successful dynamic prompt gets by user, library, and client/agent. */
+  async function loadPromptUsageSeries() {
+    const users = emptyToUndefined(promptFilterUsers.value);
+    const libraries = promptLibraryFilter();
+    const [byUser, byLibrary, byUserAgent] = await Promise.all([
+      loadSeries(
+        "promptGetByUserSeries",
+        counterMetricType.promptGet,
+        metricSeriesGroupEnum.User,
+        { users, libraries },
+      ),
+      loadSeries(
+        "promptGetByLibrarySeries",
+        counterMetricType.promptGet,
+        metricSeriesGroupEnum.Library,
+        { users, libraries },
+      ),
+      loadSeries(
+        "promptGetByUserAgentSeries",
+        counterMetricType.promptGet,
+        metricSeriesGroupEnum.UserAgent,
+        { users, libraries },
+      ),
+    ]);
+    promptGetByUserSeries.value = byUser;
+    promptGetByLibrarySeries.value = byLibrary;
+    promptGetByUserAgentSeries.value = byUserAgent;
+  }
+
+  /** Loads the top-N successfully retrieved dynamic prompts. */
+  async function loadPromptLeaderboard() {
+    const orgId = requireOrganizationId();
+    await run("promptLeaderboard", async () => {
+      promptLeaderboard.value = await Metrics.getPromptLeaderboard(orgId, {
+        window: window.value,
+        users: emptyToUndefined(promptFilterUsers.value),
+        library: promptLibrary.value ?? undefined,
+      });
+    });
   }
 
   /** Loads bucketed review volume for the reviews tab (UI-4/UI-5). */
@@ -560,6 +608,11 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     return knowledgeLibrary.value ? [knowledgeLibrary.value] : undefined;
   }
 
+  /** Prompts-tab library filter as a single-value array, or undefined for all. */
+  function promptLibraryFilter(): string[] | undefined {
+    return promptLibrary.value ? [promptLibrary.value] : undefined;
+  }
+
   /** True while the named panel is in flight. */
   function isLoading(key: string): boolean {
     return loading.value[key] === true;
@@ -594,6 +647,8 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     filterAuthorLogins,
     filterOrigin,
     knowledgeLibrary,
+    promptFilterUsers,
+    promptLibrary,
     performanceFacet,
     performanceRepositoryId,
     reviewVolumeGroup,
@@ -607,6 +662,10 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     leaderboard,
     sectionLeaderboard,
     snippetLeaderboard,
+    promptGetByUserSeries,
+    promptGetByLibrarySeries,
+    promptGetByUserAgentSeries,
+    promptLeaderboard,
     reviewVolume,
     reviewFindingsByRepo,
     reviewFindingsByOrigin,
@@ -635,6 +694,8 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     loadKnowledgeSeries,
     loadLeaderboard,
     loadSectionLeaderboard,
+    loadPromptUsageSeries,
+    loadPromptLeaderboard,
     loadReviewVolume,
     loadReviewFindings,
     loadFindingReviews,

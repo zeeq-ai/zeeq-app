@@ -126,6 +126,28 @@
             />
           </template>
 
+          <template #prompts>
+            <PromptMetricsTab
+              :prompt-get-by-user-series="promptGetByUserSeries"
+              :prompt-get-by-library-series="promptGetByLibrarySeries"
+              :prompt-get-by-user-agent-series="promptGetByUserAgentSeries"
+              :prompt-leaderboard="promptLeaderboard"
+              :loading-by-user="loading['promptGetByUserSeries'] ?? false"
+              :loading-by-library="loading['promptGetByLibrarySeries'] ?? false"
+              :loading-by-client="
+                loading['promptGetByUserAgentSeries'] ?? false
+              "
+              :loading-leaderboard="loading['promptLeaderboard'] ?? false"
+              :users="promptFilterUsers"
+              :user-items="userItems"
+              :library="promptLibrary ?? allFilterValue"
+              :library-items="libraryItems"
+              :window="window"
+              @update:users="onPromptUsersChange"
+              @update:library="onPromptLibraryChange"
+            />
+          </template>
+
           <template #agents>
             <AgentUsageTab
               :agent-token-by-model-series="agentTokenByModelSeries"
@@ -180,6 +202,7 @@ import MetricsWindowSelect from "./MetricsWindowSelect.vue";
 import OverviewTab from "./OverviewTab.vue";
 import CodeReviewsTab from "./CodeReviewsTab.vue";
 import KnowledgeBaseTab from "./KnowledgeBaseTab.vue";
+import PromptMetricsTab from "./PromptMetricsTab.vue";
 import AgentUsageTab from "./AgentUsageTab.vue";
 import PerformanceCostTab from "./PerformanceCostTab.vue";
 import {
@@ -203,6 +226,10 @@ const {
   leaderboard,
   sectionLeaderboard,
   snippetLeaderboard,
+  promptGetByUserSeries,
+  promptGetByLibrarySeries,
+  promptGetByUserAgentSeries,
+  promptLeaderboard,
   reviewVolume,
   reviewFindingsByRepo,
   reviewFindingsByOrigin,
@@ -218,6 +245,8 @@ const {
   error,
   filterOrigin,
   knowledgeLibrary,
+  promptFilterUsers,
+  promptLibrary,
   filterUsers,
   filterTools,
   filterRepositoryIds,
@@ -309,9 +338,15 @@ const tabItems = [
   },
   {
     label: "Knowledge Base",
-    icon: "i-hugeicons-book-open-01",
+    icon: "i-hugeicons-ai-book",
     slot: "knowledge",
     value: "knowledge",
+  },
+  {
+    label: "Skills",
+    icon: "i-hugeicons-ai-file",
+    slot: "prompts",
+    value: "prompts",
   },
   {
     label: "Sessions",
@@ -415,6 +450,12 @@ async function loadActiveTab() {
         metricsStore.loadSectionLeaderboard(),
       ]);
       break;
+    case "prompts":
+      await Promise.all([
+        metricsStore.loadPromptUsageSeries(),
+        metricsStore.loadPromptLeaderboard(),
+      ]);
+      break;
     case "agents": {
       await Promise.all([
         metricsStore.loadAgentUsageSeries(),
@@ -481,6 +522,18 @@ function onOriginChange(value: string) {
 /** Applies the Knowledge library filter and reloads the active tab. */
 function onLibraryChange(value: string) {
   knowledgeLibrary.value = value === allFilterValue ? null : value;
+  void refreshNow().catch(() => {});
+}
+
+/** Applies the Skills user filter and reloads the active tab. */
+function onPromptUsersChange(value: string[]) {
+  promptFilterUsers.value = value;
+  void refreshNow().catch(() => {});
+}
+
+/** Applies the Skills library filter and reloads the active tab. */
+function onPromptLibraryChange(value: string) {
+  promptLibrary.value = value === allFilterValue ? null : value;
   void refreshNow().catch(() => {});
 }
 

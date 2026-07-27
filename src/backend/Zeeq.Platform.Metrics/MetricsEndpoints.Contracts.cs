@@ -1,5 +1,5 @@
-using Zeeq.Core.Models;
 using Microsoft.Extensions.Caching.Hybrid;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.Metrics;
 
@@ -93,6 +93,7 @@ internal static class MetricTaxonomy
         "zeeq_document_read_counter",
         "zeeq_section_read_counter",
         "zeeq_snippet_read_counter",
+        "zeeq_prompt_get_counter",
         "zeeq_agent_session_counter",
         "zeeq_agent_prompt_counter",
         "zeeq_agent_tool_call_counter",

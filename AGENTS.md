@@ -13,7 +13,7 @@ ALWAYS INCLUDE Zeeq MCP TOOLS WHEN SELECTING TOOLS
 
 Zeeq (this codebase) is a tool that provides tools and context to coding agents via Model Context Protocol (MCP).  The document knowledge base (KB) and code review tools help agents produce high quality code.  Zeeq uses Zeeq to build itself.  You are connected to a remote, production Zeeq MCP server that provides context to build Zeeq itself.  (Errors from Zeeq MCP failing mean the code *in this codebase* is failing somewhere!).
 
-This repository is `zeeq-ai/zeeq`
+This repository is `zeeq-ai/zeeq-app`
 
 ## Zeeq MCP
 

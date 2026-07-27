@@ -133,4 +133,39 @@ public sealed class DocumentNormalizerTests
 
         await Assert.That(normalized).IsEqualTo("dotnet-csharp_best-practices");
     }
+
+    [Test]
+    public async Task NormalizeOptionalPromptName_LongValue_TruncatesToPersistedLimit()
+    {
+        var normalized = DocumentNormalizer.NormalizeOptionalPromptName(new string('A', 600));
+
+        await Assert.That(normalized).IsNotNull();
+        await Assert.That(normalized!.Length).IsEqualTo(DocumentNormalizer.MaxSkillNameLength);
+        await Assert.That(normalized).IsEqualTo(new string('a', 512));
+    }
+
+    [Test]
+    public async Task NormalizeOptionalPromptName_PunctuationOnly_ReturnsNull()
+    {
+        var normalized = DocumentNormalizer.NormalizeOptionalPromptName("---");
+
+        await Assert.That(normalized).IsNull();
+    }
+
+    [Test]
+    public async Task BoundOptionalSkillDescription_PreservesRawTextWithinLimit()
+    {
+        var bounded = DocumentNormalizer.BoundOptionalSkillDescription(" Raw Description ");
+
+        await Assert.That(bounded).IsEqualTo(" Raw Description ");
+    }
+
+    [Test]
+    public async Task BoundOptionalSkillDescription_LongValue_TruncatesToPersistedLimit()
+    {
+        var bounded = DocumentNormalizer.BoundOptionalSkillDescription(new string('d', 5000));
+
+        await Assert.That(bounded).IsNotNull();
+        await Assert.That(bounded!.Length).IsEqualTo(DocumentNormalizer.MaxSkillDescriptionLength);
+    }
 }

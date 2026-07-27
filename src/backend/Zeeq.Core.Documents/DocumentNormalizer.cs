@@ -11,6 +11,12 @@ namespace Zeeq.Core.Documents;
 /// </remarks>
 public static class DocumentNormalizer
 {
+    /// <summary>Database-backed maximum length for persisted skill prompt names.</summary>
+    public const int MaxSkillNameLength = 512;
+
+    /// <summary>Database-backed maximum length for persisted skill prompt descriptions.</summary>
+    public const int MaxSkillDescriptionLength = 4096;
+
     /// <summary>
     /// Normalizes a value to lower-case, stripping characters outside <c>[a-z0-9/_\-+. ]</c>.
     /// </summary>
@@ -165,6 +171,55 @@ public static class DocumentNormalizer
         }
 
         return builder.ToString().Trim('-', '_');
+    }
+
+    /// <summary>
+    /// Normalizes an optional skill prompt name and bounds it to the persisted column length.
+    /// </summary>
+    /// <remarks>
+    /// Front-matter is external input. Bounding here keeps all write paths aligned with the
+    /// database contract so oversized <c>name:</c> fields cannot fail ingestion at save time.
+    /// </remarks>
+    public static string? NormalizeOptionalPromptName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = NormalizePromptName(value);
+        if (normalized.Length == 0)
+        {
+            return null;
+        }
+
+        if (normalized.Length <= MaxSkillNameLength)
+        {
+            return normalized;
+        }
+
+        var bounded = normalized[..MaxSkillNameLength].Trim('-', '_');
+
+        return bounded.Length == 0 ? null : bounded;
+    }
+
+    /// <summary>
+    /// Bounds an optional raw skill prompt description to the persisted column length.
+    /// </summary>
+    /// <remarks>
+    /// Descriptions remain raw authored text for display. The only transformation here is a hard
+    /// maximum length guard matching the Postgres model configuration.
+    /// </remarks>
+    public static string? BoundOptionalSkillDescription(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Length <= MaxSkillDescriptionLength
+            ? value
+            : value[..MaxSkillDescriptionLength];
     }
 
     private static bool IsAllowedValueCharacter(char character) =>
