@@ -1,5 +1,9 @@
 using System.Security.Claims;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
+using OpenIddict.Abstractions;
+using OpenTelemetry.Proto.Collector.Logs.V1;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
 using Zeeq.Platform.Telemetry.Adapters;
@@ -7,10 +11,6 @@ using Zeeq.Platform.Telemetry.Adapters.ZeeqAgent;
 using Zeeq.Platform.Telemetry.Filtering;
 using Zeeq.Platform.Telemetry.Ingest.Import;
 using Zeeq.Platform.Telemetry.Ingest.Otlp;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging.Abstractions;
-using OpenIddict.Abstractions;
-using OpenTelemetry.Proto.Collector.Logs.V1;
 
 namespace Zeeq.Platform.Telemetry.Tests;
 
@@ -149,10 +149,12 @@ public sealed class AgentTelemetryImportTests
 
     private sealed class StubIdentityStore : IZeeqIdentityStore
     {
-        public Task<string?> FindUserEmailAsync(string userId, CancellationToken cancellationToken) =>
-            Task.FromResult<string?>(null);
+        public Task<string?> FindUserEmailAsync(
+            string userId,
+            CancellationToken cancellationToken
+        ) => Task.FromResult<string?>(null);
 
-        public Task<AuthContext> EnsureUserAsync(
+        public Task<AuthContext?> EnsureUserAsync(
             string provider,
             string providerSubject,
             string? displayName,
@@ -184,8 +186,10 @@ public sealed class AgentTelemetryImportTests
             CancellationToken cancellationToken
         ) => throw new NotSupportedException();
 
-        public Task MarkDcrSetupExpiredAsync(string clientId, CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
+        public Task MarkDcrSetupExpiredAsync(
+            string clientId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
 
         public Task ClaimDcrSetupAsync(
             string clientId,
