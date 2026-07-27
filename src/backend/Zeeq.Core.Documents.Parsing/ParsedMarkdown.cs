@@ -30,6 +30,14 @@ namespace Zeeq.Core.Documents.Parsing;
 /// The raw front-matter block (between the opening and closing <c>---</c> fences), excluding
 /// the fence lines themselves. Empty string when no front-matter is present.
 /// </param>
+/// <param name="ParsedSkillName">
+/// Optional skill name parsed from a front-matter <c>name</c> field. Null when the field is absent
+/// or empty.
+/// </param>
+/// <param name="ParsedSkillDescription">
+/// Optional skill description parsed from a front-matter <c>description</c> field. Null when the
+/// field is absent or empty.
+/// </param>
 /// <param name="Sections">
 /// Text sections between headings. Each section carries its owning heading text, the
 /// hierarchical heading path, and the section body text.
@@ -43,6 +51,8 @@ public sealed record ParsedMarkdown(
     IReadOnlyList<string> Headings,
     string Content,
     string FrontMatter,
+    string? ParsedSkillName,
+    string? ParsedSkillDescription,
     IReadOnlyList<Section> Sections,
     IReadOnlyList<Snippet> Snippets
 );

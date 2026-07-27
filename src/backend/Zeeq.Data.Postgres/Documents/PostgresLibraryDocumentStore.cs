@@ -608,6 +608,8 @@ internal sealed class PostgresLibraryDocumentStore(
 
         existing.Title = document.Title;
         existing.TitleNormalized = document.TitleNormalized;
+        existing.ParsedSkillName = document.ParsedSkillName;
+        existing.ParsedSkillDescription = document.ParsedSkillDescription;
         existing.Keywords = document.Keywords;
         existing.Headings = document.Headings;
         existing.Content = document.Content;
@@ -653,6 +655,8 @@ internal sealed class PostgresLibraryDocumentStore(
             byPath.ContentHash = document.ContentHash;
             byPath.Title = document.Title;
             byPath.TitleNormalized = document.TitleNormalized;
+            byPath.ParsedSkillName = document.ParsedSkillName;
+            byPath.ParsedSkillDescription = document.ParsedSkillDescription;
             byPath.Keywords = document.Keywords;
             byPath.Headings = document.Headings;
             byPath.TokenCount = document.TokenCount;
@@ -914,6 +918,174 @@ internal sealed class PostgresLibraryDocumentStore(
             .OrderBy(document => document.Path)
             .ToArrayAsync(ct);
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<LibraryScopedSkillDocument>> ListScopedSkillDocumentsAsync(
+        string organizationId,
+        LibraryDocumentScopedSkill scopedSkill,
+        CancellationToken ct
+    ) =>
+        await (
+            from document in db
+                .LibraryDocuments.AsNoTracking()
+                .TagWithOperationCallSite("documents.library_document.list_scoped_skills")
+            where document.OrganizationId == organizationId && document.AsScopedSkill == scopedSkill
+            join library in db.Libraries.AsNoTracking()
+                on new { document.OrganizationId, document.LibraryId } equals new
+                {
+                    library.OrganizationId,
+                    LibraryId = library.Id,
+                }
+            orderby library.Name, document.Path
+            select new LibraryScopedSkillDocument(
+                document.OrganizationId,
+                document.LibraryId,
+                library.Name,
+                document.Id,
+                document.Path,
+                document.Title,
+                document.ManualSkillName,
+                document.ParsedSkillName,
+                document.ManualSkillDescription,
+                document.ParsedSkillDescription,
+                document.Metadata,
+                null
+            )
+        ).ToArrayAsync(ct);
+
+    /// <inheritdoc />
+    public async Task<LibraryScopedSkillDocument?> ResolveScopedSkillDocumentAsync(
+        string organizationId,
+        string promptName,
+        LibraryDocumentScopedSkill scopedSkill,
+        CancellationToken ct
+    )
+    {
+        var manualMatches = await ResolveScopedSkillCandidatesAsync(
+            db.LibraryDocuments.AsNoTracking()
+                .TagWithOperationCallSite("documents.library_document.resolve_scoped_skill.manual")
+                .Where(document =>
+                    document.OrganizationId == organizationId
+                    && document.AsScopedSkill == scopedSkill
+                    && document.ManualSkillName == promptName
+                ),
+            ct
+        );
+        if (manualMatches.Length > 0)
+        {
+            return manualMatches.Length == 1 ? manualMatches[0] : null;
+        }
+
+        var parsedMatches = await ResolveScopedSkillCandidatesAsync(
+            db.LibraryDocuments.AsNoTracking()
+                .TagWithOperationCallSite("documents.library_document.resolve_scoped_skill.parsed")
+                .Where(document =>
+                    document.OrganizationId == organizationId
+                    && document.AsScopedSkill == scopedSkill
+                    && document.ParsedSkillName == promptName
+                ),
+            ct
+        );
+        if (parsedMatches.Length > 0)
+        {
+            return parsedMatches.Length == 1 ? parsedMatches[0] : null;
+        }
+
+        var markdownPathSuffix = ReverseString($"/{promptName}.md");
+        var mdxPathSuffix = ReverseString($"/{promptName}.mdx");
+        var mdcPathSuffix = ReverseString($"/{promptName}.mdc");
+        var pathMatches = await ResolveScopedSkillCandidatesAsync(
+            db.LibraryDocuments.AsNoTracking()
+                .TagWithOperationCallSite("documents.library_document.resolve_scoped_skill.path")
+                .Where(document =>
+                    document.OrganizationId == organizationId
+                    && document.AsScopedSkill == scopedSkill
+                    && (
+                        document.PathReversed.StartsWith(markdownPathSuffix)
+                        || document.PathReversed.StartsWith(mdxPathSuffix)
+                        || document.PathReversed.StartsWith(mdcPathSuffix)
+                    )
+                ),
+            ct
+        );
+
+        return pathMatches.Length == 1 ? pathMatches[0] : null;
+    }
+
+    /// <inheritdoc />
+    public async Task<LibraryScopedSkillDocument?> GetScopedSkillDocumentAsync(
+        string organizationId,
+        string libraryId,
+        string documentId,
+        LibraryDocumentScopedSkill scopedSkill,
+        CancellationToken ct
+    ) =>
+        await (
+            from document in db
+                .LibraryDocuments.AsNoTracking()
+                .TagWithOperationCallSite("documents.library_document.get_scoped_skill")
+            where
+                document.OrganizationId == organizationId
+                && document.LibraryId == libraryId
+                && document.Id == documentId
+                && document.AsScopedSkill == scopedSkill
+            join library in db.Libraries.AsNoTracking()
+                on new { document.OrganizationId, document.LibraryId } equals new
+                {
+                    library.OrganizationId,
+                    LibraryId = library.Id,
+                }
+            select new LibraryScopedSkillDocument(
+                document.OrganizationId,
+                document.LibraryId,
+                library.Name,
+                document.Id,
+                document.Path,
+                document.Title,
+                document.ManualSkillName,
+                document.ParsedSkillName,
+                document.ManualSkillDescription,
+                document.ParsedSkillDescription,
+                document.Metadata,
+                document.Content
+            )
+        ).FirstOrDefaultAsync(ct);
+
+    /// <summary>
+    /// Loads up to two matching scoped-skill documents so callers can detect ambiguity cheaply.
+    /// </summary>
+    private async Task<LibraryScopedSkillDocument[]> ResolveScopedSkillCandidatesAsync(
+        IQueryable<LibraryDocument> documents,
+        CancellationToken ct
+    ) =>
+        await (
+            from document in documents
+            join library in db.Libraries.AsNoTracking()
+                on new { document.OrganizationId, document.LibraryId } equals new
+                {
+                    library.OrganizationId,
+                    LibraryId = library.Id,
+                }
+            orderby library.Name, document.Path
+            select new LibraryScopedSkillDocument(
+                document.OrganizationId,
+                document.LibraryId,
+                library.Name,
+                document.Id,
+                document.Path,
+                document.Title,
+                document.ManualSkillName,
+                document.ParsedSkillName,
+                document.ManualSkillDescription,
+                document.ParsedSkillDescription,
+                document.Metadata,
+                null
+            )
+        )
+            .Take(2)
+            .ToArrayAsync(ct);
+
+    private static string ReverseString(string value) => new([.. value.Reverse()]);
 
     /// <inheritdoc />
     public async Task<LibraryDocument?> SetCodeReviewExclusionAsync(

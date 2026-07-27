@@ -23,6 +23,7 @@ public static class SetupMcpExtensions
         var name = environment.IsDevelopment() ? "Zeeq MCP (local dev)" : "Zeeq MCP";
 
         services
+            .AddScoped<IDynamicPromptsService, DynamicPromptsService>()
             .AddZeeqCodeReviewMcp()
             .AddMcpServer(options =>
             {
@@ -86,6 +87,7 @@ public static class SetupMcpExtensions
             })
             .AddAuthorizationFilters()
             .WithZeeqMcpFilters()
+            .WithZeeqDynamicPrompts()
             // 👇 Add other assemblies here to include tools
             .WithToolsFromAssembly(Assembly.GetAssembly(typeof(SetupMcpExtensions)))
             .WithToolsFromAssembly(Assembly.GetAssembly(typeof(DocumentLibraryMcpTools)))

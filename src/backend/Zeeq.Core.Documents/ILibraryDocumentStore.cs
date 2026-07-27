@@ -290,6 +290,42 @@ public interface ILibraryDocumentStore : IIndexableDocumentStore<LibraryDocument
     );
 
     /// <summary>
+    /// Lists documents exposed at the requested skill scope across an organization.
+    /// </summary>
+    Task<IReadOnlyList<LibraryScopedSkillDocument>> ListScopedSkillDocumentsAsync(
+        string organizationId,
+        LibraryDocumentScopedSkill scopedSkill,
+        CancellationToken ct
+    ) => throw new NotSupportedException();
+
+    /// <summary>
+    /// Resolves one scoped-skill document by prompt name aliases.
+    /// </summary>
+    /// <remarks>
+    /// Resolution follows the prompt precedence used by MCP: manual skill name, parsed skill name,
+    /// then document path fallback. Implementations should return <c>null</c> when a priority tier
+    /// has multiple matches, because silently selecting one ambiguous prompt would expose the wrong
+    /// source document to the MCP client.
+    /// </remarks>
+    Task<LibraryScopedSkillDocument?> ResolveScopedSkillDocumentAsync(
+        string organizationId,
+        string promptName,
+        LibraryDocumentScopedSkill scopedSkill,
+        CancellationToken ct
+    ) => throw new NotSupportedException();
+
+    /// <summary>
+    /// Gets one scoped-skill document by stable id, including its content.
+    /// </summary>
+    Task<LibraryScopedSkillDocument?> GetScopedSkillDocumentAsync(
+        string organizationId,
+        string libraryId,
+        string documentId,
+        LibraryDocumentScopedSkill scopedSkill,
+        CancellationToken ct
+    ) => throw new NotSupportedException();
+
+    /// <summary>
     /// Moves a document to a new normalized path, recording the old path in
     /// <see cref="LibraryDocument.PreviousPaths"/> (D-3, D-4).
     /// </summary>

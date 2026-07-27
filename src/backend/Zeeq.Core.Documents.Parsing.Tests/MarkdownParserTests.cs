@@ -62,6 +62,29 @@ public class MarkdownParserTests
         await Assert.That(doc.Title).IsEqualTo("");
     }
 
+    // ── Skill front matter ──────────────────────────────────────
+
+    [Test]
+    public async Task Parse_SkillFrontMatterNameAndDescription_ExtractsFields()
+    {
+        var md =
+            "---\nname: dotnet-csharp-best-practices\ndescription: C# guidance for agents\n---\n# Title\n";
+        var doc = MarkdownParser.Parse(md, fileName: "");
+
+        await Assert.That(doc.ParsedSkillName).IsEqualTo("dotnet-csharp-best-practices");
+        await Assert.That(doc.ParsedSkillDescription).IsEqualTo("C# guidance for agents");
+    }
+
+    [Test]
+    public async Task Parse_SkillFrontMatterMissingNameAndDescription_ReturnsNullFields()
+    {
+        var md = "---\ntitle: My Doc\n---\n# Title\n";
+        var doc = MarkdownParser.Parse(md, fileName: "");
+
+        await Assert.That(doc.ParsedSkillName).IsNull();
+        await Assert.That(doc.ParsedSkillDescription).IsNull();
+    }
+
     // ── Keywords ────────────────────────────────────────────────
 
     [Test]
@@ -307,7 +330,8 @@ public class MarkdownParserTests
     {
         // Block-list tags used to consume the closing --- fence, dropping all subsequent fields
         // and leaving contentStart = len so the body was never parsed.
-        var md = "---\ntags:\n  - csharp\n  - dotnet\ntitle: My Article\n---\n# Body Heading\n\nbody text\n";
+        var md =
+            "---\ntags:\n  - csharp\n  - dotnet\ntitle: My Article\n---\n# Body Heading\n\nbody text\n";
         var doc = MarkdownParser.Parse(md, fileName: "");
 
         await Assert.That(doc.Title).IsEqualTo("My Article");

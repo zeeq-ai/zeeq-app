@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 
 namespace Zeeq.Mcp;
@@ -22,18 +23,30 @@ internal static class WithZeeqDynamicPromptsExtension
                 .WithListPromptsHandler(
                     (request, cancellation) =>
                     {
-                        // TODO: Get the prompt resolution service
+                        var serviceProvider =
+                            request.Services
+                            ?? throw new McpProtocolException(
+                                "MCP request services are unavailable.",
+                                McpErrorCode.InternalError
+                            );
+                        var prompts = serviceProvider.GetRequiredService<IDynamicPromptsService>();
 
-                        return ValueTask.FromResult(new ListPromptsResult());
+                        return prompts.ListPromptsAsync(request.User, cancellation);
                     }
                 )
                 // Get the requested prompt from the document library
                 .WithGetPromptHandler(
                     (request, cancellation) =>
                     {
-                        // TODO: Get the prompt retrieval service and request the prompt which can include transforms
+                        var serviceProvider =
+                            request.Services
+                            ?? throw new McpProtocolException(
+                                "MCP request services are unavailable.",
+                                McpErrorCode.InternalError
+                            );
+                        var prompts = serviceProvider.GetRequiredService<IDynamicPromptsService>();
 
-                        return ValueTask.FromResult(new GetPromptResult());
+                        return prompts.GetPromptAsync(request.User, request.Params, cancellation);
                     }
                 );
 

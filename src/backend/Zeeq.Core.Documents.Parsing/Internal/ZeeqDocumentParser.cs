@@ -21,6 +21,8 @@ internal struct ZeeqDocumentParser : IDisposable
     // Front matter
     private readonly SourceRange _fm;
     private readonly SourceRange _title;
+    private readonly SourceRange _skillName;
+    private readonly SourceRange _skillDescription;
     private readonly SourceRange[] _kw;
     private readonly int _contentStart;
 
@@ -40,6 +42,8 @@ internal struct ZeeqDocumentParser : IDisposable
         string source,
         SourceRange fm,
         SourceRange title,
+        SourceRange skillName,
+        SourceRange skillDescription,
         SourceRange[] kw,
         TextBlockRaw[] textArr,
         int textCount,
@@ -53,6 +57,8 @@ internal struct ZeeqDocumentParser : IDisposable
         _src = source;
         _fm = fm;
         _title = title;
+        _skillName = skillName;
+        _skillDescription = skillDescription;
         _kw = kw;
         _textArr = textArr;
         _textCount = textCount;
@@ -68,6 +74,12 @@ internal struct ZeeqDocumentParser : IDisposable
 
     /// <summary>The resolved title: front-matter <c>title:</c> field, first H1 heading, or empty.</summary>
     public ReadOnlyMemory<char> Title => _title.Materialize(_src).AsMemory();
+
+    /// <summary>The front-matter <c>name:</c> value used when the document is exposed as a skill.</summary>
+    public ReadOnlyMemory<char> SkillName => _skillName.Materialize(_src).AsMemory();
+
+    /// <summary>The front-matter <c>description:</c> value used when the document is exposed as a skill.</summary>
+    public ReadOnlyMemory<char> SkillDescription => _skillDescription.Materialize(_src).AsMemory();
 
     /// <summary>The raw text between the front-matter <c>---</c> fences, or empty when absent.</summary>
     public ReadOnlyMemory<char> FrontMatter => _fm.Materialize(_src).AsMemory();
@@ -117,6 +129,8 @@ internal struct ZeeqDocumentParser : IDisposable
 
         var frontMatter = new SourceRange(0, 0);
         var title = new SourceRange(0, 0);
+        var skillName = new SourceRange(0, 0);
+        var skillDescription = new SourceRange(0, 0);
         var keywords = new List<SourceRange>();
 
         if (pos < len && MatchFence(markdown, ref pos, '-'))
@@ -164,6 +178,14 @@ internal struct ZeeqDocumentParser : IDisposable
                 if (key.Equals("Title", StringComparison.OrdinalIgnoreCase))
                 {
                     title = new SourceRange(valStart, valEnd);
+                }
+                else if (key.Equals("Name", StringComparison.OrdinalIgnoreCase))
+                {
+                    skillName = new SourceRange(valStart, valEnd);
+                }
+                else if (key.Equals("Description", StringComparison.OrdinalIgnoreCase))
+                {
+                    skillDescription = new SourceRange(valStart, valEnd);
                 }
                 else if (
                     key.Equals("Tags", StringComparison.OrdinalIgnoreCase)
@@ -436,6 +458,8 @@ internal struct ZeeqDocumentParser : IDisposable
             source: markdown,
             fm: frontMatter,
             title: title,
+            skillName: skillName,
+            skillDescription: skillDescription,
             kw: keywords.ToArray(),
             textArr: textBlocks,
             textCount: textCount,

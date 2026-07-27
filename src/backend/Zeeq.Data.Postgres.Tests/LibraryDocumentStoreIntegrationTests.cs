@@ -741,6 +741,122 @@ public sealed class LibraryDocumentStoreIntegrationTests : PgTransactionalTestBa
     }
 
     [Test]
+    public async Task ListScopedSkillDocuments_ReturnsScopedDocumentsOrderedByLibraryAndPath()
+    {
+        var (store, organizationId, docsLibrary) = await CreateStoreWithLibraryAsync();
+        var alphaLibrary = await CreateLibraryAsync(store, organizationId, "alpha");
+        var docsSkill = await CreateDocumentAsync(
+            store,
+            organizationId,
+            docsLibrary.Id,
+            "/guides/beta.md",
+            title: "Beta Skill",
+            content: "Beta guidance."
+        );
+        var alphaSkill = await CreateDocumentAsync(
+            store,
+            organizationId,
+            alphaLibrary.Id,
+            "/guides/alpha.md",
+            title: "Alpha Skill",
+            content: "Alpha guidance."
+        );
+        await CreateDocumentAsync(
+            store,
+            organizationId,
+            docsLibrary.Id,
+            "/guides/not-a-skill.md",
+            title: "Not a Skill",
+            content: "Regular guidance."
+        );
+        await store.SetScopedSkillAsync(
+            organizationId,
+            docsLibrary.Id,
+            docsSkill.Id,
+            LibraryDocumentScopedSkill.Organization,
+            default
+        );
+        await store.SetScopedSkillAsync(
+            organizationId,
+            alphaLibrary.Id,
+            alphaSkill.Id,
+            LibraryDocumentScopedSkill.Organization,
+            default
+        );
+        _context.ChangeTracker.Clear();
+
+        var scopedDocuments = await store.ListScopedSkillDocumentsAsync(
+            organizationId,
+            LibraryDocumentScopedSkill.Organization,
+            default
+        );
+
+        await Assert
+            .That(scopedDocuments.Select(document => document.DocumentId).ToArray())
+            .IsEquivalentTo([alphaSkill.Id, docsSkill.Id]);
+        await Assert
+            .That(scopedDocuments.Select(document => document.LibraryName).ToArray())
+            .IsEquivalentTo(["alpha", "docs"]);
+        await Assert.That(scopedDocuments.All(document => document.Content is null)).IsTrue();
+    }
+
+    [Test]
+    public async Task ResolveScopedSkillDocument_UsesParsedNameThenPathFallback()
+    {
+        var (store, organizationId, library) = await CreateStoreWithLibraryAsync();
+        var parsedNameSkill = await CreateDocumentAsync(
+            store,
+            organizationId,
+            library.Id,
+            "/guides/frontmatter-name.md",
+            title: "Frontmatter Name",
+            content: "Parsed-name guidance.",
+            parsedSkillName: "parsed-skill"
+        );
+        var pathFallbackSkill = await CreateDocumentAsync(
+            store,
+            organizationId,
+            library.Id,
+            "/guides/path-fallback.md",
+            title: "Path Fallback",
+            content: "Path guidance."
+        );
+        await store.SetScopedSkillAsync(
+            organizationId,
+            library.Id,
+            parsedNameSkill.Id,
+            LibraryDocumentScopedSkill.Organization,
+            default
+        );
+        await store.SetScopedSkillAsync(
+            organizationId,
+            library.Id,
+            pathFallbackSkill.Id,
+            LibraryDocumentScopedSkill.Organization,
+            default
+        );
+        _context.ChangeTracker.Clear();
+
+        var parsedResolved = await store.ResolveScopedSkillDocumentAsync(
+            organizationId,
+            "parsed-skill",
+            LibraryDocumentScopedSkill.Organization,
+            default
+        );
+        var pathResolved = await store.ResolveScopedSkillDocumentAsync(
+            organizationId,
+            "path-fallback",
+            LibraryDocumentScopedSkill.Organization,
+            default
+        );
+
+        await Assert.That(parsedResolved?.DocumentId).IsEqualTo(parsedNameSkill.Id);
+        await Assert.That(pathResolved?.DocumentId).IsEqualTo(pathFallbackSkill.Id);
+        await Assert.That(parsedResolved?.Content).IsNull();
+        await Assert.That(pathResolved?.Content).IsNull();
+    }
+
+    [Test]
     public async Task Metadata_RoundTripsAsNullableJson()
     {
         var (store, organizationId, library) = await CreateStoreWithLibraryAsync();
@@ -819,7 +935,8 @@ public sealed class LibraryDocumentStoreIntegrationTests : PgTransactionalTestBa
         string? titleNormalized = null,
         string[]? keywords = null,
         string[]? headings = null,
-        DocumentMetadata? metadata = null
+        DocumentMetadata? metadata = null,
+        string? parsedSkillName = null
     )
     {
         var now = DateTimeOffset.UtcNow;
@@ -832,6 +949,7 @@ public sealed class LibraryDocumentStoreIntegrationTests : PgTransactionalTestBa
                 Path = path,
                 Title = title,
                 TitleNormalized = titleNormalized ?? title.ToLowerInvariant(),
+                ParsedSkillName = parsedSkillName,
                 Keywords = keywords ?? [],
                 Headings = headings ?? [],
                 Content = content,

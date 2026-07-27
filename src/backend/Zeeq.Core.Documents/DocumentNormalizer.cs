@@ -124,6 +124,49 @@ public static class DocumentNormalizer
         return [.. normalized];
     }
 
+    /// <summary>
+    /// Normalizes a skill prompt name into the persisted MCP prompt identifier.
+    /// </summary>
+    /// <remarks>
+    /// This is intentionally separate from <see cref="Normalize" /> because MCP prompt names are
+    /// identifiers, not search text. Future manual override APIs must pass user-entered skill names
+    /// through this method before saving <see cref="LibraryDocument.ManualSkillName" />.
+    /// </remarks>
+    public static string NormalizePromptName(string value)
+    {
+        var builder = new StringBuilder(value.Length);
+        var previousWasSeparator = false;
+
+        foreach (var character in value.Trim().ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                builder.Append(character);
+                previousWasSeparator = false;
+                continue;
+            }
+
+            if (character is '-' or '_')
+            {
+                if (!previousWasSeparator)
+                {
+                    builder.Append(character);
+                    previousWasSeparator = true;
+                }
+
+                continue;
+            }
+
+            if (!previousWasSeparator)
+            {
+                builder.Append('-');
+                previousWasSeparator = true;
+            }
+        }
+
+        return builder.ToString().Trim('-', '_');
+    }
+
     private static bool IsAllowedValueCharacter(char character) =>
         char.IsAsciiLetterOrDigit(character) || character is '/' or '_' or '-' or '+' or '.' or ' ';
 
