@@ -1,7 +1,7 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Zeeq.Core.Common.AspNetCore.Contracts;
 using Zeeq.Core.Identity;
-using Microsoft.AspNetCore.Http;
-using OpenTelemetry.Proto.Collector.Logs.V1;
 
 namespace Zeeq.Platform.Telemetry.Ingest.Otlp;
 
@@ -17,6 +17,7 @@ namespace Zeeq.Platform.Telemetry.Ingest.Otlp;
 /// </remarks>
 public sealed class OtlpHttpLogReceiver(
     OtlpLogIngestService ingestService,
+    IZeeqIdentityStore identityStore,
     IHttpContextAccessor httpContextAccessor
 ) : IEndpointHandler
 {
@@ -38,14 +39,37 @@ public sealed class OtlpHttpLogReceiver(
         await request.Body.CopyToAsync(buffer, cancellationToken);
 
         var identity = httpContextAccessor.HttpContext!.User.AsZeeqIdentity();
+        var authenticatedEmail = await ResolveAuthenticatedEmailAsync(
+            httpContextAccessor.HttpContext.User,
+            identity,
+            cancellationToken
+        );
 
         await ingestService.StoreLogsAsync(
             buffer.ToArray(),
             identity.OwnerUserId,
             identity.OrganizationId,
+            authenticatedEmail,
             cancellationToken
         );
 
         return Results.Ok();
+    }
+
+    private async Task<string?> ResolveAuthenticatedEmailAsync(
+        ClaimsPrincipal principal,
+        ZeeqIdentity identity,
+        CancellationToken cancellationToken
+    )
+    {
+        var claimEmail = principal.AuthenticatedUser()?.Email;
+        if (!string.IsNullOrWhiteSpace(claimEmail))
+        {
+            return claimEmail;
+        }
+
+        return string.IsNullOrWhiteSpace(identity.OwnerUserId)
+            ? null
+            : await identityStore.FindUserEmailAsync(identity.OwnerUserId, cancellationToken);
     }
 }

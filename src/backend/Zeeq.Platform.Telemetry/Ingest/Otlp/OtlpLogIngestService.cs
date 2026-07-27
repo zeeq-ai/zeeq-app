@@ -1,10 +1,11 @@
-using Zeeq.Core.Common;
-using Zeeq.Core.Models;
-using Zeeq.Platform.Telemetry.Filtering;
 using Google.Protobuf;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry.Proto.Collector.Logs.V1;
 using OpenTelemetry.Proto.Collector.Trace.V1;
+using OpenTelemetry.Proto.Common.V1;
+using Zeeq.Core.Common;
+using Zeeq.Core.Models;
+using Zeeq.Platform.Telemetry.Filtering;
 
 namespace Zeeq.Platform.Telemetry.Ingest.Otlp;
 
@@ -23,6 +24,8 @@ public sealed class OtlpLogIngestService(
     ILogger<OtlpLogIngestService> log
 )
 {
+    private const string UserEmailAttribute = "user.email";
+
     /// <summary>
     /// Stores a pruned OTLP logs request into the raw store.
     /// </summary>
@@ -31,7 +34,8 @@ public sealed class OtlpLogIngestService(
         byte[] payload,
         string ingestUserId,
         string ingestOrganizationId,
-        CancellationToken cancellationToken
+        string? ingestUserEmail = null,
+        CancellationToken cancellationToken = default
     )
     {
         var request = ExportLogsServiceRequest.Parser.ParseFrom(payload);
@@ -41,6 +45,8 @@ public sealed class OtlpLogIngestService(
         {
             return 0;
         }
+
+        ApplyAuthenticatedUserEmail(request, ingestUserEmail);
 
         var metadata = metadataExtractor.ExtractLogsMetadata(request, ingestUserId, pruned);
         // NOTE: Keep this bounded receive span on the ingest path for rollout diagnostics.
@@ -67,6 +73,40 @@ public sealed class OtlpLogIngestService(
         );
 
         return pruned;
+    }
+
+    private static void ApplyAuthenticatedUserEmail(
+        ExportLogsServiceRequest request,
+        string? ingestUserEmail
+    )
+    {
+        foreach (var resourceLogs in request.ResourceLogs)
+        {
+            foreach (var scopeLogs in resourceLogs.ScopeLogs)
+            {
+                foreach (var record in scopeLogs.LogRecords)
+                {
+                    for (var i = record.Attributes.Count - 1; i >= 0; i--)
+                    {
+                        if (record.Attributes[i].Key == UserEmailAttribute)
+                        {
+                            record.Attributes.RemoveAt(i);
+                        }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(ingestUserEmail))
+                    {
+                        record.Attributes.Add(
+                            new KeyValue
+                            {
+                                Key = UserEmailAttribute,
+                                Value = new() { StringValue = ingestUserEmail },
+                            }
+                        );
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>

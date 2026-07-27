@@ -1,12 +1,14 @@
 using System.Security.Cryptography;
 using System.Text;
-using Zeeq.Core.Common;
-using Zeeq.Core.Models;
-using Zeeq.Platform.Telemetry.Adapters;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry.Proto.Resource.V1;
+using Zeeq.Core.Common;
+using Zeeq.Core.Identity;
+using Zeeq.Core.Models;
+using Zeeq.Platform.Telemetry.Adapters;
 
 namespace Zeeq.Platform.Telemetry.Processing;
 
@@ -31,11 +33,17 @@ namespace Zeeq.Platform.Telemetry.Processing;
 public sealed class TelemetryProcessingService(
     IServiceScopeFactory scopeFactory,
     IAgentTelemetryCostEnricher costEnricher,
+    HybridCache cache,
     TelemetrySettings settings,
     ILogger<TelemetryProcessingService> log
 ) : BackgroundService
 {
     private static readonly string WorkerId = "telproc-" + ProcessingWorkerId.Value;
+    private static readonly HybridCacheEntryOptions IngestUserEmailCacheOptions = new()
+    {
+        Expiration = TimeSpan.FromMinutes(30),
+        LocalCacheExpiration = TimeSpan.FromMinutes(5),
+    };
 
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -49,6 +57,7 @@ public sealed class TelemetryProcessingService(
                     scope.ServiceProvider.GetRequiredService<ITelemetryRawRequestStore>();
                 var domainStore =
                     scope.ServiceProvider.GetRequiredService<IAgentTelemetryDomainStore>();
+                var identityStore = scope.ServiceProvider.GetRequiredService<IZeeqIdentityStore>();
                 var adapters = scope.ServiceProvider.GetRequiredService<
                     IEnumerable<IAgentTelemetryAdapter>
                 >();
@@ -71,7 +80,14 @@ public sealed class TelemetryProcessingService(
                     continue;
                 }
 
-                await ProcessBatchAsync(rawStore, domainStore, adapters, batch, stoppingToken);
+                await ProcessBatchAsync(
+                    rawStore,
+                    domainStore,
+                    identityStore,
+                    adapters,
+                    batch,
+                    stoppingToken
+                );
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -92,6 +108,7 @@ public sealed class TelemetryProcessingService(
     private async Task ProcessBatchAsync(
         ITelemetryRawRequestStore rawStore,
         IAgentTelemetryDomainStore domainStore,
+        IZeeqIdentityStore identityStore,
         IEnumerable<IAgentTelemetryAdapter> adapters,
         IReadOnlyList<TelemetryRawRequest> batch,
         CancellationToken ct
@@ -103,6 +120,7 @@ public sealed class TelemetryProcessingService(
         var conversations = new Dictionary<AgentConversationKey, AgentConversation>();
         var events = new List<AgentSessionEvent>();
         var successfullyAdapted = new List<TelemetryRawRequest>();
+        var ingestUserEmails = await ResolveIngestUserEmailsAsync(identityStore, batch, ct);
 
         // NOTE: The AdaptRaw → dictionary fold path creates intermediate conversation
         // objects that are de-duplicated and re-merged. A future optimization could
@@ -112,7 +130,11 @@ public sealed class TelemetryProcessingService(
         {
             try
             {
-                var (adaptedConversations, adaptedEvents) = AdaptRaw(raw, adapters);
+                var (adaptedConversations, adaptedEvents) = AdaptRaw(
+                    raw,
+                    adapters,
+                    IngestUserEmail(raw, ingestUserEmails)
+                );
 
                 if (adaptedConversations.Count == 0)
                 {
@@ -195,10 +217,72 @@ public sealed class TelemetryProcessingService(
         }
     }
 
+    private async Task<Dictionary<string, string?>> ResolveIngestUserEmailsAsync(
+        IZeeqIdentityStore identityStore,
+        IReadOnlyList<TelemetryRawRequest> batch,
+        CancellationToken cancellationToken
+    )
+    {
+        var emails = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (
+            var userId in batch
+                .Select(raw => raw.IngestUserId)
+                .Where(userId => !string.IsNullOrWhiteSpace(userId))
+                .Distinct(StringComparer.Ordinal)
+        )
+        {
+            var cached = await cache.GetOrCreateAsync(
+                IngestUserEmailCacheKey(userId!),
+                (identityStore, userId: userId!),
+                static async (state, ct) =>
+                {
+                    var email = await state.identityStore.FindUserEmailAsync(state.userId, ct);
+
+                    return new CachedIngestUserEmail(email is not null, email);
+                },
+                IngestUserEmailCacheOptions,
+                [IngestUserEmailCacheTag(userId!)],
+                cancellationToken
+            );
+
+            emails[userId!] = cached.HasEmail ? cached.Email : null;
+        }
+
+        return emails;
+    }
+
+    private static string IngestUserEmailCacheKey(string userId) =>
+        $"telemetry:ingest-user-email:{userId}";
+
+    private static string IngestUserEmailCacheTag(string userId) =>
+        $"telemetry:ingest-user-email:user:{userId}";
+
+    /// <summary>
+    /// Cache-safe result for user email lookups.
+    /// </summary>
+    /// <remarks>
+    /// Absence is represented separately from the email string so every valid
+    /// email value can round-trip without colliding with a sentinel.
+    /// </remarks>
+    public sealed record CachedIngestUserEmail(bool HasEmail, string? Email);
+
+    private static string? IngestUserEmail(
+        TelemetryRawRequest raw,
+        IReadOnlyDictionary<string, string?> ingestUserEmails
+    ) =>
+        raw.IngestUserId is { Length: > 0 } ingestUserId
+        && ingestUserEmails.TryGetValue(ingestUserId, out var email)
+            ? email
+            : null;
+
     private (
         IReadOnlyList<AgentConversation> Conversations,
         IReadOnlyList<AgentSessionEvent> Events
-    ) AdaptRaw(TelemetryRawRequest raw, IEnumerable<IAgentTelemetryAdapter> adapters)
+    ) AdaptRaw(
+        TelemetryRawRequest raw,
+        IEnumerable<IAgentTelemetryAdapter> adapters,
+        string? ingestUserEmail
+    )
     {
         var conversations = new List<AgentConversation>();
         var events = new List<AgentSessionEvent>();
@@ -232,7 +316,7 @@ public sealed class TelemetryProcessingService(
                     RepoRemoteUrl = CanonicalRepositoryOrNull(result.Conversation.RepoRemoteUrl),
                     HeadBranch = result.Conversation.HeadBranch,
                     HeadSha = result.Conversation.HeadSha,
-                    OwnerEmail = result.Conversation.OwnerEmail,
+                    OwnerEmail = ingestUserEmail,
                     StartedAtUtc = observedAtUtc,
                     OwnershipStatus = AgentConversationOwnershipStatus.MatchedToIngestPrincipal,
                     CreatedById = raw.IngestUserId,
@@ -329,7 +413,7 @@ public sealed class TelemetryProcessingService(
                             ),
                             HeadBranch = result.Conversation.HeadBranch,
                             HeadSha = result.Conversation.HeadSha,
-                            OwnerEmail = result.Conversation.OwnerEmail,
+                            OwnerEmail = ingestUserEmail,
                             StartedAtUtc = observedAtUtc,
                             OwnershipStatus =
                                 AgentConversationOwnershipStatus.MatchedToIngestPrincipal,

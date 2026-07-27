@@ -1,13 +1,5 @@
 using System.Diagnostics;
 using System.Security.Claims;
-using Zeeq.Core.Common;
-using Zeeq.Core.Identity;
-using Zeeq.Core.Models;
-using Zeeq.Platform.Telemetry.Adapters.ClaudeCode;
-using Zeeq.Platform.Telemetry.Adapters.Copilot;
-using Zeeq.Platform.Telemetry.Filtering;
-using Zeeq.Platform.Telemetry.Ingest;
-using Zeeq.Platform.Telemetry.Ingest.Otlp;
 using Google.Protobuf;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
@@ -17,6 +9,14 @@ using Microsoft.Extensions.Logging.Abstractions;
 using OpenIddict.Abstractions;
 using OpenTelemetry.Proto.Collector.Logs.V1;
 using OpenTelemetry.Proto.Collector.Trace.V1;
+using Zeeq.Core.Common;
+using Zeeq.Core.Identity;
+using Zeeq.Core.Models;
+using Zeeq.Platform.Telemetry.Adapters.ClaudeCode;
+using Zeeq.Platform.Telemetry.Adapters.Copilot;
+using Zeeq.Platform.Telemetry.Filtering;
+using Zeeq.Platform.Telemetry.Ingest;
+using Zeeq.Platform.Telemetry.Ingest.Otlp;
 using OtlpLog = OpenTelemetry.Proto.Logs.V1;
 
 namespace Zeeq.Platform.Telemetry.Tests;
@@ -46,9 +46,7 @@ public sealed class OtlpIngestEndpointTests
         foreach (var endpoint in mapped)
         {
             var authorization = endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>();
-            await Assert
-                .That(authorization.Any(data => data.Policy is null))
-                .IsTrue();
+            await Assert.That(authorization.Any(data => data.Policy is null)).IsTrue();
         }
     }
 
@@ -80,6 +78,7 @@ public sealed class OtlpIngestEndpointTests
         var rawStore = new CapturingRawStore();
         var receiver = new OtlpHttpLogReceiver(
             CreateIngestService(rawStore),
+            new StubIdentityStore("validated-user@example.com"),
             new HttpContextAccessor
             {
                 HttpContext = new DefaultHttpContext
@@ -108,6 +107,43 @@ public sealed class OtlpIngestEndpointTests
         await Assert.That(rawStore.LastIngestUserId).IsEqualTo("validated-user");
         await Assert.That(rawStore.LastIngestOrganizationId).IsEqualTo("validated-org");
         await Assert.That(rawStore.LastMetadata!.RecordCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task HandleAsync_ValidatedPrincipal_OverwritesPayloadUserEmail()
+    {
+        var rawStore = new CapturingRawStore();
+        var receiver = new OtlpHttpLogReceiver(
+            CreateIngestService(rawStore),
+            new StubIdentityStore("stored-user@example.com"),
+            new HttpContextAccessor
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(
+                        new ClaimsIdentity(
+                            [
+                                new(OpenIddictConstants.Claims.Subject, "validated-user"),
+                                new(AuthClaims.OrganizationId, "validated-org"),
+                                new(OpenIddictConstants.Claims.Email, "Claim-User@Example.com"),
+                            ],
+                            authenticationType: "test"
+                        )
+                    ),
+                },
+            }
+        );
+        var export = LogsRequest("payload-session", userEmail: "payload@example.com");
+        var requestContext = new DefaultHttpContext();
+        requestContext.Request.Body = new MemoryStream(export.ToByteArray());
+
+        await receiver.HandleAsync(requestContext.Request, CancellationToken.None);
+
+        var stored = ExportLogsServiceRequest.Parser.ParseFrom(rawStore.LastPayload);
+        var record = stored.ResourceLogs.Single().ScopeLogs.Single().LogRecords.Single();
+        var userEmail = record.Attributes.Single(attribute => attribute.Key == "user.email");
+
+        await Assert.That(userEmail.Value.StringValue).IsEqualTo("claim-user@example.com");
     }
 
     [Test]
@@ -152,7 +188,7 @@ public sealed class OtlpIngestEndpointTests
             LogsRequest("activity-session").ToByteArray(),
             ingestUserId: "user",
             ingestOrganizationId: "org",
-            CancellationToken.None
+            cancellationToken: CancellationToken.None
         );
 
         await Assert.That(captured).IsNotNull();
@@ -169,7 +205,7 @@ public sealed class OtlpIngestEndpointTests
             NullLogger<OtlpLogIngestService>.Instance
         );
 
-    private static ExportLogsServiceRequest LogsRequest(string sessionId)
+    private static ExportLogsServiceRequest LogsRequest(string sessionId, string? userEmail = null)
     {
         var request = new ExportLogsServiceRequest();
         var resourceLogs = new OtlpLog.ResourceLogs
@@ -182,10 +218,123 @@ public sealed class OtlpIngestEndpointTests
             Body = new() { StringValue = "claude_code.user_prompt" },
         };
         record.Attributes.Add(TestTelemetry.Attribute("session.id", sessionId));
+        if (userEmail is not null)
+        {
+            record.Attributes.Add(TestTelemetry.Attribute("user.email", userEmail));
+        }
+
         scopeLogs.LogRecords.Add(record);
         resourceLogs.ScopeLogs.Add(scopeLogs);
         request.ResourceLogs.Add(resourceLogs);
         return request;
+    }
+
+    private sealed class StubIdentityStore(string? email) : IZeeqIdentityStore
+    {
+        public Task<string?> FindUserEmailAsync(
+            string userId,
+            CancellationToken cancellationToken
+        ) => Task.FromResult(email);
+
+        public Task<AuthContext?> EnsureUserAsync(
+            string provider,
+            string providerSubject,
+            string? displayName,
+            string? email,
+            string? pictureUrl,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<UserAlias>> ListUserAliasesAsync(
+            string organizationId,
+            string userId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<UserAlias>> ReplaceUserAliasesAsync(
+            string organizationId,
+            string userId,
+            IReadOnlyList<UserAliasWrite> aliases,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task CreatePendingDcrSetupAsync(
+            DcrClientSetup setup,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<DcrClientSetup?> FindDcrSetupAsync(
+            string clientId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task MarkDcrSetupExpiredAsync(
+            string clientId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task ClaimDcrSetupAsync(
+            string clientId,
+            OwnerContext owner,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<ClientCredential>> ListClientCredentialsAsync(
+            string ownerUserId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task AddClientCredentialAsync(
+            ClientCredential credential,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<ClientCredential?> FindClientCredentialAsync(
+            string clientId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<bool> DeleteClientCredentialAsync(
+            string clientId,
+            string ownerUserId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<UserToken>> ListUserTokensAsync(
+            string ownerUserId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task AddUserTokenAsync(UserToken token, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task RemoveUserTokenAsync(string tokenId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<UserToken?> FindUserTokenAsync(
+            string tokenId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<bool> DeleteUserTokenAsync(
+            string tokenId,
+            string ownerUserId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<bool> MarkUserTokenUsedAsync(
+            string tokenId,
+            string ownerUserId,
+            DateTimeOffset usedAtUtc,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<int> RevokeUserTokensForOrganizationMemberAsync(
+            string organizationId,
+            string ownerUserId,
+            DateTimeOffset revokedAtUtc,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
     }
 
     private sealed class CapturingRawStore : ITelemetryRawRequestStore
@@ -193,6 +342,7 @@ public sealed class OtlpIngestEndpointTests
         public string? LastIngestUserId { get; private set; }
         public string? LastIngestOrganizationId { get; private set; }
         public TelemetryRawRequestMetadata? LastMetadata { get; private set; }
+        public byte[] LastPayload { get; private set; } = [];
         public int StoreTracesCalls { get; private set; }
 
         public Task<string> StoreLogsAsync(
@@ -207,6 +357,7 @@ public sealed class OtlpIngestEndpointTests
             LastIngestUserId = ingestUserId;
             LastIngestOrganizationId = ingestOrganizationId;
             LastMetadata = metadata;
+            LastPayload = payload;
             return Task.FromResult("raw-log");
         }
 

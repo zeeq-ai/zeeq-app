@@ -1,8 +1,8 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Zeeq.Core.Common.AspNetCore.Contracts;
 using Zeeq.Core.Identity;
 using Zeeq.Platform.Telemetry.Ingest.Otlp;
-using Microsoft.AspNetCore.Http;
 
 namespace Zeeq.Platform.Telemetry.Ingest.Import;
 
@@ -47,6 +47,7 @@ public sealed class AgentTelemetryImportHandler(
             mapper.Map(WithAuthenticatedUserEmail(request, authenticatedEmail)),
             identity.OwnerUserId,
             identity.OrganizationId,
+            authenticatedEmail,
             cancellationToken
         );
 
@@ -103,9 +104,6 @@ public sealed class AgentTelemetryImportHandler(
     ) =>
         request with
         {
-            Events =
-            [
-                .. request.Events.Select(evt => evt with { UserEmail = authenticatedEmail }),
-            ],
+            Events = [.. request.Events.Select(evt => evt with { UserEmail = authenticatedEmail })],
         };
 }
