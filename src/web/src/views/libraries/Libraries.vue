@@ -320,7 +320,7 @@
     />
 
     <!-- Reviewed save: side-by-side diff in a bottom drawer (D-6) -->
-    <DocumentDiffDrawer
+    <ReviewDiffDrawer
       ref="diffDrawerRef"
       v-model:open="diffOpen"
       :original="diffOriginal"
@@ -394,7 +394,7 @@ import LibrarySelector from "./LibrarySelector.vue";
 import LibraryFormSlideover from "./LibraryFormSlideover.vue";
 import DocumentTree from "./DocumentTree.vue";
 import DocumentEditorPanel from "./DocumentEditorPanel.vue";
-import DocumentDiffDrawer from "./DocumentDiffDrawer.vue";
+import ReviewDiffDrawer from "@/components/ReviewDiffDrawer.vue";
 import DocumentSearchPanel from "./DocumentSearchPanel.vue";
 import DocumentParsePreviewSlideover from "./DocumentParsePreviewSlideover.vue";
 import DocumentRenameSlideover from "./DocumentRenameSlideover.vue";
@@ -403,7 +403,7 @@ import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 import { toGitHubWebUrl } from "@/utils/githubUrl";
 
 type DocumentEditorPanelInstance = InstanceType<typeof DocumentEditorPanel>;
-type DocumentDiffDrawerInstance = InstanceType<typeof DocumentDiffDrawer>;
+type ReviewDiffDrawerInstance = InstanceType<typeof ReviewDiffDrawer>;
 
 const toast = useToast();
 const store = useLibraryStore();
@@ -450,7 +450,7 @@ const { configuredRepositories, librarySourceRepositories } =
   storeToRefs(githubStore);
 
 const editorPanelRef = ref<DocumentEditorPanelInstance | null>(null);
-const diffDrawerRef = ref<DocumentDiffDrawerInstance | null>(null);
+const diffDrawerRef = ref<ReviewDiffDrawerInstance | null>(null);
 
 const librarySelectionLoading = ref(false);
 const editorActionsPanelOpen = useStorage(

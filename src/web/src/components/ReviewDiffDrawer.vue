@@ -1,14 +1,8 @@
 <template>
-  <!--
-  Bottom diff drawer (D-6): opens from the bottom at ~85vh for the widest
-  side-by-side review surface. Wraps v-code-diff <CodeDiff>.
-  -->
   <USlideover
     v-model:open="open"
     side="bottom"
-    :ui="{
-      content: 'h-[85vh] overflow-hidden',
-    }"
+    :ui="{ content: 'h-[85vh] overflow-hidden' }"
   >
     <template #content>
       <UCard
@@ -21,7 +15,7 @@
         }"
       >
         <template #header>
-          <h2 class="text-highlighted font-semibold">Review changes</h2>
+          <h2 class="font-semibold text-highlighted">{{ title }}</h2>
           <div class="flex items-center gap-3">
             <div class="flex items-center gap-3 text-xs text-muted">
               <span class="flex items-center gap-1">
@@ -40,7 +34,7 @@
               @click="closeDrawer"
             />
             <UButton
-              label="Save changes"
+              :label="confirmLabel"
               icon="i-hugeicons-checkmark-circle-02"
               color="primary"
               variant="subtle"
@@ -55,7 +49,7 @@
           :new-string="next"
           output-format="side-by-side"
           :theme="diffTheme"
-          class="library-diff-viewer min-h-0"
+          class="review-diff-viewer min-h-0"
         />
       </UCard>
     </template>
@@ -64,9 +58,8 @@
 
 <script setup lang="ts">
 /**
- * Typed wrapper around v-code-diff's CodeDiff component.
- * v-code-diff's types declare empty props (DefineComponent<{}, {}, any>),
- * so we re-declare with the actual runtime props to satisfy the type checker.
+ * Shared bottom diff drawer for reviewing text changes before save.
+ * The caller owns persistence; this component only displays the diff and confirms intent.
  */
 import { CodeDiff as RawCodeDiff } from "v-code-diff";
 import { h, defineComponent } from "vue";
@@ -91,12 +84,18 @@ const CodeDiff = defineComponent<{
   },
 );
 
-defineProps<{
-  /** Original markdown before edits. */
-  original: string;
-  /** Next markdown after edits. */
-  next: string;
-}>();
+withDefaults(
+  defineProps<{
+    original: string;
+    next: string;
+    title?: string;
+    confirmLabel?: string;
+  }>(),
+  {
+    title: "Review changes",
+    confirmLabel: "Save changes",
+  },
+);
 
 const open = defineModel<boolean>("open", { required: true });
 
@@ -105,19 +104,16 @@ const emits = defineEmits<{
 }>();
 
 const saving = ref(false);
+const colorMode = useColorMode();
+const diffTheme = computed<"light" | "dark">(() =>
+  colorMode.value === "dark" ? "dark" : "light",
+);
 
-/** Resets the saving state when the drawer closes, regardless of outcome. */
 watch(open, (isOpen) => {
   if (!isOpen) {
     saving.value = false;
   }
 });
-
-/** Diff theme follows the app color mode for consistency. */
-const colorMode = useColorMode();
-const diffTheme = computed<"light" | "dark">(() =>
-  colorMode.value === "dark" ? "dark" : "light",
-);
 
 function closeDrawer() {
   open.value = false;
@@ -129,13 +125,12 @@ function confirmSave() {
 }
 
 defineExpose({
-  /** Triggers the same save flow as the "Save changes" button. */
   triggerSave: confirmSave,
 });
 </script>
 
 <style scoped>
-:deep(.library-diff-viewer.code-diff-view) {
+:deep(.review-diff-viewer.code-diff-view) {
   max-height: 100%;
   margin: 0;
   overflow: auto;

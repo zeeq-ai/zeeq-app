@@ -2367,6 +2367,72 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/review-configuration/file-filter-preview": {
+      "post": {
+        "tags": [
+          "Code Reviews"
+        ],
+        "summary": "Preview repository file filters.",
+        "description": "Applies draft repository-level file-filter rules to a caller supplied list of\nrepository-relative paths. The response mirrors the real review runner's file\nscope behavior, including built-in default exclusions for common noise.\n\nRestricted to organization owners and admins because callers submit arbitrary\ndraft rules for the selected repository.",
+        "operationId": "PreviewCodeReviewFileFilter",
+        "parameters": [
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewCodeReviewFileFilterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "404": {
+            "description": "Not Found"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewCodeReviewFileFilterResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/pull-requests/{pullRequestNumber}/check-run/bypass": {
       "post": {
         "tags": [
@@ -10433,6 +10499,52 @@
           }
         },
         "description": "Generic paged response returned by system organization admin endpoints."
+      },
+      "PreviewCodeReviewFileFilterRequest": {
+        "required": [
+          "fileFilter",
+          "filePaths"
+        ],
+        "type": "object",
+        "properties": {
+          "fileFilter": {
+            "description": "Draft repository-level filter rules to evaluate.",
+            "$ref": "#/components/schemas/CodeReviewFileFilterDto"
+          },
+          "filePaths": {
+            "maxItems": 25,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Repository-relative paths, one logical file per entry."
+          }
+        },
+        "description": "Request for previewing repository-level file filters against typed paths."
+      },
+      "PreviewCodeReviewFileFilterResponse": {
+        "required": [
+          "includedFiles",
+          "excludedFiles"
+        ],
+        "type": "object",
+        "properties": {
+          "includedFiles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Paths that would be included in review context."
+          },
+          "excludedFiles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Paths filtered out by default noise or configured rules."
+          }
+        },
+        "description": "Response showing which preview paths would enter or leave review scope."
       },
       "ProblemDetails": {
         "type": "object",

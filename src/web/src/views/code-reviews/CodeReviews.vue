@@ -9,10 +9,11 @@
         />
 
         <!--
-        Manage Agents-only actions, consolidated here next to the repository
-        picker instead of duplicating a second toolbar inside ManageAgents.vue.
+        Manage Agents actions live in the parent toolbar so they stay beside the
+        repository picker. Keep these visible on both the collection route and
+        the deep-linked agent route; selected agents render under ManageAgent.
         -->
-        <UFieldGroup v-if="route.name === 'ManageAgents'" class="shrink-0">
+        <UFieldGroup v-if="isManageAgentsRoute" class="shrink-0">
           <UButton
             label="Global file filters"
             icon="i-hugeicons-filter"
@@ -79,7 +80,7 @@
   </ZeeqView>
 
   <SharedPromptFragmentSlideover
-    v-if="route.name === 'ManageAgents'"
+    v-if="isManageAgentsRoute"
     v-model:open="sharedPromptFragmentOpen"
     :shared-prompt-fragment="
       repositoryConfiguration?.sharedPromptFragment ?? null
@@ -102,6 +103,7 @@ import {
 } from "@/stores/code-review-store";
 import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
 
+import { confirmManageAgentsRepositoryChange } from "./manage-agents/manage-agents-repository-change-guard";
 import SharedPromptFragmentSlideover from "./manage-agents/SharedPromptFragmentSlideover.vue";
 
 const route = useRoute();
@@ -132,6 +134,15 @@ const bodyClass = computed(() =>
   route.name === "CodeReviewPullRequestSingle"
     ? "gap-0 sm:gap-0 overflow-hidden p-0 sm:p-0"
     : undefined,
+);
+
+/**
+ * Manage-agent toolbar actions are route-scoped, not view-state-scoped.
+ * Agent selection deep-links to ManageAgent, so checking only ManageAgents
+ * makes global filters, new-agent creation, and shared prompt disappear.
+ */
+const isManageAgentsRoute = computed(
+  () => route.name === "ManageAgents" || route.name === "ManageAgent",
 );
 
 const repositoryItems = computed(() =>
@@ -253,7 +264,9 @@ async function saveSharedPromptFragment(sharedPromptFragment: string) {
 async function changeRepository(repositoryId: string) {
   try {
     if (route.name === "ManageAgents" || route.name === "ManageAgent") {
-      await codeReviewStore.setSelectedRepository(repositoryId);
+      await confirmManageAgentsRepositoryChange(async () => {
+        await codeReviewStore.setSelectedRepository(repositoryId);
+      });
       return;
     }
 

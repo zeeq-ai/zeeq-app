@@ -524,6 +524,26 @@ public sealed record SaveCodeReviewRepositoryConfigurationRequest(
 );
 
 /// <summary>
+/// Request for previewing repository-level file filters against typed paths.
+/// </summary>
+/// <param name="FileFilter">Draft repository-level filter rules to evaluate.</param>
+/// <param name="FilePaths">Repository-relative paths, one logical file per entry.</param>
+public sealed record PreviewCodeReviewFileFilterRequest(
+    [property: Required] CodeReviewFileFilterDto FileFilter,
+    [property: Required, MaxLength(25)] IReadOnlyList<string> FilePaths
+);
+
+/// <summary>
+/// Response showing which preview paths would enter or leave review scope.
+/// </summary>
+/// <param name="IncludedFiles">Paths that would be included in review context.</param>
+/// <param name="ExcludedFiles">Paths filtered out by default noise or configured rules.</param>
+public sealed record PreviewCodeReviewFileFilterResponse(
+    IReadOnlyList<string> IncludedFiles,
+    IReadOnlyList<string> ExcludedFiles
+);
+
+/// <summary>
 /// Response for repository reviewer-agent listing.
 /// </summary>
 /// <param name="Items">Persisted reviewer agents for the repository.</param>

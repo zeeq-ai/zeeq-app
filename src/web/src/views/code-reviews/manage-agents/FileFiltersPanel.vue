@@ -8,8 +8,8 @@
           Repo level file filters
         </h2>
         <p class="mt-1 text-sm text-muted">
-          These filters apply before reviewer-agent activation for the currently
-          selected repository. Excluded files always win.
+          Configure file filters to reduce noise in code reviews for this
+          repository. Agent level filters can also be configured separately.
         </p>
       </div>
     </div>
@@ -18,13 +18,20 @@
       :file-filter
       :saving
       :disabled
+      :preview-result
+      :preview-loading
+      :preview-error
       @save="emits('save', $event)"
+      @preview="previewFilters"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import type { CodeReviewFileFilterDto } from "@/api/generated";
+import type {
+  CodeReviewFileFilterDto,
+  PreviewCodeReviewFileFilterResponse,
+} from "@/api/generated";
 
 import RepositoryFileFiltersPanel from "./RepositoryFileFiltersPanel.vue";
 
@@ -32,9 +39,20 @@ defineProps<{
   fileFilter: CodeReviewFileFilterDto | null;
   saving: boolean;
   disabled: boolean;
+  previewResult: PreviewCodeReviewFileFilterResponse | null;
+  previewLoading: boolean;
+  previewError: string | null;
 }>();
 
 const emits = defineEmits<{
   save: [fileFilter: CodeReviewFileFilterDto];
+  preview: [fileFilter: CodeReviewFileFilterDto, filePaths: string[]];
 }>();
+
+function previewFilters(
+  fileFilter: CodeReviewFileFilterDto,
+  filePaths: string[],
+) {
+  emits("preview", fileFilter, filePaths);
+}
 </script>

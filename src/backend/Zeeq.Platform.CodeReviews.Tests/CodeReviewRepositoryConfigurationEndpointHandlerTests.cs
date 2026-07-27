@@ -188,6 +188,131 @@ public sealed class CodeReviewRepositoryConfigurationEndpointHandlerTests
         await Assert.That(fixture.Repositories.UpsertCalls).IsEqualTo(0);
     }
 
+    [Test]
+    public async Task PreviewCodeReviewFileFilter_WithDraftRules_ReturnsIncludedAndExcludedFiles()
+    {
+        var fixture = Fixture.Create(role: "admin");
+
+        var result = await fixture.PreviewHandler.HandleAsync(
+            "org_123",
+            "repo_123",
+            PreviewRequest(
+                includePattern: ".ts",
+                excludePattern: "**/*.generated.ts",
+                filePaths:
+                [
+                    "src/app.ts",
+                    "src/app.generated.ts",
+                    "package-lock.json",
+                    "docs/readme.md",
+                ]
+            ),
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<PreviewCodeReviewFileFilterResponse>;
+
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(ok!.Value!.IncludedFiles).IsEquivalentTo(["src/app.ts"]);
+        await Assert
+            .That(ok.Value.ExcludedFiles)
+            .IsEquivalentTo(["src/app.generated.ts", "package-lock.json", "docs/readme.md"]);
+    }
+
+    [Test]
+    public async Task PreviewCodeReviewFileFilter_WithExplicitInclude_OverridesDefaultExclusion()
+    {
+        var fixture = Fixture.Create(role: "owner");
+
+        var result = await fixture.PreviewHandler.HandleAsync(
+            "org_123",
+            "repo_123",
+            new PreviewCodeReviewFileFilterRequest(
+                new CodeReviewFileFilterDto(
+                    [
+                        new CodeReviewFileMatchCriteriaDto(
+                            CodeReviewFileNameMatchType.ExactPath,
+                            "package-lock.json"
+                        ),
+                    ],
+                    []
+                ),
+                ["package-lock.json", "src/app.ts"]
+            ),
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<PreviewCodeReviewFileFilterResponse>;
+
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(ok!.Value!.IncludedFiles).IsEquivalentTo(["package-lock.json"]);
+        await Assert.That(ok.Value.ExcludedFiles).IsEquivalentTo(["src/app.ts"]);
+    }
+
+    [Test]
+    public async Task PreviewCodeReviewFileFilter_WithBlankRule_ReturnsBadRequest()
+    {
+        var fixture = Fixture.Create(role: "admin");
+
+        var result = await fixture.PreviewHandler.HandleAsync(
+            "org_123",
+            "repo_123",
+            PreviewRequest(includePattern: " "),
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var badRequest = result.Result as BadRequest<CodeReviewEndpointError>;
+
+        await Assert.That(badRequest).IsNotNull();
+        await Assert.That(badRequest!.Value!.Code).IsEqualTo("invalid_file_filter");
+    }
+
+    [Test]
+    public async Task PreviewCodeReviewFileFilter_WithTooManyPaths_ReturnsBadRequest()
+    {
+        var fixture = Fixture.Create(role: "admin");
+
+        var result = await fixture.PreviewHandler.HandleAsync(
+            "org_123",
+            "repo_123",
+            PreviewRequest(filePaths: Enumerable.Range(0, 26).Select(i => $"src/{i}.cs").ToArray()),
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var badRequest = result.Result as BadRequest<CodeReviewEndpointError>;
+
+        await Assert.That(badRequest).IsNotNull();
+        await Assert.That(badRequest!.Value!.Code).IsEqualTo("invalid_file_paths");
+    }
+
+    [Test]
+    public async Task PreviewCodeReviewFileFilter_WithBlankPaths_AppliesNormalizedCandidates()
+    {
+        var fixture = Fixture.Create(role: "admin");
+
+        var result = await fixture.PreviewHandler.HandleAsync(
+            "org_123",
+            "repo_123",
+            PreviewRequest(
+                includePattern: ".cs",
+                filePaths: [" ", "/src/App.cs", "src/App.cs", "\\src\\Generated.cs", ""]
+            ),
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<PreviewCodeReviewFileFilterResponse>;
+
+        await Assert.That(ok).IsNotNull();
+        await Assert
+            .That(ok!.Value!.IncludedFiles)
+            .IsEquivalentTo(["src/App.cs", "src/Generated.cs"]);
+    }
+
     private static SaveCodeReviewRepositoryConfigurationRequest SaveRequest(
         string includePattern = "src/backend/",
         string excludePattern = "bin/",
@@ -215,6 +340,29 @@ public sealed class CodeReviewRepositoryConfigurationEndpointHandlerTests
             }
         );
 
+    private static PreviewCodeReviewFileFilterRequest PreviewRequest(
+        string includePattern = "src/backend/",
+        string excludePattern = "bin/",
+        IReadOnlyList<string>? filePaths = null
+    ) =>
+        new(
+            new CodeReviewFileFilterDto(
+                [
+                    new CodeReviewFileMatchCriteriaDto(
+                        CodeReviewFileNameMatchType.Extension,
+                        includePattern
+                    ),
+                ],
+                [
+                    new CodeReviewFileMatchCriteriaDto(
+                        CodeReviewFileNameMatchType.Glob,
+                        excludePattern
+                    ),
+                ]
+            ),
+            filePaths ?? ["src/backend/App.cs"]
+        );
+
     private static ClaimsPrincipal TestUser() =>
         new(
             new ClaimsIdentity(
@@ -232,6 +380,8 @@ public sealed class CodeReviewRepositoryConfigurationEndpointHandlerTests
         public GetRepositoryReviewConfigurationHandler GetHandler { get; private set; } = null!;
 
         public SaveRepositoryReviewConfigurationHandler SaveHandler { get; private set; } = null!;
+
+        public PreviewCodeReviewFileFilterHandler PreviewHandler { get; private set; } = null!;
 
         public static Fixture Create(string role)
         {
@@ -256,6 +406,7 @@ public sealed class CodeReviewRepositoryConfigurationEndpointHandlerTests
 
             fixture.GetHandler = new(authorization, fixture.Repositories);
             fixture.SaveHandler = new(authorization, fixture.Repositories);
+            fixture.PreviewHandler = new(authorization, fixture.Repositories);
 
             return fixture;
         }

@@ -1,69 +1,123 @@
 <template>
-  <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-    <div
-      class="flex min-h-24 items-start justify-between gap-4 border-b border-default px-6 py-5"
-    >
-      <div class="min-w-0">
-        <h2 class="truncate text-xl font-semibold text-highlighted">
-          {{ agent ? "Edit reviewer agent" : "Create reviewer agent" }}
-        </h2>
-        <p class="mt-1 text-sm text-muted">
-          Configure one reviewer persona and the files that activate it.
-        </p>
-      </div>
-      <div class="flex shrink-0 items-center gap-2">
-        <UTabs
-          v-model="enabledTab"
-          :items="enabledTabItems"
-          :content="false"
-          color="neutral"
-          variant="pill"
-          size="xs"
-          :ui="{ list: 'w-auto', trigger: 'grow-0' }"
-        />
-
-        <UFieldGroup>
-          <!--
-        Copy (create mode only): opens the source library slideover where the
-        user can seed this new agent from a built-in template or an existing
-        agent in any org repository. The library emits a ready-to-use form.
-        -->
-          <UButton
+  <!--
+  Single editing surface for both create and update. The side panel carries
+  metadata/actions so the prompt editor keeps the vertical space.
+  -->
+  <div class="flex h-full min-h-0 flex-1 overflow-hidden">
+    <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div
+        class="flex h-[45px] shrink-0 items-center gap-3 border-b border-default px-3"
+      >
+        <div class="flex min-w-0 flex-1 items-center gap-2">
+          <h2 class="truncate text-sm font-semibold text-highlighted">
+            {{
+              draft.displayName.trim() ||
+              (agent ? "Reviewer agent" : "New reviewer agent")
+            }}
+          </h2>
+          <UBadge
             v-if="!agent"
-            label="Templates"
-            icon="i-hugeicons-copy-01"
-            color="neutral"
+            label="New"
+            color="primary"
             variant="subtle"
-            :disabled="disabled || saving"
-            @click="emits('openSourceLibrary')"
+            size="sm"
+            class="shrink-0 rounded-full"
           />
-
+        </div>
+        <UBadge
+          v-if="hasChanges"
+          label="Unsaved"
+          color="warning"
+          variant="subtle"
+          size="sm"
+          class="rounded-full"
+        />
+        <UTooltip
+          text="Toggle editor theme"
+          :content="{ side: 'bottom' }"
+          :delay-duration="0"
+        >
           <UButton
-            :label="agent ? 'Save' : 'Deploy'"
-            icon="i-hugeicons-floppy-disk"
+            icon="i-hugeicons-gibbous-moon"
+            size="xs"
             color="neutral"
-            variant="subtle"
-            :loading="saving"
-            :disabled="!canSave"
-            @click="submit"
+            variant="ghost"
+            aria-label="Toggle editor theme"
+            @click="toggleTheme"
           />
-          <UButton
-            label="Cancel"
-            color="neutral"
-            variant="subtle"
-            size="md"
-            :disabled="saving"
-            @click="emits('cancel')"
-          />
-        </UFieldGroup>
+        </UTooltip>
       </div>
+
+      <!-- Prompt and activation rules are tabs because both edit the same draft. -->
+      <UTabs
+        :items="agentConfigurationTabs"
+        default-value="prompt"
+        color="neutral"
+        variant="link"
+        class="agent-config-tabs min-h-0 flex-1 px-3"
+        :ui="{ root: 'min-h-0 flex-1', content: 'min-h-0 flex-1 pt-3' }"
+      >
+        <template #prompt>
+          <div class="prompt-editor min-h-0 flex-1">
+            <MdEditor
+              v-model="draft.prompt"
+              preview-theme="github"
+              language="en-US"
+              :preview="false"
+              :toolbars-exclude="promptToolbarsExclude"
+              :html-preview="false"
+              :no-upload-img="true"
+              :no-mermaid="true"
+              :no-katex="true"
+              :theme="editorTheme"
+              :disabled="disabled || saving"
+            />
+          </div>
+        </template>
+
+        <template #filters>
+          <div class="h-full min-h-0 overflow-y-auto pb-3">
+            <div class="grid gap-4">
+              <div class="grid gap-2">
+                <h3 class="text-sm font-semibold text-highlighted">
+                  Activation filters
+                </h3>
+                <p class="text-sm text-muted">
+                  Empty includes mean this agent can activate for any repository
+                  file that survives repository-level filters.
+                </p>
+              </div>
+
+              <AgentActivationFiltersEditor
+                :included-files="draft.activationConfiguration.includedFiles"
+                :excluded-files="draft.activationConfiguration.excludedFiles"
+                :disabled="disabled || saving"
+                @update="updateActivationConfiguration"
+              />
+            </div>
+          </div>
+        </template>
+      </UTabs>
     </div>
 
-    <div class="flex min-h-0 flex-1 flex-col px-6 py-5">
-      <div class="flex min-h-0 flex-1 flex-col gap-4">
-        <div
-          class="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(10rem,1fr)]"
-        >
+    <!--
+    Mirrors the document editor side rail: identity fields, status, save/review,
+    reset, copy, and destructive actions stay outside the editor canvas.
+    -->
+    <aside
+      class="flex w-72 shrink-0 flex-col border-l border-default bg-default"
+    >
+      <div class="min-h-0 flex-1 overflow-y-auto p-4">
+        <div class="grid gap-4">
+          <div class="grid gap-1">
+            <h3 class="text-sm font-semibold text-highlighted">
+              Reviewer settings
+            </h3>
+            <p class="text-xs text-muted">
+              Configure one reviewer persona and the files that activate it.
+            </p>
+          </div>
+
           <UFormField label="Display name" required>
             <UInput
               v-model="draft.displayName"
@@ -91,65 +145,104 @@
               class="w-full"
             />
           </UFormField>
+
+          <UFormField label="Status">
+            <UTabs
+              v-model="enabledTab"
+              :items="enabledTabItems"
+              :content="false"
+              color="neutral"
+              variant="pill"
+              size="xs"
+              class="w-full"
+              :ui="{ list: 'w-full', trigger: 'flex-1' }"
+            />
+          </UFormField>
+
+          <USeparator />
+
+          <UButton
+            :label="agent ? 'Review and save' : 'Deploy'"
+            icon="i-hugeicons-floppy-disk"
+            color="neutral"
+            variant="subtle"
+            block
+            :loading="saving"
+            :disabled="!canSave"
+            :ui="sidePanelButtonUi"
+            @click="submit"
+          />
+          <UButton
+            label="Reset changes"
+            icon="i-hugeicons-arrow-reload-horizontal"
+            color="neutral"
+            variant="ghost"
+            block
+            :disabled="saving || !hasChanges"
+            :ui="sidePanelButtonUi"
+            @click="resetDraftToSaved"
+          />
+
+          <template v-if="!agent">
+            <UButton
+              label="Templates"
+              icon="i-hugeicons-copy-01"
+              color="neutral"
+              variant="ghost"
+              block
+              :disabled="disabled || saving"
+              :ui="sidePanelButtonUi"
+              @click="emits('openSourceLibrary')"
+            />
+            <UButton
+              label="Cancel"
+              color="neutral"
+              variant="ghost"
+              block
+              :disabled="saving"
+              :ui="sidePanelButtonUi"
+              @click="emits('cancel')"
+            />
+          </template>
+
+          <template v-else>
+            <USeparator />
+
+            <USelect
+              v-if="copyTargetRepositoryItems.length > 0"
+              v-model="copyTargetRepositoryId"
+              :items="copyTargetRepositoryItems"
+              placeholder="Copy to repository"
+              color="neutral"
+              :disabled="disabled || saving"
+              class="w-full"
+              @update:model-value="copyToRepository"
+            />
+          </template>
         </div>
-
-        <UTabs
-          :items="agentConfigurationTabs"
-          default-value="prompt"
-          color="neutral"
-          variant="link"
-          class="agent-config-tabs min-h-0 flex-1"
-          :ui="{ root: 'min-h-0 flex-1', content: 'min-h-0 flex-1 pt-4' }"
-        >
-          <template #prompt>
-            <div class="prompt-editor min-h-0 flex-1">
-              <MdEditor
-                v-model="draft.prompt"
-                preview-theme="github"
-                language="en-US"
-                :preview="false"
-                :toolbars-exclude="promptToolbarsExclude"
-                :html-preview="false"
-                :no-upload-img="true"
-                :no-mermaid="true"
-                :no-katex="true"
-                :theme="editorTheme"
-                :disabled="disabled || saving"
-              />
-            </div>
-          </template>
-
-          <template #filters>
-            <div class="h-full min-h-0 overflow-y-auto">
-              <div class="grid gap-4">
-                <div class="grid gap-2">
-                  <h3 class="text-sm font-semibold text-highlighted">
-                    Activation filters
-                  </h3>
-                  <p class="text-sm text-muted">
-                    Empty includes mean this agent can activate for any
-                    repository file that survives repository-level filters.
-                  </p>
-                </div>
-
-                <AgentActivationFiltersEditor
-                  :included-files="draft.activationConfiguration.includedFiles"
-                  :excluded-files="draft.activationConfiguration.excludedFiles"
-                  :disabled="disabled || saving"
-                  @update="updateActivationConfiguration"
-                />
-              </div>
-            </div>
-          </template>
-        </UTabs>
       </div>
-    </div>
+
+      <div v-if="agent" class="grid gap-2 border-t border-default p-4">
+        <ZeeqPopConfirm
+          title="Delete reviewer agent?"
+          :body="`Delete ${draft.displayName || 'this reviewer agent'} from this repository's reviewer agents?`"
+          confirm-label="Delete"
+          label="Delete"
+          icon="i-hugeicons-delete-02"
+          color="error"
+          variant="ghost"
+          block
+          :disabled="disabled || saving"
+          :ui="sidePanelButtonUi"
+          @confirm="emits('delete')"
+        />
+      </div>
+    </aside>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { useColorMode } from "@vueuse/core";
 import { MdEditor, type ToolbarNames } from "md-editor-v3";
 import "md-editor-v3/lib/style.css";
 import type {
@@ -163,38 +256,64 @@ import {
   modelTierItems,
   type CodeReviewerAgentForm,
 } from "@/stores/code-review-store";
+import { useDraftSnapshot } from "@/composables/useDraftSnapshot";
+import { useMarkdownEditorTheme } from "@/composables/useMarkdownEditorTheme";
+import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 
 import AgentActivationFiltersEditor from "./AgentActivationFiltersEditor.vue";
+import { formatAgentFormForDiff } from "./agent-diff-format";
 
-const props = defineProps<{
-  agent: CodeReviewerAgentDto | null;
-  saving: boolean;
-  disabled: boolean;
-  initialForm?: CodeReviewerAgentForm | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    agent: CodeReviewerAgentDto | null;
+    saving: boolean;
+    disabled: boolean;
+    initialForm?: CodeReviewerAgentForm | null;
+    copyTargetRepositoryItems?: { label: string; value: string }[];
+  }>(),
+  {
+    initialForm: null,
+    copyTargetRepositoryItems: () => [],
+  },
+);
 
 const emits = defineEmits<{
   cancel: [];
   save: [agentId: string | null, form: CodeReviewerAgentForm];
+  review: [
+    agentId: string,
+    original: string,
+    next: string,
+    form: CodeReviewerAgentForm,
+  ];
+  delete: [];
+  copyToRepository: [repositoryId: string];
   openSourceLibrary: [];
 }>();
 
-const draft = ref<CodeReviewerAgentForm>(defaultAgentForm());
-const savedSnapshot = ref("");
-const colorMode = useColorMode();
-
-const editorTheme = computed<"light" | "dark">(() =>
-  colorMode.value === "dark" ? "dark" : "light",
-);
+const { editorTheme, toggleTheme } = useMarkdownEditorTheme();
+const copyTargetRepositoryId = ref<string | undefined>(undefined);
+const originalDiffText = ref(formatAgentFormForDiff(defaultAgentForm()));
+const {
+  draft,
+  dirty: formDirty,
+  resetDraft,
+  resetToBaseline,
+} = useDraftSnapshot(defaultAgentForm(), {
+  clone: cloneAgentForm,
+  serialize: serializeAgentForm,
+});
 
 const agentConfigurationTabs = [
   {
     label: "Prompt",
+    icon: "i-hugeicons-ai-programming",
     value: "prompt",
     slot: "prompt" as const,
   },
   {
     label: "Activation filters",
+    icon: "i-hugeicons-filter-edit",
     value: "filters",
     slot: "filters" as const,
   },
@@ -234,7 +353,7 @@ const promptToolbarsExclude: ToolbarNames[] = [
 ];
 
 /** Required fields mirror backend validation before submitting a mutation. */
-const canSave = computed(
+const formValid = computed(
   () =>
     !props.disabled &&
     !props.saving &&
@@ -242,21 +361,31 @@ const canSave = computed(
     draft.value.reviewFacet.trim().length > 0 &&
     draft.value.prompt.trim().length > 0,
 );
-const formDirty = computed(
-  () => serializeAgentForm(draft.value) !== savedSnapshot.value,
+
+const canSave = computed(
+  () => formValid.value && (!props.agent || formDirty.value),
 );
+const hasChanges = computed(() => formDirty.value);
+const sidePanelButtonUi = { base: "justify-start" };
 
 watch(
   () => [props.agent, props.initialForm] as const,
   ([agent, initialForm]) => {
+    const next = agent
+      ? agentToForm(agent)
+      : initialForm
+        ? cloneAgentForm(initialForm)
+        : defaultAgentForm();
+
+    // Baseline reset defines both dirty tracking and the "original" side of the diff.
+    resetToBaseline(next);
+    originalDiffText.value = formatAgentFormForDiff(next);
+
     if (agent) {
-      draft.value = agentToForm(agent);
-      savedSnapshot.value = serializeAgentForm(draft.value);
       return;
     }
 
-    draft.value = initialForm ?? defaultAgentForm();
-    savedSnapshot.value = serializeAgentForm(draft.value);
+    copyTargetRepositoryId.value = undefined;
   },
   { immediate: true },
 );
@@ -276,22 +405,54 @@ function submit() {
     return;
   }
 
-  emits("save", props.agent?.id ?? null, draft.value);
+  const form = cloneAgentForm(draft.value);
+
+  if (props.agent) {
+    // Existing agents review through the diff drawer; new agents deploy directly.
+    emits(
+      "review",
+      props.agent.id,
+      originalDiffText.value,
+      formatAgentFormForDiff(form),
+      form,
+    );
+    return;
+  }
+
+  emits("save", null, form);
 }
 
 function triggerSave() {
-  if (!canSave.value || !formDirty.value) {
+  if (!canSave.value) {
     return;
   }
 
   submit();
 }
 
+function resetDraftToSaved() {
+  resetDraft();
+}
+
+function copyToRepository(repositoryId: string) {
+  copyTargetRepositoryId.value = undefined;
+  emits("copyToRepository", repositoryId);
+}
+
+function cloneAgentForm(form: CodeReviewerAgentForm): CodeReviewerAgentForm {
+  return {
+    ...form,
+    activationConfiguration: cloneActivationConfiguration(
+      form.activationConfiguration,
+    ),
+  };
+}
+
 function serializeAgentForm(form: CodeReviewerAgentForm): string {
   return JSON.stringify(form);
 }
 
-defineExpose({ triggerSave });
+defineExpose({ triggerSave, canSave, hasChanges });
 </script>
 
 <style scoped>

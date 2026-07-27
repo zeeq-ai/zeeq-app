@@ -34,13 +34,13 @@ public sealed partial class CodeReviewMcpTools
             and either a pull request number or branch name.
 
             <get_review_findings.triggers>
-            - The user asks for review findings for a PR
-            - The user asks for review findings for a branch
-            - The user asks for review findings above a specific severity level
-            - The agent knows the current repository and branch or PR number and needs the latest review findings
+            - User asks for review findings for a PR
+            - User asks for review findings for a branch
+            - User asks for review findings above a specific severity level
+            - Agent knows the current repository and branch or PR number and needs the latest review findings
             </get_review_findings.triggers>
 
-            Provide ownerQualifiedRepoName in owner/repo form, such as zeeq-ai/zeeq.
+            Provide ownerQualifiedRepoName in owner/repo form, such as zeeq-ai/zeeq-app.
             Provide either pullRequestNumber or branch.
 
             minimumLevel is optional. Supported values are CRITICAL, MAJOR, MINOR, SUGGESTION, and COMMENT.
