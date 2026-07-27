@@ -98,11 +98,17 @@ internal static class SetupMcpFiltersExtensions
                         }
 
                         var toolName = string.Empty;
+                        var requestMethod = string.Empty;
                         var requestLooksLikeCodex = false;
 
                         if (context.JsonRpcMessage is JsonRpcRequest request)
                         {
-                            toolName = request.Params?["name"]?.GetValue<string>() ?? string.Empty;
+                            requestMethod = request.Method;
+                            if (request.Method == RequestMethods.ToolsCall)
+                            {
+                                toolName =
+                                    request.Params?["name"]?.GetValue<string>() ?? string.Empty;
+                            }
                             requestLooksLikeCodex = request.LooksLikeCodex();
                         }
 
@@ -114,10 +120,8 @@ internal static class SetupMcpFiltersExtensions
 
                         var user = httpContext?.User?.AuthenticatedUser();
 
-                        if (httpContext != null && !string.IsNullOrWhiteSpace(toolName))
+                        if (httpContext != null)
                         {
-                            // Set attributes from the HTTP context and emit telemetry
-                            // If this is a domain tool call (vs base MCP protocol message).
                             var headerUserAgent =
                                 httpContext.Request.Headers.UserAgent.FirstOrDefault();
                             userAgent =
@@ -125,6 +129,24 @@ internal static class SetupMcpFiltersExtensions
                                 : requestLooksLikeCodex ? "codex"
                                 : "unspecified";
 
+                            httpContext.Items[McpRequestTelemetryContext.HttpContextItemKey] =
+                                new McpRequestTelemetryContext(
+                                    userAgent,
+                                    context.Server.ClientInfo?.Name,
+                                    context.Server.ClientInfo?.Version
+                                );
+                        }
+
+                        if (
+                            httpContext != null
+                            && requestMethod == RequestMethods.ToolsCall
+                            && !string.IsNullOrWhiteSpace(toolName)
+                        )
+                        {
+                            // Set attributes from the HTTP context and emit telemetry for domain
+                            // tool calls only. Prompt/resource protocol messages can also carry a
+                            // `name` parameter; they get their own metrics and must not inflate the
+                            // tool-call counter.
                             ZeeqTelemetry.SetTags([
                                 ("http.user_agent", userAgent),
                                 ("user", user?.Email ?? "unknown-user"),

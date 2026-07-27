@@ -307,6 +307,54 @@ public sealed class MetricsEndpointHandlerTests
     }
 
     [Test]
+    public async Task GetPromptLeaderboard_ValidRequest_ReturnsStoreData()
+    {
+        var store = new FakeMetricsQueryStore
+        {
+            PromptLeaderboard = [new("dotnet-csharp-best-practices", "backend", 2)],
+        };
+        var handler = new GetPromptLeaderboardHandler(store, new MetricsTestHybridCache());
+
+        var result = await handler.HandleAsync(
+            "org_a",
+            "1h",
+            ["alice@example.com"],
+            "backend",
+            10,
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<MetricLeaderboardItem[]>;
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(ok!.Value!.Length).IsEqualTo(1);
+        await Assert.That(ok.Value[0].Item).IsEqualTo("dotnet-csharp-best-practices");
+        await Assert.That(store.PromptLeaderboardOrganizations).Contains("org_a");
+        await Assert.That(store.PromptLeaderboardUsers).IsEquivalentTo(["alice@example.com"]);
+    }
+
+    [Test]
+    public async Task GetPromptLeaderboard_InvalidWindow_Returns400()
+    {
+        var handler = new GetPromptLeaderboardHandler(
+            new FakeMetricsQueryStore(),
+            new MetricsTestHybridCache()
+        );
+
+        var result = await handler.HandleAsync(
+            "org_a",
+            "bogus",
+            null,
+            null,
+            null,
+            CancellationToken.None
+        );
+
+        var badRequest = result.Result as BadRequest<MetricsEndpointError>;
+        await Assert.That(badRequest).IsNotNull();
+        await Assert.That(badRequest!.Value!.Code).IsEqualTo("invalid_window");
+    }
+
+    [Test]
     public async Task GetReviewVolume_InvalidWindow_Returns400()
     {
         var handler = new GetReviewVolumeHandler(
@@ -355,9 +403,12 @@ public sealed class MetricsEndpointHandlerTests
     {
         public MetricSeriesPoint[] Series { get; init; } = [];
         public MetricTwoDimensionalSeriesPoint[] TwoDimensionalSeries { get; init; } = [];
+        public MetricLeaderboardItem[] PromptLeaderboard { get; init; } = [];
         public MetricsOverview Overview { get; init; } = new(0, 0, 0, 0, 0, 0);
         public List<string> SeriesOrganizations { get; } = [];
         public List<string> TwoDimensionalSeriesOrganizations { get; } = [];
+        public List<string> PromptLeaderboardOrganizations { get; } = [];
+        public string[]? PromptLeaderboardUsers { get; private set; }
 
         public Task<IReadOnlyList<MetricSeriesPoint>> GetSeriesAsync(
             string organizationId,
@@ -424,6 +475,20 @@ public sealed class MetricsEndpointHandlerTests
             int top,
             CancellationToken cancellationToken
         ) => Task.FromResult<IReadOnlyList<MetricLeaderboardItem>>([]);
+
+        public Task<IReadOnlyList<MetricLeaderboardItem>> GetPromptLeaderboardAsync(
+            string organizationId,
+            MetricWindow window,
+            string[]? users,
+            string? library,
+            int top,
+            CancellationToken cancellationToken
+        )
+        {
+            PromptLeaderboardOrganizations.Add(organizationId);
+            PromptLeaderboardUsers = users;
+            return Task.FromResult<IReadOnlyList<MetricLeaderboardItem>>(PromptLeaderboard);
+        }
 
         public Task<IReadOnlyList<ReviewVolumePoint>> GetReviewVolumeSeriesAsync(
             string organizationId,

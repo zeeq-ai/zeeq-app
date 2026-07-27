@@ -449,8 +449,8 @@ export function volumeDonutOption(
   );
 }
 
-/** Builds a donut of total tool calls by dimension (e.g. tool name). */
-export function toolCallDonutOption(
+/** Builds a donut of summed metric values by series key. */
+export function metricDonutOption(
   points: MetricSeriesPoint[],
   isDark: boolean,
   maxSlices = maxStackedSeries,
@@ -465,6 +465,15 @@ export function toolCallDonutOption(
     {},
     maxSlices,
   );
+}
+
+/** Builds a donut of total tool calls by dimension (e.g. tool name). */
+export function toolCallDonutOption(
+  points: MetricSeriesPoint[],
+  isDark: boolean,
+  maxSlices = maxStackedSeries,
+): EChartsOption {
+  return metricDonutOption(points, isDark, maxSlices);
 }
 
 function identitySeriesLabel(seriesKey: string): string {

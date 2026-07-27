@@ -183,13 +183,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         seed.Owner.Email = "member@company.com";
 
         await SeedMetricsAsync(
-            AgentMetric(
-                org,
-                "zeeq_agent_token_usage",
-                100,
-                "gpt-5-codex",
-                "personal@example.com"
-            )
+            AgentMetric(org, "zeeq_agent_token_usage", 100, "gpt-5-codex", "personal@example.com")
         );
 
         var store = new PostgresMetricsQueryStore(_context);
@@ -351,13 +345,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         seed.Owner.Email = "member-2d@company.com";
 
         await SeedMetricsAsync(
-            AgentMetric(
-                org,
-                "zeeq_agent_token_usage",
-                75,
-                "gpt-5-codex",
-                "personal-2d@example.com"
-            )
+            AgentMetric(org, "zeeq_agent_token_usage", 75, "gpt-5-codex", "personal-2d@example.com")
         );
 
         var store = new PostgresMetricsQueryStore(_context);
@@ -499,6 +487,102 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         // Both "Intro" rows survive as distinct entries (2 from /a.md, 1 from /d.md) rather
         // than merging into a single value=3 row.
         await Assert.That(items.Count(i => i.Item == "Intro")).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task GetPromptLeaderboard_RanksDocumentPathsAndFiltersByUserAndLibrary()
+    {
+        await SeedMetricsAsync(
+            PromptGet(
+                "org_q_prompt_lb",
+                "backend",
+                "/backend/shared.md",
+                "shared-skill",
+                "alice@example.com"
+            ),
+            PromptGet(
+                "org_q_prompt_lb",
+                "backend",
+                "/backend/shared.md",
+                "shared-skill",
+                "alice@example.com"
+            ),
+            PromptGet(
+                "org_q_prompt_lb",
+                "backend",
+                "/backend/shared.md",
+                "shared-skill",
+                "alice@example.com"
+            ),
+            PromptGet(
+                "org_q_prompt_lb",
+                "frontend",
+                "/frontend/shared.md",
+                "shared-skill",
+                "alice@example.com"
+            ),
+            PromptGet(
+                "org_q_prompt_lb",
+                "backend",
+                "/backend/other.md",
+                "other-skill",
+                "alice@example.com"
+            ),
+            PromptGet(
+                "org_q_prompt_lb",
+                "backend",
+                "/backend/other.md",
+                "other-skill",
+                "alice@example.com"
+            ),
+            PromptGet(
+                "org_q_prompt_lb",
+                "backend",
+                "/backend/shared.md",
+                "shared-skill",
+                "bob@example.com"
+            ),
+            PromptGet(
+                "org_q_prompt_lb_other",
+                "backend",
+                "/backend/shared.md",
+                "shared-skill",
+                "alice@example.com"
+            )
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var globalItems = await store.GetPromptLeaderboardAsync(
+            "org_q_prompt_lb",
+            MetricWindow.H1,
+            users: ["alice@example.com"],
+            library: null,
+            top: 10,
+            CancellationToken.None
+        );
+
+        await Assert.That(globalItems.Count).IsEqualTo(3);
+        await Assert.That(globalItems[0].Item).IsEqualTo("backend:/backend/shared.md");
+        await Assert.That(globalItems[0].Library).IsEqualTo("backend");
+        await Assert.That(globalItems[0].Value).IsEqualTo(3d);
+        await Assert.That(globalItems[1].Item).IsEqualTo("backend:/backend/other.md");
+        await Assert.That(globalItems[1].Value).IsEqualTo(2d);
+        await Assert.That(globalItems[2].Item).IsEqualTo("frontend:/frontend/shared.md");
+        await Assert.That(globalItems[2].Value).IsEqualTo(1d);
+
+        var backendItems = await store.GetPromptLeaderboardAsync(
+            "org_q_prompt_lb",
+            MetricWindow.H1,
+            users: ["alice@example.com"],
+            library: "backend",
+            top: 10,
+            CancellationToken.None
+        );
+
+        await Assert.That(backendItems.Count).IsEqualTo(2);
+        await Assert.That(backendItems[0].Item).IsEqualTo("backend:/backend/shared.md");
+        await Assert.That(backendItems[0].Library).IsEqualTo("backend");
+        await Assert.That(backendItems[0].Value).IsEqualTo(3d);
     }
 
     [Test]
@@ -733,6 +817,24 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
             Tags = heading is null
                 ? new() { ["path"] = path }
                 : new() { ["path"] = path, ["heading"] = heading },
+            CreatedAtUtc = Now,
+        };
+
+    private static MetricEvent PromptGet(
+        string org,
+        string library,
+        string documentPath,
+        string promptName,
+        string? user = null
+    ) =>
+        new()
+        {
+            OrganizationId = org,
+            MetricType = "zeeq_prompt_get_counter",
+            MetricValue = 1,
+            Library = library,
+            UserEmail = user,
+            Tags = new() { ["document_path"] = documentPath, ["prompt_name"] = promptName },
             CreatedAtUtc = Now,
         };
 

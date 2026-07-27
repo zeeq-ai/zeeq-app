@@ -1,6 +1,7 @@
 using System.Diagnostics.Metrics;
 using System.Security.Claims;
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -22,6 +23,7 @@ namespace Zeeq.Mcp;
 /// </remarks>
 internal sealed class DynamicPromptsService(
     ILibraryDocumentStore documentStore,
+    IHttpContextAccessor httpContextAccessor,
     ILogger<DynamicPromptsService> logger
 ) : IDynamicPromptsService
 {
@@ -36,6 +38,21 @@ internal sealed class DynamicPromptsService(
     /// </summary>
     private static readonly Counter<int> PromptGetCounter =
         ZeeqTelemetry.Metrics.CreateCounter<int>("zeeq_dynamic_prompt_get_counter");
+
+    /// <summary>
+    /// Counts successful prompt document retrievals for the Home → Prompts dashboard tab.
+    /// </summary>
+    /// <remarks>
+    /// This counter is intentionally success-only. <see cref="PromptGetCounter" /> keeps the
+    /// result-tagged diagnostics shape for failed lookups, while dashboard usage panels should
+    /// answer "which skills were actually retrieved?" without mixing in validation and not-found
+    /// attempts.
+    /// </remarks>
+    private static readonly Counter<int> PromptUsageCounter =
+        ZeeqTelemetry.Metrics.CreateCounter<int>(
+            "zeeq_prompt_get_counter",
+            "Successful dynamic MCP prompt document retrievals."
+        );
 
     /// <summary>
     /// Lists dynamic prompts available to the authenticated caller's organization.
@@ -195,6 +212,7 @@ internal sealed class DynamicPromptsService(
         }
 
         RecordGetTelemetry(user, identity.OrganizationId, request.Name, document, "success");
+        RecordPromptUsageTelemetry(user, identity.OrganizationId, promptEntry.Name, document);
         ZeeqTelemetry.SetTags(
             ("document.id", document.DocumentId),
             ("document.path", document.Path),
@@ -514,11 +532,66 @@ internal sealed class DynamicPromptsService(
             tags.Add(("document_id", document.DocumentId));
             tags.Add(("document_path", document.Path));
             tags.Add(("library_id", document.LibraryId));
-            tags.Add(("library_name", document.LibraryName));
+            tags.Add(("library", document.LibraryName));
         }
 
         ZeeqTelemetry.SetTags([.. tags]);
         PromptGetCounter.Increment(tags: [.. tags]);
+    }
+
+    /// <summary>
+    /// Records the successful prompt-get usage event consumed by the Prompts dashboard tab.
+    /// </summary>
+    /// <remarks>
+    /// The metrics pipeline promotes <c>organization_id</c>, <c>user</c>, and <c>library</c> into
+    /// indexed columns. Prompt/document/client fields remain JSON tags for now, matching the
+    /// existing read-path leaderboard approach; promote <c>document_path</c> later only if
+    /// top-skill queries become hot enough to require a dedicated index.
+    /// </remarks>
+    private void RecordPromptUsageTelemetry(
+        ClaimsPrincipal? user,
+        string organizationId,
+        string promptName,
+        LibraryScopedSkillDocument document
+    )
+    {
+        var requestTelemetry = McpRequestTelemetryContext.From(httpContextAccessor.HttpContext);
+        List<(string Key, object? Value)> tags =
+        [
+            ("organization_id", organizationId),
+            ("user", user.AuthenticatedUser()?.Email ?? "unknown-user"),
+            ("library", document.LibraryName),
+            ("prompt_name", promptName),
+            ("document_id", document.DocumentId),
+            ("document_path", document.Path),
+            ("library_id", document.LibraryId),
+            ("scoped_skill", LibraryDocumentScopedSkill.Organization.ToString()),
+        ];
+
+        if (requestTelemetry is null)
+        {
+            // NOTE: Client dimensions are best-effort. Successful prompt reads should still count
+            // even if a future non-HTTP invocation path reaches this service without the MCP
+            // message filter's request metadata.
+            tags.Add(("user_agent", "unspecified"));
+        }
+        else
+        {
+            tags.Add(("user_agent", requestTelemetry.UserAgent));
+
+            if (!string.IsNullOrWhiteSpace(requestTelemetry.ClientName))
+            {
+                tags.Add(("client_name", requestTelemetry.ClientName));
+            }
+
+            if (!string.IsNullOrWhiteSpace(requestTelemetry.ClientVersion))
+            {
+                tags.Add(("client_version", requestTelemetry.ClientVersion));
+            }
+        }
+
+        ZeeqTelemetry.SetTags([.. tags]);
+        PromptUsageCounter.Increment(tags: [.. tags]);
     }
 
     /// <summary>

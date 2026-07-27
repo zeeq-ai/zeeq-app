@@ -257,6 +257,16 @@ public interface IMetricsQueryStore
         CancellationToken cancellationToken
     );
 
+    /// <summary>Top-N retrieved MCP prompts, keyed by the captured <c>prompt_name</c> tag.</summary>
+    Task<IReadOnlyList<MetricLeaderboardItem>> GetPromptLeaderboardAsync(
+        string organizationId,
+        MetricWindow window,
+        string[]? users,
+        string? library,
+        int top,
+        CancellationToken cancellationToken
+    );
+
     /// <summary>Bucketed review volume from <c>code_review_records</c>, optionally grouped/filtered.</summary>
     Task<IReadOnlyList<ReviewVolumePoint>> GetReviewVolumeSeriesAsync(
         string organizationId,

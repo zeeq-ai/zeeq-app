@@ -244,7 +244,7 @@ const cards = computed<OverviewCard[]>(() => {
     },
     {
       label: "Knowledge base reads",
-      icon: "i-hugeicons-book-open-01",
+      icon: "i-hugeicons-ai-book",
       value: formatCount(overview?.knowledgeReads),
     },
     {

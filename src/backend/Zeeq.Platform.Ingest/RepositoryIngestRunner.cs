@@ -312,8 +312,10 @@ public sealed partial class RepositoryIngestRunner(
             Path: normalizedPath,
             Title: parsed.Title,
             TitleNormalized: DocumentNormalizer.Normalize(parsed.Title),
-            ParsedSkillName: NormalizeOptionalPromptName(parsed.ParsedSkillName),
-            ParsedSkillDescription: parsed.ParsedSkillDescription,
+            ParsedSkillName: DocumentNormalizer.NormalizeOptionalPromptName(parsed.ParsedSkillName),
+            ParsedSkillDescription: DocumentNormalizer.BoundOptionalSkillDescription(
+                parsed.ParsedSkillDescription
+            ),
             Keywords: DocumentNormalizer.NormalizeKeywords(parsed.Keywords),
             Headings: [.. parsed.Headings],
             Content: content,
@@ -465,9 +467,6 @@ public sealed partial class RepositoryIngestRunner(
 
     private static string ComputeSha256Hex(string content) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant();
-
-    private static string? NormalizeOptionalPromptName(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : DocumentNormalizer.NormalizePromptName(value);
 
     /// <summary>
     /// Parsed/hashed content shared by both <see cref="LibraryDocument"/> and

@@ -27,6 +27,7 @@ public sealed class MetricsEndpoints : IEndpoint
     private const string DocumentRead = "zeeq_document_read_counter";
     private const string SectionRead = "zeeq_section_read_counter";
     private const string SnippetRead = "zeeq_snippet_read_counter";
+    private const string PromptGet = "zeeq_prompt_get_counter";
     private const string AgentTokenUsage = "zeeq_agent_token_usage";
     private const string AgentCostUsd = "zeeq_agent_cost_usd";
     private const string ReviewDuration = "zeeq_review_duration_ms";
@@ -58,12 +59,24 @@ public sealed class MetricsEndpoints : IEndpoint
                         DocumentRead,
                         SectionRead,
                         SnippetRead,
+                        PromptGet,
                         AgentTokenUsage,
                         AgentCostUsd
                     )]
                         string metricType,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
+                    [AllowedValues(
+                        "15m",
+                        "30m",
+                        "1h",
+                        "4h",
+                        "12h",
+                        "24h",
+                        "72h",
+                        "7d",
+                        "14d",
+                        "30d"
+                    )]
                         string? window,
                     [FromQuery] MetricSeriesGroup groupBy,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? users,
@@ -104,12 +117,24 @@ public sealed class MetricsEndpoints : IEndpoint
                         DocumentRead,
                         SectionRead,
                         SnippetRead,
+                        PromptGet,
                         AgentTokenUsage,
                         AgentCostUsd
                     )]
                         string metricType,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
+                    [AllowedValues(
+                        "15m",
+                        "30m",
+                        "1h",
+                        "4h",
+                        "12h",
+                        "24h",
+                        "72h",
+                        "7d",
+                        "14d",
+                        "30d"
+                    )]
                         string? window,
                     [FromQuery] MetricSeriesGroup primaryGroupBy,
                     [FromQuery] MetricSeriesGroup secondaryGroupBy,
@@ -148,7 +173,18 @@ public sealed class MetricsEndpoints : IEndpoint
                     [MaxLength(MaxIdLength)] string orgId,
                     [AllowedValues(ReviewDuration, ReviewTokens, ReviewCost)] string metricType,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
+                    [AllowedValues(
+                        "15m",
+                        "30m",
+                        "1h",
+                        "4h",
+                        "12h",
+                        "24h",
+                        "72h",
+                        "7d",
+                        "14d",
+                        "30d"
+                    )]
                         string? window,
                     [FromQuery, MaxLength(MaxIdLength)] string? repositoryId,
                     [FromQuery, MaxLength(MaxFacetLength)] string? facet,
@@ -171,7 +207,18 @@ public sealed class MetricsEndpoints : IEndpoint
                     [MaxLength(MaxIdLength)] string orgId,
                     [AllowedValues(ReviewDuration, ReviewTokens, ReviewCost)] string metricType,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
+                    [AllowedValues(
+                        "15m",
+                        "30m",
+                        "1h",
+                        "4h",
+                        "12h",
+                        "24h",
+                        "72h",
+                        "7d",
+                        "14d",
+                        "30d"
+                    )]
                         string? window,
                     [FromQuery, MaxLength(MaxIdLength)] string? repositoryId,
                     [FromQuery, MaxLength(MaxFacetLength)] string? facet,
@@ -194,7 +241,18 @@ public sealed class MetricsEndpoints : IEndpoint
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
+                    [AllowedValues(
+                        "15m",
+                        "30m",
+                        "1h",
+                        "4h",
+                        "12h",
+                        "24h",
+                        "72h",
+                        "7d",
+                        "14d",
+                        "30d"
+                    )]
                         string? window,
                     [FromQuery, MaxLength(MaxIdLength)] string? library,
                     [FromQuery, Range(1, 100)] int? top,
@@ -218,7 +276,18 @@ public sealed class MetricsEndpoints : IEndpoint
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
+                    [AllowedValues(
+                        "15m",
+                        "30m",
+                        "1h",
+                        "4h",
+                        "12h",
+                        "24h",
+                        "72h",
+                        "7d",
+                        "14d",
+                        "30d"
+                    )]
                         string? window,
                     [FromQuery, AllowedValues("section", "code")] string kind,
                     [FromQuery, MaxLength(MaxIdLength)] string? library,
@@ -244,6 +313,42 @@ public sealed class MetricsEndpoints : IEndpoint
             )
             .RequireActiveOrganization();
 
+        // GET /api/v1/orgs/{orgId}/metrics/leaderboard/prompts
+        group
+            .MapGet(
+                "/leaderboard/prompts",
+                static (
+                    [MaxLength(MaxIdLength)] string orgId,
+                    [FromQuery]
+                    [AllowedValues(
+                        "15m",
+                        "30m",
+                        "1h",
+                        "4h",
+                        "12h",
+                        "24h",
+                        "72h",
+                        "7d",
+                        "14d",
+                        "30d"
+                    )]
+                        string? window,
+                    [FromQuery, MaxLength(MaxFilterValues)] string[]? users,
+                    [FromQuery, MaxLength(MaxIdLength)] string? library,
+                    [FromQuery, Range(1, 100)] int? top,
+                    [FromServices] GetPromptLeaderboardHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, window, users, library, top, ct)
+            )
+            .WithName("GetPromptLeaderboard")
+            .Produces<MetricLeaderboardItem[]>()
+            .Produces<MetricsEndpointError>(StatusCodes.Status400BadRequest)
+            .WithSummary("Top-N retrieved prompts.")
+            .WithDescription(
+                "Returns the top-N dynamic MCP prompts retrieved successfully in the selected window."
+            )
+            .RequireActiveOrganization();
+
         // GET /api/v1/orgs/{orgId}/metrics/reviews/volume
         group
             .MapGet(
@@ -251,7 +356,18 @@ public sealed class MetricsEndpoints : IEndpoint
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
+                    [AllowedValues(
+                        "15m",
+                        "30m",
+                        "1h",
+                        "4h",
+                        "12h",
+                        "24h",
+                        "72h",
+                        "7d",
+                        "14d",
+                        "30d"
+                    )]
                         string? window,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? repositoryIds,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? authorLogins,
@@ -286,7 +402,18 @@ public sealed class MetricsEndpoints : IEndpoint
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
+                    [AllowedValues(
+                        "15m",
+                        "30m",
+                        "1h",
+                        "4h",
+                        "12h",
+                        "24h",
+                        "72h",
+                        "7d",
+                        "14d",
+                        "30d"
+                    )]
                         string? window,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? repositoryIds,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? authorLogins,
@@ -311,7 +438,18 @@ public sealed class MetricsEndpoints : IEndpoint
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
+                    [AllowedValues(
+                        "15m",
+                        "30m",
+                        "1h",
+                        "4h",
+                        "12h",
+                        "24h",
+                        "72h",
+                        "7d",
+                        "14d",
+                        "30d"
+                    )]
                         string? window,
                     [FromQuery] FindingSeverity severity,
                     [FromQuery, MaxLength(MaxIdLength)] string? cursor,
@@ -341,7 +479,18 @@ public sealed class MetricsEndpoints : IEndpoint
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
                     [FromQuery]
-                    [AllowedValues("15m", "30m", "1h", "4h", "12h", "24h", "72h", "7d", "14d", "30d")]
+                    [AllowedValues(
+                        "15m",
+                        "30m",
+                        "1h",
+                        "4h",
+                        "12h",
+                        "24h",
+                        "72h",
+                        "7d",
+                        "14d",
+                        "30d"
+                    )]
                         string? window,
                     [FromServices] GetMetricsOverviewHandler handler,
                     CancellationToken ct

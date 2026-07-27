@@ -54,7 +54,13 @@
             <div class="flex min-w-0 items-center gap-1.5">
               <UIcon
                 :name="node.icon"
-                class="size-4 shrink-0 text-neutral-400"
+                :class="[
+                  'size-4 shrink-0',
+                  node.asScopedSkill ===
+                  libraryDocumentScopedSkillEnum.Organization
+                    ? 'text-primary'
+                    : 'text-neutral-400',
+                ]"
               />
               <span class="truncate text-sm">{{ node.label }}</span>
             </div>
