@@ -1,14 +1,14 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using Zeeq.Core.Common;
-using Zeeq.Core.Llm;
-using Zeeq.Core.Models;
 using Humanizer;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Zeeq.Core.Common;
+using Zeeq.Core.Llm;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -35,9 +35,13 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
     string provider,
     string model,
     ILoggerFactory loggerFactory,
-    CodeReviewTelemetryContext? telemetry = null
+    CodeReviewTelemetryContext? telemetry = null,
+    CodeReviewExecutionOptions? options = null
 ) : Executor<ChatMessage, ChatMessage>(id)
 {
+    private readonly CodeReviewExecutionOptions _options =
+        options ?? CodeReviewExecutionOptions.Durable;
+
     private const int MaxCorrectionAttempts = 2;
 
     private static readonly Histogram<double> ReviewDurationHistogram =
@@ -88,14 +92,17 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
         CancellationToken cancellationToken = default
     )
     {
-        using var activity = ZeeqTelemetry.Trace(
-            [
-                ("code_review.reviewer.id", runtimeAgent.Id),
-                ("code_review.reviewer.name", runtimeAgent.DisplayName),
-                ("code_review.reviewer.facet", runtimeAgent.ReviewFacet),
-            ],
-            "code-review.reviewer.validate"
-        );
+        using var activity = _options.EmitDiagnostics
+            ? ZeeqTelemetry.Trace(
+                [
+                    ("code_review.reviewer.id", runtimeAgent.Id),
+                    ("code_review.reviewer.name", runtimeAgent.DisplayName),
+                    ("code_review.reviewer.facet", runtimeAgent.ReviewFacet),
+                    ("code_review.execution_mode", _options.Mode.ToString()),
+                ],
+                "code-review.reviewer.validate"
+            )
+            : null;
 
         LogReviewerStarted(
             _logger,
@@ -141,14 +148,17 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
 
                 if (parsed && facetOutput is not null)
                 {
-                    activity?.AddEvent(
-                        [
-                            ("code_review.reviewer.id", runtimeAgent.Id),
-                            ("code_review.reviewer.facet", runtimeAgent.ReviewFacet),
-                            ("code_review.reviewer.correction_attempts", correctionAttempt),
-                        ],
-                        "code_review.reviewer_xml_validated"
-                    );
+                    if (_options.EmitDiagnostics)
+                    {
+                        activity?.AddEvent(
+                            [
+                                ("code_review.reviewer.id", runtimeAgent.Id),
+                                ("code_review.reviewer.facet", runtimeAgent.ReviewFacet),
+                                ("code_review.reviewer.correction_attempts", correctionAttempt),
+                            ],
+                            "code_review.reviewer_xml_validated"
+                        );
+                    }
 
                     LogReviewerValidated(
                         _logger,
@@ -172,15 +182,18 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
 
                 var validationError = parseError ?? "Reviewer output could not be validated.";
 
-                activity?.AddEvent(
-                    [
-                        ("code_review.reviewer.id", runtimeAgent.Id),
-                        ("code_review.reviewer.facet", runtimeAgent.ReviewFacet),
-                        ("code_review.reviewer.correction_attempt", correctionAttempt),
-                        ("exception.message", validationError),
-                    ],
-                    "code_review.reviewer_xml_invalid"
-                );
+                if (_options.EmitDiagnostics)
+                {
+                    activity?.AddEvent(
+                        [
+                            ("code_review.reviewer.id", runtimeAgent.Id),
+                            ("code_review.reviewer.facet", runtimeAgent.ReviewFacet),
+                            ("code_review.reviewer.correction_attempt", correctionAttempt),
+                            ("exception.message", validationError),
+                        ],
+                        "code_review.reviewer_xml_invalid"
+                    );
+                }
 
                 var diagnosticOutput = RuntimeConfig.IsDevelopment
                     ? outputText
@@ -199,15 +212,18 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
                 {
                     var failureMessage = CreateReviewerFailureMessage(validationError);
 
-                    activity?.AddEvent(
-                        [
-                            ("code_review.reviewer.id", runtimeAgent.Id),
-                            ("code_review.reviewer.facet", runtimeAgent.ReviewFacet),
-                            ("code_review.reviewer.correction_attempts", correctionAttempt),
-                            ("exception.message", failureMessage),
-                        ],
-                        "code_review.reviewer_placeholder_emitted"
-                    );
+                    if (_options.EmitDiagnostics)
+                    {
+                        activity?.AddEvent(
+                            [
+                                ("code_review.reviewer.id", runtimeAgent.Id),
+                                ("code_review.reviewer.facet", runtimeAgent.ReviewFacet),
+                                ("code_review.reviewer.correction_attempts", correctionAttempt),
+                                ("exception.message", failureMessage),
+                            ],
+                            "code_review.reviewer_placeholder_emitted"
+                        );
+                    }
 
                     return new ChatMessage(
                         ChatRole.Assistant,
@@ -223,14 +239,17 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
                     };
                 }
 
-                activity?.AddEvent(
-                    [
-                        ("code_review.reviewer.id", runtimeAgent.Id),
-                        ("code_review.reviewer.facet", runtimeAgent.ReviewFacet),
-                        ("code_review.reviewer.correction_attempt", correctionAttempt + 1),
-                    ],
-                    "code_review.reviewer_correction_started"
-                );
+                if (_options.EmitDiagnostics)
+                {
+                    activity?.AddEvent(
+                        [
+                            ("code_review.reviewer.id", runtimeAgent.Id),
+                            ("code_review.reviewer.facet", runtimeAgent.ReviewFacet),
+                            ("code_review.reviewer.correction_attempt", correctionAttempt + 1),
+                        ],
+                        "code_review.reviewer_correction_started"
+                    );
+                }
 
                 LogReviewerCorrectionStarted(
                     _logger,
@@ -252,15 +271,18 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.GetType().Name);
-            activity?.AddEvent(
-                [
-                    ("code_review.reviewer.id", runtimeAgent.Id),
-                    ("code_review.reviewer.facet", runtimeAgent.ReviewFacet),
-                    ("exception.type", ex.GetType().Name),
-                    ("exception.message", ex.Message),
-                ],
-                "code_review.reviewer_failed"
-            );
+            if (_options.EmitDiagnostics)
+            {
+                activity?.AddEvent(
+                    [
+                        ("code_review.reviewer.id", runtimeAgent.Id),
+                        ("code_review.reviewer.facet", runtimeAgent.ReviewFacet),
+                        ("exception.type", ex.GetType().Name),
+                        ("exception.message", ex.Message),
+                    ],
+                    "code_review.reviewer_failed"
+                );
+            }
 
             var failureMessage = CreateReviewerFailureMessage(ex.Message);
 
@@ -284,7 +306,10 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
         }
         finally
         {
-            RecordReviewMetrics(Stopwatch.GetElapsedTime(reviewStartedAt), usageSink);
+            if (_options.RecordMetrics)
+            {
+                RecordReviewMetrics(Stopwatch.GetElapsedTime(reviewStartedAt), usageSink);
+            }
         }
     }
 

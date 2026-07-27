@@ -372,6 +372,71 @@ public sealed record CodeReviewManualRequestResponse(
 );
 
 /// <summary>
+/// PR targets available for repository reviewer-agent test runs.
+/// </summary>
+/// <param name="Items">Recent PR rows for the repository, newest first. Includes draft and closed PRs.</param>
+/// <param name="NextCursor">Cursor for loading the next older page, when available.</param>
+/// <param name="NewestCursor">Cursor for the newest row in this response, when available.</param>
+public sealed record CodeReviewAgentTestTargetListResponse(
+    IReadOnlyList<CodeReviewPullRequestDto> Items,
+    CodeReviewStreamCursorDto? NextCursor,
+    CodeReviewStreamCursorDto? NewestCursor
+);
+
+/// <summary>
+/// Request for running an unsaved reviewer-agent draft against one PR target.
+/// </summary>
+/// <param name="PullRequestRecordId">Stable PR record id selected by the user.</param>
+/// <param name="PullRequestCreatedAtUtc">PR record partition timestamp selected by the user.</param>
+/// <param name="Agent">Full unsaved draft reviewer-agent configuration to test.</param>
+public sealed record RunCodeReviewAgentTestRequest(
+    [property: Required, MaxLength(64)] string PullRequestRecordId,
+    DateTimeOffset PullRequestCreatedAtUtc,
+    [property: Required] CreateCodeReviewerAgentRequest Agent
+);
+
+/// <summary>
+/// Caller-visible outcome for an ephemeral reviewer-agent test run.
+/// </summary>
+public enum CodeReviewAgentTestRunResultKind
+{
+    /// <summary>
+    /// The draft agent executed and returned a validated result.
+    /// </summary>
+    Completed = 0,
+
+    /// <summary>
+    /// Repository-level filters removed every changed file before draft activation.
+    /// </summary>
+    NoFilesInScope = 1,
+
+    /// <summary>
+    /// The draft agent did not activate for any repository-scoped changed file.
+    /// </summary>
+    NoAgentActivation = 2,
+}
+
+/// <summary>
+/// Response for an ephemeral reviewer-agent test run.
+/// </summary>
+/// <param name="ResultKind">High-level result for Results-tab empty-state selection.</param>
+/// <param name="PullRequest">PR target used for the run.</param>
+/// <param name="Review">Synthetic review row that describes the test execution.</param>
+/// <param name="Findings">Parsed findings and source telemetry returned directly, not persisted.</param>
+/// <param name="InScopeFileCount">Files included after repository-level filters.</param>
+/// <param name="OutOfScopeFileCount">Files excluded by repository-level filters.</param>
+/// <param name="ReviewerCount">Number of runtime reviewers executed.</param>
+public sealed record CodeReviewAgentTestRunResponse(
+    CodeReviewAgentTestRunResultKind ResultKind,
+    CodeReviewPullRequestDto PullRequest,
+    CodeReviewRecordDto Review,
+    CodeReviewFindingsResponse Findings,
+    int InScopeFileCount,
+    int OutOfScopeFileCount,
+    int ReviewerCount
+);
+
+/// <summary>
 /// Organization-level code-review execution settings.
 /// </summary>
 /// <param name="OrganizationId">Organization these settings apply to.</param>

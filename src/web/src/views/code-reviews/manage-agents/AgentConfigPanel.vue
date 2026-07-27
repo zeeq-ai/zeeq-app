@@ -9,7 +9,7 @@
         class="flex h-[45px] shrink-0 items-center gap-3 border-b border-default px-3"
       >
         <div class="flex min-w-0 flex-1 items-center gap-2">
-          <h2 class="truncate text-sm font-semibold text-highlighted">
+          <h2 class="truncate text-xl font-bold text-highlighted">
             {{
               draft.displayName.trim() ||
               (agent ? "Reviewer agent" : "New reviewer agent")
@@ -50,8 +50,8 @@
 
       <!-- Prompt and activation rules are tabs because both edit the same draft. -->
       <UTabs
+        v-model="activeConfigurationTab"
         :items="agentConfigurationTabs"
-        default-value="prompt"
         color="neutral"
         variant="link"
         class="agent-config-tabs min-h-0 flex-1 px-3"
@@ -96,6 +96,24 @@
               />
             </div>
           </div>
+        </template>
+
+        <template #test>
+          <AgentTestPanel
+            :targets="agentTestTargets"
+            :loading="agentTestTargetsLoading"
+            :loading-more="agentTestTargetsLoadingMore"
+            :running="agentTestRunning"
+            :disabled="disabled || saving"
+            :has-more="agentTestTargetsHasMore"
+            @load-targets="emits('loadTestTargets')"
+            @load-more-targets="emits('loadMoreTestTargets')"
+            @run="runAgentTest"
+          />
+        </template>
+
+        <template #results>
+          <AgentTestResultsPanel :result="agentTestResult" />
         </template>
       </UTabs>
     </div>
@@ -246,6 +264,8 @@ import { computed, ref, watch } from "vue";
 import { MdEditor, type ToolbarNames } from "md-editor-v3";
 import "md-editor-v3/lib/style.css";
 import type {
+  CodeReviewAgentTestRunResponse,
+  CodeReviewPullRequestDto,
   CodeReviewerActivationConfigurationDto,
   CodeReviewerAgentDto,
 } from "@/api/generated";
@@ -261,6 +281,8 @@ import { useMarkdownEditorTheme } from "@/composables/useMarkdownEditorTheme";
 import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 
 import AgentActivationFiltersEditor from "./AgentActivationFiltersEditor.vue";
+import AgentTestPanel from "./AgentTestPanel.vue";
+import AgentTestResultsPanel from "./AgentTestResultsPanel.vue";
 import { formatAgentFormForDiff } from "./agent-diff-format";
 
 const props = withDefaults(
@@ -270,10 +292,22 @@ const props = withDefaults(
     disabled: boolean;
     initialForm?: CodeReviewerAgentForm | null;
     copyTargetRepositoryItems?: { label: string; value: string }[];
+    agentTestTargets?: CodeReviewPullRequestDto[];
+    agentTestTargetsLoading?: boolean;
+    agentTestTargetsLoadingMore?: boolean;
+    agentTestTargetsHasMore?: boolean;
+    agentTestRunning?: boolean;
+    agentTestResult?: CodeReviewAgentTestRunResponse | null;
   }>(),
   {
     initialForm: null,
     copyTargetRepositoryItems: () => [],
+    agentTestTargets: () => [],
+    agentTestTargetsLoading: false,
+    agentTestTargetsLoadingMore: false,
+    agentTestTargetsHasMore: false,
+    agentTestRunning: false,
+    agentTestResult: null,
   },
 );
 
@@ -289,9 +323,13 @@ const emits = defineEmits<{
   delete: [];
   copyToRepository: [repositoryId: string];
   openSourceLibrary: [];
+  loadTestTargets: [];
+  loadMoreTestTargets: [];
+  runTest: [pullRequest: CodeReviewPullRequestDto, form: CodeReviewerAgentForm];
 }>();
 
 const { editorTheme, toggleTheme } = useMarkdownEditorTheme();
+const activeConfigurationTab = ref("prompt");
 const copyTargetRepositoryId = ref<string | undefined>(undefined);
 const originalDiffText = ref(formatAgentFormForDiff(defaultAgentForm()));
 const {
@@ -304,20 +342,46 @@ const {
   serialize: serializeAgentForm,
 });
 
-const agentConfigurationTabs = [
-  {
-    label: "Prompt",
-    icon: "i-hugeicons-ai-programming",
-    value: "prompt",
-    slot: "prompt" as const,
-  },
-  {
-    label: "Activation filters",
-    icon: "i-hugeicons-filter-edit",
-    value: "filters",
-    slot: "filters" as const,
-  },
-];
+type AgentConfigurationTab = {
+  label: string;
+  icon: string;
+  value: "prompt" | "filters" | "test" | "results";
+  slot: "prompt" | "filters" | "test" | "results";
+};
+
+const agentConfigurationTabs = computed<AgentConfigurationTab[]>(() => {
+  const tabs: AgentConfigurationTab[] = [
+    {
+      label: "Prompt",
+      icon: "i-hugeicons-ai-programming",
+      value: "prompt",
+      slot: "prompt" as const,
+    },
+    {
+      label: "Activation filters",
+      icon: "i-hugeicons-filter-edit",
+      value: "filters",
+      slot: "filters" as const,
+    },
+    {
+      label: "Test",
+      icon: "i-hugeicons-test-tube-01",
+      value: "test",
+      slot: "test" as const,
+    },
+  ];
+
+  if (props.agentTestResult) {
+    tabs.push({
+      label: "Results",
+      icon: "i-hugeicons-chart-evaluation",
+      value: "results",
+      slot: "results" as const,
+    });
+  }
+
+  return tabs;
+});
 
 const enabledTabItems = computed(() => [
   {
@@ -390,6 +454,36 @@ watch(
   { immediate: true },
 );
 
+/**
+ * Test targets load lazily because the editor opens far more often than the
+ * back-testing flow. The root view owns the store call; this panel only signals
+ * intent when the tab becomes visible.
+ */
+watch(activeConfigurationTab, (tab) => {
+  if (tab === "test" && props.agentTestTargets.length === 0) {
+    emits("loadTestTargets");
+  }
+});
+
+/**
+ * A completed synthetic run should reveal its browser-local result immediately.
+ * Subsequent runs replace the same result surface without becoming review history.
+ */
+watch(
+  () => props.agentTestResult,
+  (result) => {
+    if (result) {
+      activeConfigurationTab.value = "results";
+      return;
+    }
+
+    if (activeConfigurationTab.value === "results") {
+      // Results is conditional; return to the test workflow when its backing result is cleared.
+      activeConfigurationTab.value = "test";
+    }
+  },
+);
+
 /** Replaces activation rules with a cloned value from the shared rule editor. */
 function updateActivationConfiguration(
   value: CodeReviewerActivationConfigurationDto,
@@ -437,6 +531,10 @@ function resetDraftToSaved() {
 function copyToRepository(repositoryId: string) {
   copyTargetRepositoryId.value = undefined;
   emits("copyToRepository", repositoryId);
+}
+
+function runAgentTest(pullRequest: CodeReviewPullRequestDto) {
+  emits("runTest", pullRequest, cloneAgentForm(draft.value));
 }
 
 function cloneAgentForm(form: CodeReviewerAgentForm): CodeReviewerAgentForm {

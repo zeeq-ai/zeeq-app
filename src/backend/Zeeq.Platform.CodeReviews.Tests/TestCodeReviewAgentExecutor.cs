@@ -8,9 +8,12 @@ internal sealed class TestCodeReviewAgentExecutor : ICodeReviewAgentExecutor
     public string OrganizationId { get; private set; } = string.Empty;
     public string Prompt { get; private set; } = string.Empty;
     public IReadOnlyList<CodeReviewerRuntimeAgent> ActiveReviewers { get; private set; } = [];
+    public IReadOnlyList<CodeReviewPreviousReview> PreviousReviews { get; private set; } = [];
     public bool NoAgentsActivated { get; private set; }
     public ClaimsPrincipal CallerIdentity { get; private set; } = null!;
     public CodeReviewTelemetryContext? Telemetry { get; private set; }
+    public CodeReviewExecutionOptions? Options { get; private set; }
+    public Action<CodeReviewTelemetryContext>? OnExecute { get; set; }
 
     public Task<string> ExecuteAsync(
         string organizationId,
@@ -20,6 +23,7 @@ internal sealed class TestCodeReviewAgentExecutor : ICodeReviewAgentExecutor
         IReadOnlyList<CodeReviewPreviousReview> previousReviews,
         ClaimsPrincipal callerIdentity,
         CodeReviewTelemetryContext telemetry,
+        CodeReviewExecutionOptions options,
         CancellationToken cancellationToken
     )
     {
@@ -27,8 +31,11 @@ internal sealed class TestCodeReviewAgentExecutor : ICodeReviewAgentExecutor
         ActiveReviewers = activeReviewers;
         NoAgentsActivated = noAgentsActivated;
         Prompt = codeReviewUserPrompt.SharedPullRequestPromptBody;
+        PreviousReviews = previousReviews;
         CallerIdentity = callerIdentity;
         Telemetry = telemetry;
+        Options = options;
+        OnExecute?.Invoke(telemetry);
 
         return Task.FromResult(Xml);
     }

@@ -138,12 +138,21 @@
             :disabled="!canManageOrganization || !selectedRepositoryId"
             :initial-form="copiedAgentForm"
             :copy-target-repository-items="copyTargetRepositoryItems"
+            :agent-test-targets="agentTestTargets"
+            :agent-test-targets-loading="loadingAgentTestTargets"
+            :agent-test-targets-loading-more="loadingMoreAgentTestTargets"
+            :agent-test-targets-has-more="!!agentTestTargetsNextCursor"
+            :agent-test-running="runningAgentTest"
+            :agent-test-result="agentTestResult"
             @cancel="cancelAgentConfig"
             @save="saveAgent"
             @review="openAgentDiff"
             @delete="deleteSelectedAgent"
             @copy-to-repository="openCopyConfirm"
             @open-source-library="openSourceLibrary"
+            @load-test-targets="loadAgentTestTargets"
+            @load-more-test-targets="loadMoreAgentTestTargets"
+            @run-test="runAgentTest"
           />
 
           <UEmpty
@@ -264,6 +273,9 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import type {
+  CodeReviewAgentTestRunResponse,
+  CodeReviewPullRequestDto,
+  CodeReviewStreamCursorDto,
   CodeReviewFileFilterDto,
   CodeReviewerAgentDto,
   CodeReviewerAgentTemplateDto,
@@ -313,6 +325,8 @@ const {
   handledCreateManagementAgentRequestId,
   loadingRepositories,
   loadingAgents,
+  loadingAgentTestTargets,
+  runningAgentTest,
   savingAgent,
   savingRepositoryConfiguration,
   error: codeReviewError,
@@ -421,6 +435,10 @@ const fileFilterPreviewResult = ref<PreviewCodeReviewFileFilterResponse | null>(
   null,
 );
 const fileFilterPreviewError = ref<string | null>(null);
+const agentTestTargets = ref<CodeReviewPullRequestDto[]>([]);
+const agentTestTargetsNextCursor = ref<CodeReviewStreamCursorDto | null>(null);
+const loadingMoreAgentTestTargets = ref(false);
+const agentTestResult = ref<CodeReviewAgentTestRunResponse | null>(null);
 
 const agentHasUnsavedChanges = computed(
   () => agentConfigPanelRef.value?.hasChanges ?? false,
@@ -513,6 +531,7 @@ watch(activeOrganizationId, async () => {
 /** Repository changes reset to repo-level filters so stale agent ids never leak across repos. */
 watch(selectedRepositoryId, () => {
   selectedManagementItemId.value = managementFiltersItemId;
+  clearAgentTestState();
   if (!routeSelectionApplying.value) {
     void replaceWithManageAgentsRoute();
   }
@@ -530,6 +549,8 @@ watch(agents, () => {
 });
 
 watch(selectedManagementItemId, (itemId) => {
+  agentTestResult.value = null;
+
   if (routeSelectionApplying.value) {
     return;
   }
@@ -625,6 +646,66 @@ async function previewRepositoryFilters(
   } finally {
     previewingFileFilter.value = false;
   }
+}
+
+/** Loads the newest page of PR targets for the agent test tab. */
+async function loadAgentTestTargets() {
+  if (!selectedRepositoryId.value) {
+    return;
+  }
+
+  try {
+    const page = await codeReviewStore.listAgentTestTargets();
+    agentTestTargets.value = page.items;
+    agentTestTargetsNextCursor.value = page.nextCursor;
+  } catch (err: unknown) {
+    showError("Could not load test pull requests", err);
+  }
+}
+
+/** Appends the next page of PR targets without disturbing the current selection. */
+async function loadMoreAgentTestTargets() {
+  if (!agentTestTargetsNextCursor.value || loadingMoreAgentTestTargets.value) {
+    return;
+  }
+
+  loadingMoreAgentTestTargets.value = true;
+
+  try {
+    const page = await codeReviewStore.listAgentTestTargets({
+      cursor: agentTestTargetsNextCursor.value,
+    });
+    agentTestTargets.value = [...agentTestTargets.value, ...page.items];
+    agentTestTargetsNextCursor.value = page.nextCursor;
+  } catch (err: unknown) {
+    showError("Could not load more test pull requests", err);
+  } finally {
+    loadingMoreAgentTestTargets.value = false;
+  }
+}
+
+/** Runs the current unsaved draft against the selected PR and keeps the result in browser state only. */
+async function runAgentTest(
+  pullRequest: CodeReviewPullRequestDto,
+  form: CodeReviewerAgentForm,
+) {
+  try {
+    agentTestResult.value = null;
+    agentTestResult.value = await codeReviewStore.runAgentTest(
+      pullRequest,
+      form,
+    );
+  } catch (err: unknown) {
+    showError("Could not run agent test", err);
+  }
+}
+
+/** Repository/agent switches invalidate ephemeral targets and results. */
+function clearAgentTestState() {
+  agentTestTargets.value = [];
+  agentTestTargetsNextCursor.value = null;
+  loadingMoreAgentTestTargets.value = false;
+  agentTestResult.value = null;
 }
 
 function cancelAgentConfig() {

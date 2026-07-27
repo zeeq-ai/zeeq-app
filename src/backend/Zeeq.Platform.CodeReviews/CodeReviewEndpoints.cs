@@ -434,6 +434,81 @@ public sealed class CodeReviewEndpoints : IEndpoint
                 """
             );
 
+        // GET /api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/agent-test-targets
+        group
+            .MapGet(
+                "/repositories/{repositoryId}/agent-test-targets",
+                static (
+                    string repositoryId,
+                    string orgId,
+                    [FromQuery] DateTimeOffset? cursorCreatedAtUtc,
+                    [FromQuery] string? cursorId,
+                    [FromQuery] int? pageSize,
+                    ClaimsPrincipal user,
+                    [FromServices] ListCodeReviewAgentTestTargetsHandler handler,
+                    CancellationToken ct
+                ) =>
+                    handler.HandleAsync(
+                        orgId,
+                        repositoryId,
+                        cursorCreatedAtUtc,
+                        cursorId,
+                        pageSize,
+                        user,
+                        ct
+                    )
+            )
+            .RequireActiveOrganization()
+            .WithName("ListCodeReviewAgentTestTargets")
+            .Produces<CodeReviewAgentTestTargetListResponse>()
+            .Produces<CodeReviewEndpointError>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("List agent test targets.")
+            .WithDescription(
+                """
+                Returns recent pull requests for the selected repository so a draft reviewer
+                agent can be back-tested. Results include PRs in any state, including draft
+                and closed rows.
+
+                Restricted to organization owners and admins (`403` otherwise).
+                """
+            );
+
+        // POST /api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/agents/test-run
+        group
+            .MapPost(
+                "/repositories/{repositoryId}/agents/test-run",
+                static (
+                    string repositoryId,
+                    string orgId,
+                    // NOTE: Keep nullable so JSON null bodies reach the handler's typed 400 response.
+                    [FromBody] RunCodeReviewAgentTestRequest? request,
+                    ClaimsPrincipal user,
+                    [FromServices] RunCodeReviewAgentTestHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, repositoryId, request, user, ct)
+            )
+            .RequireActiveOrganization()
+            .WithName("RunCodeReviewAgentTest")
+            .Produces<CodeReviewAgentTestRunResponse>()
+            .Produces<CodeReviewEndpointError>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("Run a draft agent test.")
+            .WithDescription(
+                """
+                Runs the submitted reviewer-agent draft against one selected pull request and
+                returns ephemeral findings directly to the caller. The run uses the same source
+                loading, repository file filters, draft activation filters, prompt construction,
+                reviewer execution, XML validation, and source telemetry collection as durable
+                code reviews, but does not persist review rows, write findings artifacts, publish
+                GitHub comments, update check runs, or decrement review budget.
+
+                Restricted to organization owners and admins (`403` otherwise).
+                """
+            );
+
         // POST /api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/agents
         group
             .MapPost(

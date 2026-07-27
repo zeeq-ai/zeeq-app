@@ -1984,6 +1984,161 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/agent-test-targets": {
+      "get": {
+        "tags": [
+          "Code Reviews"
+        ],
+        "summary": "List agent test targets.",
+        "description": "Returns recent pull requests for the selected repository so a draft reviewer\nagent can be back-tested. Results include PRs in any state, including draft\nand closed rows.\n\nRestricted to organization owners and admins (`403` otherwise).",
+        "operationId": "ListCodeReviewAgentTestTargets",
+        "parameters": [
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursorCreatedAtUtc",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "cursorId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "404": {
+            "description": "Not Found"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewAgentTestTargetListResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/agents/test-run": {
+      "post": {
+        "tags": [
+          "Code Reviews"
+        ],
+        "summary": "Run a draft agent test.",
+        "description": "Runs the submitted reviewer-agent draft against one selected pull request and\nreturns ephemeral findings directly to the caller. The run uses the same source\nloading, repository file filters, draft activation filters, prompt construction,\nreviewer execution, XML validation, and source telemetry collection as durable\ncode reviews, but does not persist review rows, write findings artifacts, publish\nGitHub comments, update check runs, or decrement review budget.\n\nRestricted to organization owners and admins (`403` otherwise).",
+        "operationId": "RunCodeReviewAgentTest",
+        "parameters": [
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunCodeReviewAgentTestRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "404": {
+            "description": "Not Found"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewAgentTestRunResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/agents/{agentId}": {
       "put": {
         "tags": [
@@ -6498,6 +6653,112 @@
         },
         "description": "Non-sensitive credential metadata returned by list endpoints."
       },
+      "CodeReviewAgentTestRunResponse": {
+        "required": [
+          "resultKind",
+          "pullRequest",
+          "review",
+          "findings",
+          "inScopeFileCount",
+          "outOfScopeFileCount",
+          "reviewerCount"
+        ],
+        "type": "object",
+        "properties": {
+          "resultKind": {
+            "description": "High-level result for Results-tab empty-state selection.",
+            "$ref": "#/components/schemas/CodeReviewAgentTestRunResultKind"
+          },
+          "pullRequest": {
+            "description": "PR target used for the run.",
+            "$ref": "#/components/schemas/CodeReviewPullRequestDto"
+          },
+          "review": {
+            "description": "Synthetic review row that describes the test execution.",
+            "$ref": "#/components/schemas/CodeReviewRecordDto"
+          },
+          "findings": {
+            "description": "Parsed findings and source telemetry returned directly, not persisted.",
+            "$ref": "#/components/schemas/CodeReviewFindingsResponse"
+          },
+          "inScopeFileCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Files included after repository-level filters.",
+            "format": "int32"
+          },
+          "outOfScopeFileCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Files excluded by repository-level filters.",
+            "format": "int32"
+          },
+          "reviewerCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Number of runtime reviewers executed.",
+            "format": "int32"
+          }
+        },
+        "description": "Response for an ephemeral reviewer-agent test run."
+      },
+      "CodeReviewAgentTestRunResultKind": {
+        "enum": [
+          "Completed",
+          "NoFilesInScope",
+          "NoAgentActivation"
+        ],
+        "description": "Caller-visible outcome for an ephemeral reviewer-agent test run."
+      },
+      "CodeReviewAgentTestTargetListResponse": {
+        "required": [
+          "items",
+          "nextCursor",
+          "newestCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewPullRequestDto"
+            },
+            "description": "Recent PR rows for the repository, newest first. Includes draft and closed PRs."
+          },
+          "nextCursor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "Cursor for loading the next older page, when available.",
+                "$ref": "#/components/schemas/CodeReviewStreamCursorDto"
+              }
+            ]
+          },
+          "newestCursor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "Cursor for the newest row in this response, when available.",
+                "$ref": "#/components/schemas/CodeReviewStreamCursorDto"
+              }
+            ]
+          }
+        },
+        "description": "PR targets available for repository reviewer-agent test runs."
+      },
       "CodeReviewCheckRunConfigurationDto": {
         "required": [
           "blockOnCritical",
@@ -10787,6 +11048,31 @@
           }
         },
         "description": "Request body for rotating an existing tenant-owned LLM API key."
+      },
+      "RunCodeReviewAgentTestRequest": {
+        "required": [
+          "pullRequestRecordId",
+          "pullRequestCreatedAtUtc",
+          "agent"
+        ],
+        "type": "object",
+        "properties": {
+          "pullRequestRecordId": {
+            "maxLength": 64,
+            "type": "string",
+            "description": "Stable PR record id selected by the user."
+          },
+          "pullRequestCreatedAtUtc": {
+            "type": "string",
+            "description": "PR record partition timestamp selected by the user.",
+            "format": "date-time"
+          },
+          "agent": {
+            "description": "Full unsaved draft reviewer-agent configuration to test.",
+            "$ref": "#/components/schemas/CreateCodeReviewerAgentRequest"
+          }
+        },
+        "description": "Request for running an unsaved reviewer-agent draft against one PR target."
       },
       "SameDomainInvitationDetailsResponse": {
         "required": [

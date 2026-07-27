@@ -8,6 +8,8 @@ import {
   type CodeReviewInboxScope,
   type CodeReviewFileFilterDto,
   type CodeReviewFileMatchCriteriaDto,
+  type CodeReviewAgentTestRunResponse,
+  type CodeReviewAgentTestTargetListResponse,
   type CodeReviewFindingsResponse,
   type CodeReviewInboxUpdateDto,
   type CodeReviewPullRequestDto,
@@ -23,6 +25,7 @@ import {
   type CodeReviewModelTier,
   type CreateCodeReviewerAgentRequest,
   type PreviewCodeReviewFileFilterResponse,
+  type RunCodeReviewAgentTestRequest,
   type SaveCodeReviewRepositoryConfigurationRequest,
   type UpdateCodeReviewerAgentRequest,
 } from "@/api/generated";
@@ -173,6 +176,8 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
   const pollingPullRequests = ref(false);
   const pollingReviewUpdates = ref(false);
   const loadingAgents = ref(false);
+  const loadingAgentTestTargets = ref(false);
+  const runningAgentTest = ref(false);
   const savingAgent = ref(false);
   const savingRepositoryConfiguration = ref(false);
   const requestingReviewId = ref<string | null>(null);
@@ -895,6 +900,74 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     return response.items;
   }
 
+  /**
+   * Lists PR targets for draft-agent test runs without mutating the inbox list.
+   *
+   * The Manage Agents test tab owns selection and pagination independently from
+   * the review inbox, so this action returns the page directly.
+   */
+  async function listAgentTestTargets(options?: {
+    cursor?: CodeReviewStreamCursorDto | null;
+    pageSize?: number;
+  }): Promise<CodeReviewAgentTestTargetListResponse> {
+    const repositoryId = requireRepositoryId();
+    const orgId = requireOrganizationId();
+
+    loadingAgentTestTargets.value = true;
+    error.value = null;
+
+    try {
+      return await CodeReviews.listCodeReviewAgentTestTargets(
+        repositoryId,
+        orgId,
+        {
+          cursorCreatedAtUtc: options?.cursor?.createdAtUtc,
+          cursorId: options?.cursor?.id,
+          pageSize: options?.pageSize,
+        },
+      );
+    } catch (err: unknown) {
+      error.value = errorMessage(err, "Could not load agent test targets.");
+      throw err;
+    } finally {
+      loadingAgentTestTargets.value = false;
+    }
+  }
+
+  /**
+   * Runs the current draft form against a selected PR target and returns the
+   * browser-only result payload. The response is intentionally not merged into
+   * normal review history because the backend does not persist synthetic tests.
+   */
+  async function runAgentTest(
+    pullRequest: CodeReviewPullRequestDto,
+    form: CodeReviewerAgentForm,
+  ): Promise<CodeReviewAgentTestRunResponse> {
+    const repositoryId = requireRepositoryId();
+    const orgId = requireOrganizationId();
+    const request: RunCodeReviewAgentTestRequest = {
+      pullRequestRecordId: pullRequest.id,
+      pullRequestCreatedAtUtc: pullRequest.createdAtUtc,
+      agent: agentFormToRequest(form),
+    };
+
+    runningAgentTest.value = true;
+    error.value = null;
+
+    try {
+      return await CodeReviews.runCodeReviewAgentTest(
+        repositoryId,
+        orgId,
+        request,
+      );
+    } catch (err: unknown) {
+      error.value = errorMessage(err, "Could not run the agent test.");
+      throw err;
+    } finally {
+      runningAgentTest.value = false;
+    }
+  }
+
   /** Creates a persisted reviewer agent for the selected repository. */
   async function createAgent(form: CodeReviewerAgentForm) {
     const repositoryId = requireRepositoryId();
@@ -1373,6 +1446,8 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     pollingPullRequests,
     pollingReviewUpdates,
     loadingAgents,
+    loadingAgentTestTargets,
+    runningAgentTest,
     savingAgent,
     savingRepositoryConfiguration,
     requestingReviewId,
@@ -1414,6 +1489,8 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     openCreateAgentPanel,
     listRepositoryAgents,
     listAgentTemplates,
+    listAgentTestTargets,
+    runAgentTest,
     createAgent,
     updateAgent,
     disableAgent,
