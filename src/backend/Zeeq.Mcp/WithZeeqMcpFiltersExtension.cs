@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Security.Claims;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
@@ -15,7 +16,7 @@ namespace Zeeq.Mcp;
 /// Set up filters for the MCP runtime.
 /// See: https://modelcontextprotocol.github.io/csharp-sdk/concepts/filters.html
 /// </summary>
-internal static class SetupMcpFiltersExtensions
+internal static partial class SetupMcpFiltersExtensions
 {
     private static readonly Counter<int> UserAgentCounter =
         ZeeqTelemetry.Metrics.CreateCounter<int>("zeeq_user_agent_counter");
@@ -231,6 +232,68 @@ internal static class SetupMcpFiltersExtensions
                 );
             });
 
+            // Argument-binding failures are a caller mistake, not a server fault. The SDK binds
+            // tool arguments before the method body runs, so a tool's own "x is required."
+            // guard can never fire for an omitted argument — the bind throws first. Without
+            // this filter the throw reaches the message filter above and becomes a JSON-RPC
+            // protocol error, which a model cannot act on as readily as a tool result. Convert
+            // it to an error result naming the parameter so the caller can retry correctly.
+            server.WithRequestFilters(filters =>
+            {
+                filters.AddCallToolFilter(next =>
+                    async (context, cancellationToken) =>
+                    {
+                        try
+                        {
+                            return await next(context, cancellationToken);
+                        }
+                        // The SDK's own argument-binding failure always names the arguments
+                        // dictionary itself, not a tool parameter (ParamName == "arguments").
+                        // Domain validators inside tool bodies — e.g. DocumentNormalizer.
+                        // NormalizePath throwing ArgumentException(..., nameof(path)) for an
+                        // empty-but-supplied path — always name their own parameter instead, so
+                        // this guard is what keeps this filter from misreporting a real
+                        // validation failure as "the argument was not supplied."
+                        catch (ArgumentException exception)
+                            when (
+                                string.Equals(
+                                    exception.ParamName,
+                                    "arguments",
+                                    StringComparison.Ordinal
+                                )
+                            )
+                        {
+                            var toolName = context.Params?.Name ?? "unknown";
+                            var missingParameter = TryGetMissingParameterName(exception.Message);
+
+                            // Still surfaced on the trace: this is a real failed call, it just
+                            // is not an unhandled server exception.
+                            Activity.Current?.AddException(
+                                exception,
+                                tags:
+                                [
+                                    new("exception_message", exception.Message),
+                                    new("tool_name", toolName),
+                                    new("missing_parameter", missingParameter),
+                                ]
+                            );
+
+                            return new CallToolResult
+                            {
+                                IsError = true,
+                                Content =
+                                [
+                                    new TextContentBlock
+                                    {
+                                        Text = BuildArgumentErrorText(toolName, missingParameter),
+                                    },
+                                ],
+                            };
+                        }
+                    }
+                );
+            });
+
             // TODO: Implement user-level tool filter selection
             server.WithListToolsHandler(
                 async (context, cancellationToken) =>
@@ -307,6 +370,52 @@ internal static class SetupMcpFiltersExtensions
             return server;
         }
     }
+
+    /// <summary>
+    /// Extracts the parameter name from an SDK argument-binding failure message.
+    /// </summary>
+    /// <remarks>
+    /// The SDK throws <see cref="ArgumentException"/> with <c>ParamName</c> set to
+    /// <c>"arguments"</c> (the dictionary), not the parameter that was missing, so the useful
+    /// name is only available in the message text: "The arguments dictionary is missing a value
+    /// for the required parameter 'library'."
+    /// </remarks>
+    /// <param name="message">The exception message to parse.</param>
+    /// <returns>The missing parameter name, or <see langword="null"/> when it cannot be read.</returns>
+    private static string? TryGetMissingParameterName(string message)
+    {
+        var match = MissingParameterExpression().Match(message);
+
+        return match.Success ? match.Groups["name"].Value : null;
+    }
+
+    /// <summary>
+    /// Builds the caller-facing message for a tool call with bad or missing arguments.
+    /// </summary>
+    /// <param name="toolName">The tool that was called.</param>
+    /// <param name="missingParameter">The missing parameter name, when known.</param>
+    /// <returns>Text guiding the caller to retry with the correct arguments.</returns>
+    private static string BuildArgumentErrorText(string toolName, string? missingParameter)
+    {
+        if (missingParameter is null)
+        {
+            return $"The arguments supplied to `{toolName}` were not valid. Check the tool's input schema and call it again.";
+        }
+
+        // `library` scopes every document tool, so point at the tool that enumerates
+        // valid values rather than letting the caller guess a name.
+        var hint = string.Equals(missingParameter, "library", StringComparison.OrdinalIgnoreCase)
+            ? " Use `list_libraries` to see the available libraries."
+            : string.Empty;
+
+        return $"`{toolName}` requires the `{missingParameter}` argument, which was not supplied. Call it again including `{missingParameter}`.{hint}";
+    }
+
+    [GeneratedRegex(
+        @"missing a value for the required parameter '(?<name>[^']+)'",
+        RegexOptions.IgnoreCase
+    )]
+    private static partial Regex MissingParameterExpression();
 }
 
 file static class Extensions
