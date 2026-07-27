@@ -15,6 +15,8 @@ Zeeq (this codebase) is a tool that provides tools and context to coding agents 
 
 This repository is `zeeq-ai/zeeq-app`
 
+Local web URL is: <http://zeeq-web.localhost:8095>, but prod carries a `/web/` base URL: <http://app.zeeq.ai/web> because it is served from .NET static route: `src/backend/Zeeq.Runtime.Server/Setup/SetupStaticFiles.cs`
+
 ## Zeeq MCP
 
 |Library|Purpose|
@@ -42,13 +44,15 @@ Use `library = zeeq-app`.  It does not have the full upstream content.
 
 ### Playwright MCP
 
+Use Playwright via MCP to get access to an **authenticated** browser session (the `node_repl` is not a substitute).
+
 |URL|Purpose|
 |---|---|
 |`http://zeeq-web.localhost:8095`|Local Vue front-end development (NOTE: no `/web/` base URL)|
 |`http://zeeq-inspector.localhost:8095`|MCP inspector for testing MCP behavior (NOTE: no `/web/` base URL)|
 |`http://app.zeeq.ai/web`|Production deployment of the app (NOTE the `/web/` base URL)|
 
- Pause and ask to connect to an authenticated session if needed
+Pause and ask to connect to an authenticated session if needed; if the application is on the login screen "Choose sign-in provider"; pause and ask for authentication to continue.
 
 ### Aspire MCP/CLI
 

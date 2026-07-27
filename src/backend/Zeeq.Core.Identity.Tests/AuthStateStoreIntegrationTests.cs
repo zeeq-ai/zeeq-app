@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Zeeq.Data.Postgres.Identity;
 using Zeeq.Testing;
 
@@ -66,6 +67,73 @@ public class AuthStateStoreIntegrationTests(PgDatabaseFixture postgres)
         );
 
         await Assert.That(payload).IsNull();
+    }
+
+    /// <summary>
+    /// Verifies the inactive-organization flag survives the handoff serialization round-trip.
+    /// </summary>
+    /// <remarks>
+    /// Regression guard: <c>AuthHandoff</c> is persisted as <c>SerializedAuthHandoff</c> JSON to
+    /// cross the API-origin/frontend-origin boundary. A field missing from that record is
+    /// silently dropped and reappears as its default, which sent users with an unactivated
+    /// organization to their requested return URL instead of <c>/login?inactiveOrg=true</c>.
+    /// </remarks>
+    [Test]
+    public async Task AuthHandoff_WithInactiveOrganization_SurvivesRoundTrip()
+    {
+        var handoffStore = new AuthHandoffStore(CreateStore());
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity(
+                [new Claim(AuthClaims.OrganizationId, "org_inactive")],
+                authenticationType: "ExternalIdpCookie"
+            )
+        );
+
+        var ticket = await handoffStore.StoreAsync(
+            new AuthHandoff(
+                Principal: principal,
+                ReturnUrl: "/settings/github?tab=app",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(2),
+                InactiveOrganization: true
+            ),
+            CancellationToken.None
+        );
+
+        var handoff = await handoffStore.ConsumeAsync(ticket, CancellationToken.None);
+
+        await Assert.That(handoff).IsNotNull();
+        await Assert.That(handoff!.InactiveOrganization).IsTrue();
+        await Assert.That(handoff.ReturnUrl).IsEqualTo("/settings/github?tab=app");
+    }
+
+    /// <summary>
+    /// Verifies an active-organization handoff still carries the caller's return URL.
+    /// </summary>
+    [Test]
+    public async Task AuthHandoff_WithActiveOrganization_KeepsReturnUrl()
+    {
+        var handoffStore = new AuthHandoffStore(CreateStore());
+        var principal = new ClaimsPrincipal(
+            new ClaimsIdentity(
+                [new Claim(AuthClaims.OrganizationId, "org_active")],
+                authenticationType: "ExternalIdpCookie"
+            )
+        );
+
+        var ticket = await handoffStore.StoreAsync(
+            new AuthHandoff(
+                Principal: principal,
+                ReturnUrl: "/settings/github?tab=app",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(2)
+            ),
+            CancellationToken.None
+        );
+
+        var handoff = await handoffStore.ConsumeAsync(ticket, CancellationToken.None);
+
+        await Assert.That(handoff).IsNotNull();
+        await Assert.That(handoff!.InactiveOrganization).IsFalse();
+        await Assert.That(handoff.ReturnUrl).IsEqualTo("/settings/github?tab=app");
     }
 
     private PostgresZeeqAuthStateStore CreateStore() => new(_context);

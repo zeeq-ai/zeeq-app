@@ -30,12 +30,12 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         );
 
         var organization = await _context.Organizations.SingleAsync(org =>
-            org.Id == context.OrganizationId
+            org.Id == context!.OrganizationId
         );
 
         // Guards that first-login organizations get a stable URL-safe slug while
         // avoiding collisions by suffixing the generated organization id.
-        await Assert.That(organization.Slug).IsEqualTo($"my-org-{context.OrganizationId[^8..]}");
+        await Assert.That(organization.Slug).IsEqualTo($"my-org-{context!.OrganizationId[^8..]}");
         await Assert.That(organization.ActivatedAtUtc).IsNotNull();
         await Assert.That(organization.DisabledAtUtc).IsNull();
     }
@@ -61,7 +61,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
             .ToArrayAsync();
 
         await Assert.That(invitations).Count().IsEqualTo(1);
-        await Assert.That(invitations[0].OrganizationId).IsNotEqualTo(context.OrganizationId);
+        await Assert.That(invitations[0].OrganizationId).IsNotEqualTo(context!.OrganizationId);
         await Assert.That(invitations[0].Role).IsEqualTo("admin");
         await Assert.That(invitations[0].IsSameDomainAutoInvite).IsTrue();
         await Assert.That(invitations[0].ExpiresAtUtc).IsNotNull();
@@ -202,13 +202,23 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         await Assert.That(pendingInvitationCount).IsEqualTo(0);
     }
 
+    /// <summary>
+    /// Verifies that an unactivated organization still resolves a context instead of failing.
+    /// </summary>
+    /// <remarks>
+    /// Regression guard: this previously threw, which surfaced as an unhandled 500 on
+    /// <c>/auth/callback/{provider}</c> before any cookie was issued. The user could then
+    /// never reach <c>RequireActiveCurrentOrganizationFilter</c>, which is what redirects to
+    /// <c>/login?inactiveOrg=true</c>, nor use the signed cookie to accept a pending
+    /// same-domain invitation. Activation is enforced per-request, not at context resolution.
+    /// </remarks>
     [Test]
-    public async Task EnsureUserAsync_ExistingIdentityWithOnlyInactiveOrganizations_DoesNotReturnInactiveContext()
+    public async Task EnsureUserAsync_ExistingIdentityWithOnlyInactiveOrganizations_ReturnsInactiveContext()
     {
         var providerSubject = Guid.NewGuid().ToString("N");
         var store = new PostgresZeeqIdentityStore(_context);
 
-        await store.EnsureUserAsync(
+        var initialContext = await store.EnsureUserAsync(
             "mock",
             providerSubject,
             "Inactive User",
@@ -220,17 +230,57 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         organization.ActivatedAtUtc = null;
         await _context.SaveChangesAsync();
 
-        Func<Task> act = async () =>
-            await store.EnsureUserAsync(
-                "mock",
-                providerSubject,
-                "Inactive User",
-                "inactive-user@example.com",
-                null,
-                CancellationToken.None
-            );
+        var context = await store.EnsureUserAsync(
+            "mock",
+            providerSubject,
+            "Inactive User",
+            "inactive-user@example.com",
+            null,
+            CancellationToken.None
+        );
 
-        await Assert.That(act).Throws<InvalidOperationException>();
+        await Assert.That(context).IsNotNull();
+        await Assert.That(context!.OrganizationId).IsEqualTo(initialContext!.OrganizationId);
+        await Assert.That(context.TeamId).IsEqualTo(initialContext.TeamId);
+    }
+
+    /// <summary>
+    /// Verifies that a user with no organization membership at all resolves to no context.
+    /// </summary>
+    /// <remarks>
+    /// The login callback turns this into a redirect with an error message rather than a 500.
+    /// </remarks>
+    [Test]
+    public async Task EnsureUserAsync_ExistingIdentityWithNoMemberships_ReturnsNull()
+    {
+        var providerSubject = Guid.NewGuid().ToString("N");
+        var store = new PostgresZeeqIdentityStore(_context);
+
+        var initialContext = await store.EnsureUserAsync(
+            "mock",
+            providerSubject,
+            "Orphan User",
+            "orphan-user@example.com",
+            null,
+            CancellationToken.None
+        );
+
+        var membership = await _context.OrganizationMemberships.SingleAsync(row =>
+            row.UserId == initialContext!.UserId
+        );
+        membership.DisabledAtUtc = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync();
+
+        var context = await store.EnsureUserAsync(
+            "mock",
+            providerSubject,
+            "Orphan User",
+            "orphan-user@example.com",
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(context).IsNull();
     }
 
     [Test]
@@ -262,22 +312,26 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         );
         organizationMembership.DisabledAtUtc = DateTimeOffset.UtcNow;
         var initialOrganization = await _context.Organizations.SingleAsync(organization =>
-            organization.Id == initialContext.OrganizationId
+            organization.Id == initialContext!.OrganizationId
         );
         initialOrganization.ActivatedAtUtc = null;
         await _context.SaveChangesAsync();
 
-        Func<Task> act = async () =>
-            await store.EnsureUserAsync(
-                "mock",
-                providerSubject,
-                "Stale Team User",
-                "stale-team-user@example.com",
-                null,
-                CancellationToken.None
-            );
+        var context = await store.EnsureUserAsync(
+            "mock",
+            providerSubject,
+            "Stale Team User",
+            "stale-team-user@example.com",
+            null,
+            CancellationToken.None
+        );
 
-        await Assert.That(act).Throws<InvalidOperationException>();
+        // The disabled membership must not leak a context for the activated org via the
+        // team membership that outlived it. Falling back to the user's own (now
+        // unactivated) org is correct: the activation filter shows the notice from there.
+        await Assert.That(context).IsNotNull();
+        await Assert.That(context!.OrganizationId).IsNotEqualTo(activated.OrganizationId);
+        await Assert.That(context.OrganizationId).IsEqualTo(initialContext!.OrganizationId);
     }
 
     [Test]
@@ -295,7 +349,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         );
 
         var activated = await AddActivatedOrganizationMembershipAsync(
-            initialContext.UserId,
+            initialContext!.UserId,
             "Activated Org",
             isDefault: false,
             createdAtUtc: DateTimeOffset.UtcNow
@@ -311,7 +365,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         );
 
         await Assert.That(initialContext.OrganizationId).IsNotEqualTo(activated.OrganizationId);
-        await Assert.That(nextContext.OrganizationId).IsEqualTo(initialContext.OrganizationId);
+        await Assert.That(nextContext!.OrganizationId).IsEqualTo(initialContext.OrganizationId);
         await Assert.That(nextContext.TeamId).IsEqualTo(initialContext.TeamId);
     }
 
@@ -329,13 +383,13 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
             CancellationToken.None
         );
         var initialMembership = await _context.OrganizationMemberships.SingleAsync(membership =>
-            membership.OrganizationId == initialContext.OrganizationId
+            membership.OrganizationId == initialContext!.OrganizationId
         );
         initialMembership.IsDefault = false;
         await _context.SaveChangesAsync();
 
         await AddActivatedOrganizationMembershipAsync(
-            initialContext.UserId,
+            initialContext!.UserId,
             "Earlier Activated Org",
             isDefault: false,
             createdAtUtc: DateTimeOffset.UtcNow.AddMinutes(-2)
@@ -356,7 +410,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
             CancellationToken.None
         );
 
-        await Assert.That(nextContext.OrganizationId).IsEqualTo(defaultActivated.OrganizationId);
+        await Assert.That(nextContext!.OrganizationId).IsEqualTo(defaultActivated.OrganizationId);
         await Assert.That(nextContext.TeamId).IsEqualTo(defaultActivated.TeamId);
     }
 

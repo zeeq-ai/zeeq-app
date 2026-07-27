@@ -34,10 +34,15 @@ public sealed record OAuthState(
 /// <param name="Principal">Local cookie principal created from the verified IdP identity.</param>
 /// <param name="ReturnUrl">Normalized return URL to redirect to after issuing the cookie.</param>
 /// <param name="ExpiresAt">Hard expiry for the handoff entry.</param>
+/// <param name="InactiveOrganization">
+/// <see langword="true"/> when the session's organization is not yet activated, so the
+/// handoff lands on <c>/login?inactiveOrg=true</c> instead of <paramref name="ReturnUrl"/>.
+/// </param>
 public sealed record AuthHandoff(
     System.Security.Claims.ClaimsPrincipal Principal,
     string ReturnUrl,
-    DateTimeOffset ExpiresAt
+    DateTimeOffset ExpiresAt,
+    bool InactiveOrganization = false
 );
 
 /// <summary>
@@ -93,7 +98,8 @@ public sealed class AuthHandoffStore(IZeeqAuthStateStore stateStore)
         var serialized = new SerializedAuthHandoff(
             Convert.ToBase64String(TicketSerializer.Default.Serialize(authenticationTicket)),
             value.ReturnUrl,
-            value.ExpiresAt
+            value.ExpiresAt,
+            value.InactiveOrganization
         );
 
         return StoreAndReturnTicketAsync(ticket, serialized, value.ExpiresAt, cancellationToken);
@@ -125,7 +131,8 @@ public sealed class AuthHandoffStore(IZeeqAuthStateStore stateStore)
             : new AuthHandoff(
                 authenticationTicket.Principal,
                 serialized.ReturnUrl,
-                serialized.ExpiresAt
+                serialized.ExpiresAt,
+                serialized.InactiveOrganization
             );
     }
 
@@ -147,9 +154,13 @@ public sealed class AuthHandoffStore(IZeeqAuthStateStore stateStore)
         return ticket;
     }
 
+    // NOTE: Every AuthHandoff field must be represented here. The handoff crosses an
+    // origin boundary as JSON, so anything missing from this record is silently lost
+    // and reappears as its default on the far side.
     private sealed record SerializedAuthHandoff(
         string PrincipalTicket,
         string ReturnUrl,
-        DateTimeOffset ExpiresAt
+        DateTimeOffset ExpiresAt,
+        bool InactiveOrganization = false
     );
 }

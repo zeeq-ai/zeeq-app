@@ -434,7 +434,7 @@ public sealed class GetMeHandlerTests
 
     private sealed class TestIdentityStore(IReadOnlyList<UserAlias> aliases) : IZeeqIdentityStore
     {
-        public Task<AuthContext> EnsureUserAsync(
+        public Task<AuthContext?> EnsureUserAsync(
             string provider,
             string providerSubject,
             string? displayName,
