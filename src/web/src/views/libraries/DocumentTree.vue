@@ -68,7 +68,7 @@
             <div class="ml-auto flex shrink-0 items-center gap-1">
               <!-- Muted marker: document is excluded from code-review agents -->
               <UTooltip
-                v-if="(node as DocNode).excludedFromCodeReviews"
+                v-if="(node as DocNode).reviewExcludedFromCodeReviews"
                 text="Excluded from code reviews"
                 :delay-duration="0"
               >
@@ -137,6 +137,8 @@ const props = defineProps<{
   loading: boolean;
   hasLibrary: boolean;
   activePath: string | null;
+  /** True when remote document summaries are private-source LibraryDocument rows. */
+  allowRemoteReviewExclusion: boolean;
 }>();
 
 const emits = defineEmits<{
@@ -145,7 +147,7 @@ const emits = defineEmits<{
   add: [folderPath: string];
   rename: [oldPath: string];
   delete: [path: string];
-  /** Desired inclusion state for a local document. */
+  /** Desired exclusion state for a document backed by a mutable LibraryDocument row. */
   toggleReviewExclusion: [documentId: string, excluded: boolean];
   toggleScopedSkill: [
     documentId: string,
@@ -182,6 +184,7 @@ type NodeAction = {
   label: string;
   icon: string;
   onSelect: () => void;
+  disabled?: boolean;
 };
 
 /**
@@ -203,6 +206,8 @@ type DocNode = {
   origin?: "local" | "remote";
   /** Leaf only: hidden from code-review agents' list/search tools. */
   excludedFromCodeReviews?: boolean;
+  /** Leaf only: manual exclusion or derived skill exclusion. */
+  reviewExcludedFromCodeReviews?: boolean;
   /** Leaf only: scope at which the document is exposed as a skill. */
   asScopedSkill?: LibraryDocumentScopedSkill;
   children?: DocNode[];
@@ -340,6 +345,12 @@ function makeRootNode(children: DocNode[]): DocNode {
 /** Creates a leaf node with pre-computed document-only context actions. */
 function makeLeafNode(path: string, doc: DocumentResponse): DocNode {
   const parentPath = path.substring(0, path.lastIndexOf("/")) || "/";
+  const isOrganizationSkill =
+    doc.asScopedSkill === libraryDocumentScopedSkillEnum.Organization;
+  const isReviewExcludedFromCodeReviews =
+    doc.excludedFromCodeReviews || isOrganizationSkill;
+  const canToggleReviewExclusion =
+    doc.origin === "local" || props.allowRemoteReviewExclusion;
   const actions: NodeAction[] = [
     {
       label: "Add sibling",
@@ -348,31 +359,36 @@ function makeLeafNode(path: string, doc: DocumentResponse): DocNode {
     },
   ];
 
-  // Mirrors the editor control: exclusion is available only for local documents.
-  if (doc.origin === "local") {
+  // Mirrors the editor control: local rows and private-source remote rows are mutable
+  // LibraryDocument records; public-source remote rows stay hidden because they are shared.
+  if (canToggleReviewExclusion) {
     actions.push({
-      label: doc.excludedFromCodeReviews
-        ? "Include in code reviews"
-        : "Exclude from code reviews",
-      icon: doc.excludedFromCodeReviews
-        ? "i-hugeicons-view"
-        : "i-hugeicons-view-off-slash",
+      label: isOrganizationSkill
+        ? "Excluded from code reviews"
+        : doc.excludedFromCodeReviews
+          ? "Include in code reviews"
+          : "Exclude from code reviews",
+      icon: isOrganizationSkill
+        ? "i-hugeicons-view-off-slash"
+        : doc.excludedFromCodeReviews
+          ? "i-hugeicons-view"
+          : "i-hugeicons-view-off-slash",
+      disabled: isOrganizationSkill,
       onSelect: () =>
         emits("toggleReviewExclusion", doc.id, !doc.excludedFromCodeReviews),
     });
   }
 
   actions.push({
-    label:
-      doc.asScopedSkill === libraryDocumentScopedSkillEnum.Organization
-        ? "Remove organization skill"
-        : "Use as organization skill",
+    label: isOrganizationSkill
+      ? "Remove organization skill"
+      : "Use as organization skill",
     icon: "i-hugeicons-ai-file",
     onSelect: () =>
       emits(
         "toggleScopedSkill",
         doc.id,
-        doc.asScopedSkill === libraryDocumentScopedSkillEnum.Organization
+        isOrganizationSkill
           ? libraryDocumentScopedSkillEnum.None
           : libraryDocumentScopedSkillEnum.Organization,
       ),
@@ -387,16 +403,16 @@ function makeLeafNode(path: string, doc: DocumentResponse): DocNode {
   return {
     id: path,
     label: path.split("/").pop()!,
-    icon:
-      doc.asScopedSkill === libraryDocumentScopedSkillEnum.Organization
-        ? "i-hugeicons-ai-file"
-        : doc.origin === "remote"
-          ? "i-hugeicons-file-cloud"
-          : "i-hugeicons-file-01",
+    icon: isOrganizationSkill
+      ? "i-hugeicons-ai-file"
+      : doc.origin === "remote"
+        ? "i-hugeicons-file-cloud"
+        : "i-hugeicons-file-01",
     isFolder: false,
     path,
     origin: doc.origin as "local" | "remote",
     excludedFromCodeReviews: doc.excludedFromCodeReviews,
+    reviewExcludedFromCodeReviews: isReviewExcludedFromCodeReviews,
     asScopedSkill: doc.asScopedSkill,
     children: undefined,
     actions,

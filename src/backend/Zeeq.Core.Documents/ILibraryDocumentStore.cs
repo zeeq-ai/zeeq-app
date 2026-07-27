@@ -354,9 +354,9 @@ public interface ILibraryDocumentStore : IIndexableDocumentStore<LibraryDocument
     /// <remarks>
     /// Narrow field update — mirrors <see cref="UpdateSyncStateAsync"/>'s pattern of mutating
     /// lifecycle state without requiring the caller to round-trip the whole document body.
-    /// The store does not gate on <see cref="LibraryDocument.SyncRunId"/>; the API handler
-    /// rejects synced documents before calling this (v1 scopes exclusion to hand-authored
-    /// documents, whose lifecycle a sync run does not own).
+    /// The flag lives on <see cref="LibraryDocument"/>, so it is valid for hand-authored rows
+    /// and private repository-sourced rows. Shared public-source documents are not represented
+    /// by this store and require a separate per-library override model.
     /// </remarks>
     /// <param name="organizationId">Owning organization.</param>
     /// <param name="libraryId">Library containing the document.</param>

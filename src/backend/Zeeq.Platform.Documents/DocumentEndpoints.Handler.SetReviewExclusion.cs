@@ -13,11 +13,11 @@ namespace Zeeq.Platform.Documents;
 /// Interactive MCP and HTTP callers still see them, and direct reads by path always resolve.
 /// </para>
 /// <para>
-/// Synced/remote documents are rejected with a 400 (v1 scope): a sync run owns their lifecycle
-/// — <see cref="ILibraryDocumentStore.UpsertSyncedDocumentAsync"/> move-detection can rewrite
-/// rows, and the shared public tables have no per-org override — so the flag is only meaningful
-/// on hand-authored documents. The editor hides the toggle for remote documents; this guard
-/// keeps direct API callers honest too.
+/// Private repository-sourced documents are still <see cref="LibraryDocument"/> rows, so their
+/// review-exclusion flag is per organization/library and survives normal sync updates. Public
+/// source documents are different: they live in shared <c>DocsPublicDocument</c> rows and do not
+/// resolve through this handler's <see cref="ILibraryDocumentStore"/> lookup, so per-library
+/// public-source exclusions need a separate override model before they can be supported.
 /// </para>
 /// </remarks>
 public sealed class SetDocumentReviewExclusionHandler(ILibraryDocumentStore store)
@@ -66,15 +66,6 @@ public sealed class SetDocumentReviewExclusionHandler(ILibraryDocumentStore stor
         if (document is null)
         {
             return TypedResults.NotFound();
-        }
-
-        if (document.SyncRunId is not null || document.SourceOrigin is not null)
-        {
-            return TypedResults.BadRequest(
-                new DocumentError(
-                    "Synced documents cannot be excluded from code reviews; the flag is only supported on hand-authored documents."
-                )
-            );
         }
 
         var updated = await store.SetCodeReviewExclusionAsync(

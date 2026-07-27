@@ -708,15 +708,16 @@ public sealed class DocumentEndpointHandlerTests
     }
 
     [Test]
-    public async Task SetReviewExclusion_SyncedDocument_Returns400()
+    public async Task SetReviewExclusion_PrivateSyncedDocument_TogglesFlag()
     {
-        // Guards the v1 scope rule: a sync run owns synced documents' lifecycle, so the flag
-        // is rejected rather than silently fighting the next ingest pass.
         var store = new TestLibraryDocumentStore();
-        store.Libraries.Add(TestLibrary());
-        var synced = TestDocument();
-        synced.SyncRunId = "run_123";
-        store.Documents.Add(synced);
+        store.Libraries.Add(TestPrivateSourceLibrary());
+        store.Documents.Add(
+            TestDocument(
+                syncRunId: "run_123",
+                sourceOrigin: new LibraryDocumentSourceOrigin("GitHub", "main")
+            )
+        );
         var handler = new SetDocumentReviewExclusionHandler(store);
 
         var result = await handler.HandleAsync(
@@ -726,8 +727,12 @@ public sealed class DocumentEndpointHandlerTests
             CancellationToken.None
         );
 
-        await Assert.That(result.Result is BadRequest<DocumentError>).IsTrue();
-        await Assert.That(store.Documents.Single().ExcludedFromCodeReviews).IsFalse();
+        var ok = result.Result as Ok<DocumentResponse>;
+
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(ok!.Value!.Origin).IsEqualTo("remote");
+        await Assert.That(ok.Value.ExcludedFromCodeReviews).IsTrue();
+        await Assert.That(store.Documents.Single().ExcludedFromCodeReviews).IsTrue();
     }
 
     [Test]
