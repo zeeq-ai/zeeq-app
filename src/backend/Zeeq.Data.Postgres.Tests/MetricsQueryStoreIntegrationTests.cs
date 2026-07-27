@@ -644,6 +644,68 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     }
 
     [Test]
+    public async Task ListFindingReviewGroups_ResolvesInternalAuthorUserIdToEmail()
+    {
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        var org = seed.Organization.Id;
+        seed.Owner.Email = "member@company.com";
+
+        await SeedReviewsAsync(
+            Review(
+                org,
+                origin: CodeReviewRequestOrigin.Agent,
+                critical: 1,
+                authorLogin: seed.Owner.Id
+            )
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var groups = await store.ListFindingReviewGroupsAsync(
+            org,
+            MetricWindow.H1,
+            FindingSeverity.Critical,
+            cursorCreatedAtUtc: null,
+            cursorId: null,
+            limit: 10,
+            CancellationToken.None
+        );
+
+        await Assert.That(groups.Count).IsEqualTo(1);
+        await Assert.That(groups[0].AuthorLogin).IsEqualTo("member@company.com");
+    }
+
+    [Test]
+    public async Task ListFindingReviewGroups_DoesNotResolveWebhookAuthorThatLooksLikeUserId()
+    {
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        var org = seed.Organization.Id;
+        seed.Owner.Email = "member@company.com";
+
+        await SeedReviewsAsync(
+            Review(
+                org,
+                origin: CodeReviewRequestOrigin.RepositoryWebhook,
+                critical: 1,
+                authorLogin: seed.Owner.Id
+            )
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var groups = await store.ListFindingReviewGroupsAsync(
+            org,
+            MetricWindow.H1,
+            FindingSeverity.Critical,
+            cursorCreatedAtUtc: null,
+            cursorId: null,
+            limit: 10,
+            CancellationToken.None
+        );
+
+        await Assert.That(groups.Count).IsEqualTo(1);
+        await Assert.That(groups[0].AuthorLogin).IsEqualTo(seed.Owner.Id);
+    }
+
+    [Test]
     public async Task GetReviewVolume_GroupByRepo_ResolvesDisplayNameEvenWhenSoftDeleted()
     {
         // The repository row still exists (just soft-deleted), so review rows whose repo mapping was
@@ -707,8 +769,12 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
             ToolCall(org, "read_document", user: "bob@x.com"),
             ToolCall(org, "search_documents", user: "alice@x.com")
         );
+        seed.Owner.Email = "member@company.com";
         await SeedRepositoriesAsync(Repository(org, "repo_deleted", "acme/old", disabled: true));
-        await SeedReviewsAsync(Review(org));
+        await SeedReviewsAsync(
+            Review(org),
+            Review(org, origin: CodeReviewRequestOrigin.Agent, authorLogin: seed.Owner.Id)
+        );
 
         var store = new PostgresMetricsQueryStore(_context);
         var options = await store.GetFilterOptionsAsync(org, CancellationToken.None);
@@ -717,6 +783,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         await Assert.That(options.Users.Contains("alice@x.com")).IsTrue();
         await Assert.That(options.Tools.Contains("search_documents")).IsTrue();
         await Assert.That(options.Authors.Contains("octocat")).IsTrue();
+        await Assert.That(options.Authors.Contains("member@company.com")).IsTrue();
         await Assert
             .That(options.Repositories.Any(repo => repo.DisplayName == "acme/old"))
             .IsTrue();
@@ -842,7 +909,8 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         string org,
         CodeReviewRequestOrigin origin = CodeReviewRequestOrigin.RepositoryWebhook,
         int critical = 0,
-        int major = 0
+        int major = 0,
+        string authorLogin = "octocat"
     ) =>
         new()
         {
@@ -854,7 +922,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
             OwnerQualifiedRepoName = "acme/repo",
             Branch = "main",
             Title = "Test review",
-            AuthorLogin = "octocat",
+            AuthorLogin = authorLogin,
             Status = CodeReviewStatus.Completed,
             RequestOrigin = origin,
             CriticalFindings = critical,

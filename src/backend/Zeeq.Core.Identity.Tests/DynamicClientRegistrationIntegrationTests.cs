@@ -1,11 +1,11 @@
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using OpenIddict.Abstractions;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Identity;
 using Zeeq.Testing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
-using OpenIddict.Abstractions;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
 namespace Zeeq.Core.Identity.Tests;
@@ -141,7 +141,10 @@ public class DynamicClientRegistrationSetupTests(PgDatabaseFixture postgres)
             );
         _context.ChangeTracker.Clear();
 
-        return context;
+        return context
+            ?? throw new InvalidOperationException(
+                "Expected test user creation to return an auth context."
+            );
     }
 
     private static ClaimsPrincipal CreateUser(

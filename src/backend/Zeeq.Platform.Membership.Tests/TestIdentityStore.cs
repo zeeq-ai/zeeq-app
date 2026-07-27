@@ -49,7 +49,7 @@ internal sealed class TestIdentityStore : IZeeqIdentityStore
         return Task.FromResult(matching.Length);
     }
 
-    public Task<AuthContext> EnsureUserAsync(
+    public Task<AuthContext?> EnsureUserAsync(
         string provider,
         string providerSubject,
         string? displayName,

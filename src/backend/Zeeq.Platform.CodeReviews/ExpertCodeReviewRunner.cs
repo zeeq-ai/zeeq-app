@@ -1,15 +1,15 @@
 using System.Diagnostics;
 using System.Security.Claims;
 using System.Text;
+using Danom;
+using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Zeeq.Core.Common;
 using Zeeq.Core.Common.Storage;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
-using Danom;
-using Microsoft.Extensions.Caching.Hybrid;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -178,14 +178,15 @@ public sealed partial class ExpertCodeReviewRunner(
                 cancellationToken
             );
 
-            var libraryNames = requestedLibraryNames.Length > 0
-                ? requestedLibraryNames
-                : await libraries.ResolveMappedLibraryNamesAsync(
-                    reviewContext.OrganizationId,
-                    repository?.LibraryIds,
-                    cache,
-                    cancellationToken
-                );
+            var libraryNames =
+                requestedLibraryNames.Length > 0
+                    ? requestedLibraryNames
+                    : await libraries.ResolveMappedLibraryNamesAsync(
+                        reviewContext.OrganizationId,
+                        repository?.LibraryIds,
+                        cache,
+                        cancellationToken
+                    );
 
             var prompt = CodeReviewUserPrompt.From(
                 new(
@@ -239,6 +240,10 @@ public sealed partial class ExpertCodeReviewRunner(
 
             // Create the durable agent review record.
             var now = DateTimeOffset.UtcNow;
+            var authenticatedUser = user.AuthenticatedUser();
+            var authorLabel = string.IsNullOrWhiteSpace(authenticatedUser?.Email)
+                ? authenticatedUser?.Sub ?? string.Empty
+                : authenticatedUser.Email;
             var review = new CodeReviewRecord
             {
                 Id = $"cr_{Guid.CreateVersion7():N}",
@@ -250,7 +255,7 @@ public sealed partial class ExpertCodeReviewRunner(
                 PullRequestNumber = 0,
                 Branch = request.Branch?.Trim() ?? string.Empty,
                 Title = request.Title ?? request.OwnerQualifiedRepoName,
-                AuthorLogin = user.AuthenticatedUser()?.Sub ?? string.Empty,
+                AuthorLogin = authorLabel,
                 Status = CodeReviewStatus.Completed,
                 RequestOrigin = CodeReviewRequestOrigin.Agent,
                 ReviewGroupId = reviewGroupId,
