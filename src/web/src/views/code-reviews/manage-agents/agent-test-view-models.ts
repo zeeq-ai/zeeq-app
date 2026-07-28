@@ -55,7 +55,7 @@ export function buildAgentTestTargetRows(
   targets: CodeReviewPullRequestDto[],
 ): AgentTestTargetRow[] {
   return targets.map((target) => ({
-    value: `${target.id}:${new Date(target.createdAtUtc).toISOString()}`,
+    value: agentTestTargetValue(target),
     pullRequest: target,
     label: `#${target.pullRequestNumber} ${target.title}`,
     description: `${bareRepoName(target.ownerQualifiedRepoName)} · ${target.authorLogin} · ${target.branch} -> ${target.baseBranch} · updated ${formatDate(target.updatedAtUtc)}`,
@@ -69,6 +69,11 @@ export function buildAgentTestTargetRows(
       : "i-hugeicons-git-pull-request",
     iconClass: target.isDraft ? "text-warning" : "text-muted",
   }));
+}
+
+/** Stable listbox identity for PR rows and parent-owned selected PR state. */
+export function agentTestTargetValue(target: CodeReviewPullRequestDto): string {
+  return `${target.id}:${new Date(target.createdAtUtc).toISOString()}`;
 }
 
 /** Builds the compact numeric summary above the Results tab content. */

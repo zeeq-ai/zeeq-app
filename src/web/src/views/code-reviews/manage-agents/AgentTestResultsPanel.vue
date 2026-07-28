@@ -37,6 +37,15 @@
             variant="subtle"
             class="rounded-full"
           />
+          <UButton
+            label="View PR"
+            icon="i-hugeicons-github"
+            color="neutral"
+            variant="subtle"
+            size="sm"
+            :to="result.pullRequest.htmlUrl"
+            target="_blank"
+          />
         </div>
       </div>
 

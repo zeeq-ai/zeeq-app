@@ -133,13 +133,18 @@
               selectedAgent
             "
             ref="agentConfigPanelRef"
+            v-model:selected-agent-test-pull-request="
+              selectedAgentTestPullRequest
+            "
             :agent="selectedAgent"
             :saving="savingAgent"
             :disabled="!canManageOrganization || !selectedRepositoryId"
             :initial-form="copiedAgentForm"
             :copy-target-repository-items="copyTargetRepositoryItems"
             :agent-test-targets="agentTestTargets"
-            :agent-test-targets-loading="loadingAgentTestTargets"
+            :agent-test-targets-loading="
+              loadingAgentTestTargets && !loadingMoreAgentTestTargets
+            "
             :agent-test-targets-loading-more="loadingMoreAgentTestTargets"
             :agent-test-targets-has-more="!!agentTestTargetsNextCursor"
             :agent-test-running="runningAgentTest"
@@ -438,6 +443,7 @@ const fileFilterPreviewError = ref<string | null>(null);
 const agentTestTargets = ref<CodeReviewPullRequestDto[]>([]);
 const agentTestTargetsNextCursor = ref<CodeReviewStreamCursorDto | null>(null);
 const loadingMoreAgentTestTargets = ref(false);
+const selectedAgentTestPullRequest = ref<CodeReviewPullRequestDto | null>(null);
 const agentTestResult = ref<CodeReviewAgentTestRunResponse | null>(null);
 
 const agentHasUnsavedChanges = computed(
@@ -705,6 +711,7 @@ function clearAgentTestState() {
   agentTestTargets.value = [];
   agentTestTargetsNextCursor.value = null;
   loadingMoreAgentTestTargets.value = false;
+  selectedAgentTestPullRequest.value = null;
   agentTestResult.value = null;
 }
 
