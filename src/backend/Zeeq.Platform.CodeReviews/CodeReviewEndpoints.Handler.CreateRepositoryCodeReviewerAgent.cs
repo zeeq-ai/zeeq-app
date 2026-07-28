@@ -11,7 +11,7 @@ public sealed class CreateRepositoryCodeReviewerAgentHandler(
     ICodeReviewerAgentStore agents
 ) : IEndpointHandler
 {
-    private const int MaxRepositoryAgents = 10;
+    private const int MaxRepositoryAgents = 25;
 
     /// <summary>
     /// Creates a repository-scoped reviewer agent.
@@ -81,7 +81,7 @@ public sealed class CreateRepositoryCodeReviewerAgentHandler(
             return TypedResults.BadRequest(
                 new CodeReviewEndpointError(
                     "agent_limit_reached",
-                    "A repository can have at most 10 reviewer agents."
+                    "A repository can have at most 25 reviewer agents."
                 )
             );
         }
