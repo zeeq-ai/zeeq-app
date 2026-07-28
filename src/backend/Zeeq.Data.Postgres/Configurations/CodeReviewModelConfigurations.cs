@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres;
@@ -79,6 +81,7 @@ internal sealed class CodeRepositoryConfiguration : IEntityTypeConfiguration<Cod
     {
         entity.ToTable("code_review_repositories");
         entity.HasKey(repository => repository.Id);
+        entity.HasAlternateKey(repository => new { repository.OrganizationId, repository.Id });
 
         entity.Property(repository => repository.Id).HasMaxLength(128);
         entity.Property(repository => repository.OrganizationId).IsRequired().HasMaxLength(128);
@@ -789,5 +792,138 @@ internal sealed class GitHubCommentAnchorConfiguration
             .WithMany()
             .HasForeignKey(anchor => anchor.RepositoryId)
             .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+/// <summary>
+/// EF mapping for repository-scoped MCP prompt activation and placeholder overrides.
+/// </summary>
+/// <remarks>
+/// One row per (repository, prompt document). The document identity is the key rather than the MCP
+/// prompt name because prompt names are derived from skill metadata and change when a document is
+/// renamed; keying on the document lets saved values survive those edits.
+///
+/// The retrieval path reads this on <c>prompts/get</c>, so the unique index doubles as the lookup
+/// index: it leads with <c>organization_id</c> (the distribution key) and covers the exact
+/// organization/repository/library/document predicate the MCP read issues, as well as the
+/// organization/repository prefix the configuration UI lists by.
+/// </remarks>
+internal sealed class CodeRepositoryPromptConfigurationConfiguration
+    : IEntityTypeConfiguration<CodeRepositoryPromptConfiguration>
+{
+    /// <summary>
+    /// Order-insensitive comparer so EF tracks jsonb placeholder mutations by value.
+    /// </summary>
+    /// <remarks>
+    /// The snapshot factory preserves <see cref="StringComparer.Ordinal" />; a snapshot taken with
+    /// the default comparer would silently produce a dictionary the retrieval path's span alternate
+    /// lookup cannot use.
+    /// </remarks>
+    private static readonly ValueComparer<Dictionary<string, string>> PlaceholderValuesComparer =
+        new(
+            (left, right) =>
+                (left == null && right == null)
+                || (left != null && right != null && ArePlaceholderValuesEqual(left, right)),
+            value =>
+                value == null
+                    ? 0
+                    : value.Aggregate(
+                        0,
+                        (hash, pair) => hash ^ HashCode.Combine(pair.Key, pair.Value)
+                    ),
+            value =>
+                value == null ? new(StringComparer.Ordinal) : new(value, StringComparer.Ordinal)
+        );
+
+    private static bool ArePlaceholderValuesEqual(
+        Dictionary<string, string> left,
+        Dictionary<string, string> right
+    )
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        foreach (var (key, value) in left)
+        {
+            if (!right.TryGetValue(key, out var rightValue) || value != rightValue)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public void Configure(EntityTypeBuilder<CodeRepositoryPromptConfiguration> entity)
+    {
+        entity.ToTable("code_repository_prompt_configurations");
+        entity.HasKey(configuration => configuration.Id);
+
+        entity.Property(configuration => configuration.Id).HasMaxLength(128);
+        entity
+            .Property(configuration => configuration.OrganizationId)
+            .IsRequired()
+            .HasMaxLength(128);
+        entity.Property(configuration => configuration.TeamId).HasMaxLength(128);
+        entity.Property(configuration => configuration.RepositoryId).IsRequired().HasMaxLength(128);
+        entity.Property(configuration => configuration.LibraryId).IsRequired().HasMaxLength(128);
+        entity.Property(configuration => configuration.DocumentId).IsRequired().HasMaxLength(128);
+        entity.Property(configuration => configuration.Active).IsRequired();
+        entity.Property(configuration => configuration.CreatedAtUtc).IsRequired();
+        entity.Property(configuration => configuration.UpdatedAtUtc).IsRequired();
+
+        // NOTE: The materializer rebuilds the dictionary with an ordinal comparer on purpose. The
+        // MCP retrieval path probes it with a ReadOnlySpan<char> alternate lookup to avoid
+        // allocating a string per placeholder, and that API requires a comparer implementing
+        // IAlternateEqualityComparer — which a plain deserialized dictionary does not carry.
+        entity
+            .Property(configuration => configuration.PlaceholderValues)
+            .HasColumnType("jsonb")
+            .IsRequired()
+            .HasConversion(
+                values => JsonSerializer.Serialize(values, (JsonSerializerOptions?)null),
+                json => new Dictionary<string, string>(
+                    JsonSerializer.Deserialize<Dictionary<string, string>>(
+                        json,
+                        (JsonSerializerOptions?)null
+                    ) ?? new(),
+                    StringComparer.Ordinal
+                ),
+                PlaceholderValuesComparer
+            );
+
+        // One live configuration per repository/prompt document. The filter keeps historical
+        // disabled rows from blocking a fresh configuration after a repository is re-registered.
+        // NOTE: Active=false is still a live row because the configuration UI must preserve saved
+        // values while a prompt customization is toggled off. DisabledAtUtc is the inherited
+        // domain-row tombstone, not the prompt activation flag.
+        entity
+            .HasIndex(configuration => new
+            {
+                configuration.OrganizationId,
+                configuration.RepositoryId,
+                configuration.LibraryId,
+                configuration.DocumentId,
+            })
+            .IsUnique()
+            .HasFilter("disabled_at_utc IS NULL");
+
+        entity
+            .HasOne<Organization>()
+            .WithMany()
+            .HasForeignKey(configuration => configuration.OrganizationId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity
+            .HasOne<CodeRepository>()
+            .WithMany()
+            .HasPrincipalKey(repository => new { repository.OrganizationId, repository.Id })
+            .HasForeignKey(configuration => new
+            {
+                configuration.OrganizationId,
+                configuration.RepositoryId,
+            })
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

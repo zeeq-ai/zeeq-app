@@ -95,6 +95,12 @@ public class PostgresDbContext(DbContextOptions<PostgresDbContext> options)
     public DbSet<CodeRepository> CodeRepositories => Set<CodeRepository>();
 
     /// <summary>
+    /// Repository-scoped MCP prompt activation and placeholder overrides.
+    /// </summary>
+    public DbSet<CodeRepositoryPromptConfiguration> CodeRepositoryPromptConfigurations =>
+        Set<CodeRepositoryPromptConfiguration>();
+
+    /// <summary>
     /// Pull request records used by code-review streams.
     /// </summary>
     public DbSet<PullRequestRecord> PullRequestRecords => Set<PullRequestRecord>();

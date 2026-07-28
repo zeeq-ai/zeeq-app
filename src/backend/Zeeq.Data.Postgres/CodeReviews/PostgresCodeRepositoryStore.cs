@@ -63,6 +63,46 @@ internal sealed class PostgresCodeRepositoryStore(PostgresDbContext db) : ICodeR
             );
 
     /// <summary>
+    /// Finds a configured repository mapping by provider identity, including paused mappings.
+    /// </summary>
+    /// <remarks>
+    /// Case-insensitive by design: provider owner/name identity is case-insensitive and the caller
+    /// is typically resolving a client-supplied header value. The <c>lower(...)</c> comparison gives
+    /// up the exact-match index seek on <c>owner_qualified_name</c>, but the organization and
+    /// provider predicates still narrow to that organization's handful of rows, and callers cache
+    /// the result — so the tradeoff favors correctness over an index seek here.
+    ///
+    /// NOTE: <see cref="string.ToLower()"/> is used rather than the
+    /// <see cref="StringComparison.OrdinalIgnoreCase"/> overload that analyzers suggest, because this
+    /// predicate lives in an EF expression tree. Npgsql translates <c>ToLower()</c> to SQL
+    /// <c>lower(...)</c>; the <see cref="StringComparison"/> overloads have no translation and would
+    /// fail rather than run server-side.
+    /// </remarks>
+    public Task<CodeRepository?> FindConfiguredForOrganizationByProviderIdentityAsync(
+        string organizationId,
+        string provider,
+        string ownerQualifiedName,
+        CancellationToken cancellationToken
+    )
+    {
+        var normalized = ownerQualifiedName.ToLowerInvariant();
+
+        return db
+            .CodeRepositories.TagWithOperationCallSite(
+                "code_repository.find_configured_for_organization_by_provider_identity"
+            )
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                repository =>
+                    repository.OrganizationId == organizationId
+                    && repository.Provider == provider
+                    && repository.OwnerQualifiedName.ToLower() == normalized
+                    && repository.DisabledAtUtc == null,
+                cancellationToken
+            );
+    }
+
+    /// <summary>
     /// Lists enabled repository mappings for one organization.
     /// </summary>
     /// <remarks>

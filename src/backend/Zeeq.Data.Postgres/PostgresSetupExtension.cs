@@ -96,6 +96,10 @@ public static class PostgresSetupExtension
             services.AddScoped<IEncryptedValueStore, PostgresEncryptedValueStore>();
             services.AddScoped<IGitHubInstallationStore, PostgresGitHubInstallationStore>();
             services.AddScoped<ICodeRepositoryStore, PostgresCodeRepositoryStore>();
+            services.AddScoped<
+                ICodeRepositoryPromptConfigurationStore,
+                PostgresCodeRepositoryPromptConfigurationStore
+            >();
             services.AddScoped<IPullRequestRecordStore, PostgresPullRequestRecordStore>();
             services.AddScoped<IPullRequestLookupStore, PostgresPullRequestLookupStore>();
             services.AddScoped<ICodeReviewRecordStore, PostgresCodeReviewRecordStore>();
