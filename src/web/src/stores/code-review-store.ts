@@ -219,7 +219,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     ),
   );
 
-  const maxRepositoryAgents = 10;
+  const maxRepositoryAgents = 25;
   const hasReachedAgentLimit = computed(
     () => agents.value.length >= maxRepositoryAgents,
   );
@@ -232,7 +232,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
   );
   const newAgentButtonTitle = computed(() =>
     hasReachedAgentLimit.value
-      ? "This repository already has 10 reviewer agents."
+      ? "This repository already has 25 reviewer agents."
       : undefined,
   );
 

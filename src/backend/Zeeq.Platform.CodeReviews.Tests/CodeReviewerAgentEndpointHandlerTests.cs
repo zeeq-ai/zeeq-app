@@ -142,10 +142,10 @@ public sealed class CodeReviewerAgentEndpointHandlerTests
     }
 
     [Test]
-    public async Task CreateRepositoryCodeReviewerAgent_WhenRepositoryAlreadyHasTenAgents_ReturnsBadRequest()
+    public async Task CreateRepositoryCodeReviewerAgent_WhenRepositoryAlreadyHasTwentyFiveAgents_ReturnsBadRequest()
     {
         var fixture = Fixture.Create(role: "owner");
-        for (var index = 0; index < 10; index++)
+        for (var index = 0; index < 25; index++)
         {
             fixture.Agents.Agents.Add(
                 Agent(id: $"agent_{index}", displayName: $"Reviewer {index}")
@@ -155,7 +155,7 @@ public sealed class CodeReviewerAgentEndpointHandlerTests
         var result = await fixture.CreateHandler.HandleAsync(
             "org_123",
             "repo_123",
-            CreateRequest(displayName: "Reviewer 11"),
+            CreateRequest(displayName: "Reviewer 26"),
             TestUser(),
             CancellationToken.None
         );
@@ -164,7 +164,7 @@ public sealed class CodeReviewerAgentEndpointHandlerTests
 
         await Assert.That(badRequest).IsNotNull();
         await Assert.That(badRequest!.Value!.Code).IsEqualTo("agent_limit_reached");
-        await Assert.That(fixture.Agents.Agents).Count().IsEqualTo(10);
+        await Assert.That(fixture.Agents.Agents).Count().IsEqualTo(25);
     }
 
     [Test]
