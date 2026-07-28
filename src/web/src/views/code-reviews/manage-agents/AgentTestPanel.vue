@@ -9,7 +9,8 @@
         <h3 class="text-sm font-semibold text-highlighted">Test agent</h3>
         <p class="text-sm text-muted">
           Test the current configuration against an existing PR. Select a PR and
-          click <b>Run test</b>.
+          click <b>Run test</b>. This allows back-testing changes against
+          existing PRs to help tune agent behavior.
         </p>
       </div>
     </div>

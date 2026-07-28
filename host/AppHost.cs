@@ -85,7 +85,7 @@ var cloudSqlProxy = builder.AddExecutable(
     ["--port", "55432"]
 );
 
-// Run the pub/sub emulator
+// Run the pub/sub emulator; occasionally dies so `aspire stop` and `aspire run` to restart stack.
 var pubSubEmulator = builder
     .AddContainer("gcp-pubsub-emulator", "google/cloud-sdk:568.0.0-emulators")
     .WithArgs(
@@ -97,6 +97,7 @@ var pubSubEmulator = builder
         $"--project={pubSubProjectId}",
         "--host-port=0.0.0.0:18085"
     )
+    .WithEnvironment("JAVA_TOOL_OPTIONS", "-Xmx2g") // Maybe prevent the emulator from resetting?
     .WithHttpEndpoint(port: 18085, targetPort: 18085, name: "http", isProxied: false)
     .WithLifetime(ContainerLifetime.Persistent)
     .WithImagePullPolicy(ImagePullPolicy.Missing);

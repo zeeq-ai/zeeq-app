@@ -803,6 +803,29 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
   }
 
   /**
+   * Evaluates draft agent activation filters after saved repository filters.
+   *
+   * @param activationConfiguration - Unsaved or saved rules currently visible in the agent panel.
+   * @param filePaths - Repository-relative paths entered by the user.
+   */
+  async function previewAgentActivationFilter(
+    activationConfiguration: CodeReviewerActivationConfigurationDto,
+    filePaths: string[],
+  ): Promise<PreviewCodeReviewFileFilterResponse> {
+    const repositoryId = requireRepositoryId();
+    const orgId = requireOrganizationId();
+
+    return await CodeReviews.previewCodeReviewerActivationFilter(
+      repositoryId,
+      orgId,
+      {
+        activationConfiguration,
+        filePaths,
+      },
+    );
+  }
+
+  /**
    * Persists the repository-level shared prompt fragment injected into every
    * reviewer agent's prompt for this repository.
    *
@@ -1483,6 +1506,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     loadSelectedRepositoryManagement,
     saveRepositoryFileFilter,
     previewRepositoryFileFilter,
+    previewAgentActivationFilter,
     saveSharedPromptFragment,
     saveRepositoryConfiguration,
     selectManagementFilters,

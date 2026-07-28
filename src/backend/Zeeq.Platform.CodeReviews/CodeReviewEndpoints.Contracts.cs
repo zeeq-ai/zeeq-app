@@ -599,6 +599,16 @@ public sealed record PreviewCodeReviewFileFilterRequest(
 );
 
 /// <summary>
+/// Request for previewing draft reviewer-agent activation filters against typed paths.
+/// </summary>
+/// <param name="ActivationConfiguration">Draft agent-level activation rules to evaluate.</param>
+/// <param name="FilePaths">Repository-relative paths, one logical file per entry.</param>
+public sealed record PreviewCodeReviewerActivationFilterRequest(
+    [property: Required] CodeReviewerActivationConfigurationDto ActivationConfiguration,
+    [property: Required, MaxLength(25)] IReadOnlyList<string> FilePaths
+);
+
+/// <summary>
 /// Response showing which preview paths would enter or leave review scope.
 /// </summary>
 /// <param name="IncludedFiles">Paths that would be included in review context.</param>

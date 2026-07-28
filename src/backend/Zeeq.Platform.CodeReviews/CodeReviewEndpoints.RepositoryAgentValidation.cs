@@ -67,7 +67,7 @@ internal static class CodeReviewerAgentEndpointValidation
         return ValidateActivationConfiguration(activationConfiguration);
     }
 
-    private static CodeReviewEndpointError? ValidateActivationConfiguration(
+    internal static CodeReviewEndpointError? ValidateActivationConfiguration(
         CodeReviewerActivationConfigurationDto activationConfiguration
     )
     {
