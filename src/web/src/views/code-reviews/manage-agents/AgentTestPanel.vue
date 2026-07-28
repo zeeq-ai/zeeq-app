@@ -14,37 +14,64 @@
       </div>
     </div>
 
-    <div class="mt-4 flex flex-wrap items-center justify-end gap-2">
-      <UButton
-        label="Refresh"
-        icon="i-hugeicons-refresh"
-        color="neutral"
-        variant="ghost"
-        size="md"
-        :loading="loading"
-        :disabled="disabled || running"
-        @click="emits('loadTargets')"
-      />
-      <UButton
-        v-if="hasMore"
-        label="Load more"
-        color="neutral"
-        variant="ghost"
-        size="md"
-        :loading="loadingMore"
-        :disabled="disabled || running || loadingMore"
-        @click="emits('loadMoreTargets')"
-      />
-      <UButton
-        label="Run test"
-        icon="i-hugeicons-play"
-        color="neutral"
-        variant="subtle"
-        size="md"
-        :loading="running"
-        :disabled="disabled || running || !selectedRow"
-        @click="runSelected"
-      />
+    <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
+      <div class="min-w-0 flex-1">
+        <div
+          v-if="selectedPullRequest"
+          class="inline-flex h-8 max-w-full items-center gap-2 rounded-md border border-default bg-elevated/30 px-2"
+        >
+          <UIcon
+            name="i-hugeicons-git-pull-request"
+            class="size-4 shrink-0 text-muted"
+          />
+          <span class="min-w-0 truncate text-sm text-highlighted">
+            {{ selectedPullRequestLabel }}
+          </span>
+          <UButton
+            icon="i-hugeicons-cancel-01"
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            square
+            aria-label="Clear selected pull request"
+            :disabled="disabled || running"
+            @click="clearSelectedPullRequest"
+          />
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        <UButton
+          label="Refresh"
+          icon="i-hugeicons-refresh"
+          color="neutral"
+          variant="ghost"
+          size="md"
+          :loading="loading"
+          :disabled="disabled || running || loadingMore"
+          @click="emits('loadTargets')"
+        />
+        <UButton
+          v-if="hasMore"
+          label="Load more"
+          color="neutral"
+          variant="ghost"
+          size="md"
+          :loading="loadingMore"
+          :disabled="disabled || running || loading || loadingMore"
+          @click="emits('loadMoreTargets')"
+        />
+        <UButton
+          label="Run test"
+          icon="i-hugeicons-play"
+          color="neutral"
+          variant="subtle"
+          size="md"
+          :loading="running"
+          :disabled="disabled || running || !selectedPullRequest"
+          @click="runSelected"
+        />
+      </div>
     </div>
 
     <div class="my-3 min-h-0 flex-1 overflow-hidden">
@@ -123,9 +150,15 @@
 <script setup lang="ts">
 import type { CodeReviewPullRequestDto } from "@/api/generated";
 import {
+  agentTestTargetValue,
   buildAgentTestTargetRows,
   type AgentTestTargetRow,
 } from "./agent-test-view-models";
+
+const selectedPullRequest = defineModel<CodeReviewPullRequestDto | null>(
+  "selectedPullRequest",
+  { default: null },
+);
 
 const props = defineProps<{
   targets: CodeReviewPullRequestDto[];
@@ -142,37 +175,41 @@ const emits = defineEmits<{
   run: [pullRequest: CodeReviewPullRequestDto];
 }>();
 
-const selectedRow = ref<AgentTestTargetRow | undefined>();
-
 /** View models keep listbox row rendering compact and avoid template-side formatting. */
 const rows = computed<AgentTestTargetRow[]>(() =>
   buildAgentTestTargetRows(props.targets),
 );
 
-/**
- * Preserve the user's selected PR while pages append, but choose the first row
- * on initial load so "Run test" has an obvious target.
- */
-watch(
-  rows,
-  (nextRows) => {
-    if (
-      selectedRow.value &&
-      nextRows.some((row) => row.value === selectedRow.value?.value)
-    ) {
-      return;
+/** Bridges UListbox row objects to parent-owned PR selection by stable PR key. */
+const selectedRow = computed<AgentTestTargetRow | undefined>({
+  get: () => {
+    if (!selectedPullRequest.value) {
+      return undefined;
     }
 
-    selectedRow.value = nextRows[0];
+    const selectedValue = agentTestTargetValue(selectedPullRequest.value);
+    return rows.value.find((row) => row.value === selectedValue);
   },
-  { immediate: true },
+  set: (row) => {
+    selectedPullRequest.value = row?.pullRequest ?? null;
+  },
+});
+
+const selectedPullRequestLabel = computed(() =>
+  selectedPullRequest.value
+    ? `#${selectedPullRequest.value.pullRequestNumber} ${selectedPullRequest.value.title}`
+    : "",
 );
 
+function clearSelectedPullRequest() {
+  selectedPullRequest.value = null;
+}
+
 function runSelected() {
-  if (!selectedRow.value) {
+  if (!selectedPullRequest.value) {
     return;
   }
 
-  emits("run", selectedRow.value.pullRequest);
+  emits("run", selectedPullRequest.value);
 }
 </script>

@@ -100,6 +100,7 @@
 
         <template #test>
           <AgentTestPanel
+            v-model:selected-pull-request="selectedAgentTestPullRequest"
             :targets="agentTestTargets"
             :loading="agentTestTargetsLoading"
             :loading-more="agentTestTargetsLoadingMore"
@@ -310,6 +311,11 @@ const props = withDefaults(
     agentTestResult: null,
   },
 );
+
+const selectedAgentTestPullRequest =
+  defineModel<CodeReviewPullRequestDto | null>("selectedAgentTestPullRequest", {
+    default: null,
+  });
 
 const emits = defineEmits<{
   cancel: [];
