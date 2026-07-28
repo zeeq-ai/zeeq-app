@@ -149,6 +149,9 @@
             :agent-test-targets-has-more="!!agentTestTargetsNextCursor"
             :agent-test-running="runningAgentTest"
             :agent-test-result="agentTestResult"
+            :activation-filter-preview-result="activationFilterPreviewResult"
+            :activation-filter-preview-loading="previewingActivationFilter"
+            :activation-filter-preview-error="activationFilterPreviewError"
             @cancel="cancelAgentConfig"
             @save="saveAgent"
             @review="openAgentDiff"
@@ -158,6 +161,7 @@
             @load-test-targets="loadAgentTestTargets"
             @load-more-test-targets="loadMoreAgentTestTargets"
             @run-test="runAgentTest"
+            @preview-activation-filters="previewActivationFilters"
           />
 
           <UEmpty
@@ -282,6 +286,7 @@ import type {
   CodeReviewPullRequestDto,
   CodeReviewStreamCursorDto,
   CodeReviewFileFilterDto,
+  CodeReviewerActivationConfigurationDto,
   CodeReviewerAgentDto,
   CodeReviewerAgentTemplateDto,
   PreviewCodeReviewFileFilterResponse,
@@ -440,6 +445,10 @@ const fileFilterPreviewResult = ref<PreviewCodeReviewFileFilterResponse | null>(
   null,
 );
 const fileFilterPreviewError = ref<string | null>(null);
+const previewingActivationFilter = ref(false);
+const activationFilterPreviewResult =
+  ref<PreviewCodeReviewFileFilterResponse | null>(null);
+const activationFilterPreviewError = ref<string | null>(null);
 const agentTestTargets = ref<CodeReviewPullRequestDto[]>([]);
 const agentTestTargetsNextCursor = ref<CodeReviewStreamCursorDto | null>(null);
 const loadingMoreAgentTestTargets = ref(false);
@@ -556,6 +565,8 @@ watch(agents, () => {
 
 watch(selectedManagementItemId, (itemId) => {
   agentTestResult.value = null;
+  activationFilterPreviewResult.value = null;
+  activationFilterPreviewError.value = null;
 
   if (routeSelectionApplying.value) {
     return;
@@ -654,6 +665,31 @@ async function previewRepositoryFilters(
   }
 }
 
+/** Previews unsaved agent activation rules after saved repository filters. */
+async function previewActivationFilters(
+  activationConfiguration: CodeReviewerActivationConfigurationDto,
+  filePaths: string[],
+) {
+  previewingActivationFilter.value = true;
+  activationFilterPreviewError.value = null;
+
+  try {
+    activationFilterPreviewResult.value =
+      await codeReviewStore.previewAgentActivationFilter(
+        activationConfiguration,
+        filePaths,
+      );
+  } catch (err: unknown) {
+    activationFilterPreviewResult.value = null;
+    activationFilterPreviewError.value =
+      err instanceof Error
+        ? err.message
+        : "Could not preview activation filters.";
+  } finally {
+    previewingActivationFilter.value = false;
+  }
+}
+
 /** Loads the newest page of PR targets for the agent test tab. */
 async function loadAgentTestTargets() {
   if (!selectedRepositoryId.value) {
@@ -713,6 +749,8 @@ function clearAgentTestState() {
   loadingMoreAgentTestTargets.value = false;
   selectedAgentTestPullRequest.value = null;
   agentTestResult.value = null;
+  activationFilterPreviewResult.value = null;
+  activationFilterPreviewError.value = null;
 }
 
 function cancelAgentConfig() {

@@ -2588,6 +2588,72 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/agents/activation-filter-preview": {
+      "post": {
+        "tags": [
+          "Code Reviews"
+        ],
+        "summary": "Preview reviewer activation filters.",
+        "description": "Applies the saved repository-level file filters and draft reviewer-agent\nactivation filters to a caller supplied list of repository-relative paths.\nThis mirrors real review execution where global repository scope is applied\nbefore deciding whether a reviewer agent activates.\n\nRestricted to organization owners and admins because callers submit arbitrary\ndraft rules for the selected repository.",
+        "operationId": "PreviewCodeReviewerActivationFilter",
+        "parameters": [
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewCodeReviewerActivationFilterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "404": {
+            "description": "Not Found"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewCodeReviewFileFilterResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/pull-requests/{pullRequestNumber}/check-run/bypass": {
       "post": {
         "tags": [
@@ -10760,6 +10826,28 @@
           }
         },
         "description": "Generic paged response returned by system organization admin endpoints."
+      },
+      "PreviewCodeReviewerActivationFilterRequest": {
+        "required": [
+          "activationConfiguration",
+          "filePaths"
+        ],
+        "type": "object",
+        "properties": {
+          "activationConfiguration": {
+            "description": "Draft agent-level activation rules to evaluate.",
+            "$ref": "#/components/schemas/CodeReviewerActivationConfigurationDto"
+          },
+          "filePaths": {
+            "maxItems": 25,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Repository-relative paths, one logical file per entry."
+          }
+        },
+        "description": "Request for previewing draft reviewer-agent activation filters against typed paths."
       },
       "PreviewCodeReviewFileFilterRequest": {
         "required": [

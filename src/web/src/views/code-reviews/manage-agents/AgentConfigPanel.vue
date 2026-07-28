@@ -57,6 +57,20 @@
         class="agent-config-tabs min-h-0 flex-1 px-3"
         :ui="{ root: 'min-h-0 flex-1', content: 'min-h-0 flex-1 pt-3' }"
       >
+        <template #default="{ item }">
+          <span class="inline-flex min-w-0 items-center gap-1.5">
+            <span class="truncate">{{ item.label }}</span>
+            <UBadge
+              v-if="item.value === 'filters'"
+              :label="`${activationFilterCount}`"
+              color="neutral"
+              variant="soft"
+              size="sm"
+              square
+            />
+          </span>
+        </template>
+
         <template #prompt>
           <div class="prompt-editor min-h-0 flex-1">
             <MdEditor
@@ -123,7 +137,22 @@
     Mirrors the document editor side rail: identity fields, status, save/review,
     reset, copy, and destructive actions stay outside the editor canvas.
     -->
+    <FilterPreviewSidePanel
+      v-if="activeConfigurationTab === 'filters'"
+      :disabled="disabled || saving"
+      :preview-result="activationFilterPreviewResult"
+      :preview-loading="activationFilterPreviewLoading"
+      :preview-error="activationFilterPreviewError"
+      :show-save-button="true"
+      :saving
+      :can-save="canSave"
+      compact
+      @preview="previewActivationFilters"
+      @save="submit"
+    />
+
     <aside
+      v-else
       class="flex w-72 shrink-0 flex-col border-l border-default bg-default"
     >
       <div class="min-h-0 flex-1 overflow-y-auto p-4">
@@ -137,7 +166,11 @@
             </p>
           </div>
 
-          <UFormField label="Display name" required>
+          <UFormField
+            label="Display name"
+            description="A human-readable display name; a persona for the agent."
+            required
+          >
             <UInput
               v-model="draft.displayName"
               placeholder="Structural reviewer"
@@ -146,7 +179,11 @@
             />
           </UFormField>
 
-          <UFormField label="Facet" required>
+          <UFormField
+            label="Facet"
+            description="The short name of the review facet rendered in results."
+            required
+          >
             <UInput
               v-model="draft.reviewFacet"
               placeholder="Structural"
@@ -155,7 +192,11 @@
             />
           </UFormField>
 
-          <UFormField label="Model tier" required>
+          <UFormField
+            label="Model tier"
+            description="Maps to an underlying LLM model configured in settings."
+            required
+          >
             <USelect
               v-model="draft.modelTier"
               :items="modelTierItems"
@@ -266,6 +307,7 @@ import { MdEditor, type ToolbarNames } from "md-editor-v3";
 import "md-editor-v3/lib/style.css";
 import type {
   CodeReviewAgentTestRunResponse,
+  PreviewCodeReviewFileFilterResponse,
   CodeReviewPullRequestDto,
   CodeReviewerActivationConfigurationDto,
   CodeReviewerAgentDto,
@@ -282,6 +324,7 @@ import { useMarkdownEditorTheme } from "@/composables/useMarkdownEditorTheme";
 import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 
 import AgentActivationFiltersEditor from "./AgentActivationFiltersEditor.vue";
+import FilterPreviewSidePanel from "./FilterPreviewSidePanel.vue";
 import AgentTestPanel from "./AgentTestPanel.vue";
 import AgentTestResultsPanel from "./AgentTestResultsPanel.vue";
 import { formatAgentFormForDiff } from "./agent-diff-format";
@@ -299,6 +342,9 @@ const props = withDefaults(
     agentTestTargetsHasMore?: boolean;
     agentTestRunning?: boolean;
     agentTestResult?: CodeReviewAgentTestRunResponse | null;
+    activationFilterPreviewResult?: PreviewCodeReviewFileFilterResponse | null;
+    activationFilterPreviewLoading?: boolean;
+    activationFilterPreviewError?: string | null;
   }>(),
   {
     initialForm: null,
@@ -309,6 +355,9 @@ const props = withDefaults(
     agentTestTargetsHasMore: false,
     agentTestRunning: false,
     agentTestResult: null,
+    activationFilterPreviewResult: null,
+    activationFilterPreviewLoading: false,
+    activationFilterPreviewError: null,
   },
 );
 
@@ -332,6 +381,10 @@ const emits = defineEmits<{
   loadTestTargets: [];
   loadMoreTestTargets: [];
   runTest: [pullRequest: CodeReviewPullRequestDto, form: CodeReviewerAgentForm];
+  previewActivationFilters: [
+    activationConfiguration: CodeReviewerActivationConfigurationDto,
+    filePaths: string[],
+  ];
 }>();
 
 const { editorTheme, toggleTheme } = useMarkdownEditorTheme();
@@ -380,7 +433,7 @@ const agentConfigurationTabs = computed<AgentConfigurationTab[]>(() => {
   if (props.agentTestResult) {
     tabs.push({
       label: "Results",
-      icon: "i-hugeicons-chart-evaluation",
+      icon: "i-hugeicons-message-programming",
       value: "results",
       slot: "results" as const,
     });
@@ -436,6 +489,11 @@ const canSave = computed(
   () => formValid.value && (!props.agent || formDirty.value),
 );
 const hasChanges = computed(() => formDirty.value);
+const activationFilterCount = computed(
+  () =>
+    draft.value.activationConfiguration.includedFiles.length +
+    draft.value.activationConfiguration.excludedFiles.length,
+);
 const sidePanelButtonUi = { base: "justify-start" };
 
 watch(
@@ -498,6 +556,15 @@ function updateActivationConfiguration(
     ...draft.value,
     activationConfiguration: cloneActivationConfiguration(value),
   };
+}
+
+/** Sends the current unsaved activation rules with normalized preview paths. */
+function previewActivationFilters(filePaths: string[]) {
+  emits(
+    "previewActivationFilters",
+    cloneActivationConfiguration(draft.value.activationConfiguration),
+    filePaths,
+  );
 }
 
 function submit() {

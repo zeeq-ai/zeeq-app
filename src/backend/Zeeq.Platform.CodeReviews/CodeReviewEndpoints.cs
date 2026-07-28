@@ -740,6 +740,38 @@ public sealed class CodeReviewEndpoints : IEndpoint
                 """
             );
 
+        // POST /api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/agents/activation-filter-preview
+        group
+            .MapPost(
+                "/repositories/{repositoryId}/agents/activation-filter-preview",
+                static (
+                    string repositoryId,
+                    string orgId,
+                    [FromBody] PreviewCodeReviewerActivationFilterRequest request,
+                    ClaimsPrincipal user,
+                    [FromServices] PreviewCodeReviewerActivationFilterHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, repositoryId, request, user, ct)
+            )
+            .RequireActiveOrganization()
+            .WithName("PreviewCodeReviewerActivationFilter")
+            .Produces<PreviewCodeReviewFileFilterResponse>()
+            .Produces<CodeReviewEndpointError>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("Preview reviewer activation filters.")
+            .WithDescription(
+                """
+                Applies the saved repository-level file filters and draft reviewer-agent
+                activation filters to a caller supplied list of repository-relative paths.
+                This mirrors real review execution where global repository scope is applied
+                before deciding whether a reviewer agent activates.
+
+                Restricted to organization owners and admins because callers submit arbitrary
+                draft rules for the selected repository.
+                """
+            );
+
         // POST /api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/pull-requests/{pullRequestNumber}/check-run/bypass
         group
             .MapPost(

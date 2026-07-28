@@ -116,10 +116,13 @@ public sealed partial class CodeReviewerAgentResolver(
             return false;
         }
 
-        return inScopeFiles.Any(file => IsIncluded(file, configuration));
+        return inScopeFiles.Any(file => IsFileIncluded(file, configuration));
     }
 
-    private static bool IsIncluded(
+    /// <summary>
+    /// Determines whether one repository-scoped file can activate a reviewer.
+    /// </summary>
+    internal static bool IsFileIncluded(
         CodeReviewFileSnapshot file,
         CodeReviewerActivationConfiguration configuration
     )
