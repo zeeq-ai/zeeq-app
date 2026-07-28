@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
+using Microsoft.Net.Http.Headers;
 
 namespace Zeeq.Runtime.Server.Setup;
 
@@ -10,19 +11,29 @@ public static class SetupStaticFilesExtension
 {
     private static void ConfigureStaticFileCaching(StaticFileResponseContext ctx)
     {
+        // Default cache control is aggressive for the static SPA assets, since they
+        // are fingerprinted and immutable.
         const int durationInSeconds = 60 * 60 * 24 * 365; // 1 year
         string cacheControlValue = $"max-age={durationInSeconds}, immutable";
 
         var fileExtension = Path.GetExtension(ctx.File.Name).ToLowerInvariant();
+        var fileName = Path.GetFileName(ctx.File.Name).ToLowerInvariant();
 
         if (fileExtension == ".html")
         {
-            // Short cache for HTML files
+            // Short cache for the index HTML file
             cacheControlValue = "max-age=180, private";
         }
 
-        // Add caching headers for static files
-        ctx.Context.Response.Headers.Append("Cache-Control", cacheControlValue);
+        if (fileName == "service-worker.js")
+        {
+            // Service worker should be updated frequently
+            cacheControlValue = "no-cache, no-store, must-revalidate, max-age=0";
+        }
+
+        // Set the cache headers for the frontend static app served through the
+        // backend server.
+        ctx.Context.Response.Headers[HeaderNames.CacheControl] = cacheControlValue;
     }
 
     extension(WebApplication app)
