@@ -147,9 +147,7 @@ public sealed class CodeReviewMcpToolsTests
         );
 
         await Assert.That(runner.RunRequest).IsNotNull();
-        await Assert
-            .That(runner.RunRequest!.Libraries)
-            .IsEquivalentTo(["zeeq-app", "zeeq-docs"]);
+        await Assert.That(runner.RunRequest!.Libraries).IsEquivalentTo(["zeeq-app", "zeeq-docs"]);
     }
 
     [Test]
@@ -439,17 +437,11 @@ public sealed class CodeReviewMcpToolsTests
         // The prompt-token lookup is exercised by the MCP dynamic-prompt tests, not this fixture.
 
         public Task<CodeRepository?> FindConfiguredForOrganizationByProviderIdentityAsync(
-
             string organizationId,
-
             string provider,
-
             string ownerQualifiedName,
-
             CancellationToken cancellationToken
-
         ) => throw new NotSupportedException();
-
 
         public Task<CodeRepository?> FindActiveForOrganizationByProviderIdentityAsync(
             string organizationId,

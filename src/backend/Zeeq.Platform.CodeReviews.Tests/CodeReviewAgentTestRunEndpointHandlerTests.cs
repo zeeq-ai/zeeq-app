@@ -501,17 +501,11 @@ public sealed class CodeReviewAgentTestRunEndpointHandlerTests
         // The prompt-token lookup is exercised by the MCP dynamic-prompt tests, not this fixture.
 
         public Task<CodeRepository?> FindConfiguredForOrganizationByProviderIdentityAsync(
-
             string organizationId,
-
             string provider,
-
             string ownerQualifiedName,
-
             CancellationToken cancellationToken
-
         ) => throw new NotSupportedException();
-
 
         public Task<CodeRepository?> FindActiveForOrganizationByProviderIdentityAsync(
             string organizationId,
@@ -536,11 +530,10 @@ public sealed class CodeReviewAgentTestRunEndpointHandlerTests
             CancellationToken cancellationToken
         ) =>
             Task.FromResult(
-                !EnforceOrganizationLookup
+                !EnforceOrganizationLookup ? Repository
+                : Repository.OrganizationId == organizationId && Repository.Id == repositoryId
                     ? Repository
-                    : Repository.OrganizationId == organizationId && Repository.Id == repositoryId
-                        ? Repository
-                        : null
+                : null
             );
 
         public Task<CodeRepository> UpsertAsync(

@@ -47,7 +47,7 @@ public sealed class PromptPlaceholderParserTests
         var content = """
             # Workflow
 
-            <zeeq_placeholder name="testing_rules" displayName="Testing rules" description="How to test">
+            <zeeq_placeholder name="testing_rules" label="Testing rules" description="How to test">
             Run the project's default test runner.
             </zeeq_placeholder>
             """;
@@ -56,7 +56,7 @@ public sealed class PromptPlaceholderParserTests
 
         await Assert.That(placeholders).Count().IsEqualTo(1);
         await Assert.That(placeholders[0].Name).IsEqualTo("testing_rules");
-        await Assert.That(placeholders[0].DisplayName).IsEqualTo("Testing rules");
+        await Assert.That(placeholders[0].Label).IsEqualTo("Testing rules");
         await Assert.That(placeholders[0].Description).IsEqualTo("How to test");
         await Assert
             .That(placeholders[0].DefaultValue)
@@ -75,24 +75,48 @@ public sealed class PromptPlaceholderParserTests
 
         await Assert.That(placeholders).Count().IsEqualTo(1);
         await Assert.That(placeholders[0].Name).IsEqualTo("build_rules");
-        await Assert.That(placeholders[0].DisplayName).IsNull();
+        await Assert.That(placeholders[0].Label).IsNull();
         await Assert.That(placeholders[0].Description).IsEqualTo("Only a description");
     }
 
     [Test]
-    public async Task Parse_DisplayNameBeforeName_DoesNotMistakeItForName()
+    public async Task Parse_LabelBeforeName_DoesNotMistakeItForName()
     {
-        // `displayName="..."` contains the literal text `name=`; a substring scan would read
-        // "Display value" as the placeholder name and break override lookup entirely.
+        // Explicit name remains the stable storage key even when the human label comes first.
         var content = """
-            <zeeq_placeholder displayName="Display value" name="real_name">Default</zeeq_placeholder>
+            <zeeq_placeholder label="Display value" name="real_name">Default</zeeq_placeholder>
             """;
 
         var placeholders = PromptPlaceholderParser.Parse(content);
 
         await Assert.That(placeholders).Count().IsEqualTo(1);
         await Assert.That(placeholders[0].Name).IsEqualTo("real_name");
-        await Assert.That(placeholders[0].DisplayName).IsEqualTo("Display value");
+        await Assert.That(placeholders[0].Label).IsEqualTo("Display value");
+    }
+
+    [Test]
+    public async Task Parse_LabelOnly_DerivesNameFromLabelSlug()
+    {
+        var content = """
+            <zeeq_placeholder label="Language count">5</zeeq_placeholder>
+            """;
+
+        var placeholders = PromptPlaceholderParser.Parse(content);
+
+        await Assert.That(placeholders).Count().IsEqualTo(1);
+        await Assert.That(placeholders[0].Name).IsEqualTo("language-count");
+        await Assert.That(placeholders[0].Label).IsEqualTo("Language count");
+        await Assert.That(placeholders[0].DefaultValue).IsEqualTo("5");
+    }
+
+    [Test]
+    public async Task Parse_DisplayNameOnly_IsIgnored()
+    {
+        var content = """
+            <zeeq_placeholder displayName="Legacy label">Default</zeeq_placeholder>
+            """;
+
+        await Assert.That(PromptPlaceholderParser.Parse(content)).IsEmpty();
     }
 
     [Test]
@@ -199,7 +223,7 @@ public sealed class PromptPlaceholderParserTests
         var content = """
             Follow this workflow.
 
-            <zeeq_placeholder name="rules" displayName="Rules">
+            <zeeq_placeholder name="rules" label="Rules">
             Use the default runner.
             </zeeq_placeholder>
 
@@ -322,15 +346,30 @@ public sealed class PromptPlaceholderParserTests
     }
 
     [Test]
-    public async Task Substitute_MatchedRegionWithoutName_LeavesTextUntouched()
+    public async Task Substitute_LabelOnly_DerivesNameFromLabelSlug()
     {
         var content = """
-            Intro <zeeq_placeholder displayName="Rules">body</zeeq_placeholder> Outro
+            Intro <zeeq_placeholder label="Rules">body</zeeq_placeholder> Outro
             """;
 
         var result = PromptPlaceholderParser.Substitute(content, Overrides(("rules", "value")));
 
-        await Assert.That(result).IsEqualTo(content);
+        await Assert.That(result).IsEqualTo("Intro value Outro");
+    }
+
+    [Test]
+    public async Task Substitute_ExplicitNameWinsOverDerivedLabelSlug()
+    {
+        var content = """
+            <zeeq_placeholder name="stable-key" label="Editable label">Default</zeeq_placeholder>
+            """;
+
+        var result = PromptPlaceholderParser.Substitute(
+            content,
+            Overrides(("editable-label", "Wrong"), ("stable-key", "Right"))
+        );
+
+        await Assert.That(result).IsEqualTo("Right");
     }
 
     [Test]

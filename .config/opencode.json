@@ -39,12 +39,18 @@
     "zeeq": {
       "type": "remote",
       "enabled": true,
-      "url": "https://app.zeeq.ai/mcp"
+      "url": "https://app.zeeq.ai/mcp",
+      "headers": {
+        "x-zeeq-prompts-repo": "zeeq-ai/zeeq-app"
+      }
     },
     "local-dev-only-zeeq": {
       "type": "remote",
       "enabled": true,
-      "url": "http://zeeq-web.localhost:8095/mcp"
+      "url": "http://zeeq-web.localhost:8095/mcp",
+      "headers": {
+        "x-zeeq-prompts-repo": "zeeq-ai/zeeq-app"
+      }
     }
   },
   "lsp": {

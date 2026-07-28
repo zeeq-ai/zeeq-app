@@ -10,7 +10,7 @@ namespace Zeeq.Core.Documents;
 /// A prompt document may declare repository-customizable regions:
 ///
 /// <code>
-/// &lt;zeeq_placeholder name="testing_rules" displayName="Testing rules" description="How to test"&gt;
+/// &lt;zeeq_placeholder label="Testing rules" description="How to test"&gt;
 /// Use the project's default test runner.
 /// &lt;/zeeq_placeholder&gt;
 /// </code>
@@ -32,8 +32,8 @@ namespace Zeeq.Core.Documents;
 /// </description></item>
 /// <item><description>
 /// <see cref="Substitute" /> is the hot retrieval path, called on every <c>prompts/get</c>. It reads
-/// only <c>name</c>, keeps default values as ranges into the source, and allocates exactly one
-/// string — the result.
+/// only the placeholder key, keeps default values as ranges into the source, and allocates exactly
+/// one string — the result.
 /// </description></item>
 /// </list>
 /// </remarks>
@@ -116,7 +116,7 @@ public static partial class PromptPlaceholderParser
     /// without the caller pre-validating the document.
     ///
     /// Duplicate names are returned as-is rather than deduplicated, so the editing surface can show
-    /// the author that a name was reused; override lookup treats them as one key.
+    /// the author that a key was reused; override lookup treats them as one key.
     /// </remarks>
     /// <param name="content">Raw prompt document body.</param>
     /// <returns>Declared placeholders in document order; empty when none are present.</returns>
@@ -140,9 +140,10 @@ public static partial class PromptPlaceholderParser
             }
 
             var attributes = region[OpenTagPrefix.Length..openTagEnd];
-            if (!TryGetAttribute(attributes, "name", out var name) || name.IsEmpty)
+            var label = ReadLabel(attributes);
+            if (!TryResolvePlaceholderKey(attributes, label, out var name, out _))
             {
-                // A region without a usable name can never be overridden, so it is not an editable
+                // A region without a usable key can never be overridden, so it is not an editable
                 // placeholder. It still renders its default at retrieval time.
                 continue;
             }
@@ -152,10 +153,7 @@ public static partial class PromptPlaceholderParser
             placeholders.Add(
                 new PromptPlaceholder(
                     Name: name.ToString(),
-                    DisplayName: TryGetAttribute(attributes, "displayName", out var displayName)
-                    && !displayName.IsEmpty
-                        ? displayName.ToString()
-                        : null,
+                    Label: label.IsEmpty ? null : label.ToString(),
                     Description: TryGetAttribute(attributes, "description", out var description)
                     && !description.IsEmpty
                         ? description.ToString()
@@ -180,7 +178,7 @@ public static partial class PromptPlaceholderParser
     ///
     /// Allocation shape: the no-placeholder document returns the original instance; a substituting
     /// call allocates exactly one string. Default values are copied straight out of
-    /// <paramref name="content" /> as spans and are never materialized, and placeholder names probe
+    /// <paramref name="content" /> as spans and are never materialized, and placeholder keys probe
     /// <paramref name="overrides" /> through a span alternate lookup so no name string is created
     /// either.
     /// </remarks>
@@ -219,12 +217,11 @@ public static partial class PromptPlaceholderParser
                     continue;
                 }
 
-                if (
-                    !TryGetAttribute(region[OpenTagPrefix.Length..openTagEnd], "name", out var name)
-                    || name.IsEmpty
-                )
+                var attributes = region[OpenTagPrefix.Length..openTagEnd];
+                var label = ReadLabel(attributes);
+                if (!TryResolvePlaceholderKey(attributes, label, out var name, out var derivedName))
                 {
-                    // NOTE: Unnamed or malformed regions are not valid placeholders. Leave them
+                    // NOTE: Keyless or malformed regions are not valid placeholders. Leave them
                     // untouched so authoring mistakes remain visible instead of silently deleting
                     // markup around the body.
                     continue;
@@ -373,10 +370,9 @@ public static partial class PromptPlaceholderParser
     /// Reads one attribute value out of an opening tag's attribute region.
     /// </summary>
     /// <remarks>
-    /// This tokenizes whole <c>name="value"</c> pairs rather than searching for a substring, which is
-    /// a correctness requirement and not just a performance one: <c>displayName="…"</c> contains the
-    /// text <c>name=</c>, so an index scan would silently read the wrong attribute. Comparing complete
-    /// tokens also makes attribute order and omission free.
+    /// This tokenizes whole <c>name="value"</c> pairs rather than searching for a substring. Comparing
+    /// complete tokens makes attribute order and omission free and avoids matching attribute names
+    /// that merely contain the requested name as a suffix.
     ///
     /// Parsing stops at the first structural surprise (no <c>=</c>, an unquoted value, an unterminated
     /// quote) and reports failure rather than guessing.
@@ -429,6 +425,62 @@ public static partial class PromptPlaceholderParser
         value = default;
 
         return false;
+    }
+
+    /// <summary>
+    /// Reads the authored human label for a placeholder.
+    /// </summary>
+    private static ReadOnlySpan<char> ReadLabel(ReadOnlySpan<char> attributes)
+    {
+        return TryGetAttribute(attributes, "label", out var label) && !label.IsEmpty
+            ? label
+            : default;
+    }
+
+    /// <summary>
+    /// Resolves the stable override key for one placeholder region.
+    /// </summary>
+    /// <remarks>
+    /// Explicit <c>name</c> wins because it is the stable storage identity. When it is absent, the
+    /// key is derived from <c>label</c>, which makes the common authoring case concise while keeping
+    /// an escape hatch for labels that may be edited later.
+    /// </remarks>
+    private static bool TryResolvePlaceholderKey(
+        ReadOnlySpan<char> attributes,
+        ReadOnlySpan<char> label,
+        out ReadOnlySpan<char> name,
+        out string? derivedName
+    )
+    {
+        derivedName = null;
+        if (TryGetAttribute(attributes, "name", out var explicitName) && !explicitName.IsEmpty)
+        {
+            name = explicitName;
+
+            return true;
+        }
+
+        if (label.IsEmpty)
+        {
+            name = default;
+
+            return false;
+        }
+
+        var normalized = DocumentNormalizer.NormalizePromptName(label.ToString());
+        if (normalized.Length == 0)
+        {
+            name = default;
+
+            return false;
+        }
+
+        // Keep the normalized string explicitly rooted in the caller while its span is used for the
+        // dictionary probe. Explicit `name` values still stay allocation-free on the hot path.
+        derivedName = normalized;
+        name = derivedName.AsSpan();
+
+        return true;
     }
 
     /// <summary>

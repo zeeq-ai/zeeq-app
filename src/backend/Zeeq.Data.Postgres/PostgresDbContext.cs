@@ -1,9 +1,9 @@
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Carts;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Snippets;
 using Zeeq.Core.Models;
-using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore;
 
 namespace Zeeq.Data.Postgres;
 
@@ -138,7 +138,8 @@ public class PostgresDbContext(DbContextOptions<PostgresDbContext> options)
     /// <summary>
     /// PR-session link rows (many-to-many, non-partitioned).
     /// </summary>
-    public DbSet<AgentPullRequestSessionLink> AgentPullRequestSessionLinks => Set<AgentPullRequestSessionLink>();
+    public DbSet<AgentPullRequestSessionLink> AgentPullRequestSessionLinks =>
+        Set<AgentPullRequestSessionLink>();
 
     /// <summary>
     /// Organization execution capacity leases for running code reviews.

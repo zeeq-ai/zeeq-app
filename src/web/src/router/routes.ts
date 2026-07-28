@@ -35,6 +35,25 @@ export const routes: Array<RouteRecordRaw> = [
         meta: { title: "Memories" },
       },
       {
+        // Repository configuration reachable by any organization member, unlike
+        // Settings → GitHub which stays owner/admin-only for connect and enable.
+        path: "repositories",
+        name: "Repositories",
+        component: () => import("@/views/repositories/Repositories.vue"),
+        meta: { title: "Repositories" },
+      },
+      {
+        // Deep link to one repository. The repository id is already organization
+        // scoped, so unlike ManageAgents this needs no orgId segment.
+        path: "repositories/:repositoryId",
+        name: "Repository",
+        component: () => import("@/views/repositories/Repositories.vue"),
+        meta: { title: "Repositories" },
+        props: (route) => ({
+          repositoryId: (route.params.repositoryId as string) || undefined,
+        }),
+      },
+      {
         path: "code-reviews",
         component: () => import("@/views/code-reviews/CodeReviews.vue"),
         redirect: "/code-reviews/pull-requests",
