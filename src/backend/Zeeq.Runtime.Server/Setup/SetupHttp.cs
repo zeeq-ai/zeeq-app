@@ -1,6 +1,8 @@
+using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.ResponseCompression;
 
 namespace Zeeq.Runtime.Server.Setup;
 
@@ -90,6 +92,32 @@ internal static class HttpPipelineExtensions
                     }
                 )
             );
+
+            return services;
+        }
+
+        /// <summary>
+        /// Set up the reponse compression for the HTTP pipeline.  This is used to
+        /// compress responses for clients that support it.
+        /// See: https://learn.microsoft.com/en-us/aspnet/core/performance/response-compression
+        /// </summary>
+        public IServiceCollection AddZeeqResponseCompression()
+        {
+            services.AddResponseCompression(options =>
+            {
+                options.Providers.Add<GzipCompressionProvider>();
+                options.Providers.Add<BrotliCompressionProvider>();
+            });
+
+            services.Configure<BrotliCompressionProviderOptions>(options =>
+            {
+                options.Level = CompressionLevel.Optimal;
+            });
+
+            services.Configure<GzipCompressionProviderOptions>(options =>
+            {
+                options.Level = CompressionLevel.Optimal;
+            });
 
             return services;
         }

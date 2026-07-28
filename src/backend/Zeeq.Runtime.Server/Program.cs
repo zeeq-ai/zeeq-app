@@ -50,6 +50,7 @@ builder
 builder
     .Services.AddRequestDecompression()
     .AddExceptionHandler<ZeeqHttpExceptionHandler>()
+    .AddZeeqResponseCompression()
     .AddZeeqTelemetry()
     .AddZeeqOpenApiConfig()
     .AddZeeqJsonConfig()
@@ -104,6 +105,8 @@ var app = builder.Build();
 await app.Services.UseZeeqDataAsync(appSettings);
 
 await app.Services.SeedMcpIdentityAsync();
+
+app.UseResponseCompression();
 
 // Force eager creation of the cache schema and table.
 await app.Services.UseZeeqCacheAsync(appSettings);
