@@ -12,17 +12,30 @@
     >
       <div class="flex min-w-0 items-center gap-2">
         <h2 class="text-base font-semibold text-highlighted">Repositories</h2>
-        <UBadge :label="repositories.length" color="primary" variant="subtle" />
+        <UBadge :label="rows.length" color="primary" variant="subtle" />
       </div>
 
-      <UButton
-        label="Admin settings"
-        icon="i-hugeicons-settings-01"
-        color="neutral"
-        variant="subtle"
-        size="sm"
-        to="/settings/github"
-      />
+      <div class="flex shrink-0 items-center gap-2">
+        <UTabs
+          v-model="scope"
+          :items="scopeItems"
+          :content="false"
+          color="neutral"
+          variant="pill"
+          size="xs"
+          class="shrink-0"
+          :ui="compactTabsUi"
+        />
+
+        <UButton
+          label="Admin"
+          icon="i-hugeicons-settings-01"
+          color="neutral"
+          variant="subtle"
+          size="sm"
+          to="/settings/github"
+        />
+      </div>
     </div>
 
     <div v-if="loading" class="grid gap-2 p-4 sm:px-6">
@@ -43,6 +56,23 @@
           color="neutral"
           variant="subtle"
           to="/settings/github"
+        />
+      </template>
+    </UEmpty>
+
+    <UEmpty
+      v-else-if="rows.length === 0"
+      icon="i-hugeicons-github"
+      title="No enabled repositories"
+      description="Every configured repository is paused. Switch to All to configure a paused repository."
+      class="flex-1"
+    >
+      <template #actions>
+        <UButton
+          label="Show all"
+          color="neutral"
+          variant="subtle"
+          @click="scope = 'all'"
         />
       </template>
     </UEmpty>
@@ -85,6 +115,8 @@
 <script setup lang="ts">
 import type { GitHubConfiguredRepository } from "@/stores/github-settings-store";
 
+type RepositoryScope = "enabled" | "all";
+
 type RepositoryRow = {
   id: string;
   ownerQualifiedName: string;
@@ -103,26 +135,39 @@ const emits = defineEmits<{
 }>();
 
 /**
+ * View-only scope filter. Paused repositories stay reachable under "All"
+ * because they still participate in prompt customization — only their webhook
+ * reviews are stopped — but enabled ones are what users configure day to day.
+ */
+const scope = ref<RepositoryScope>("enabled");
+
+const scopeItems = [
+  { label: "Enabled", value: "enabled" },
+  { label: "All", value: "all" },
+];
+
+const compactTabsUi = {
+  list: "h-7 w-auto p-0.5",
+  trigger: "h-6 grow-0 px-2 py-0 text-xs",
+};
+
+/**
  * Projects mapping rows into exactly what the template renders, so the `v-for`
- * makes no method calls. Paused is surfaced because a paused repository still
- * participates in prompt customization — only its webhook reviews are stopped.
- *
- * NOTE: This intentionally renders the full configured-repository set without
- * local search/filter controls for now. Organization repository lists are small
- * enough that the extra UI state is not worth the complexity until usage shows
- * this panel needs it.
+ * makes no method calls.
  */
 const rows = computed<RepositoryRow[]>(() =>
-  props.repositories.map((repository) => ({
-    id: repository.id,
-    ownerQualifiedName: repository.ownerQualifiedName,
-    librarySummary:
-      repository.libraryIds.length === 0
-        ? "No libraries mapped"
-        : `${repository.libraryIds.length} ${repository.libraryIds.length === 1 ? "library" : "libraries"} mapped`,
-    status: repository.enabled
-      ? { label: "Enabled", color: "success" }
-      : { label: "Paused", color: "warning" },
-  })),
+  props.repositories
+    .filter((repository) => scope.value === "all" || repository.enabled)
+    .map((repository) => ({
+      id: repository.id,
+      ownerQualifiedName: repository.ownerQualifiedName,
+      librarySummary:
+        repository.libraryIds.length === 0
+          ? "No libraries mapped"
+          : `${repository.libraryIds.length} ${repository.libraryIds.length === 1 ? "library" : "libraries"} mapped`,
+      status: repository.enabled
+        ? { label: "Enabled", color: "success" }
+        : { label: "Paused", color: "warning" },
+    })),
 );
 </script>
