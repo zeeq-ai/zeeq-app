@@ -932,6 +932,281 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/integrations/github/repositories/{repositoryId}/libraries": {
+      "put": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Update repository library mapping.",
+        "description": "Replaces the set of libraries reviewer agents may query for this repository. Every\nother repository setting is left untouched, so this is available to any member of the\norganization rather than only owners and admins.\n\nRequires active membership in the route organization.",
+        "operationId": "UpdateRepositoryLibraries",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRepositoryLibrariesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubConfiguredRepositoryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubRepositoryManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubRepositoryManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/integrations/github/repositories/{repositoryId}/prompts": {
+      "get": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "List organization prompts for a repository.",
+        "description": "Returns every organization-scoped MCP prompt alongside whether this repository has\nactivated it and how many placeholder values it has saved. Prompt bodies and their\ndeclared placeholders are not included; fetch a single prompt for those.\n\nRequires active membership in the route organization.",
+        "operationId": "ListRepositoryPrompts",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RepositoryPromptSummaryResponse"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubRepositoryManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/integrations/github/repositories/{repositoryId}/prompts/{documentId}": {
+      "get": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Get a prompt's placeholders for a repository.",
+        "description": "Returns the placeholders declared by one organization prompt, each paired with this\nrepository's saved value when it has one. Placeholders are parsed from the live\nprompt body, so edits to the prompt are reflected immediately.\n\nRequires active membership in the route organization.",
+        "operationId": "GetRepositoryPrompt",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "libraryId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepositoryPromptDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubRepositoryManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubRepositoryManagementError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "GitHub"
+        ],
+        "summary": "Save a repository's prompt customization.",
+        "description": "Activates or deactivates one organization prompt for this repository and replaces its\nplaceholder values. Activation gates substitution: when inactive, agents retrieving\nthe prompt receive its authored defaults even though the saved values are retained.\n\nRequires active membership in the route organization.",
+        "operationId": "SaveRepositoryPrompt",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "documentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveRepositoryPromptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepositoryPromptDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubRepositoryManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubRepositoryManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/carts": {
       "get": {
         "tags": [
@@ -9087,6 +9362,58 @@
         ],
         "description": "Severity dimension for the findings drill-down list (the Critical/Major stat-card slideover)."
       },
+      "GitHubConfiguredRepositoryResponse": {
+        "required": [
+          "id",
+          "teamId",
+          "ownerQualifiedName",
+          "displayName",
+          "enabled",
+          "visibleInLibraryPicker",
+          "libraryIds",
+          "createdAtUtc",
+          "updatedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "teamId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ownerQualifiedName": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "visibleInLibraryPicker": {
+            "type": "boolean"
+          },
+          "libraryIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "Response for a repository already configured in Zeeq."
+      },
       "GitHubCreateRepositoryMappingRequest": {
         "required": [
           "ownerQualifiedName",
@@ -9132,6 +9459,18 @@
           }
         },
         "description": "Request to register a GitHub repository for Zeeq code review."
+      },
+      "GitHubRepositoryManagementError": {
+        "required": [
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "description": "Error response returned by GitHub repository management endpoints."
       },
       "GitHubUpdateRepositoryMappingRequest": {
         "required": [
@@ -10990,6 +11329,152 @@
         },
         "description": "Request body for renaming an existing tenant-owned LLM API key."
       },
+      "RepositoryPromptDetailResponse": {
+        "required": [
+          "documentId",
+          "libraryId",
+          "libraryName",
+          "path",
+          "title",
+          "description",
+          "active",
+          "placeholders"
+        ],
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "type": "string",
+            "description": "Stable identifier of the prompt document."
+          },
+          "libraryId": {
+            "type": "string",
+            "description": "Library that owns the prompt document."
+          },
+          "libraryName": {
+            "type": "string",
+            "description": "Human-readable library name."
+          },
+          "path": {
+            "type": "string",
+            "description": "Document path within the library."
+          },
+          "title": {
+            "type": "string",
+            "description": "Document title."
+          },
+          "description": {
+            "type": "string",
+            "description": "Prompt description, using the same precedence agents see."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Whether this repository's saved values are applied when an agent retrieves the prompt."
+          },
+          "placeholders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RepositoryPromptPlaceholderResponse"
+            },
+            "description": "Every placeholder the prompt currently declares, in document order, each carrying this\nrepository's saved value when one exists."
+          }
+        },
+        "description": "A single prompt with every placeholder it declares and this repository's saved values."
+      },
+      "RepositoryPromptPlaceholderResponse": {
+        "required": [
+          "name",
+          "label",
+          "description",
+          "defaultValue",
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Stable key a saved value is stored against. This comes from the prompt's explicit `name`\nattribute when present; otherwise it is derived from Label."
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Optional human-readable label. The UI falls back to Name when absent."
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Optional helper text explaining what the repository should supply."
+          },
+          "defaultValue": {
+            "type": "string",
+            "description": "Authored fallback used whenever Value is absent. Shown as placeholder text so\nthe user can see what they are overriding."
+          },
+          "value": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "This repository's override, or `null` when it has not customized this\nplaceholder. Null and empty string are meaningfully different: null falls back to the authored\ndefault, while empty string is an explicit \"render nothing here\"."
+          }
+        },
+        "description": "One placeholder declared by a prompt, paired with the repository's saved value."
+      },
+      "RepositoryPromptSummaryResponse": {
+        "required": [
+          "documentId",
+          "libraryId",
+          "libraryName",
+          "path",
+          "title",
+          "description",
+          "active",
+          "configuredValueCount"
+        ],
+        "type": "object",
+        "properties": {
+          "documentId": {
+            "type": "string",
+            "description": "Stable identifier of the prompt document. Combined with LibraryId this is the\nkey used to save configuration, and it is stable across prompt renames."
+          },
+          "libraryId": {
+            "type": "string",
+            "description": "Library that owns the prompt document."
+          },
+          "libraryName": {
+            "type": "string",
+            "description": "Human-readable library name, for grouping prompts in the UI."
+          },
+          "path": {
+            "type": "string",
+            "description": "Document path within the library, for example `/prompts/review-flow.md`."
+          },
+          "title": {
+            "type": "string",
+            "description": "Document title shown as the accordion label."
+          },
+          "description": {
+            "type": "string",
+            "description": "Prompt description using the same precedence agents see: manual skill description, then parsed\nfront matter, then the document title."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "Whether this repository's saved values are applied when an agent retrieves the prompt. Inactive\nprompts still render their authored defaults."
+          },
+          "configuredValueCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "How many placeholder values this repository has saved, so the UI can badge a row as customized\nwithout loading the prompt body.",
+            "format": "int32"
+          }
+        },
+        "description": "One organization prompt as seen from a repository's configuration surface."
+      },
       "ResetLibraryIngestRunStateResponse": {
         "required": [
           "syncStatus",
@@ -11453,6 +11938,36 @@
           }
         },
         "description": "Request body for saving organization LLM tier settings."
+      },
+      "SaveRepositoryPromptRequest": {
+        "required": [
+          "libraryId",
+          "active"
+        ],
+        "type": "object",
+        "properties": {
+          "libraryId": {
+            "maxLength": 128,
+            "pattern": ".*\\S.*",
+            "type": "string",
+            "description": "Library owning the prompt document. Part of the prompt's identity, so it is required even though\nthe document id appears in the route."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "`true` to apply this repository's values when an agent retrieves the prompt;\n        `false` to fall back to authored defaults while retaining the saved values."
+          },
+          "values": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Placeholder values keyed by declared name. Replaced wholesale, so send the complete set to\npersist; omitting a name falls back to that placeholder's authored default. A value may be at\nmost 8,000 characters, and at most 100 values may be stored for one prompt."
+          }
+        },
+        "description": "Request to activate a prompt for a repository and set its placeholder values."
       },
       "SetDocumentReviewExclusionRequest": {
         "required": [
@@ -12117,6 +12632,22 @@
           }
         },
         "description": "Request body for updating organization display details."
+      },
+      "UpdateRepositoryLibrariesRequest": {
+        "required": [
+          "libraryIds"
+        ],
+        "type": "object",
+        "properties": {
+          "libraryIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Complete set of library ids reviewer agents may query for this repository. Replaced wholesale;\nsend an empty array to unmap every library."
+          }
+        },
+        "description": "Request to replace only the library mapping for a repository."
       },
       "UpdateSameDomainOnboardingRequest": {
         "required": [

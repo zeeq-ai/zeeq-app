@@ -48,12 +48,7 @@
           >
             <div class="flex min-w-0 items-center gap-2">
               <h2 class="text-base font-semibold text-highlighted">Agents</h2>
-              <UBadge
-                :label="agents.length"
-                color="primary"
-                variant="subtle"
-                class="rounded-full"
-              />
+              <UBadge :label="agents.length" color="primary" variant="subtle" />
             </div>
           </div>
 

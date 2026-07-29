@@ -459,7 +459,15 @@ public sealed class DisableGitHubRepositoryMappingHandler(ICodeRepositoryStore r
     }
 }
 
-file static class GitHubRepositoryEndpointSupport
+/// <summary>
+/// Shared helpers for repository mapping endpoints.
+/// </summary>
+/// <remarks>
+/// Widened from <c>file</c> to <c>internal</c> scope because the repository prompt endpoints in
+/// <c>RepositoryPromptEndpointHandlers.cs</c> reuse the same library-id validation and response
+/// mapping; duplicating either would let the two surfaces drift apart.
+/// </remarks>
+internal static class GitHubRepositoryEndpointSupport
 {
     public const string Provider = "github";
 

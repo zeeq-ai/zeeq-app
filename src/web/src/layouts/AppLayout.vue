@@ -82,6 +82,7 @@ const sidebarDefaultStorage: DashboardSidebarStorage = {
 const sidebarOpen = ref(false);
 const appStore = useAppStore();
 const libraryStore = useLibraryStore();
+const route = useRoute();
 const { libraries } = storeToRefs(libraryStore);
 
 // Share Nuxt UI's resizable-sidebar storage object so the collapse toggle and
@@ -119,6 +120,7 @@ const navigationLinks = computed(() =>
     appStore.isSystemAdmin,
     closeSidebar,
     libraryNavigationItems.value,
+    route.path,
   ),
 );
 const commandGroups = computed(() =>

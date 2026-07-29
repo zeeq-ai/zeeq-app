@@ -40,6 +40,11 @@ const mainSection: AppNavigationSection = {
       icon: "i-hugeicons-hierarchy-files",
       to: "/libraries",
     },
+    {
+      label: "Repositories",
+      icon: "i-hugeicons-github",
+      to: "/repositories",
+    },
   ],
 };
 
@@ -128,17 +133,23 @@ export function buildAppNavigationLinks(
   isSystemAdmin: boolean,
   onSelect: () => void,
   libraries: AppNavigationLibrary[] = [],
+  currentPath = "",
 ): NavigationMenuItem[][] {
   const sections = getAppNavigationSections(isSystemAdmin);
+  // Libraries is swapped for an expandable variant listing each library; every
+  // other main item passes through in declared order. Slicing past index 1
+  // keeps items added after Libraries (Repositories, and anything later) from
+  // being silently dropped here while still appearing in the command palette.
   const mainItems = [
     mainSection.items[0],
     toLibrariesNavigationItem(libraries, onSelect),
+    ...mainSection.items.slice(2),
   ];
   const mainLinks: NavigationMenuItem[] = [
-    ...mainItems.map((item) => toNavigationItem(item, onSelect)),
+    ...mainItems.map((item) => toNavigationItem(item, onSelect, currentPath)),
     ...sections
       .filter((section) => section.id !== mainSection.id)
-      .map((section) => toNavigationSection(section, onSelect)),
+      .map((section) => toNavigationSection(section, onSelect, currentPath)),
   ];
 
   return [mainLinks, []];
@@ -162,25 +173,30 @@ export function buildAppCommandGroups(
 function toNavigationSection(
   section: AppNavigationSection,
   onSelect: () => void,
+  currentPath: string,
 ): NavigationMenuItem {
   return {
     label: section.label,
     icon: section.icon,
     defaultOpen: section.defaultOpen ?? false,
     type: "trigger",
-    children: section.items.map((item) => toNavigationItem(item, onSelect)),
+    children: section.items.map((item) =>
+      toNavigationItem(item, onSelect, currentPath),
+    ),
   };
 }
 
 function toNavigationItem(
   item: AppNavigationItem,
   onSelect: () => void,
+  currentPath: string,
 ): NavigationMenuItem {
   return {
     label: item.label,
     icon: item.icon,
     to: item.to,
     exact: item.to === "/",
+    active: isActiveRoute(item.to, currentPath),
     defaultOpen: item.defaultOpen,
     onSelect: item.onSelect ?? onSelect,
     children: item.children,
@@ -208,4 +224,21 @@ function toLibrariesNavigationItem(
 
 function libraryRoute(name: string) {
   return `/libraries/${encodeURIComponent(name)}`;
+}
+
+/**
+ * Nuxt UI's route matching does not always highlight parent rows for routed
+ * detail views. Compute the parent-prefix relationship explicitly for shell
+ * navigation while keeping Home exact.
+ */
+function isActiveRoute(to: string, currentPath: string): boolean {
+  if (!currentPath) {
+    return false;
+  }
+
+  if (to === "/") {
+    return currentPath === "/";
+  }
+
+  return currentPath === to || currentPath.startsWith(`${to}/`);
 }
