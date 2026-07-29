@@ -23,6 +23,7 @@ namespace Zeeq.Mcp;
 /// </remarks>
 internal sealed class DynamicPromptsService(
     ILibraryDocumentStore documentStore,
+    RepositoryPromptRenderer promptRenderer,
     IHttpContextAccessor httpContextAccessor,
     ILogger<DynamicPromptsService> logger
 ) : IDynamicPromptsService
@@ -220,6 +221,12 @@ internal sealed class DynamicPromptsService(
             ("library.name", document.LibraryName)
         );
 
+        // Placeholder regions are resolved against the calling repository (x-zeeq-prompts-repo) so a
+        // shared workflow prompt can carry repository-specific rules. This always runs: it is also
+        // what guarantees raw placeholder markup never reaches a client, including when there is no
+        // repository context at all.
+        var body = await promptRenderer.RenderAsync(document, cancellationToken);
+
         return new GetPromptResult
         {
             Description = Description(document),
@@ -228,7 +235,7 @@ internal sealed class DynamicPromptsService(
                 new()
                 {
                     Role = Role.User,
-                    Content = new TextContentBlock { Text = document.Content ?? string.Empty },
+                    Content = new TextContentBlock { Text = body },
                 },
             ],
         };

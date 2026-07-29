@@ -43,6 +43,35 @@ public interface ICodeRepositoryStore
     );
 
     /// <summary>
+    /// Finds a configured repository mapping by provider identity, including paused ones.
+    /// </summary>
+    /// <remarks>
+    /// This is deliberately looser than <see cref="FindActiveForOrganizationByProviderIdentityAsync"/>:
+    /// it accepts mappings where <see cref="Zeeq.Core.Models.CodeRepository.Enabled"/> is false.
+    ///
+    /// <see cref="Zeeq.Core.Models.CodeRepository.Enabled"/> gates <em>webhook-triggered review
+    /// work</em>. Non-webhook features that merely identify a repository must not inherit that gate,
+    /// the same way library-source visibility already does not. The concrete case is the MCP
+    /// <c>x-zeeq-prompts-repo</c> header: an agent working in a repository whose webhooks are paused
+    /// should still get that repository's prompt customization, because pausing reviews says nothing
+    /// about how prompts should render.
+    ///
+    /// Matching is case-insensitive because provider owner/name identity is case-insensitive and the
+    /// header value is client-supplied.
+    /// </remarks>
+    /// <param name="organizationId">Organization scope; the caller's tenant boundary.</param>
+    /// <param name="provider">External provider key, for example <c>github</c>.</param>
+    /// <param name="ownerQualifiedName">Provider-qualified name, for example <c>owner/repo</c>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The mapping, or <see langword="null"/> when the organization has no such repository.</returns>
+    Task<Zeeq.Core.Models.CodeRepository?> FindConfiguredForOrganizationByProviderIdentityAsync(
+        string organizationId,
+        string provider,
+        string ownerQualifiedName,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// Lists enabled repository mappings for an organization.
     /// </summary>
     /// <remarks>

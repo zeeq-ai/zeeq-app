@@ -966,7 +966,8 @@ internal sealed class PostgresLibraryDocumentStore(
                 document.ManualSkillDescription,
                 document.ParsedSkillDescription,
                 document.Metadata,
-                null
+                null,
+                document.UpdatedAt
             )
         ).ToArrayAsync(ct);
 
@@ -1064,7 +1065,8 @@ internal sealed class PostgresLibraryDocumentStore(
                 document.ManualSkillDescription,
                 document.ParsedSkillDescription,
                 document.Metadata,
-                document.Content
+                document.Content,
+                document.UpdatedAt
             )
         ).FirstOrDefaultAsync(ct);
 
@@ -1096,7 +1098,8 @@ internal sealed class PostgresLibraryDocumentStore(
                 document.ManualSkillDescription,
                 document.ParsedSkillDescription,
                 document.Metadata,
-                null
+                null,
+                document.UpdatedAt
             )
         )
             .Take(2)

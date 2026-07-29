@@ -23,6 +23,7 @@ public static class SetupMcpExtensions
         var name = environment.IsDevelopment() ? "Zeeq MCP (local dev)" : "Zeeq MCP";
 
         services
+            .AddScoped<RepositoryPromptRenderer>()
             .AddScoped<IDynamicPromptsService, DynamicPromptsService>()
             .AddZeeqCodeReviewMcp()
             .AddMcpServer(options =>
