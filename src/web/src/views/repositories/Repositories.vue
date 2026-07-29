@@ -136,7 +136,13 @@ async function load() {
         (repository) => repository.id === props.repositoryId,
       )
     : null;
-  const target = routed ?? repositories.value[0] ?? null;
+  // Falls back to the first enabled repository so the default selection matches
+  // the list's default "Enabled" scope instead of highlighting a hidden row.
+  const target =
+    routed ??
+    repositories.value.find((repository) => repository.enabled) ??
+    repositories.value[0] ??
+    null;
 
   if (target) {
     await selectAndLoad(target.id);
