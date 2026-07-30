@@ -168,6 +168,12 @@ public sealed record CodeReviewFindingsResponse(
 );
 
 /// <summary>
+/// The unparsed review artifact exactly as produced by the reviewer agents.
+/// </summary>
+/// <param name="Xml">Raw XML review artifact.</param>
+public sealed record CodeReviewRawFindingsResponse(string Xml);
+
+/// <summary>
 /// Findings and summary text emitted by one reviewer facet.
 /// </summary>
 /// <param name="Facet">Reviewer facet label, such as Security or Performance.</param>

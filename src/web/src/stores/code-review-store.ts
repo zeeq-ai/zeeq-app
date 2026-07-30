@@ -147,6 +147,9 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
   >({});
   const loadingReviewFindingsByReviewKey = ref<Record<string, boolean>>({});
   const reviewFindingsErrorsByReviewKey = ref<Record<string, string>>({});
+  const reviewRawXmlByReviewKey = ref<Record<string, string>>({});
+  const loadingReviewRawXmlByReviewKey = ref<Record<string, boolean>>({});
+  const reviewRawXmlErrorsByReviewKey = ref<Record<string, string>>({});
   const latestReviewUpdatesByPullRequestId = ref<
     Record<string, CodeReviewInboxUpdateDto>
   >({});
@@ -618,6 +621,47 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
       throw err;
     } finally {
       setReviewFindingsLoading(key, false);
+    }
+  }
+
+  /** Loads the raw, unparsed findings XML artifact for one review on demand. */
+  async function loadReviewRawXml(review: CodeReviewRecordDto) {
+    const key = reviewFindingsKey(review);
+
+    if (Object.hasOwn(reviewRawXmlByReviewKey.value, key)) {
+      return reviewRawXmlByReviewKey.value[key];
+    }
+
+    // Single-flight: a rapid re-open of the raw-XML panel before the first
+    // request resolves must not fire a second request for the same review.
+    if (loadingReviewRawXmlByReviewKey.value[key]) {
+      return;
+    }
+
+    const orgId = requireOrganizationId();
+    setReviewRawXmlLoading(key, true);
+    setReviewRawXmlError(key, null);
+
+    try {
+      const response = await CodeReviews.getCodeReviewRawFindings(
+        review.id,
+        orgId,
+        {
+          createdAtUtc: review.createdAtUtc,
+        },
+      );
+      reviewRawXmlByReviewKey.value = {
+        ...reviewRawXmlByReviewKey.value,
+        [key]: response.xml,
+      };
+
+      return response.xml;
+    } catch (err: unknown) {
+      const message = errorMessage(err, "Could not load raw review findings.");
+      setReviewRawXmlError(key, message);
+      throw err;
+    } finally {
+      setReviewRawXmlLoading(key, false);
     }
   }
 
@@ -1391,6 +1435,9 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     reviewFindingsByReviewKey.value = {};
     loadingReviewFindingsByReviewKey.value = {};
     reviewFindingsErrorsByReviewKey.value = {};
+    reviewRawXmlByReviewKey.value = {};
+    loadingReviewRawXmlByReviewKey.value = {};
+    reviewRawXmlErrorsByReviewKey.value = {};
   }
 
   function setReviewFindingsLoading(reviewKey: string, loading: boolean) {
@@ -1410,6 +1457,25 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     }
 
     reviewFindingsErrorsByReviewKey.value = nextErrors;
+  }
+
+  function setReviewRawXmlLoading(reviewKey: string, loading: boolean) {
+    loadingReviewRawXmlByReviewKey.value = {
+      ...loadingReviewRawXmlByReviewKey.value,
+      [reviewKey]: loading,
+    };
+  }
+
+  function setReviewRawXmlError(reviewKey: string, message: string | null) {
+    const nextErrors = { ...reviewRawXmlErrorsByReviewKey.value };
+
+    if (message) {
+      nextErrors[reviewKey] = message;
+    } else {
+      delete nextErrors[reviewKey];
+    }
+
+    reviewRawXmlErrorsByReviewKey.value = nextErrors;
   }
 
   function upsertAgent(agent: CodeReviewerAgentDto) {
@@ -1451,6 +1517,9 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     reviewFindingsByReviewKey,
     loadingReviewFindingsByReviewKey,
     reviewFindingsErrorsByReviewKey,
+    reviewRawXmlByReviewKey,
+    loadingReviewRawXmlByReviewKey,
+    reviewRawXmlErrorsByReviewKey,
     latestReviewUpdatesByPullRequestId,
     pullRequestUiStateById,
     repositoryConfiguration,
@@ -1497,6 +1566,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     selectPullRequest,
     requestReview,
     loadReviewFindings,
+    loadReviewRawXml,
     pollPullRequestUpdates,
     pollInboxUpdates,
     pollSinglePullRequestReviews,

@@ -211,6 +211,34 @@ public sealed class CodeReviewEndpoints : IEndpoint
                 """
             );
 
+        // GET /api/v1/orgs/{orgId}/code-reviews/reviews/{codeReviewRecordId}/raw
+        group
+            .MapGet(
+                "/reviews/{codeReviewRecordId}/raw",
+                static (
+                    string codeReviewRecordId,
+                    string orgId,
+                    [FromQuery] DateTimeOffset? createdAtUtc,
+                    ClaimsPrincipal user,
+                    [FromServices] GetCodeReviewRawFindingsHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, codeReviewRecordId, createdAtUtc, user, ct)
+            )
+            .WithName("GetCodeReviewRawFindings")
+            .Produces<CodeReviewRawFindingsResponse>()
+            .Produces<CodeReviewEndpointError>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("Get the raw review findings artifact.")
+            .WithDescription(
+                """
+                Returns the unparsed XML findings artifact produced by a single review run,
+                identified by `codeReviewRecordId` within the route `orgId`. Unlike
+                `GetCodeReviewFindings`, this always opens artifact storage when a URI is present.
+
+                Pass `createdAtUtc` to locate the record's partition directly.
+                """
+            );
+
         // GET /api/v1/orgs/{orgId}/code-reviews/reviews/{codeReviewRecordId}
         group
             .MapGet(

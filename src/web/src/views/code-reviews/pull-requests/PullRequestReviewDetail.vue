@@ -118,8 +118,12 @@
           :review-findings-by-review-key
           :loading-review-findings-by-review-key
           :review-findings-errors-by-review-key
+          :review-raw-xml-by-review-key
+          :loading-review-raw-xml-by-review-key
+          :review-raw-xml-errors-by-review-key
           :cart-content-hashes
           @load-review-findings="emits('loadReviewFindings', $event)"
+          @load-raw-xml="emits('loadRawXml', $event)"
           @toggle-cart="
             (finding, reviewer, review, annotation) =>
               emits('toggleCart', finding, reviewer, review, annotation)
@@ -150,6 +154,9 @@ defineProps<{
   reviewFindingsByReviewKey: Record<string, CodeReviewFindingsResponse>;
   loadingReviewFindingsByReviewKey: Record<string, boolean>;
   reviewFindingsErrorsByReviewKey: Record<string, string>;
+  reviewRawXmlByReviewKey: Record<string, string>;
+  loadingReviewRawXmlByReviewKey: Record<string, boolean>;
+  reviewRawXmlErrorsByReviewKey: Record<string, string>;
   loading: boolean;
   requestingReviewId: string | null;
   showClose?: boolean;
@@ -164,6 +171,7 @@ const bypassing = defineModel<boolean>("bypassing", { default: false });
 const emits = defineEmits<{
   requestReview: [pullRequest: CodeReviewPullRequestDto];
   loadReviewFindings: [review: CodeReviewRecordDto];
+  loadRawXml: [review: CodeReviewRecordDto];
   close: [];
   bypassCheck: [pullRequest: CodeReviewPullRequestDto];
   toggleCart: [

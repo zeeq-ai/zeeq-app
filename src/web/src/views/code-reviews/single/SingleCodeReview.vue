@@ -117,8 +117,12 @@
             :review-findings-by-review-key
             :loading-review-findings-by-review-key
             :review-findings-errors-by-review-key
+            :review-raw-xml-by-review-key
+            :loading-review-raw-xml-by-review-key
+            :review-raw-xml-errors-by-review-key
             :cart-content-hashes
             @load-review-findings="handleLoadReviewFindings"
+            @load-raw-xml="handleLoadRawXml"
             @toggle-cart="
               (finding, reviewer, review, annotation) =>
                 handleToggleCart(finding, reviewer, review, annotation)
@@ -162,6 +166,9 @@ const {
   reviewFindingsByReviewKey,
   loadingReviewFindingsByReviewKey,
   reviewFindingsErrorsByReviewKey,
+  reviewRawXmlByReviewKey,
+  loadingReviewRawXmlByReviewKey,
+  reviewRawXmlErrorsByReviewKey,
   error,
 } = storeToRefs(codeReviewStore);
 
@@ -184,6 +191,10 @@ onMounted(async () => {
 
 async function handleLoadReviewFindings(review: CodeReviewRecordDto) {
   await codeReviewStore.loadReviewFindings(review);
+}
+
+async function handleLoadRawXml(review: CodeReviewRecordDto) {
+  await codeReviewStore.loadReviewRawXml(review);
 }
 
 const toast = useToast();

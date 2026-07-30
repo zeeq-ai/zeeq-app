@@ -111,18 +111,15 @@ app.UseResponseCompression();
 // Force eager creation of the cache schema and table.
 await app.Services.UseZeeqCacheAsync(appSettings);
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-    app.MapScalarApiReference(
-        "/scalar",
-        options =>
-        {
-            options.WithTitle("Zeeq API Reference");
-        }
-    );
-}
+// Configure the HTTP request pipeline; serve the OpenAPI schema and Scalar UI
+app.MapOpenApi();
+app.MapScalarApiReference(
+    "/scalar",
+    options =>
+    {
+        options.WithTitle("Zeeq API Reference");
+    }
+);
 
 app.UseForwardedHeaders();
 app.UseRequestDecompression();
