@@ -53,11 +53,37 @@ public sealed class CodeReviewFindingsEndpointHandlerTests
     }
 
     [Test]
-    public async Task GetCodeReviewFindings_WithZeroFindings_DoesNotOpenArtifact()
+    public async Task GetCodeReviewFindings_WithZeroFindings_StillParsesArtifactForReviewerSummary()
     {
+        // A clean review (zero aggregate findings) can still have an artifact whose reviewer
+        // facets carry a non-empty summary/details narrative — that must not be discarded.
         var fixture = Fixture.Create();
         fixture.CodeReviews.Record.FindingsStorageUri = fixture.Artifacts.StorageUri;
-        fixture.Artifacts.StoredXml = ReviewXml();
+        fixture.Artifacts.StoredXml = CleanReviewXml();
+
+        var result = await fixture.Handler.HandleAsync(
+            "org_123",
+            fixture.CodeReviews.Record.Id,
+            fixture.CodeReviews.Record.CreatedAtUtc,
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<CodeReviewFindingsResponse>;
+        var reviewer = ok!.Value!.Reviews.Single();
+
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(ok.Value.NoAgentsActivated).IsFalse();
+        await Assert.That(reviewer.Summary).IsEqualTo("Looks good overall.");
+        await Assert.That(reviewer.Details).IsEqualTo("No issues found in this pass.");
+        await Assert.That(reviewer.Findings).IsEmpty();
+        await Assert.That(fixture.Artifacts.OpenCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task GetCodeReviewFindings_WithZeroFindingsAndNoArtifact_ReturnsEmptyWithoutOpeningStorage()
+    {
+        var fixture = Fixture.Create();
 
         var result = await fixture.Handler.HandleAsync(
             "org_123",
@@ -72,6 +98,30 @@ public sealed class CodeReviewFindingsEndpointHandlerTests
         await Assert.That(ok).IsNotNull();
         await Assert.That(ok!.Value!.Reviews).IsEmpty();
         await Assert.That(ok.Value.NoAgentsActivated).IsFalse();
+        await Assert.That(fixture.Artifacts.OpenCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task GetCodeReviewFindings_WithFindingsButNoArtifact_ReturnsBadRequest()
+    {
+        // A record that claims non-zero aggregate findings but has no artifact is a
+        // data-integrity problem, not a clean review — it must not be silently reported
+        // as an empty success.
+        var fixture = Fixture.Create();
+        fixture.CodeReviews.Record.MajorFindings = 2;
+
+        var result = await fixture.Handler.HandleAsync(
+            "org_123",
+            fixture.CodeReviews.Record.Id,
+            fixture.CodeReviews.Record.CreatedAtUtc,
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var badRequest = result.Result as BadRequest<CodeReviewEndpointError>;
+
+        await Assert.That(badRequest).IsNotNull();
+        await Assert.That(badRequest!.Value!.Code).IsEqualTo("missing_findings_artifact");
         await Assert.That(fixture.Artifacts.OpenCount).IsEqualTo(0);
     }
 
@@ -229,6 +279,18 @@ public sealed class CodeReviewFindingsEndpointHandlerTests
                 <details>Security details</details>
                 <findings>
                   <finding level="CRITICAL" summary="Critical issue" file="src/App.cs" line="42" side="RIGHT"><![CDATA[Critical body]]></finding>
+                </findings>
+              </review>
+            </reviews>
+            """;
+
+    private static string CleanReviewXml() =>
+        """
+            <reviews noAgentsActivated="false">
+              <review facet="Security" agent="Security Reviewer">
+                <summary>Looks good overall.</summary>
+                <details>No issues found in this pass.</details>
+                <findings>
                 </findings>
               </review>
             </reviews>

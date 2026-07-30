@@ -17,9 +17,12 @@ public sealed class GetCodeReviewFindingsHandler(
     /// </summary>
     /// <remarks>
     /// Review rows are partitioned by creation timestamp, so callers must provide
-    /// <paramref name="createdAtUtc" />. Reviews with zero aggregate findings
-    /// intentionally return an empty payload without opening artifact storage;
-    /// the frontend uses the same rule to avoid loading clean review artifacts.
+    /// <paramref name="createdAtUtc" />. A review with an artifact is always parsed, even with
+    /// zero aggregate findings, because reviewer facets can carry a non-empty summary/details
+    /// narrative on an otherwise clean review. A review genuinely has no artifact when zero
+    /// findings were ever claimed (e.g. no agents activated); a missing artifact on a record
+    /// that claims non-zero findings is a data-integrity problem, not a clean review, and still
+    /// surfaces as a 400 instead of silently reporting empty findings.
     /// </remarks>
     public async Task<
         Results<NotFound, BadRequest<CodeReviewEndpointError>, Ok<CodeReviewFindingsResponse>>
@@ -69,20 +72,20 @@ public sealed class GetCodeReviewFindingsHandler(
             review.SourceTelemetryPayload
         );
 
-        if (TotalFindings(review) == 0)
-        {
-            return TypedResults.Ok(
-                CodeReviewEndpointMapping.ToEmptyFindingsDto(review, sourceTelemetry)
-            );
-        }
-
         if (string.IsNullOrWhiteSpace(review.FindingsStorageUri))
         {
-            return TypedResults.BadRequest(
-                new CodeReviewEndpointError(
-                    "missing_findings_artifact",
-                    "Code review findings cannot be loaded because the review has no findings artifact."
-                )
+            if (TotalFindings(review) > 0)
+            {
+                return TypedResults.BadRequest(
+                    new CodeReviewEndpointError(
+                        "missing_findings_artifact",
+                        "Code review findings cannot be loaded because the review has no findings artifact."
+                    )
+                );
+            }
+
+            return TypedResults.Ok(
+                CodeReviewEndpointMapping.ToEmptyFindingsDto(review, sourceTelemetry)
             );
         }
 

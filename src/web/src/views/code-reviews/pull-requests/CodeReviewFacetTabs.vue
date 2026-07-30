@@ -12,23 +12,19 @@
     variant="subtle"
   />
 
-  <!-- Shows the clean completed state when there are no findings to review. -->
+  <!-- Shows the pending state before findings are available from the review artifact.
+       A completed review always falls through to the tabs below instead, even with zero
+       findings and no telemetry, so the Summary tab (raw XML, reviewer summaries) stays reachable.
+       NOTE: the `status !== Completed` check is intentional, not inverted. The old condition had
+       no status check at all, so it also fired for completed clean reviews — hiding the tabs
+       entirely for exactly the case this fix targets. Completed reviews (any finding count) must
+       always reach the tabs block below; only Pending/Running/Cancelled land here. -->
   <UAlert
     v-else-if="
       !hasSourceTelemetryContent &&
-      review.status === codeReviewStatusEnum.Completed &&
+      review.status !== codeReviewStatusEnum.Completed &&
       totalFindings(review) === 0
     "
-    title="No findings"
-    description="This review completed cleanly with no critical, major, minor, suggestion, or comment findings."
-    icon="i-hugeicons-checkmark-circle-02"
-    color="success"
-    variant="subtle"
-  />
-
-  <!-- Shows the pending state before findings are available from the review artifact. -->
-  <UAlert
-    v-else-if="!hasSourceTelemetryContent && totalFindings(review) === 0"
     title="Review pending"
     :description="`This code review is ${review.status.toLowerCase()}; findings will appear after it completes.`"
     icon="i-hugeicons-clock-01"
@@ -60,7 +56,7 @@
       "
       class="mb-4 flex items-center gap-2 rounded-md bg-success/10 px-4 py-2"
     >
-      {{ celebrationEmoji }} LGTM
+      {{ celebration.emoji }} {{ celebration.phrase }}
     </div>
 
     <UTabs
@@ -107,7 +103,9 @@
             />
           </div>
           <CodeReviewSummaryAccordion :reviews="findings?.reviews ?? []" />
-          <CodeReviewSourceTelemetryAccordion :source-telemetry="sourceTelemetry" />
+          <CodeReviewSourceTelemetryAccordion
+            :source-telemetry="sourceTelemetry"
+          />
         </div>
 
         <!-- Shows an empty severity bucket with the count and explanatory description. -->
@@ -300,7 +298,9 @@
           <UTooltip text="Copy raw XML" :delayDuration="0">
             <UButton
               :icon="
-                rawXmlCopied ? 'i-hugeicons-checkmark-circle-02' : 'i-hugeicons-copy-01'
+                rawXmlCopied
+                  ? 'i-hugeicons-checkmark-circle-02'
+                  : 'i-hugeicons-copy-01'
               "
               aria-label="Copy raw XML"
               color="neutral"
@@ -590,12 +590,15 @@ const items = computed<SeverityItem[]>(() => {
   return [
     ...severityItems,
     {
+      // Always enabled: even with no reviewer summaries and no source telemetry, the raw
+      // XML artifact is still viewable here (see GetCodeReviewRawFindingsHandler, which
+      // fetches unconditionally regardless of finding count).
       label: "Summary",
       value: sourcesTabValue,
       level: codeReviewFindingLevelEnum.Critical,
       count: 0,
       color: "neutral",
-      disabled: !hasSummaryContent.value && !hasSourceTelemetryContent.value,
+      disabled: false,
       description: "",
     },
   ];
@@ -626,15 +629,19 @@ const hasSourceTelemetryContent = computed(
   () => sourceTelemetrySectionCount.value > 0,
 );
 
-const hasSummaryContent = computed(() =>
-  (props.findings?.reviews ?? []).some(
-    (reviewer) => reviewer.summary || reviewer.details,
-  ),
-);
+/** Emoji + fun phrase pairs for the completed-review banner. */
+const celebrations = [
+  { emoji: "🎉", phrase: "Let's gooo!" },
+  { emoji: "🚢", phrase: "Say no more; ship it!" },
+  { emoji: "🚀", phrase: "LGTM!" },
+  { emoji: "✨", phrase: "That's sparkly!" },
+  { emoji: "💯", phrase: "No notes!" },
+  { emoji: "🏆", phrase: "Certified W!" },
+];
 
-/** Picks a random celebration emoji for the completed-review banner. */
-const celebrationEmoji = ref(
-  ["🎉", "🥳", "🚀", "✨", "💯", "🏆"][Math.floor(Math.random() * 6)],
+/** Picks a random celebration for the completed-review banner. */
+const celebration = ref(
+  celebrations[Math.floor(Math.random() * celebrations.length)],
 );
 
 /**
