@@ -146,20 +146,21 @@ function handleOpenReviewChange(value: string | string[] | undefined) {
 }
 
 /**
- * Emits a request to load detailed findings for the given review. Loads when the
- * review has findings to hydrate OR source telemetry to show, and there is an
- * artifact or telemetry payload to fetch. Skips reviews already loaded/loading.
+ * Emits a request to load detailed findings for the given review whenever there's an
+ * artifact to parse OR source telemetry to show. Fetches regardless of aggregate finding
+ * count: a clean review's artifact can still carry non-empty reviewer summary/details
+ * text, and the backend's empty-artifact response still includes telemetry read straight
+ * off the review record. Skips reviews with neither, or already loaded/loading.
  *
  * @param reviewId - The ID of the review whose findings should be loaded.
  */
 function loadFindingsForOpenReview(reviewId: string) {
   const item = accordionItems.value.find((item) => item.value === reviewId);
 
-  if (!item || (item.totalFindings === 0 && !item.review.hasSourceTelemetry)) {
-    return;
-  }
-
-  if (!item.review.findingsStorageUri && !item.review.hasSourceTelemetry) {
+  if (
+    !item ||
+    (!item.review.findingsStorageUri && !item.review.hasSourceTelemetry)
+  ) {
     return;
   }
 

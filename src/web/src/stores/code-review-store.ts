@@ -579,24 +579,6 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
       return reviewFindingsByReviewKey.value[key];
     }
 
-    // Fetch when there is anything to show (findings OR source telemetry). A clean
-    // review that still consulted docs must hydrate so the sources panel can render.
-    if (totalFindings(review) === 0 && !review.hasSourceTelemetry) {
-      const emptyFindings: CodeReviewFindingsResponse = {
-        codeReviewRecordId: review.id,
-        codeReviewCreatedAtUtc: review.createdAtUtc,
-        noAgentsActivated: false,
-        reviews: [],
-        sourceTelemetry: null,
-      };
-      reviewFindingsByReviewKey.value = {
-        ...reviewFindingsByReviewKey.value,
-        [key]: emptyFindings,
-      };
-
-      return emptyFindings;
-    }
-
     const orgId = requireOrganizationId();
     setReviewFindingsLoading(key, true);
     setReviewFindingsError(key, null);
@@ -1712,16 +1694,6 @@ function agentFormToRequest(
   };
 }
 
-function totalFindings(review: CodeReviewRecordDto): number {
-  return (
-    toNumber(review.criticalFindings) +
-    toNumber(review.majorFindings) +
-    toNumber(review.minorFindings) +
-    toNumber(review.suggestionFindings) +
-    toNumber(review.commentFindings)
-  );
-}
-
 function sortPullRequests(
   pullRequests: CodeReviewPullRequestDto[],
 ): CodeReviewPullRequestDto[] {
@@ -1764,10 +1736,6 @@ function isPullRequestRowUpdated(
     new Date(current.updatedAtUtc).getTime() >
     new Date(previous.updatedAtUtc).getTime()
   );
-}
-
-function toNumber(value: number | string): number {
-  return typeof value === "number" ? value : Number(value) || 0;
 }
 
 function errorMessage(err: unknown, fallback: string): string {
