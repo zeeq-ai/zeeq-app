@@ -1810,6 +1810,67 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/code-reviews/reviews/{codeReviewRecordId}/raw": {
+      "get": {
+        "tags": [
+          "Code Reviews"
+        ],
+        "summary": "Get the raw review findings artifact.",
+        "description": "Returns the unparsed XML findings artifact produced by a single review run,\nidentified by `codeReviewRecordId` within the route `orgId`. Unlike\n`GetCodeReviewFindings`, this always opens artifact storage when a URI is present.\n\nPass `createdAtUtc` to locate the record's partition directly.",
+        "operationId": "GetCodeReviewRawFindings",
+        "parameters": [
+          {
+            "name": "codeReviewRecordId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "createdAtUtc",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "404": {
+            "description": "Not Found"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewRawFindingsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/code-reviews/reviews/{codeReviewRecordId}": {
       "get": {
         "tags": [
@@ -7955,6 +8016,19 @@
           }
         },
         "description": "Response for one selected pull request's review history."
+      },
+      "CodeReviewRawFindingsResponse": {
+        "required": [
+          "xml"
+        ],
+        "type": "object",
+        "properties": {
+          "xml": {
+            "type": "string",
+            "description": "Raw XML review artifact."
+          }
+        },
+        "description": "The unparsed review artifact exactly as produced by the reviewer agents."
       },
       "CodeReviewRecordDto": {
         "required": [

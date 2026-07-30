@@ -95,10 +95,20 @@
 
       <!-- Renders the selected severity tab content for its reviewer findings bucket. -->
       <template #content="{ item }">
-        <CodeReviewSourceTelemetryAccordion
-          v-if="item.value === sourcesTabValue"
-          :source-telemetry="sourceTelemetry"
-        />
+        <div v-if="item.value === sourcesTabValue" class="grid gap-4">
+          <div class="flex justify-end">
+            <UButton
+              label="View raw XML"
+              icon="i-hugeicons-xml-02"
+              color="neutral"
+              variant="outline"
+              size="sm"
+              @click="openRawXml"
+            />
+          </div>
+          <CodeReviewSummaryAccordion :reviews="findings?.reviews ?? []" />
+          <CodeReviewSourceTelemetryAccordion :source-telemetry="sourceTelemetry" />
+        </div>
 
         <!-- Shows an empty severity bucket with the count and explanatory description. -->
         <div
@@ -206,26 +216,6 @@
             >
               <template #content>
                 <div class="grid gap-3">
-                  <!-- TODO: Refactor this into a separate "By reviewer" view because it's confusing in this view
-                <div
-                  v-if="section.reviewer.summary || section.reviewer.details"
-                  class="grid gap-1 text-sm"
-                >
-                  <Comark
-                    v-if="section.reviewer.summary"
-                    :markdown="section.reviewer.summary"
-                    :plugins="markdownPlugins"
-                    class="code-review-markdown-body text-default"
-                  />
-                  <Comark
-                    v-if="section.reviewer.details"
-                    :markdown="section.reviewer.details"
-                    :plugins="markdownPlugins"
-                    class="code-review-markdown-body text-muted"
-                  />
-                </div>
-                -->
-
                   <!-- Renders every finding card for this reviewer within the selected severity. -->
                   <div class="grid gap-3">
                     <article
@@ -295,6 +285,75 @@
       </template>
     </UTabs>
   </div>
+
+  <!-- Side panel showing the raw, unparsed XML artifact behind this review's findings. -->
+  <USlideover v-model:open="rawXmlOpen" :ui="{ content: 'max-w-2xl' }">
+    <template #header="{ close }">
+      <div class="flex w-full min-w-0 items-center justify-between gap-2">
+        <div class="flex min-w-0 items-center gap-2">
+          <UIcon name="i-hugeicons-xml-02" class="size-5 shrink-0 text-muted" />
+          <h2 class="truncate text-base font-semibold text-highlighted">
+            Raw review XML
+          </h2>
+        </div>
+        <div class="flex shrink-0 items-center gap-1">
+          <UTooltip text="Copy raw XML" :delayDuration="0">
+            <UButton
+              :icon="
+                rawXmlCopied ? 'i-hugeicons-checkmark-circle-02' : 'i-hugeicons-copy-01'
+              "
+              aria-label="Copy raw XML"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              square
+              @click="copyRawXml(rawXml ?? '')"
+            />
+          </UTooltip>
+          <UButton
+            icon="i-hugeicons-cancel-01"
+            aria-label="Close"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            square
+            @click="close"
+          />
+        </div>
+      </div>
+    </template>
+
+    <template #body>
+      <div v-if="loadingRawXml" class="grid gap-3">
+        <USkeleton v-for="index in 6" :key="index" class="h-5 rounded-md" />
+      </div>
+
+      <UAlert
+        v-else-if="rawXmlError"
+        title="Could not load raw XML"
+        :description="rawXmlError"
+        icon="i-hugeicons-alert-02"
+        color="error"
+        variant="subtle"
+      />
+
+      <UAlert
+        v-else-if="rawXml === ''"
+        title="Empty artifact"
+        description="This review has no raw findings artifact content to display."
+        icon="i-hugeicons-information-circle"
+        color="neutral"
+        variant="subtle"
+      />
+
+      <Comark
+        v-else-if="rawXml !== null"
+        :markdown="rawXmlMarkdown"
+        :plugins="markdownPlugins"
+        class="code-review-markdown-body text-sm text-default"
+      />
+    </template>
+  </USlideover>
 </template>
 
 <script setup lang="ts">
@@ -315,6 +374,7 @@ import { computeFindingContentHash } from "@/composables/useFindingContentHash";
 import { useCodeHighlight } from "@/composables/useCodeHighlight";
 import { buildSourceTelemetryAccordionItems } from "../shared/source-telemetry-view-models";
 import CodeReviewSourceTelemetryAccordion from "../shared/CodeReviewSourceTelemetryAccordion.vue";
+import CodeReviewSummaryAccordion from "../shared/CodeReviewSummaryAccordion.vue";
 
 type SeverityItem = {
   label: string;
@@ -342,6 +402,9 @@ const props = defineProps<{
   loading: boolean;
   error: string | null;
   cartContentHashes: Set<string>;
+  rawXml: string | null;
+  loadingRawXml: boolean;
+  rawXmlError: string | null;
 }>();
 
 const emits = defineEmits<{
@@ -351,7 +414,29 @@ const emits = defineEmits<{
     review: CodeReviewRecordDto,
     annotation: string | null,
   ];
+  loadRawXml: [review: CodeReviewRecordDto];
 }>();
+
+/** Controls the raw-XML side panel; opening lazily requests the artifact once. */
+const rawXmlOpen = ref(false);
+
+const rawXmlMarkdown = computed(() =>
+  toFencedMarkdown(props.rawXml ?? "", "xml"),
+);
+
+/** Independent clipboard instance so copying the raw XML doesn't affect reviewer-section copy state. */
+const { copied: rawXmlCopied, copy: copyRawXml } = useClipboard({
+  copiedDuring: 1500,
+  legacy: true,
+});
+
+function openRawXml() {
+  rawXmlOpen.value = true;
+
+  if (props.rawXml === null && !props.loadingRawXml) {
+    emits("loadRawXml", props.review);
+  }
+}
 
 /** Tracks controlled UCollapsible state per severity/reviewer section. */
 const reviewerSectionOpenByKey = ref<Record<string, boolean>>({});
@@ -505,12 +590,12 @@ const items = computed<SeverityItem[]>(() => {
   return [
     ...severityItems,
     {
-      label: "Sources",
+      label: "Summary",
       value: sourcesTabValue,
       level: codeReviewFindingLevelEnum.Critical,
       count: 0,
       color: "neutral",
-      disabled: !hasSourceTelemetryContent.value,
+      disabled: !hasSummaryContent.value && !hasSourceTelemetryContent.value,
       description: "",
     },
   ];
@@ -539,6 +624,12 @@ const sourceTelemetrySectionCount = computed(
 
 const hasSourceTelemetryContent = computed(
   () => sourceTelemetrySectionCount.value > 0,
+);
+
+const hasSummaryContent = computed(() =>
+  (props.findings?.reviews ?? []).some(
+    (reviewer) => reviewer.summary || reviewer.details,
+  ),
 );
 
 /** Picks a random celebration emoji for the completed-review banner. */
@@ -584,7 +675,8 @@ watch(
  * Adds Comark syntax highlighting for reviewer markdown bodies while keeping
  * the rendered code block styling controlled by this component.
  */
-const { codeHighlightPlugins: markdownPlugins } = useCodeHighlight();
+const { codeHighlightPlugins: markdownPlugins, toFencedMarkdown } =
+  useCodeHighlight();
 
 /**
  * Returns the finding count for a severity, preferring hydrated artifact data

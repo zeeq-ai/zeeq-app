@@ -60,10 +60,14 @@
         :loading="item.loadingFindings"
         :error="item.findingsError"
         :cart-content-hashes="cartContentHashes"
+        :raw-xml="item.rawXml"
+        :loading-raw-xml="item.loadingRawXml"
+        :raw-xml-error="item.rawXmlError"
         @toggle-cart="
           (finding, reviewer, review, annotation) =>
             emits('toggleCart', finding, reviewer, review, annotation)
         "
+        @load-raw-xml="emits('loadRawXml', $event)"
       />
     </template>
   </UAccordion>
@@ -93,6 +97,9 @@ type CodeReviewAccordionItemViewModel = {
   findings: CodeReviewFindingsResponse | null;
   loadingFindings: boolean;
   findingsError: string | null;
+  rawXml: string | null;
+  loadingRawXml: boolean;
+  rawXmlError: string | null;
 };
 
 const props = defineProps<{
@@ -100,11 +107,15 @@ const props = defineProps<{
   reviewFindingsByReviewKey: Record<string, CodeReviewFindingsResponse>;
   loadingReviewFindingsByReviewKey: Record<string, boolean>;
   reviewFindingsErrorsByReviewKey: Record<string, string>;
+  reviewRawXmlByReviewKey: Record<string, string>;
+  loadingReviewRawXmlByReviewKey: Record<string, boolean>;
+  reviewRawXmlErrorsByReviewKey: Record<string, string>;
   cartContentHashes: Set<string>;
 }>();
 
 const emits = defineEmits<{
   loadReviewFindings: [review: CodeReviewRecordDto];
+  loadRawXml: [review: CodeReviewRecordDto];
   toggleCart: [
     finding: CodeReviewFindingDto,
     reviewer: CodeReviewReviewerFindingsDto,
@@ -206,6 +217,9 @@ function createAccordionItemViewModel(
     findings: props.reviewFindingsByReviewKey[key] ?? null,
     loadingFindings: props.loadingReviewFindingsByReviewKey[key] === true,
     findingsError: props.reviewFindingsErrorsByReviewKey[key] ?? null,
+    rawXml: props.reviewRawXmlByReviewKey[key] ?? null,
+    loadingRawXml: props.loadingReviewRawXmlByReviewKey[key] === true,
+    rawXmlError: props.reviewRawXmlErrorsByReviewKey[key] ?? null,
   };
 }
 

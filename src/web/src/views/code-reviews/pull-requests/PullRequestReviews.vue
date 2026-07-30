@@ -60,6 +60,9 @@
         :review-findings-by-review-key
         :loading-review-findings-by-review-key
         :review-findings-errors-by-review-key
+        :review-raw-xml-by-review-key
+        :loading-review-raw-xml-by-review-key
+        :review-raw-xml-errors-by-review-key
         :loading="loadingSelectedPullRequest"
         :requesting-review-id
         v-model:open-review-id="openReviewId"
@@ -69,6 +72,7 @@
         @request-review="requestReview"
         @bypass-check="handleBypassCheck"
         @load-review-findings="loadReviewFindings"
+        @load-raw-xml="loadReviewRawXml"
         @toggle-cart="handleToggleCart"
       />
 
@@ -84,6 +88,9 @@
             :review-findings-by-review-key
             :loading-review-findings-by-review-key
             :review-findings-errors-by-review-key
+            :review-raw-xml-by-review-key
+            :loading-review-raw-xml-by-review-key
+            :review-raw-xml-errors-by-review-key
             :loading="loadingSelectedPullRequest"
             :requesting-review-id
             v-model:open-review-id="openReviewId"
@@ -94,6 +101,7 @@
             @request-review="requestReview"
             @bypass-check="handleBypassCheck"
             @load-review-findings="loadReviewFindings"
+            @load-raw-xml="loadReviewRawXml"
             @toggle-cart="handleToggleCart"
             @close="closeDetailPanel"
           />
@@ -163,6 +171,9 @@ const {
   reviewFindingsByReviewKey,
   loadingReviewFindingsByReviewKey,
   reviewFindingsErrorsByReviewKey,
+  reviewRawXmlByReviewKey,
+  loadingReviewRawXmlByReviewKey,
+  reviewRawXmlErrorsByReviewKey,
   latestReviewUpdatesByPullRequestId,
   pullRequestUiStateById,
   loadingRepositories,
@@ -442,6 +453,15 @@ async function loadReviewFindings(
     showError("Could not load review findings", err);
 
     return undefined;
+  }
+}
+
+/** Loads the raw findings XML artifact when the "View raw XML" panel is opened. */
+async function loadReviewRawXml(review: CodeReviewRecordDto) {
+  try {
+    await codeReviewStore.loadReviewRawXml(review);
+  } catch (err: unknown) {
+    showError("Could not load raw XML", err);
   }
 }
 
