@@ -124,6 +124,63 @@ public sealed class TelemetryRawRequestStoreIntegrationTests(PgDatabaseFixture p
     }
 
     [Test]
+    public async Task TryCreatePullRequestSessionLinkAsync_SequentialDuplicateReturnsFalse()
+    {
+        await using var provider = CreateProvider(postgres.ConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAgentTelemetryDomainStore>();
+        var db = scope.ServiceProvider.GetRequiredService<PostgresDbContext>();
+        var linkKey = Guid.CreateVersion7().ToString("N");
+        var organizationId = $"org-{linkKey}";
+        var pullRequestRecordId = $"pr-{linkKey}";
+        var conversationId = $"conversation-{linkKey}";
+        var links = new[]
+        {
+            Link(
+                $"link-a-{linkKey}",
+                organizationId,
+                pullRequestRecordId,
+                conversationId
+            ),
+            Link(
+                $"link-b-{linkKey}",
+                organizationId,
+                pullRequestRecordId,
+                conversationId
+            ),
+        };
+
+        await Assert
+            .That(
+                await store.TryCreatePullRequestSessionLinkAsync(
+                    links[0],
+                    CancellationToken.None
+                )
+            )
+            .IsTrue();
+        await Assert
+            .That(
+                await store.TryCreatePullRequestSessionLinkAsync(
+                    links[1],
+                    CancellationToken.None
+                )
+            )
+            .IsFalse();
+
+        var persistedCount = await db
+            .Set<AgentPullRequestSessionLink>()
+            .AsNoTracking()
+            .CountAsync(
+                link =>
+                    link.OrganizationId == organizationId
+                    && link.PullRequestRecordId == pullRequestRecordId
+                    && link.ConversationId == conversationId
+            );
+
+        await Assert.That(persistedCount).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task TryCreatePullRequestSessionLinkAsync_ConcurrentDuplicateReturnsFalse()
     {
         var linkKey = Guid.CreateVersion7().ToString("N");

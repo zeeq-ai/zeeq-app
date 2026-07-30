@@ -48,6 +48,22 @@ internal sealed class PostgresAgentTelemetryDomainStore(PostgresDbContext db)
         CancellationToken cancellationToken
     )
     {
+        var exists = await db
+            .Set<AgentPullRequestSessionLink>()
+            .AsNoTracking()
+            .TagWithOperationCallSite("telemetry.pull_request_session_link.exists")
+            .AnyAsync(
+                existing =>
+                    existing.OrganizationId == link.OrganizationId
+                    && existing.PullRequestRecordId == link.PullRequestRecordId
+                    && existing.ConversationId == link.ConversationId,
+                cancellationToken
+            );
+        if (exists)
+        {
+            return false;
+        }
+
         db.Set<AgentPullRequestSessionLink>().Add(link);
         try
         {
