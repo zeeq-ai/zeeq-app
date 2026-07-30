@@ -83,3 +83,7 @@ Important workflow notes:
 
 - Read Zeeq MCP: `zeeq://workflow/feature-planning-coding-process.md`
 - Use CSharpRepl to evaluate C# code inside the running local `zeeq-server` process, debug, test hypotheses, inspect DI state, invoke code while bypassing auth, write dynamic wrappers (logging, etc.).  Access via `zeeq-dotnet-repl` skill.  See the full reference guide as needed.
+
+## Plans
+
+Plans do not get committed; they create noise.  Do not add them to git.
