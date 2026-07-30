@@ -41,6 +41,7 @@
     <Project Path="src/backend/Zeeq.Platform.Membership/Zeeq.Platform.Membership.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Storage.Google/Zeeq.Platform.Storage.Google.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Telemetry/Zeeq.Platform.Telemetry.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.WorldModel/Zeeq.Platform.WorldModel.csproj" />
   </Folder>
   <Folder Name="/runtime/">
     <Project Path="src/backend/Zeeq.Runtime.Server/Zeeq.Runtime.Server.csproj" />
@@ -52,6 +53,7 @@
     <Project Path="src/backend/Zeeq.Platform.Metrics.Tests/Zeeq.Platform.Metrics.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Metrics/Zeeq.Platform.Metrics.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Telemetry.Tests/Zeeq.Platform.Telemetry.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.WorldModel.Tests/Zeeq.Platform.WorldModel.Tests.csproj" />
   </Folder>
   <Folder Name="/testing/">
     <Project Path="src/backend/Zeeq.Core.Documents.Tests/Zeeq.Core.Documents.Tests.csproj" />

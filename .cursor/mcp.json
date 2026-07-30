@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "zeeq": {
+      "url": "https://app.zeeq.ai/mcp",
+      "auth": {
+        "scopes": ["mcp:tools"]
+      },
+      "headers": {
+        "x-zeeq-prompts-repo": "zeeq-ai/zeeq-app"
+      }
+    }
+  }
+}

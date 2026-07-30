@@ -277,7 +277,7 @@ const configurationTabs: TabsItem[] = [
     icon: "i-hugeicons-book-01",
   },
   {
-    label: "MCP Prompts",
+    label: "Dynamic skills",
     value: "prompts",
     slot: "prompts",
     icon: "i-hugeicons-ai-file",
