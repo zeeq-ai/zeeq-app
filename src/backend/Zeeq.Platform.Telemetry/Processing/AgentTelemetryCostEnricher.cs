@@ -136,7 +136,7 @@ internal static class PricingCatalog
     /// <summary>
     /// Catalog version for traceability. Bump when rates are updated.
     /// </summary>
-    public const int Version = 2;
+    public const int Version = 3;
 
     /// <summary>
     /// Copilot nano-AIU → USD conversion rate.
@@ -159,12 +159,14 @@ internal static class PricingCatalog
         // --- OpenAI models (pricing as of July 2026) ---
         // Source: https://platform.openai.com/docs/pricing (standard tier)
         ["gpt-5.6-sol"] = TokenRates.FromPerMillion(5.00m, 0.50m, 30.00m),
-        ["gpt-5.6-terra"] = TokenRates.FromPerMillion(2.50m, 0.25m, 15.00m),
-        ["gpt-5.6-luna"] = TokenRates.FromPerMillion(1.00m, 0.10m, 6.00m),
+        ["gpt-5.6-terra"] = TokenRates.FromPerMillion(2.00m, 0.20m, 12.00m),
+        ["gpt-5.6-luna"] = TokenRates.FromPerMillion(0.20m, 0.02m, 1.20m),
         ["gpt-5.5"] = TokenRates.FromPerMillion(5.00m, 0.50m, 30.00m),
+        ["gpt-5.5-pro"] = TokenRates.FromPerMillion(30.00m, 30.00m, 180.00m),
         ["gpt-5.4"] = TokenRates.FromPerMillion(2.50m, 0.25m, 15.00m),
         ["gpt-5.4-mini"] = TokenRates.FromPerMillion(0.75m, 0.075m, 4.50m),
         ["gpt-5.4-nano"] = TokenRates.FromPerMillion(0.20m, 0.02m, 1.25m),
+        ["gpt-5.4-pro"] = TokenRates.FromPerMillion(30.00m, 30.00m, 180.00m),
         ["gpt-5.3-codex"] = TokenRates.FromPerMillion(1.75m, 0.175m, 14.00m),
 
         // --- Anthropic models (pricing as of July 2026) ---
