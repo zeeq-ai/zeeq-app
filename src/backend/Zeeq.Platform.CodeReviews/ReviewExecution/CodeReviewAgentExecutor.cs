@@ -540,9 +540,6 @@ public sealed partial class CodeReviewAgentExecutor(
         return
         [
             AIFunctionFactory
-                .Create(DocumentLibraryMcpTools.ListLibraries, options)
-                .WithScopedServices(services, MarkCodeReviewExecutionScope),
-            AIFunctionFactory
                 .Create(DocumentLibraryMcpTools.ListDocuments, options)
                 .WithScopedServices(services, MarkCodeReviewExecutionScope),
             AIFunctionFactory
