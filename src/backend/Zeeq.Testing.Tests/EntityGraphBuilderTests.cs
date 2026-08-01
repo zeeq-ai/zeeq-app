@@ -1,7 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Testing;
 using Zeeq.Testing.EntityGraphs;
-using Microsoft.EntityFrameworkCore;
 
 namespace Zeeq.Testing.Tests;
 
@@ -194,6 +194,26 @@ public sealed class EntityGraphBuilderTests(PgDatabaseFixture postgres)
             .IsTrue();
         await Assert.That(membershipA.IsDefault).IsTrue();
         await Assert.That(membershipB.IsDefault).IsFalse();
+    }
+
+    [Test]
+    public async Task AddOrganizations_WithInactivePrototype_PersistsInactiveOrganization()
+    {
+        // Guards that EntityGraph can construct inactive organization preconditions
+        // without post-build mutation in activation-flow tests.
+        var (_, organizationGraphs) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddOrganizations(organization => organization.IsActivated = false)
+            .BuildAsync();
+        var organizationId = organizationGraphs[0].Organization.Id;
+
+        _context.ChangeTracker.Clear();
+
+        var persistedOrganization = await _context.Organizations.SingleAsync(organization =>
+            organization.Id == organizationId
+        );
+
+        await Assert.That(persistedOrganization.ActivatedAtUtc).IsNull();
     }
 
     [Test]

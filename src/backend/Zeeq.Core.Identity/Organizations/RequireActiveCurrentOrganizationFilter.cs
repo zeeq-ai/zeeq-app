@@ -1,5 +1,3 @@
-using System.Security.Claims;
-using Zeeq.Core.Common;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
@@ -21,8 +19,6 @@ public sealed partial class RequireActiveCurrentOrganizationFilter(
     ILogger<RequireActiveCurrentOrganizationFilter> logger
 ) : IEndpointFilter
 {
-    private const string CacheKeyPrefix = "identity:organization-activation-state:";
-
     private static readonly HybridCacheEntryOptions CacheOptions = new()
     {
         Expiration = TimeSpan.FromSeconds(30),
@@ -47,7 +43,7 @@ public sealed partial class RequireActiveCurrentOrganizationFilter(
             (IZeeqMembershipStore Store, string OrganizationId),
             OrganizationActivationState?
         >(
-            key: CacheKeyPrefix + orgId,
+            key: OrganizationActivationCacheKeys.ForOrganization(orgId),
             state: (store, orgId),
             factory: static async (state, cancellationToken) =>
                 await state.Store.FindOrganizationActivationStateAsync(

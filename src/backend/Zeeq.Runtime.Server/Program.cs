@@ -1,5 +1,6 @@
 using System.Reflection;
 using Scalar.AspNetCore;
+using Zeeq.Core.Common;
 using Zeeq.Core.Common.AspNetCore;
 using Zeeq.Core.Common.AspNetCore.Endpoints;
 using Zeeq.Core.Llm;
@@ -43,7 +44,12 @@ var appSettings =
 builder
     .Services.AddOptions<AppSettings>()
     .Bind(builder.Configuration.GetSection(nameof(AppSettings)))
+    .Validate(
+        settings => settings.Platform.HasValidOrganizationActivationKeyLifetimeBounds(),
+        $"Organization activation key lifetime settings must be between 1 and {PlatformSettings.MaxSupportedOrganizationActivationKeyLifetimeDays} days, and the default must be less than or equal to the maximum."
+    )
     .ValidateOnStart();
+builder.Services.AddSingleton(appSettings);
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -52,6 +58,7 @@ builder
     .AddExceptionHandler<ZeeqHttpExceptionHandler>()
     .AddZeeqResponseCompression()
     .AddZeeqTelemetry()
+    .AddZeeqRateLimiting()
     .AddZeeqOpenApiConfig()
     .AddZeeqJsonConfig()
     .AddZeeqForwardedHeadersConfig()
@@ -127,6 +134,7 @@ app.UseAuthentication();
 app.UseUserTokenValidation();
 app.UseMembershipEnrichment();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapStaticSpas(app.Environment);
 app.MapWebRootRedirect(app.Environment);
@@ -155,6 +163,7 @@ void HandleSchemaGenerationAndExit()
 
     minimalBuilder
         .Services.AddOpenApi()
+        .AddSingleton(new AppSettings())
         .AddZeeqJsonConfig()
         .AddHttpContextAccessor()
         .AddZeeqEndpoints();

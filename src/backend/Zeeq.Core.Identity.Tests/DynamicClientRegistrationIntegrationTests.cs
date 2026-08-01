@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenIddict.Abstractions;
+using Zeeq.Core.Common;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Identity;
@@ -14,6 +15,8 @@ namespace Zeeq.Core.Identity.Tests;
 public class DynamicClientRegistrationSetupTests(PgDatabaseFixture postgres)
     : PgTransactionalTestBase(postgres)
 {
+    private static readonly AppSettings DisabledActivationSettings = new();
+
     [Test]
     public async Task ClaimOrValidateActiveAsync_WithPendingSetup_ClaimsAuthenticatedUser()
     {
@@ -126,7 +129,8 @@ public class DynamicClientRegistrationSetupTests(PgDatabaseFixture postgres)
     private DcrClientSetupService CreateService() =>
         new(CreateIdentityStore(), NullLogger<DcrClientSetupService>.Instance);
 
-    private PostgresZeeqIdentityStore CreateIdentityStore() => new(_context);
+    private PostgresZeeqIdentityStore CreateIdentityStore() =>
+        new(_context, DisabledActivationSettings);
 
     private async Task<AuthContext> EnsureAuthContextAsync(string provider, string subject)
     {

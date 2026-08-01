@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http.HttpResults;
+using Zeeq.Core.Common;
 using Zeeq.Core.Models;
 using Zeeq.Testing.EntityGraphs;
 
@@ -15,6 +16,8 @@ namespace Zeeq.Platform.Membership.Tests;
 /// </summary>
 public sealed class OrganizationEndpointHandlerTests
 {
+    private static readonly AppSettings DisabledActivationSettings = new();
+
     [Test]
     public async Task CreateOrganizationHandler_WithFiveCreatedOrganizations_ReturnsValidationProblem()
     {
@@ -28,7 +31,7 @@ public sealed class OrganizationEndpointHandlerTests
 
         // Guards that the create endpoint enforces the product limit of five
         // organizations created by a single user.
-        var handler = new CreateOrganizationHandler(store);
+        var handler = new CreateOrganizationHandler(store, DisabledActivationSettings);
         var result = await handler.HandleAsync(
             new CreateOrganizationRequest("Sixth Org", null, null),
             MembershipTestClaims.TestUser(seed.Owner.Id),
@@ -46,7 +49,7 @@ public sealed class OrganizationEndpointHandlerTests
 
         // Guards that creating an organization inserts the org, root team,
         // active owner membership, and root team membership together.
-        var handler = new CreateOrganizationHandler(store);
+        var handler = new CreateOrganizationHandler(store, DisabledActivationSettings);
         var result = await handler.HandleAsync(
             new CreateOrganizationRequest("My New Org", null, null),
             MembershipTestClaims.TestUser("user_1"),
@@ -65,6 +68,32 @@ public sealed class OrganizationEndpointHandlerTests
         await Assert.That(store.Memberships).Count().IsEqualTo(1);
         await Assert.That(store.Memberships[0].Status).IsEqualTo(MembershipStatus.Active);
         await Assert.That(store.TeamMemberships).Count().IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task CreateOrganizationHandler_ActivationKeysEnabled_CreatesInactiveOrganization()
+    {
+        // Guards that user-created organizations also remain inactive when
+        // activation keys are enabled, matching the first-login org invariant.
+        var store = new TestMembershipStore();
+        var settings = new AppSettings
+        {
+            Platform = new PlatformSettings { OrganizationActivationKeysEnabled = true },
+        };
+
+        var handler = new CreateOrganizationHandler(store, settings);
+        var result = await handler.HandleAsync(
+            new CreateOrganizationRequest("Inactive Org", null, null),
+            MembershipTestClaims.TestUser("user_1"),
+            CancellationToken.None
+        );
+
+        var created = result.Result as Created<OrganizationResponse>;
+
+        await Assert.That(created).IsNotNull();
+        await Assert.That(created!.Value!.ActivatedAtUtc).IsNull();
+        await Assert.That(store.Organizations[0].ActivatedAtUtc).IsNull();
+        await Assert.That(store.Organizations[0].DisabledAtUtc).IsNull();
     }
 
     [Test]

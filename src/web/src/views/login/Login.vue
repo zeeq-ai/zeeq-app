@@ -1,6 +1,7 @@
 <template>
   <div class="flex flex-col items-center justify-center gap-4 p-4 min-h-screen">
     <UPageCard
+      v-if="!showInactiveOrgNotice"
       class="w-full max-w-md"
       title="Choose sign-in provider"
       description="Connect or create your account to continue."
@@ -45,26 +46,67 @@
           size="lg"
           color="neutral"
           variant="subtle"
-          to="https://www.linkedin.com/in/charlescchen/"
+          to="mailto:hello@zeeq.ai"
           :avatar="{
             src: avatarSrc,
             loading: 'lazy',
           }"
           external
         >
-          Linkedin
+          Contact
         </UButton>
       </div>
     </UPageCard>
 
+    <!-- NOTE: Activation-key capability discovery is deferred. Until the login
+    page can know feature availability up front, the exchange call's 404 fallback
+    supplies the terse unavailable notice for disabled deployments. -->
     <template v-if="showInactiveOrgNotice">
       <UPageCard
         class="w-full max-w-md"
-        title="Organization requires activation to continue"
-        description="The organization associated with this account is not active yet. Activation by the account team is required before you can continue using organization-scoped features. Log out if you want to try a different account."
-        icon="i-hugeicons-shield-02"
+        title="Activate organization"
+        description="Enter the activation key provided by a system administrator."
+        icon="i-hugeicons-shield-key"
         :ui="{ footer: 'w-full self-stretch' }"
       >
+        <UAlert
+          v-if="activationError"
+          title="Activation failed"
+          :description="activationError"
+          icon="i-hugeicons-alert-02"
+          color="error"
+          variant="subtle"
+          class="mb-4"
+        />
+
+        <UForm
+          :state="activationForm"
+          class="flex flex-col gap-4"
+          @submit="activateOrganization"
+        >
+          <UFormField label="Activation key" name="key">
+            <UInput
+              v-model="activationForm.key"
+              class="w-full"
+              autocomplete="one-time-code"
+              placeholder="64-character key"
+            />
+          </UFormField>
+
+          <UButton
+            type="submit"
+            block
+            class="justify-center"
+            icon="i-hugeicons-shield-key"
+            color="neutral"
+            variant="subtle"
+            :loading="exchanging"
+            :disabled="normalizedActivationKey.length !== 64"
+          >
+            Activate
+          </UButton>
+        </UForm>
+
         <template #footer>
           <div class="w-full">
             <UButton
@@ -76,7 +118,7 @@
               :loading="loggingOut"
               @click="logout"
             >
-              OK
+              Use a different account
             </UButton>
           </div>
         </template>
@@ -89,13 +131,21 @@
 import { useRouter, useRoute } from "vue-router";
 import { isActivationReturnUrl } from "@/router/return-url";
 import { useAppStore } from "@/stores/app-store";
+import { useOrganizationActivationStore } from "@/stores/organization-activation-store";
+import { storeToRefs } from "pinia";
 
 const toast = useToast();
 const router = useRouter();
 const route = useRoute();
 const appStore = useAppStore();
+const activationStore = useOrganizationActivationStore();
+const { exchanging, error: activationError } = storeToRefs(activationStore);
 const loggingOut = ref(false);
 const avatarSrc = `${import.meta.env.BASE_URL}favicon-32x32.png`;
+const activationForm = reactive({ key: "" });
+const normalizedActivationKey = computed(() =>
+  activationForm.key.trim().toLowerCase(),
+);
 
 interface LoginProvider {
   name: string;
@@ -149,6 +199,7 @@ onMounted(() => {
     const query = { ...route.query };
     delete query.returnUrl;
     router.replace({ query });
+    return;
   }
 });
 
@@ -189,6 +240,26 @@ async function logout() {
     await router.push("/login");
   } finally {
     loggingOut.value = false;
+  }
+}
+
+/** Activates the current inactive organization using the existing signed-in session. */
+async function activateOrganization() {
+  if (normalizedActivationKey.value.length !== 64) {
+    return;
+  }
+
+  try {
+    await activationStore.exchange(normalizedActivationKey.value);
+    await appStore.fetchUser({ force: true });
+    toast.add({
+      title: "Organization activated",
+      icon: "i-hugeicons-tick-02",
+      color: "success",
+    });
+    await router.push("/");
+  } catch {
+    // Store error is rendered above.
   }
 }
 </script>

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Zeeq.Core.Common;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Identity;
 using Zeeq.Testing;
@@ -14,20 +15,23 @@ namespace Zeeq.Core.Identity.Tests;
 public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     : PgTransactionalTestBase(postgres)
 {
+    private static readonly AppSettings DisabledActivationSettings = new();
+
     /// <summary>
     /// Verifies that new-user bootstrap creates an organization slug with the ID suffix.
     /// </summary>
     [Test]
     public async Task EnsureUserAsync_NewUser_CreatesOrganizationSlugWithIdSuffix()
     {
-        var context = await new PostgresZeeqIdentityStore(_context).EnsureUserAsync(
-            "mock",
-            Guid.NewGuid().ToString("N"),
-            "My Org",
-            null,
-            null,
-            CancellationToken.None
-        );
+        var context = await CreateStore()
+            .EnsureUserAsync(
+                "mock",
+                Guid.NewGuid().ToString("N"),
+                "My Org",
+                null,
+                null,
+                CancellationToken.None
+            );
 
         var organization = await _context.Organizations.SingleAsync(org =>
             org.Id == context!.OrganizationId
@@ -41,18 +45,46 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     }
 
     [Test]
+    public async Task EnsureUserAsync_ActivationKeysEnabled_CreatesInactiveOrganization()
+    {
+        // Guards that first-login personal organizations start inactive when
+        // activation keys are enabled, forcing explicit activation later.
+        var settings = new AppSettings
+        {
+            Platform = new PlatformSettings { OrganizationActivationKeysEnabled = true },
+        };
+
+        var context = await new PostgresZeeqIdentityStore(_context, settings).EnsureUserAsync(
+            "mock",
+            Guid.NewGuid().ToString("N"),
+            "Activation User",
+            "activation-user@example.com",
+            null,
+            CancellationToken.None
+        );
+
+        var organization = await _context.Organizations.SingleAsync(org =>
+            org.Id == context!.OrganizationId
+        );
+
+        await Assert.That(organization.ActivatedAtUtc).IsNull();
+        await Assert.That(organization.DisabledAtUtc).IsNull();
+    }
+
+    [Test]
     public async Task EnsureUserAsync_NewMatchingPrivateDomain_CreatesPendingSameDomainInvitation()
     {
         await SeedSameDomainOrganizationAsync("example.com", "admin");
 
-        var context = await new PostgresZeeqIdentityStore(_context).EnsureUserAsync(
-            "mock",
-            Guid.NewGuid().ToString("N"),
-            "Domain User",
-            "new-user@example.com",
-            null,
-            CancellationToken.None
-        );
+        var context = await CreateStore()
+            .EnsureUserAsync(
+                "mock",
+                Guid.NewGuid().ToString("N"),
+                "Domain User",
+                "new-user@example.com",
+                null,
+                CancellationToken.None
+            );
 
         var invitations = await _context
             .OrganizationMemberships.Where(m =>
@@ -87,14 +119,15 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         _context.OrganizationMemberships.Add(expiredInvitation);
         await _context.SaveChangesAsync();
 
-        await new PostgresZeeqIdentityStore(_context).EnsureUserAsync(
-            "mock",
-            Guid.NewGuid().ToString("N"),
-            "Domain User",
-            "expired-user@example.com",
-            null,
-            CancellationToken.None
-        );
+        await CreateStore()
+            .EnsureUserAsync(
+                "mock",
+                Guid.NewGuid().ToString("N"),
+                "Domain User",
+                "expired-user@example.com",
+                null,
+                CancellationToken.None
+            );
 
         _context.ChangeTracker.Clear();
         var invitations = await _context
@@ -116,7 +149,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     {
         await SeedSameDomainOrganizationAsync("example.com", "member");
         var providerSubject = Guid.NewGuid().ToString("N");
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
 
         await store.EnsureUserAsync(
             "mock",
@@ -156,7 +189,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     {
         await SeedSameDomainOrganizationAsync("example.com", "member");
         var providerSubject = Guid.NewGuid().ToString("N");
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
 
         await store.EnsureUserAsync(
             "mock",
@@ -216,7 +249,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     public async Task EnsureUserAsync_ExistingIdentityWithOnlyInactiveOrganizations_ReturnsInactiveContext()
     {
         var providerSubject = Guid.NewGuid().ToString("N");
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
 
         var initialContext = await store.EnsureUserAsync(
             "mock",
@@ -254,7 +287,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     public async Task EnsureUserAsync_ExistingIdentityWithNoMemberships_ReturnsNull()
     {
         var providerSubject = Guid.NewGuid().ToString("N");
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
 
         var initialContext = await store.EnsureUserAsync(
             "mock",
@@ -287,7 +320,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     public async Task EnsureUserAsync_ExistingIdentityWithInactiveOrgMembership_DoesNotUseStaleTeamMembership()
     {
         var providerSubject = Guid.NewGuid().ToString("N");
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
         var initialContext = await store.EnsureUserAsync(
             "mock",
             providerSubject,
@@ -338,7 +371,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     public async Task EnsureUserAsync_ExistingIdentity_KeepsInitialActivatedOrganization()
     {
         var providerSubject = Guid.NewGuid().ToString("N");
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
         var initialContext = await store.EnsureUserAsync(
             "mock",
             providerSubject,
@@ -373,7 +406,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     public async Task EnsureUserAsync_ExistingIdentity_PrefersDefaultActivatedOrganization()
     {
         var providerSubject = Guid.NewGuid().ToString("N");
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
         var initialContext = await store.EnsureUserAsync(
             "mock",
             providerSubject,
@@ -417,7 +450,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     [Test]
     public async Task ReplaceUserAliasesAsync_EmailAliasMatchingAnotherMemberEmail_ThrowsConflict()
     {
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
         var seed = await EntityGraph.AddGeneratedSeed(_context, userCount: 2).BuildAsync();
         var member = seed.Users[1];
         member.Email = "other@example.com";
@@ -444,7 +477,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     [Test]
     public async Task ReplaceUserAliasesAsync_EmailAliasMatchingTrimmedMemberEmail_ThrowsConflict()
     {
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
         var seed = await EntityGraph.AddGeneratedSeed(_context, userCount: 2).BuildAsync();
         var member = seed.Users[1];
         member.Email = "  Other@Example.com  ";
@@ -464,7 +497,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     [Test]
     public async Task ListUserAliasesAsync_IgnoresDisabledAliases()
     {
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
         var now = DateTimeOffset.UtcNow;
         var (seed, _) = await EntityGraph
             .AddGeneratedSeed(_context)
@@ -498,7 +531,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     [Test]
     public async Task ReplaceUserAliasesAsync_ReactivatesRequestedDisabledAlias()
     {
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
         var now = DateTimeOffset.UtcNow;
         var (seed, _) = await EntityGraph
             .AddGeneratedSeed(_context)
@@ -532,7 +565,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     [Test]
     public async Task ReplaceUserAliasesAsync_OmittedAlias_DisablesInsteadOfDeleting()
     {
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
         var (seed, aliases) = await EntityGraph
             .AddGeneratedSeed(_context)
             .AddUserAliases(
@@ -567,7 +600,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     [Test]
     public async Task ReplaceUserAliasesAsync_WithoutActiveMembership_ThrowsConflict()
     {
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
         var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
         var membership = seed.OrganizationMemberships[0];
         membership.Status = MembershipStatus.Disabled;
@@ -588,7 +621,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     [Test]
     public async Task ReplaceUserAliasesAsync_WithMismatchedNormalizedValue_ThrowsArgumentException()
     {
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
         var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
 
         Func<Task> act = async () =>
@@ -605,7 +638,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     [Test]
     public async Task ReplaceUserAliasesAsync_WithUnsupportedAliasKind_ThrowsArgumentOutOfRangeException()
     {
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
         var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
 
         Func<Task> act = async () =>
@@ -725,7 +758,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     [Test]
     public async Task RevokeUserTokensForOrganizationMemberAsync_RevokesOnlyMatchingActiveTokens()
     {
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
         var (orgId, teamId, userId) = await SeedOrgUserTeamAsync();
         var (otherOrgId, otherTeamId, _) = await SeedOrgUserTeamAsync();
         var (_, _, otherUserId) = await SeedOrgUserTeamAsync();
@@ -771,7 +804,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     [Test]
     public async Task RevokeUserTokensForOrganizationMemberAsync_IsIdempotentAgainstAlreadyRevokedRows()
     {
-        var store = new PostgresZeeqIdentityStore(_context);
+        var store = CreateStore();
         var (orgId, teamId, userId) = await SeedOrgUserTeamAsync();
         var firstRevokedAt = DateTimeOffset.UtcNow.AddDays(-1).TruncateToPostgresPrecision();
         var token = NewUserToken(orgId, teamId, userId);
@@ -865,4 +898,6 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
 
         return (organizationId, teamId, userId);
     }
+
+    private PostgresZeeqIdentityStore CreateStore() => new(_context, DisabledActivationSettings);
 }
