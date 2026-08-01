@@ -128,11 +128,11 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
                 message.Text,
                 previousReviewsSection
             );
-
-            var originalReviewPrompt = composedPrompt;
+            var session = await reviewerAgent.CreateSessionAsync(cancellationToken);
 
             var outputText = await RunInitialReviewAsync(
                 new ChatMessage(ChatRole.User, composedPrompt),
+                session,
                 usageSink,
                 cancellationToken
             );
@@ -259,8 +259,7 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
                 );
 
                 outputText = await RunCorrectionAsync(
-                    originalReviewPrompt,
-                    outputText,
+                    session,
                     validationError,
                     correctionAttempt + 1,
                     usageSink,
@@ -306,6 +305,8 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
         }
         finally
         {
+            RecordTokenTelemetry(usageSink);
+
             if (_options.RecordMetrics)
             {
                 RecordReviewMetrics(Stopwatch.GetElapsedTime(reviewStartedAt), usageSink);
@@ -343,7 +344,7 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
             tags.Add(("repository_id", (object)repositoryId));
         }
 
-        if (usageSink.HasUsage)
+        if (usageSink.HasTotalTokens)
         {
             var tokens = usageSink.TotalTokens;
             List<(string Key, object? Value)> durationTags = [.. tags, ("tokens", (object)tokens)];
@@ -354,6 +355,21 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
         {
             ReviewDurationHistogram.Record(duration.TotalMilliseconds, [.. tags]);
         }
+    }
+
+    private void RecordTokenTelemetry(LlmUsageSink usageSink)
+    {
+        if (telemetry is null || !usageSink.HasUsage)
+        {
+            return;
+        }
+
+        telemetry.RecordTokenUsage(
+            inputTokens: usageSink.InputTokensOrNull,
+            cachedInputTokens: usageSink.CachedInputTokensOrNull,
+            outputTokens: usageSink.OutputTokensOrNull,
+            totalTokens: usageSink.TotalTokensOrNull
+        );
     }
 
     /// <summary>
@@ -441,17 +457,23 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
 
     private async Task<string> RunInitialReviewAsync(
         ChatMessage message,
+        AgentSession session,
         LlmUsageSink usageSink,
         CancellationToken cancellationToken
     )
     {
         var startedAt = Stopwatch.GetTimestamp();
+        var inputTokensBefore = usageSink.InputTokens;
+        var cachedInputTokensBefore = usageSink.CachedInputTokens;
 
         var response = await reviewerAgent.RunAsync(
             message,
+            session,
             options: BuildRunOptions(usageSink),
             cancellationToken: cancellationToken
         );
+        var inputTokens = usageSink.InputTokens - inputTokensBefore;
+        var cachedInputTokens = usageSink.CachedInputTokens - cachedInputTokensBefore;
 
         LogReviewerModelInvocationCompleted(
             _logger,
@@ -461,6 +483,8 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
             provider,
             model,
             Stopwatch.GetElapsedTime(startedAt),
+            inputTokens,
+            cachedInputTokens,
             response.Text.Length
         );
 
@@ -468,8 +492,7 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
     }
 
     private async Task<string> RunCorrectionAsync(
-        string originalReviewPrompt,
-        string previousOutputText,
+        AgentSession session,
         string validationError,
         int correctionAttempt,
         LlmUsageSink usageSink,
@@ -489,7 +512,7 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
 
             Correction attempt: {correctionAttempt} of {MaxCorrectionAttempts}.
 
-            Use the original review request as the source of truth. If the original request includes <file_patch> entries, do not state that no code diff was supplied. Preserve any substantive review content or findings from the previous response when possible. If it cannot be repaired safely, rerun the review from the original request.
+            Use the original review request and your previous response from this conversation as the source of truth. If the original request includes <file_patch> entries, do not state that no code diff was supplied. Preserve any substantive review content or findings from the previous response when possible. If it cannot be repaired safely, rerun the review from the original request.
 
             Output ONLY a single JSON object matching the required shape:
             - Top-level string fields "summary" and "details", both non-empty.
@@ -498,18 +521,11 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
             - Do NOT include "facet" or "agent" fields; they are assigned automatically.
             - Put all code snippets and Markdown inside the string fields. Do NOT wrap the JSON in code fences.
 
-            <original_review_request>
-            {originalReviewPrompt}
-            </original_review_request>
-
-            <previous_invalid_response>
-            {previousOutputText}
-            </previous_invalid_response>
-
             Output only the corrected JSON object and nothing else. Do not truncate your output.
 
             MAXIMUM OUTPUT TOKENS: {CodeReviewAgentExecutor.MaxReviewerOutputTokens}
             """,
+            session: session,
             cancellationToken: cancellationToken
         );
         LogReviewerCorrectionModelInvocationCompleted(
@@ -544,7 +560,7 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
     [LoggerMessage(
         EventId = 3257,
         Level = LogLevel.Information,
-        Message = "☑️  Received code-review reviewer model response. ReviewerId={ReviewerId}, Facet={Facet}, ModelTier={ModelTier}, Provider={Provider}, Model={Model}, Duration={Duration}, ResponseLength={ResponseLength}"
+        Message = "☑️  Received code-review reviewer model response. ReviewerId={ReviewerId}, Facet={Facet}, ModelTier={ModelTier}, Provider={Provider}, Model={Model}, Duration={Duration}, InputTokens={InputTokens}, CachedInputTokens={CachedInputTokens}, ResponseLength={ResponseLength}"
     )]
     private static partial void LogReviewerModelInvocationCompleted(
         ILogger logger,
@@ -554,6 +570,8 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
         string provider,
         string model,
         TimeSpan duration,
+        long inputTokens,
+        long cachedInputTokens,
         int responseLength
     );
 

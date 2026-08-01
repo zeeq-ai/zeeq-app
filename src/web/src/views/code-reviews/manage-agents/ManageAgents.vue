@@ -406,6 +406,8 @@ async function loadSourceRepoAgents(repositoryId: string) {
 /** Seeds the create panel's draft with a form chosen from the source library. */
 function applySourceForm(form: CodeReviewerAgentForm) {
   copiedAgentForm.value = form;
+  editingAgent.value = null;
+  selectedManagementItemId.value = managementConfigItemId;
 }
 
 const copyTargetRepositoryItems = computed(() =>
@@ -864,8 +866,10 @@ async function applyRouteAgentSelection() {
   // watcher-triggered navigation suppressed until the latest route sync completes.
   if (!props.orgId || !props.agentId) {
     editingAgent.value = null;
-    copiedAgentForm.value = null;
-    selectedManagementItemId.value = managementFiltersItemId;
+    if (selectedManagementItemId.value !== managementConfigItemId) {
+      copiedAgentForm.value = null;
+      selectedManagementItemId.value = managementFiltersItemId;
+    }
     finishCurrentSync();
     return;
   }

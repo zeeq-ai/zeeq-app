@@ -7,6 +7,7 @@ import {
   buildSourceTelemetryDocumentRows,
   buildSourceTelemetrySnippetRows,
   buildSourceTelemetryToolRows,
+  hasSourceTelemetryContent,
 } from "./source-telemetry-view-models";
 
 describe("source telemetry view models", () => {
@@ -79,6 +80,24 @@ describe("source telemetry view models", () => {
       facets: ["Logical"],
     });
   });
+
+  it("treats token-only telemetry as content", () => {
+    const telemetry = sourceTelemetry({
+      documents: [],
+      toolUsage: [],
+      missedQueries: [],
+      tokenUsage: {
+        inputTokens: 100,
+        cachedInputTokens: null,
+        outputTokens: 0,
+        totalTokens: null,
+      },
+    });
+
+    expect(buildSourceTelemetryAccordionItems(telemetry)).toEqual([]);
+    expect(hasSourceTelemetryContent(telemetry)).toBe(true);
+    expect(hasSourceTelemetryContent(null)).toBe(false);
+  });
 });
 
 function sourceTelemetry(
@@ -137,6 +156,7 @@ function sourceTelemetry(
         facets: ["Logical"],
       },
     ],
+    tokenUsage: null,
     ...overrides,
   };
 }

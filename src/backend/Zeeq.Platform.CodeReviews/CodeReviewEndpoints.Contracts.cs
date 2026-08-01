@@ -222,12 +222,22 @@ public sealed record CodeReviewFindingDto(
 /// <param name="Documents">Consulted documents, ordered by importance.</param>
 /// <param name="ToolUsage">Per-tool call/success/failure counts.</param>
 /// <param name="MissedQueries">Searches that returned nothing (content gaps).</param>
+/// <param name="TokenUsage">Provider-reported token usage, null when unavailable.</param>
 public sealed record CodeReviewSourceTelemetryDto(
     int SchemaVersion,
     CodeReviewSourceSummaryDto Summary,
     IReadOnlyList<CodeReviewSourceDocumentDto> Documents,
     IReadOnlyList<CodeReviewToolUsageDto> ToolUsage,
-    IReadOnlyList<CodeReviewMissedQueryDto> MissedQueries
+    IReadOnlyList<CodeReviewMissedQueryDto> MissedQueries,
+    CodeReviewTokenUsageDto? TokenUsage
+);
+
+/// <summary>Provider-reported token usage for the review run.</summary>
+public sealed record CodeReviewTokenUsageDto(
+    long? InputTokens,
+    long? CachedInputTokens,
+    long? OutputTokens,
+    long? TotalTokens
 );
 
 /// <summary>Roll-up counts for a <see cref="CodeReviewSourceTelemetryDto" />.</summary>
@@ -818,7 +828,18 @@ internal static class CodeReviewEndpointMapping
                         miss.Tool,
                         miss.Facets
                     )),
-                ]
+                ],
+                ToDto(telemetry.TokenUsage)
+            );
+
+    private static CodeReviewTokenUsageDto? ToDto(CodeReviewTokenUsage? usage) =>
+        usage is null
+            ? null
+            : new(
+                usage.InputTokens,
+                usage.CachedInputTokens,
+                usage.OutputTokens,
+                usage.TotalTokens
             );
 
     private static CodeReviewSourceDocumentDto ToDto(CodeReviewSourceDocument document) =>

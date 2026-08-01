@@ -88,7 +88,13 @@ public sealed class CodeReviewSourceTelemetrySerializerTests
                     Tool: "search_sections",
                     Facets: ["Structural"]
                 ),
-            ]
+            ],
+            TokenUsage: new(
+                InputTokens: 121_518,
+                CachedInputTokens: 93_440,
+                OutputTokens: 541,
+                TotalTokens: 122_059
+            )
         );
 
     [Test]
@@ -103,8 +109,11 @@ public sealed class CodeReviewSourceTelemetrySerializerTests
         await Assert.That(json).Contains("\"hc\"");
         await Assert.That(json).Contains("\"sid\"");
         await Assert.That(json).Contains("\"ras\"");
+        await Assert.That(json).Contains("\"tok\"");
+        await Assert.That(json).Contains("\"cin\"");
         await Assert.That(json).DoesNotContain("SchemaVersion");
         await Assert.That(json).DoesNotContain("ReadAfterSearch");
+        await Assert.That(json).DoesNotContain("TokenUsage");
 
         var roundTripped = CodeReviewSourceTelemetrySerializer.Deserialize(json);
 
@@ -124,9 +133,27 @@ public sealed class CodeReviewSourceTelemetrySerializerTests
         await Assert.That(firstDoc.Snippets[0].SnippetId).IsEqualTo("sn_01H");
         await Assert.That(firstDoc.Snippets[0].IdentifierMatch).IsTrue();
         await Assert.That(firstDoc.Snippets[1].Language).IsEqualTo("csharp");
+        await Assert.That(roundTripped.TokenUsage).IsNotNull();
+        await Assert.That(roundTripped.TokenUsage!.InputTokens).IsEqualTo(121_518);
+        await Assert.That(roundTripped.TokenUsage.CachedInputTokens).IsEqualTo(93_440);
+        await Assert.That(roundTripped.TokenUsage.OutputTokens).IsEqualTo(541);
+        await Assert.That(roundTripped.TokenUsage.TotalTokens).IsEqualTo(122_059);
         await Assert
             .That(roundTripped.MissedQueries[0].Query)
             .IsEqualTo("aspire distributed lock pattern");
+    }
+
+    [Test]
+    public async Task Serialize_OmitsNullTokenUsage()
+    {
+        var telemetry = PopulatedSnapshot() with { TokenUsage = null };
+
+        var json = CodeReviewSourceTelemetrySerializer.Serialize(telemetry);
+        var roundTripped = CodeReviewSourceTelemetrySerializer.Deserialize(json);
+
+        await Assert.That(json).DoesNotContain("\"tok\"");
+        await Assert.That(roundTripped).IsNotNull();
+        await Assert.That(roundTripped!.TokenUsage).IsNull();
     }
 
     [Test]
