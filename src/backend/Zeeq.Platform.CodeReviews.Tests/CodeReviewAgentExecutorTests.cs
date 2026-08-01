@@ -108,7 +108,7 @@ public sealed class CodeReviewAgentExecutorTests
 
         var tools = CodeReviewAgentExecutor.BuildLibraryTools(principal, services);
 
-        await Assert.That(tools.Count).IsEqualTo(6);
+        await Assert.That(tools.Count).IsEqualTo(5);
 
         foreach (var tool in tools)
         {
