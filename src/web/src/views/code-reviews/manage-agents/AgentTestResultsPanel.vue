@@ -49,11 +49,12 @@
         </div>
       </div>
 
-      <div class="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
+      <div class="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-6">
         <div
           v-for="metric in summaryMetrics"
           :key="metric.label"
           class="min-w-0 rounded-md border border-default bg-elevated/20 px-3 py-2"
+          :class="{ 'xl:col-span-3': metric.wide }"
         >
           <p class="text-xs text-muted">{{ metric.label }}</p>
           <p class="mt-1 font-mono text-sm text-highlighted">
@@ -81,14 +82,6 @@
         icon="i-hugeicons-filter-edit"
         title="No agent activation"
         description="The repository had files in scope, but this draft agent's activation filters did not match any of them."
-        class="py-12"
-      />
-
-      <UEmpty
-        v-else-if="totalFindingCount === 0 && !hasSourceTelemetryContent"
-        icon="i-hugeicons-checkmark-circle-02"
-        title="No findings"
-        description="The draft agent ran successfully and did not emit any findings."
         class="py-12"
       />
 
@@ -123,10 +116,24 @@
         </template>
 
         <template #content="{ item }">
-          <CodeReviewSourceTelemetryAccordion
-            v-if="item.value === sourcesTabValue"
-            :source-telemetry="result.findings.sourceTelemetry"
-          />
+          <div v-if="item.value === sourcesTabValue" class="grid gap-4">
+            <CodeReviewSummaryAccordion
+              :reviews="result.findings.reviews ?? []"
+            />
+
+            <CodeReviewSourceTelemetryAccordion
+              v-if="hasSourceTelemetryContent"
+              :source-telemetry="result.findings.sourceTelemetry"
+            />
+
+            <UEmpty
+              v-else
+              icon="i-hugeicons-checkmark-circle-02"
+              title="No findings"
+              description="The draft agent ran successfully and did not emit any findings or source telemetry."
+              class="py-10"
+            />
+          </div>
 
           <UEmpty
             v-else-if="reviewerSectionsByLevel[item.level].length === 0"
@@ -178,13 +185,13 @@ import {
 } from "@/api/generated";
 import { useCodeHighlight } from "@/composables/useCodeHighlight";
 import CodeReviewSourceTelemetryAccordion from "../shared/CodeReviewSourceTelemetryAccordion.vue";
-import { buildSourceTelemetryAccordionItems } from "../shared/source-telemetry-view-models";
+import CodeReviewSummaryAccordion from "../shared/CodeReviewSummaryAccordion.vue";
+import { hasSourceTelemetryContent as hasSourceTelemetryContentValue } from "../shared/source-telemetry-view-models";
 import {
   agentTestLocationLabel,
   buildAgentTestSeverityTabs,
   buildAgentTestSummaryMetrics,
   buildReviewerSectionsByLevel,
-  totalAgentTestFindingCount,
   type AgentTestSeverityTab,
 } from "./agent-test-view-models";
 
@@ -213,40 +220,27 @@ const severityTabs = computed(() =>
   buildAgentTestSeverityTabs(reviewerSectionsByLevel.value),
 );
 
-const sourceTelemetrySections = computed(() =>
-  buildSourceTelemetryAccordionItems(props.result?.findings.sourceTelemetry),
-);
-
-const sourceTelemetrySectionCount = computed(
-  () => sourceTelemetrySections.value.length,
-);
-
-const hasSourceTelemetryContent = computed(
-  () => sourceTelemetrySectionCount.value > 0,
+const hasSourceTelemetryContent = computed(() =>
+  hasSourceTelemetryContentValue(props.result?.findings.sourceTelemetry),
 );
 
 const resultTabs = computed<AgentTestSeverityTab[]>(() => {
   return [
     ...severityTabs.value,
     {
-      label: "Sources",
+      label: "Summary",
       value: sourcesTabValue,
       level: codeReviewFindingLevelEnum.Critical,
       count: 0,
       color: "neutral",
-      disabled: !hasSourceTelemetryContent.value,
+      disabled: false,
     },
   ];
 });
 
 const defaultResultTab = computed(
   () =>
-    severityTabs.value.find((item) => item.count > 0)?.value ??
-    (hasSourceTelemetryContent.value ? sourcesTabValue : "critical"),
-);
-
-const totalFindingCount = computed(() =>
-  totalAgentTestFindingCount(severityTabs.value),
+    severityTabs.value.find((item) => item.count > 0)?.value ?? sourcesTabValue,
 );
 </script>
 

@@ -50,14 +50,17 @@ public sealed class CodeReviewWorkflowExecutorTests
             CancellationToken.None
         );
         var validation = _xmlValidator.ValidateReviewerBlock(result.Text);
-        var correctionPrompt = JoinedMessageText(chatClient.Calls[1]);
+        var correctionMessages = chatClient.Calls[1];
+        var correctionPrompt = correctionMessages[2].Text;
 
         await Assert.That(chatClient.CallCount).IsEqualTo(2);
-        await Assert.That(correctionPrompt).Contains("<original_review_request>");
-        await Assert.That(correctionPrompt).Contains("<file_patch path=\"run.cs\">");
-        await Assert.That(correctionPrompt).Contains("+while (true) {");
-        await Assert.That(correctionPrompt).Contains("<previous_invalid_response>");
-        await Assert.That(correctionPrompt).Contains(malformedReviewOutput);
+        await Assert.That(correctionMessages).Count().IsEqualTo(3);
+        await Assert.That(correctionMessages[0].Role).IsEqualTo(ChatRole.User);
+        await Assert.That(correctionMessages[0].Text).Contains("<file_patch path=\"run.cs\">");
+        await Assert.That(correctionMessages[0].Text).Contains("+while (true) {");
+        await Assert.That(correctionMessages[1].Role).IsEqualTo(ChatRole.Assistant);
+        await Assert.That(correctionMessages[1].Text).IsEqualTo(malformedReviewOutput);
+        await Assert.That(correctionMessages[2].Role).IsEqualTo(ChatRole.User);
         await Assert.That(correctionPrompt).Contains("do not state that no code diff was supplied");
         await Assert.That(correctionPrompt).Contains("single JSON object");
         await Assert
@@ -93,6 +96,7 @@ public sealed class CodeReviewWorkflowExecutorTests
         var validation = _xmlValidator.ValidateReviewerBlock(result.Text);
         var review = validation.Output!.Reviews.Single();
         var finding = review.Findings.Single();
+        var finalCorrectionMessages = chatClient.Calls[2];
 
         await Assert.That(validation.IsValid).IsTrue();
         await Assert.That(result.AuthorName).IsEqualTo("Test");
@@ -103,6 +107,18 @@ public sealed class CodeReviewWorkflowExecutorTests
         await Assert.That(finding.Summary).IsEqualTo("Reviewer output failed validation");
         await Assert.That(finding.Details).Contains("did not contain a JSON object");
         await Assert.That(chatClient.CallCount).IsEqualTo(3);
+        await Assert.That(finalCorrectionMessages).Count().IsEqualTo(5);
+        await Assert
+            .That(finalCorrectionMessages.Select(message => message.Role))
+            .IsEquivalentTo([
+                ChatRole.User,
+                ChatRole.Assistant,
+                ChatRole.User,
+                ChatRole.Assistant,
+                ChatRole.User,
+            ]);
+        await Assert.That(finalCorrectionMessages[1].Text).IsEqualTo("nope");
+        await Assert.That(finalCorrectionMessages[3].Text).IsEqualTo("still not json");
     }
 
     [Test]

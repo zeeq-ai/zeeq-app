@@ -26,6 +26,7 @@ export type AgentTestTargetRow = {
 export type AgentTestSummaryMetric = {
   label: string;
   value: string;
+  wide?: boolean;
 };
 
 export type AgentTestSeverityTab = {
@@ -95,6 +96,11 @@ export function buildAgentTestSummaryMetrics(
         result?.review.createdAtUtc,
         result?.review.updatedAtUtc,
       ),
+    },
+    {
+      label: "Token usage (input/cached/output/total)",
+      value: formatTokenUsage(result?.findings.sourceTelemetry?.tokenUsage),
+      wide: true,
     },
   ];
 }
@@ -265,4 +271,38 @@ function formatRunTime(
 function toNumber(value: number | string | null | undefined): number {
   const numeric = Number(value ?? 0);
   return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function formatTokenUsage(
+  usage:
+    | {
+        inputTokens: number | string | null;
+        cachedInputTokens: number | string | null;
+        outputTokens: number | string | null;
+        totalTokens: number | string | null;
+      }
+    | null
+    | undefined,
+): string {
+  if (!usage) {
+    return "-- / -- / -- / --";
+  }
+
+  return [
+    formatTokenCount(usage.inputTokens),
+    formatTokenCount(usage.cachedInputTokens),
+    formatTokenCount(usage.outputTokens),
+    formatTokenCount(usage.totalTokens),
+  ].join(" / ");
+}
+
+function formatTokenCount(value: number | string | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "--";
+  }
+
+  const numeric = Number(value);
+  return Number.isFinite(numeric)
+    ? new Intl.NumberFormat("en-US").format(numeric)
+    : "--";
 }

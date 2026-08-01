@@ -35,11 +35,19 @@ public sealed class LlmUsageSink
     public const string RunOptionsKey = "zeeq.llm.usage_sink";
 
     private long _inputTokens;
+    private long _cachedInputTokens;
     private long _outputTokens;
     private long _totalTokens;
+    private int _hasInputTokens;
+    private int _hasCachedInputTokens;
+    private int _hasOutputTokens;
+    private int _hasTotalTokens;
 
     /// <summary>Accumulated input tokens across the run.</summary>
     public long InputTokens => Interlocked.Read(ref _inputTokens);
+
+    /// <summary>Accumulated cached input tokens across the run.</summary>
+    public long CachedInputTokens => Interlocked.Read(ref _cachedInputTokens);
 
     /// <summary>Accumulated output tokens across the run.</summary>
     public long OutputTokens => Interlocked.Read(ref _outputTokens);
@@ -47,11 +55,37 @@ public sealed class LlmUsageSink
     /// <summary>Accumulated total tokens across the run.</summary>
     public long TotalTokens => Interlocked.Read(ref _totalTokens);
 
+    /// <summary>Accumulated input tokens, or null when the provider never reported the field.</summary>
+    public long? InputTokensOrNull => HasInputTokens ? InputTokens : null;
+
+    /// <summary>Accumulated cached input tokens, or null when the provider never reported the field.</summary>
+    public long? CachedInputTokensOrNull => HasCachedInputTokens ? CachedInputTokens : null;
+
+    /// <summary>Accumulated output tokens, or null when the provider never reported the field.</summary>
+    public long? OutputTokensOrNull => HasOutputTokens ? OutputTokens : null;
+
+    /// <summary>Accumulated total tokens, or null when the provider never reported the field.</summary>
+    public long? TotalTokensOrNull => HasTotalTokens ? TotalTokens : null;
+
+    /// <summary>Whether input tokens were reported at least once.</summary>
+    public bool HasInputTokens => Interlocked.CompareExchange(ref _hasInputTokens, 0, 0) != 0;
+
+    /// <summary>Whether cached input tokens were reported at least once.</summary>
+    public bool HasCachedInputTokens =>
+        Interlocked.CompareExchange(ref _hasCachedInputTokens, 0, 0) != 0;
+
+    /// <summary>Whether output tokens were reported at least once.</summary>
+    public bool HasOutputTokens => Interlocked.CompareExchange(ref _hasOutputTokens, 0, 0) != 0;
+
+    /// <summary>Whether total tokens were reported at least once.</summary>
+    public bool HasTotalTokens => Interlocked.CompareExchange(ref _hasTotalTokens, 0, 0) != 0;
+
     /// <summary>
     /// Whether any usage was recorded. False when a provider populated no usage — the caller then
     /// emits no token metric rather than a misleading zero.
     /// </summary>
-    public bool HasUsage => Interlocked.Read(ref _totalTokens) > 0;
+    public bool HasUsage =>
+        HasInputTokens || HasCachedInputTokens || HasOutputTokens || HasTotalTokens;
 
     /// <summary>Adds one round trip's usage; a null or empty <paramref name="usage" /> is ignored.</summary>
     public void Add(UsageDetails? usage)
@@ -61,9 +95,14 @@ public sealed class LlmUsageSink
             return;
         }
 
-        Interlocked.Add(ref _inputTokens, usage.InputTokenCount ?? 0);
-        Interlocked.Add(ref _outputTokens, usage.OutputTokenCount ?? 0);
-        Interlocked.Add(ref _totalTokens, usage.TotalTokenCount ?? 0);
+        AddIfReported(ref _inputTokens, ref _hasInputTokens, usage.InputTokenCount);
+        AddIfReported(
+            ref _cachedInputTokens,
+            ref _hasCachedInputTokens,
+            usage.CachedInputTokenCount
+        );
+        AddIfReported(ref _outputTokens, ref _hasOutputTokens, usage.OutputTokenCount);
+        AddIfReported(ref _totalTokens, ref _hasTotalTokens, usage.TotalTokenCount);
     }
 
     /// <summary>
@@ -84,4 +123,15 @@ public sealed class LlmUsageSink
     /// <summary>Threads this sink onto <paramref name="options" /> for the usage middleware to find.</summary>
     public void AttachTo(ChatOptions options) =>
         (options.AdditionalProperties ??= [])[RunOptionsKey] = this;
+
+    private static void AddIfReported(ref long total, ref int hasValue, long? value)
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        Interlocked.Exchange(ref hasValue, 1);
+        Interlocked.Add(ref total, value.Value);
+    }
 }

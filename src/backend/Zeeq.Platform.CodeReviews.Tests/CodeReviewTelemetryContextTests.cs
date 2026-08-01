@@ -221,6 +221,48 @@ public sealed class CodeReviewTelemetryContextTests
     }
 
     [Test]
+    public async Task Snapshot_TokenUsageAggregatesAndKeepsTokenOnlyPayloadNonEmpty()
+    {
+        var context = new CodeReviewTelemetryContext();
+
+        context.RecordTokenUsage(100, 40, 10, 110);
+        context.RecordTokenUsage(25, 0, 5, 30);
+
+        var snapshot = context.Snapshot();
+
+        await Assert.That(snapshot.IsEmpty).IsFalse();
+        await Assert.That(snapshot.Documents).IsEmpty();
+        await Assert.That(snapshot.ToolUsage).IsEmpty();
+        await Assert.That(snapshot.TokenUsage).IsNotNull();
+        await Assert.That(snapshot.TokenUsage!.InputTokens).IsEqualTo(125);
+        await Assert.That(snapshot.TokenUsage.CachedInputTokens).IsEqualTo(40);
+        await Assert.That(snapshot.TokenUsage.OutputTokens).IsEqualTo(15);
+        await Assert.That(snapshot.TokenUsage.TotalTokens).IsEqualTo(140);
+    }
+
+    [Test]
+    public async Task Snapshot_TokenUsagePreservesPerFieldNullability()
+    {
+        var context = new CodeReviewTelemetryContext();
+
+        context.RecordTokenUsage(
+            inputTokens: 100,
+            cachedInputTokens: null,
+            outputTokens: 0,
+            totalTokens: null
+        );
+
+        var snapshot = context.Snapshot();
+
+        await Assert.That(snapshot.IsEmpty).IsFalse();
+        await Assert.That(snapshot.TokenUsage).IsNotNull();
+        await Assert.That(snapshot.TokenUsage!.InputTokens).IsEqualTo(100);
+        await Assert.That(snapshot.TokenUsage.CachedInputTokens).IsNull();
+        await Assert.That(snapshot.TokenUsage.OutputTokens).IsEqualTo(0);
+        await Assert.That(snapshot.TokenUsage.TotalTokens).IsNull();
+    }
+
+    [Test]
     public async Task Snapshot_WhenNoHitsNorMisses_ReturnsEmpty()
     {
         var context = new CodeReviewTelemetryContext();

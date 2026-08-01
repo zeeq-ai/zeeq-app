@@ -8583,7 +8583,8 @@
           "summary",
           "documents",
           "toolUsage",
-          "missedQueries"
+          "missedQueries",
+          "tokenUsage"
         ],
         "type": "object",
         "properties": {
@@ -8620,6 +8621,17 @@
               "$ref": "#/components/schemas/CodeReviewMissedQueryDto"
             },
             "description": "Searches that returned nothing (content gaps)."
+          },
+          "tokenUsage": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "Provider-reported token usage, null when unavailable.",
+                "$ref": "#/components/schemas/CodeReviewTokenUsageDto"
+              }
+            ]
           }
         },
         "description": "Readable API projection of the review's source telemetry (which KB documents/snippets the\nreviewers consulted, tool usage, and content-gap misses)."
@@ -8652,6 +8664,54 @@
           }
         },
         "description": "DTO cursor for streams ordered newest first by `CreatedAtUtc, Id`."
+      },
+      "CodeReviewTokenUsageDto": {
+        "required": [
+          "inputTokens",
+          "cachedInputTokens",
+          "outputTokens",
+          "totalTokens"
+        ],
+        "type": "object",
+        "properties": {
+          "inputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "cachedInputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "outputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "totalTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        },
+        "description": "Provider-reported token usage for the review run."
       },
       "CodeReviewToolUsageDto": {
         "required": [

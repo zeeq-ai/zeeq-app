@@ -106,7 +106,71 @@ describe("agent test view models", () => {
       { label: "Files in scope", value: "3" },
       { label: "Files filtered out", value: "2" },
       { label: "Run time", value: "1m" },
+      {
+        label: "Token usage (input/cached/output/total)",
+        value: "-- / -- / -- / --",
+        wide: true,
+      },
     ]);
+
+    const tokenResult = testResult({
+      findings: {
+        sourceTelemetry: {
+          schemaVersion: 2,
+          summary: {
+            documentCount: 0,
+            snippetCount: 0,
+            sourceHitCount: 0,
+            toolCallCount: 0,
+            missedQueryCount: 0,
+          },
+          documents: [],
+          toolUsage: [],
+          missedQueries: [],
+          tokenUsage: {
+            inputTokens: 121518,
+            cachedInputTokens: 93440,
+            outputTokens: 541,
+            totalTokens: 122059,
+          },
+        },
+      },
+    });
+    expect(buildAgentTestSummaryMetrics(tokenResult)[3]).toEqual({
+      label: "Token usage (input/cached/output/total)",
+      value: "121,518 / 93,440 / 541 / 122,059",
+      wide: true,
+    });
+
+    const partialTokenResult = testResult({
+      findings: {
+        sourceTelemetry: {
+          schemaVersion: 2,
+          summary: {
+            documentCount: 0,
+            snippetCount: 0,
+            sourceHitCount: 0,
+            toolCallCount: 0,
+            missedQueryCount: 0,
+          },
+          documents: [],
+          toolUsage: [],
+          missedQueries: [],
+          tokenUsage: {
+            inputTokens: 100,
+            cachedInputTokens: null,
+            outputTokens: 0,
+            totalTokens: null,
+          },
+        },
+      },
+    });
+    expect(buildAgentTestSummaryMetrics(partialTokenResult)[3]).toEqual({
+      label: "Token usage (input/cached/output/total)",
+      value: "100 / -- / 0 / --",
+      wide: true,
+    });
+
     expect(
       agentTestLocationLabel({
         level: codeReviewFindingLevelEnum.Minor,

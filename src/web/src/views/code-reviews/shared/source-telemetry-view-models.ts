@@ -91,6 +91,17 @@ export function buildSourceTelemetryAccordionItems(
   return items.filter((item) => item.count > 0);
 }
 
+export function hasSourceTelemetryContent(
+  sourceTelemetry: CodeReviewSourceTelemetryDto | null | undefined,
+): boolean {
+  return (
+    sourceTelemetry !== null &&
+    sourceTelemetry !== undefined &&
+    (sourceTelemetry.tokenUsage !== null ||
+      buildSourceTelemetryAccordionItems(sourceTelemetry).length > 0)
+  );
+}
+
 export function buildSourceTelemetryDocumentRows(
   sourceTelemetry: CodeReviewSourceTelemetryDto | null | undefined,
 ): SourceTelemetryDocumentRow[] {
