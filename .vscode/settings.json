@@ -50,5 +50,12 @@
     "docs/.nuxt/**": true,
     "docs/.output/**": true,
     "docs/.dist/**": true
-  }
+  },
+  "mise.configureExtensionsAutomatically": true,
+  "mise.configureExtensionsUseSymLinks": true,
+  "dotnetAcquisitionExtension.sharedExistingDotnetPath": "${workspaceFolder}/.vscode/mise-tools/dotnet",
+  "debug.javascript.defaultRuntimeExecutable": {
+    "pwa-node": "${workspaceFolder}/.vscode/mise-tools/node"
+  },
+  "oxc.path.node": "${workspaceFolder}/.vscode/mise-tools/node"
 }

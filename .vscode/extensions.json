@@ -1,0 +1,12 @@
+{
+  "recommendations": [
+    "hverlin.mise-vscode",
+    "ms-dotnettools.csdevkit",
+    "ms-dotnettools.csharp",
+    "microsoft-aspire.aspire-vscode",
+    "k--kato.docomment",
+    "aaron-bond.better-comments",
+    "csharpier.csharpier-vscode",
+    "jeremycaron.csharp-organize-usings"
+  ]
+}
