@@ -440,7 +440,7 @@ public sealed class PromptPlaceholderParserTests
     }
 
     [Test]
-    public async Task Substitute_SubstitutingCall_AllocatesExactlyOneString()
+    public async Task Substitute_SubstitutingCall_HasBoundedAllocations()
     {
         var content = string.Concat(
             Enumerable
@@ -451,18 +451,19 @@ public sealed class PromptPlaceholderParserTests
         );
         var overrides = Overrides(("p0", "value"), ("p3", "value"), ("p7", "value"));
 
-        // Warm the generated regex and pooled buffers so steady-state behavior is measured.
+        // Warm the generated regex so steady-state behavior is measured.
         _ = PromptPlaceholderParser.Substitute(content, overrides);
 
         var before = GC.GetAllocatedBytesForCurrentThread();
         var result = PromptPlaceholderParser.Substitute(content, overrides);
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
-        // One string of `result.Length` chars plus object header/length overhead. A per-placeholder
-        // string (name, default, or a StringBuilder chunk) would push this well past the bound.
-        var singleStringUpperBound = (result.Length * sizeof(char)) + 64;
+        // One result string plus one small slice array. A per-placeholder string
+        // (name, default, or a StringBuilder chunk) would push this well past the bound.
+        var boundedSubstitutionUpperBound =
+            (result.Length * sizeof(char)) + (8 * 5 * sizeof(int)) + (8 * IntPtr.Size) + 256;
 
         await Assert.That(allocated).IsGreaterThan(0);
-        await Assert.That(allocated).IsLessThanOrEqualTo(singleStringUpperBound);
+        await Assert.That(allocated).IsLessThanOrEqualTo(boundedSubstitutionUpperBound);
     }
 }

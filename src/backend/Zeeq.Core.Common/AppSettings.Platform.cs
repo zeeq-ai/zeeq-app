@@ -17,6 +17,11 @@ public sealed partial record AppSettings
 public sealed record PlatformSettings
 {
     /// <summary>
+    /// Largest supported organization activation-key lifetime.
+    /// </summary>
+    public const int MaxSupportedOrganizationActivationKeyLifetimeDays = 36_000;
+
+    /// <summary>
     /// Allow-list of `provider:subject` identities granted the system-admin role.
     /// </summary>
     /// <remarks>
@@ -24,4 +29,31 @@ public sealed record PlatformSettings
     /// across providers; `provider:subject` is the stable, IdP-verified identity key.
     /// </remarks>
     public string[] SystemAdminSubjects { get; init; } = [];
+
+    /// <summary>
+    /// Requires activation keys for newly-created organizations when enabled.
+    /// </summary>
+    public bool OrganizationActivationKeysEnabled { get; init; }
+
+    /// <summary>
+    /// Default activation-key validity window in days.
+    /// </summary>
+    public int OrganizationActivationKeyDefaultLifetimeDays { get; init; } = 90;
+
+    /// <summary>
+    /// Maximum activation-key validity window in days.
+    /// </summary>
+    public int OrganizationActivationKeyMaxLifetimeDays { get; init; } = 365;
+
+    /// <summary>
+    /// Validates the cross-property activation-key lifetime bounds.
+    /// </summary>
+    public bool HasValidOrganizationActivationKeyLifetimeBounds() =>
+        OrganizationActivationKeyDefaultLifetimeDays
+            is >= 1
+                and <= MaxSupportedOrganizationActivationKeyLifetimeDays
+        && OrganizationActivationKeyMaxLifetimeDays
+            is >= 1
+                and <= MaxSupportedOrganizationActivationKeyLifetimeDays
+        && OrganizationActivationKeyMaxLifetimeDays >= OrganizationActivationKeyDefaultLifetimeDays;
 }

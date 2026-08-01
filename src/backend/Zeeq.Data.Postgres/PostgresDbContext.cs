@@ -55,6 +55,12 @@ public class PostgresDbContext(DbContextOptions<PostgresDbContext> options)
     public DbSet<Organization> Organizations => Set<Organization>();
 
     /// <summary>
+    /// System-minted organization activation keys.
+    /// </summary>
+    public DbSet<OrganizationActivationKey> OrganizationActivationKeys =>
+        Set<OrganizationActivationKey>();
+
+    /// <summary>
     /// Organization-owned encrypted secret values.
     /// </summary>
     public DbSet<EncryptedValue> EncryptedValues => Set<EncryptedValue>();

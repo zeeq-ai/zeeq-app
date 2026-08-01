@@ -82,6 +82,11 @@ public sealed class OrganizationPrototype
     /// Activation timestamp for the generated organization.
     /// </summary>
     public DateTimeOffset? ActivatedAtUtc { get; set; }
+
+    /// <summary>
+    /// Whether the generated organization should be active.
+    /// </summary>
+    public bool IsActivated { get; set; } = true;
 }
 
 /// <summary>
@@ -184,7 +189,7 @@ public static class EntityGraphMembershipExtensions
                     CreatedByUserId = owner.Id,
                     CreatedAtUtc = now,
                     UpdatedAtUtc = now,
-                    ActivatedAtUtc = prototype.ActivatedAtUtc ?? now,
+                    ActivatedAtUtc = prototype.IsActivated ? prototype.ActivatedAtUtc ?? now : null,
                 };
 
                 var rootTeam = new Team

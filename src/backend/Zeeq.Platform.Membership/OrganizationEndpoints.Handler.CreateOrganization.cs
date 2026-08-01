@@ -1,3 +1,4 @@
+using Zeeq.Core.Common;
 using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.Membership;
@@ -5,7 +6,8 @@ namespace Zeeq.Platform.Membership;
 /// <summary>
 /// Creates a new organization for the authenticated user.
 /// </summary>
-public sealed class CreateOrganizationHandler(IZeeqMembershipStore store) : IEndpointHandler
+public sealed class CreateOrganizationHandler(IZeeqMembershipStore store, AppSettings appSettings)
+    : IEndpointHandler
 {
     private const int MaxCreatedOrganizations = 5;
 
@@ -50,7 +52,7 @@ public sealed class CreateOrganizationHandler(IZeeqMembershipStore store) : IEnd
             CreatedByUserId = userId,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
-            ActivatedAtUtc = now,
+            ActivatedAtUtc = appSettings.Platform.OrganizationActivationKeysEnabled ? null : now,
         };
         var rootTeam = new Team
         {

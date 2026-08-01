@@ -167,6 +167,13 @@ export const routes: Array<RouteRecordRaw> = [
               import("@/views/system/organizations/SystemOrganizations.vue"),
             meta: { title: "Organizations", requiresSystemAdmin: true },
           },
+          {
+            path: "activation-keys",
+            name: "SystemActivationKeys",
+            component: () =>
+              import("@/views/system/activation-keys/SystemActivationKeys.vue"),
+            meta: { title: "Activation Keys", requiresSystemAdmin: true },
+          },
         ],
       },
       {
@@ -246,10 +253,6 @@ export const routes: Array<RouteRecordRaw> = [
   },
   {
     path: "/activate-account",
-    redirect: "/login?inactiveOrg=true",
-  },
-  {
-    path: "/activate-organization",
     redirect: "/login?inactiveOrg=true",
   },
   {

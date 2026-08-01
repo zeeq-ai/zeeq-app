@@ -27,6 +27,11 @@ const links: NavigationMenuItem[][] = [
       icon: "i-hugeicons-building-03",
       to: "/system/organizations",
     },
+    {
+      label: "Activation Keys",
+      icon: "i-hugeicons-shield-key",
+      to: "/system/activation-keys",
+    },
   ],
 ];
 </script>

@@ -89,6 +89,47 @@ internal sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organ
     }
 }
 
+internal sealed class OrganizationActivationKeyConfiguration
+    : IEntityTypeConfiguration<OrganizationActivationKey>
+{
+    public void Configure(EntityTypeBuilder<OrganizationActivationKey> entity)
+    {
+        entity.ToTable("core_organization_activation_keys");
+        entity.HasKey(key => key.Id);
+        entity.Property(key => key.Id).HasMaxLength(128);
+        entity.Property(key => key.KeyHash).IsRequired().HasMaxLength(64);
+        entity.HasIndex(key => key.KeyHash).IsUnique();
+        entity.Property(key => key.Note).HasMaxLength(500);
+        entity.Property(key => key.CreatedByUserId).IsRequired().HasMaxLength(128);
+        entity.Property(key => key.ExpiresAtUtc).IsRequired();
+        entity.Property(key => key.ActivatedOrganizationId).HasMaxLength(128);
+        entity.Property(key => key.ActivatedByUserId).HasMaxLength(128);
+        entity.Property(key => key.CreatedAtUtc).IsRequired();
+        entity.Property(key => key.UpdatedAtUtc).IsRequired();
+        entity.HasIndex(key => key.CreatedAtUtc);
+        entity.HasIndex(key => key.ExpiresAtUtc);
+        entity.HasIndex(key => key.ActivatedAtUtc);
+        entity.HasIndex(key => key.DisabledAtUtc);
+        entity.HasIndex(key => key.ActivatedOrganizationId);
+        entity.HasIndex(key => key.ActivatedByUserId);
+        entity
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(key => key.CreatedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity
+            .HasOne<Organization>()
+            .WithMany()
+            .HasForeignKey(key => key.ActivatedOrganizationId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(key => key.ActivatedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 /// <summary>
 /// EF mapping for organization-owned encrypted secret values.
 /// </summary>

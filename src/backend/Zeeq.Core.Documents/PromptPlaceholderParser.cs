@@ -32,8 +32,8 @@ namespace Zeeq.Core.Documents;
 /// </description></item>
 /// <item><description>
 /// <see cref="Substitute" /> is the hot retrieval path, called on every <c>prompts/get</c>. It reads
-/// only the placeholder key, keeps default values as ranges into the source, and allocates exactly
-/// one string — the result.
+/// only the placeholder key, keeps default values as ranges into the source, and avoids
+/// per-placeholder strings.
 /// </description></item>
 /// </list>
 /// </remarks>
@@ -176,11 +176,11 @@ public static partial class PromptPlaceholderParser
     /// match and passes through untouched — surfacing that to the author belongs in the parse-preview
     /// API, not in a runtime guess at intent.
     ///
-    /// Allocation shape: the no-placeholder document returns the original instance; a substituting
-    /// call allocates exactly one string. Default values are copied straight out of
-    /// <paramref name="content" /> as spans and are never materialized, and placeholder keys probe
-    /// <paramref name="overrides" /> through a span alternate lookup so no name string is created
-    /// either.
+    /// Allocation shape: the no-placeholder document returns the original instance. A substituting
+    /// call allocates one small slice array and one result string. Default values are copied straight
+    /// out of <paramref name="content" /> as spans and are never materialized, and placeholder keys
+    /// probe <paramref name="overrides" /> through a span alternate lookup so no name string is
+    /// created either.
     /// </remarks>
     /// <param name="content">Raw prompt document body.</param>
     /// <param name="overrides">
@@ -202,70 +202,62 @@ public static partial class PromptPlaceholderParser
         var lookup = BuildLookup(overrides, out var hasOverrides);
 
         var source = content.AsSpan();
-        var slices = ArrayPool<PlaceholderSlice>.Shared.Rent(8);
+        var slices = new PlaceholderSlice[8];
         var count = 0;
         var finalLength = content.Length;
 
-        try
+        foreach (var match in PlaceholderRegionExpression().EnumerateMatches(source))
         {
-            foreach (var match in PlaceholderRegionExpression().EnumerateMatches(source))
+            var region = source.Slice(match.Index, match.Length);
+            var openTagEnd = FindOpenTagEnd(region);
+            if (openTagEnd < 0)
             {
-                var region = source.Slice(match.Index, match.Length);
-                var openTagEnd = FindOpenTagEnd(region);
-                if (openTagEnd < 0)
-                {
-                    continue;
-                }
-
-                var attributes = region[OpenTagPrefix.Length..openTagEnd];
-                var label = ReadLabel(attributes);
-                if (!TryResolvePlaceholderKey(attributes, label, out var name, out var derivedName))
-                {
-                    // NOTE: Keyless or malformed regions are not valid placeholders. Leave them
-                    // untouched so authoring mistakes remain visible instead of silently deleting
-                    // markup around the body.
-                    continue;
-                }
-
-                string? overrideValue = null;
-                if (hasOverrides && lookup.TryGetValue(name, out var configured))
-                {
-                    overrideValue = configured;
-                }
-
-                // Trimming is applied to the indices rather than through Span.Trim so the offset
-                // back into the source string survives for the copy phase below.
-                var (bodyStart, bodyLength) = MeasureBody(region, openTagEnd);
-
-                if (count == slices.Length)
-                {
-                    Grow(ref slices, count);
-                }
-
-                finalLength += (overrideValue?.Length ?? bodyLength) - match.Length;
-                slices[count++] = new PlaceholderSlice(
-                    RegionStart: match.Index,
-                    RegionLength: match.Length,
-                    DefaultStart: match.Index + bodyStart,
-                    DefaultLength: bodyLength,
-                    Override: overrideValue
-                );
+                continue;
             }
 
-            // The marker was present but nothing well-formed matched: return the original instance
-            // instead of allocating an identical copy.
-            if (count == 0)
+            var attributes = region[OpenTagPrefix.Length..openTagEnd];
+            var label = ReadLabel(attributes);
+            if (!TryResolvePlaceholderKey(attributes, label, out var name, out var derivedName))
             {
-                return content;
+                // NOTE: Keyless or malformed regions are not valid placeholders. Leave them
+                // untouched so authoring mistakes remain visible instead of silently deleting
+                // markup around the body.
+                continue;
             }
 
-            return string.Create(finalLength, (content, slices, count), SpliceAction);
+            string? overrideValue = null;
+            if (hasOverrides && lookup.TryGetValue(name, out var configured))
+            {
+                overrideValue = configured;
+            }
+
+            // Trimming is applied to the indices rather than through Span.Trim so the offset
+            // back into the source string survives for the copy phase below.
+            var (bodyStart, bodyLength) = MeasureBody(region, openTagEnd);
+
+            if (count == slices.Length)
+            {
+                Grow(ref slices, count);
+            }
+
+            finalLength += (overrideValue?.Length ?? bodyLength) - match.Length;
+            slices[count++] = new PlaceholderSlice(
+                RegionStart: match.Index,
+                RegionLength: match.Length,
+                DefaultStart: match.Index + bodyStart,
+                DefaultLength: bodyLength,
+                Override: overrideValue
+            );
         }
-        finally
+
+        // The marker was present but nothing well-formed matched: return the original instance
+        // instead of allocating an identical copy.
+        if (count == 0)
         {
-            // clearArray because the slice holds a string reference the pool must not keep alive.
-            ArrayPool<PlaceholderSlice>.Shared.Return(slices, clearArray: true);
+            return content;
         }
+
+        return string.Create(finalLength, (content, slices, count), SpliceAction);
     }
 
     /// <summary>
@@ -484,13 +476,12 @@ public static partial class PromptPlaceholderParser
     }
 
     /// <summary>
-    /// Replaces the pooled slice buffer with a larger one, preserving recorded entries.
+    /// Replaces the slice buffer with a larger one, preserving recorded entries.
     /// </summary>
     private static void Grow(ref PlaceholderSlice[] buffer, int count)
     {
-        var larger = ArrayPool<PlaceholderSlice>.Shared.Rent(buffer.Length * 2);
+        var larger = new PlaceholderSlice[buffer.Length * 2];
         buffer.AsSpan(0, count).CopyTo(larger);
-        ArrayPool<PlaceholderSlice>.Shared.Return(buffer, clearArray: true);
         buffer = larger;
     }
 

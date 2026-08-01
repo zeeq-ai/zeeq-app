@@ -1,13 +1,15 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
+using Zeeq.Core.Common;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
 
 namespace Zeeq.Data.Postgres.Identity;
 
 /// <inheritdoc cref="IZeeqIdentityStore" />
-public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdentityStore
+public sealed class PostgresZeeqIdentityStore(PostgresDbContext db, AppSettings appSettings)
+    : IZeeqIdentityStore
 {
     private const string SameDomainAutoInviteIndexName =
         "ix_core_organization_memberships_same_domain_auto_invite";
@@ -114,7 +116,9 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
                 CreatedByUserId = userId,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,
-                ActivatedAtUtc = now,
+                ActivatedAtUtc = appSettings.Platform.OrganizationActivationKeysEnabled
+                    ? null
+                    : now,
             }
         );
         db.Teams.Add(
@@ -179,7 +183,10 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db) : IZeeqIdent
     }
 
     /// <inheritdoc />
-    public async Task<string?> FindUserEmailAsync(string userId, CancellationToken cancellationToken)
+    public async Task<string?> FindUserEmailAsync(
+        string userId,
+        CancellationToken cancellationToken
+    )
     {
         return await db
             .Users.TagWithOperationCallSite("identity.user.find_email")

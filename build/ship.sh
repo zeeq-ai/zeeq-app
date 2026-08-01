@@ -28,7 +28,7 @@ gcloud run deploy zeeq-runtime \
   --region="${REGION}" \
   --cpu-boost \
   --cpu=2 \
-  --memory=2Gi \
+  --memory=4Gi \
   --concurrency=500 \
   --use-http2 \
   --project="${PROJECT_ID}" \

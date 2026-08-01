@@ -130,6 +130,157 @@
         }
       }
     },
+    "/api/v1/admin/activation-keys": {
+      "get": {
+        "tags": [
+          "SystemActivationKeys"
+        ],
+        "summary": "List activation keys.",
+        "description": "Lists activation keys for system administration, including status,\ncreator, expiry, and activation metadata.\n\nRequires system-admin permissions. The result is paged and can be\nfiltered by status or searched by key metadata such as note, creator,\nand activated organization id.",
+        "operationId": "ListSystemActivationKeys",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 10000,
+              "minimum": 1,
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/OrganizationActivationKeyStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedResponseOfSystemActivationKeyResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "SystemActivationKeys"
+        ],
+        "summary": "Create activation key.",
+        "description": "Creates one unassigned organization activation key and returns the raw\nkey material exactly once. The backend stores only the key hash.\n\nRequires system-admin permissions. The key is later exchanged by an\nauthenticated user with an inactive personal organization.",
+        "operationId": "CreateSystemActivationKey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSystemActivationKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSystemActivationKeyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/activation-keys/{keyId}": {
+      "delete": {
+        "tags": [
+          "SystemActivationKeys"
+        ],
+        "summary": "Revoke activation key.",
+        "description": "Revokes one never-activated activation key so it can no longer be\nexchanged for organization activation.\n\nRequires system-admin permissions. Activated keys are immutable audit\nrecords and cannot be revoked through this route.",
+        "operationId": "RevokeSystemActivationKey",
+        "parameters": [
+          {
+            "name": "keyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemActivationKeyResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/v1/admin/organizations": {
       "get": {
         "tags": [
@@ -572,6 +723,51 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/me/organization-activation/exchange": {
+      "post": {
+        "tags": [
+          "OrganizationActivation"
+        ],
+        "summary": "Activate organization.",
+        "description": "Exchanges an unassigned activation key for activation of the authenticated\nuser's current inactive organization. The key proves system-issued activation\nprovenance; it is not pre-bound to an organization.\n\nRequires cookie authentication, but intentionally does not require an active\norganization because the target organization is not active yet. The route is\nrate limited and returns a generic validation failure when the key is invalid,\nexpired, already used, revoked, or the current organization is not eligible.",
+        "operationId": "ExchangeOrganizationActivationKey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganizationActivationExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationActivationExchangeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -9003,6 +9199,65 @@
         },
         "description": "Request body for creating an organization."
       },
+      "CreateSystemActivationKeyRequest": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "maxLength": 500,
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Optional operator note."
+          },
+          "expiresInDays": {
+            "maximum": 36000,
+            "minimum": 1,
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "description": "Optional key lifetime in days.",
+            "format": "int32"
+          }
+        },
+        "description": "System-admin create activation-key request."
+      },
+      "CreateSystemActivationKeyResponse": {
+        "required": [
+          "id",
+          "key",
+          "note",
+          "createdAtUtc",
+          "expiresAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "System-admin response that returns the raw key only at creation time."
+      },
       "DocumentContentResponse": {
         "required": [
           "id",
@@ -11064,6 +11319,41 @@
         },
         "description": "One bucketed point in a metric time series grouped by two dimensions."
       },
+      "OrganizationActivationExchangeRequest": {
+        "required": [
+          "key"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "maxLength": 64,
+            "minLength": 64,
+            "type": "string"
+          }
+        },
+        "description": "Authenticated activation-key exchange request."
+      },
+      "OrganizationActivationExchangeResponse": {
+        "required": [
+          "organizationId"
+        ],
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          }
+        },
+        "description": "Successful activation-key exchange response."
+      },
+      "OrganizationActivationKeyStatus": {
+        "enum": [
+          "Available",
+          "Activated",
+          "Revoked",
+          "Expired"
+        ],
+        "description": "Status filter for activation-key administration."
+      },
       "OrganizationResponse": {
         "required": [
           "id",
@@ -11207,6 +11497,52 @@
             "format": "date-time"
           }
         }
+      },
+      "PagedResponseOfSystemActivationKeyResponse": {
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "totalCount"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemActivationKeyResponse"
+            },
+            "description": "Items returned for the requested page."
+          },
+          "page": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "One-based page number that was requested.",
+            "format": "int32"
+          },
+          "pageSize": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Maximum number of items requested per page.",
+            "format": "int32"
+          },
+          "totalCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Total number of matching items across all pages.",
+            "format": "int32"
+          }
+        },
+        "description": "Generic paged response returned by system organization admin endpoints."
       },
       "PagedResponseOfSystemOrganizationMemberResponse": {
         "required": [
@@ -12240,6 +12576,82 @@
         },
         "description": "A ranked snippet search hit for the \"Test\" panel's Sections/Code modes."
       },
+      "SystemActivationKeyResponse": {
+        "required": [
+          "id",
+          "note",
+          "createdByUserId",
+          "createdByDisplayName",
+          "createdAtUtc",
+          "updatedAtUtc",
+          "expiresAtUtc",
+          "activatedAtUtc",
+          "activatedOrganizationId",
+          "activatedByUserId",
+          "disabledAtUtc",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "createdByUserId": {
+            "type": "string"
+          },
+          "createdByDisplayName": {
+            "type": "string"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "activatedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "activatedOrganizationId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "activatedByUserId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "disabledAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrganizationActivationKeyStatus"
+          }
+        },
+        "description": "System-admin activation-key summary."
+      },
       "SystemOrganizationCreatorResponse": {
         "required": [
           "userId",
@@ -13009,10 +13421,16 @@
       "name": "Ingest"
     },
     {
+      "name": "SystemActivationKeys"
+    },
+    {
       "name": "SystemOrganizations"
     },
     {
       "name": "Auth"
+    },
+    {
+      "name": "OrganizationActivation"
     },
     {
       "name": "GitHub"

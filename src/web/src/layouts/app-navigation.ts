@@ -107,14 +107,19 @@ const systemSection: AppNavigationSection = {
   icon: "i-hugeicons-shield-01",
   items: [
     {
+      label: "Diagnostics",
+      icon: "i-hugeicons-activity-02",
+      to: "/system/diagnostics",
+    },
+    {
       label: "Organizations",
       icon: "i-hugeicons-building-03",
       to: "/system/organizations",
     },
     {
-      label: "Diagnostics",
-      icon: "i-hugeicons-activity-02",
-      to: "/system/diagnostics",
+      label: "Activation Keys",
+      icon: "i-hugeicons-shield-key",
+      to: "/system/activation-keys",
     },
   ],
 };
