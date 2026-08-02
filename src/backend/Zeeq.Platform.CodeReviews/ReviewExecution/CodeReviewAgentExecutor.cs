@@ -468,9 +468,9 @@ public sealed partial class CodeReviewAgentExecutor(
         $"""
             {CodeReviewSystemPrompt.CommonInstructions}
 
-            ---
-
+            <reviewer_instructions>
             {reviewer.Prompt}
+            </reviewer_instructions>
             """;
 
     /// <summary>
