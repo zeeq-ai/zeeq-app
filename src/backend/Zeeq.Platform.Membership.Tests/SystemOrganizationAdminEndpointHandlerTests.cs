@@ -306,7 +306,7 @@ public sealed class SystemOrganizationAdminEndpointHandlerTests
             new SystemOrganizationLlmTier(
                 "Fast",
                 "Fireworks",
-                "accounts/fireworks/models/deepseek-v4-flash",
+                "accounts/fireworks/models/deepseek-v4-flash-0731",
                 null,
                 UsesManagedKey: false,
                 KeyId: null

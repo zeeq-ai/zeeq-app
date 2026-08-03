@@ -138,7 +138,7 @@ public sealed record LlmModelDefaults
         new()
         {
             Provider = "Fireworks",
-            Model = "accounts/fireworks/models/deepseek-v4-flash",
+            Model = "accounts/fireworks/models/deepseek-v4-flash-0731",
             Endpoint = "https://api.fireworks.ai/inference/v1",
         };
 

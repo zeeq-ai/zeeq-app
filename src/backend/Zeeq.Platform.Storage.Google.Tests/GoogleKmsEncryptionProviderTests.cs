@@ -1,8 +1,8 @@
 using System.Text;
+using Google.Cloud.Kms.V1;
 using Zeeq.Core.Common;
 using Zeeq.Core.Llm;
 using Zeeq.Platform.Storage.Google;
-using Google.Cloud.Kms.V1;
 
 namespace Zeeq.Platform.Storage.Google.Tests;
 
@@ -90,7 +90,7 @@ public sealed class GoogleKmsEncryptionProviderTests
                 Fast = new LlmModelDefault
                 {
                     ApiKey = "default-key",
-                    Model = "deepseek-v4-flash",
+                    Model = "deepseek-v4-flash-0731",
                     Endpoint = "https://api.deepseek.com",
                 },
             },

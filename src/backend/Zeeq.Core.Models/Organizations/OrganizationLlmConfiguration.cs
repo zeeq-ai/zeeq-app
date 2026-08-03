@@ -19,7 +19,7 @@ public sealed record OrganizationLlmConfiguration
             Fast = new OrganizationLlmTierConfiguration
             {
                 Provider = "Fireworks",
-                Model = "accounts/fireworks/models/deepseek-v4-flash",
+                Model = "accounts/fireworks/models/deepseek-v4-flash-0731",
             },
             High = new OrganizationLlmTierConfiguration
             {
@@ -46,7 +46,7 @@ public sealed record OrganizationLlmConfiguration
             Fast = new OrganizationLlmTierConfiguration
             {
                 Provider = "DeepSeek",
-                Model = "deepseek-v4-flash",
+                Model = "deepseek-v4-flash-0731",
             },
             High = new OrganizationLlmTierConfiguration
             {
@@ -91,12 +91,20 @@ public sealed record OrganizationLlmTierConfiguration
     /// <summary>
     /// Provider name, such as Fireworks, OpenAI, or Anthropic.
     /// </summary>
-    public string Provider { get; init { field = value.Trim(); } } = "Fireworks";
+    public string Provider
+    {
+        get;
+        init { field = value.Trim(); }
+    } = "Fireworks";
 
     /// <summary>
     /// Provider model identifier.
     /// </summary>
-    public string Model { get; init { field = value.Trim(); } } = string.Empty;
+    public string Model
+    {
+        get;
+        init { field = value.Trim(); }
+    } = string.Empty;
 
     /// <summary>
     /// Tenant-owned encrypted value ID; <see langword="null" /> uses Zeeq's internal default key only for Fireworks tiers.

@@ -1,10 +1,10 @@
 using System.Data.Common;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Zeeq.Core.Models;
 using Zeeq.Testing;
 using Zeeq.Testing.EntityGraphs;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -102,7 +102,7 @@ public sealed class LlmSettingsMappingIntegrationTests : PgTransactionalTestBase
             .IsEqualTo("Fireworks");
         await Assert
             .That(document.RootElement.GetProperty("Fast").GetProperty("Model").GetString())
-            .IsEqualTo("accounts/fireworks/models/deepseek-v4-flash");
+            .IsEqualTo("accounts/fireworks/models/deepseek-v4-flash-0731");
         await Assert
             .That(document.RootElement.GetProperty("High").GetProperty("Model").GetString())
             .IsEqualTo("accounts/fireworks/models/deepseek-v4-pro");
