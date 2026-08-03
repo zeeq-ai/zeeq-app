@@ -6711,6 +6711,118 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/agent-conversations": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "List my agent conversations.",
+        "description": "Returns a cursor-paginated page of the caller's own recent agent conversations\n(matched by ingest principal, sign-in email, or an active email alias),\nnewest first. There is no \"all conversations\" option — sharing one conversation\nwith a teammate is done by sending them its direct `/sessions/{id}` link, which\nthe detail endpoint below serves to any organization member. Pass the cursor\nfields from the previous page (`cursorStartedAtUtc`, `cursorId`) to fetch the\nnext page.",
+        "operationId": "ListAgentConversations",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursorStartedAtUtc",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "cursorId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConversationEndpointError"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConversationListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/agent-conversations/{conversationId}": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Get one agent conversation's detail.",
+        "description": "Returns one conversation's summary, prompt timeline, and token/cost usage\nsummary. Independently addressable by conversation id and intentionally not\nownership-scoped, unlike the list endpoint above — any organization member with\na direct link can open it, so a conversation can be shared by URL.",
+        "operationId": "GetAgentConversationDetail",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "conversationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "404": {
+            "description": "Not Found"
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConversationDetailResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/telemetry/import": {
       "post": {
         "tags": [
@@ -6870,6 +6982,470 @@
           }
         },
         "description": "Response returned by the admin snippet-embedding key diagnostic."
+      },
+      "AgentConversationDetailResponse": {
+        "required": [
+          "summary",
+          "prompts",
+          "tokenUsage",
+          "models"
+        ],
+        "type": "object",
+        "properties": {
+          "summary": {
+            "description": "Conversation metadata row, identical shape to an inbox list item.",
+            "$ref": "#/components/schemas/AgentConversationListItemDto"
+          },
+          "prompts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentConversationPromptEventDto"
+            },
+            "description": "Prompt events, ascending by time, capped at 500."
+          },
+          "tokenUsage": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "`null` when the conversation has no completion events yet.",
+                "$ref": "#/components/schemas/AgentConversationTokenUsageDto"
+              }
+            ]
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Distinct, non-blank model names seen across this conversation's completion events (a\nconversation can span more than one, e.g. a cheaper model for housekeeping calls and a\ndifferent one for the actual turns), sorted alphabetically."
+          }
+        },
+        "description": "Full detail for one conversation: summary, prompt timeline, and token usage."
+      },
+      "AgentConversationEndpointError": {
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable error code."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable description of the validation failure."
+          }
+        },
+        "description": "Error response for Sessions API validation failures."
+      },
+      "AgentConversationListItemDto": {
+        "required": [
+          "id",
+          "harness",
+          "harnessVariant",
+          "repoRemoteUrl",
+          "headBranch",
+          "ownerEmail",
+          "createdById",
+          "startedAtUtc",
+          "completedAtUtc",
+          "totalInputTokens",
+          "totalOutputTokens",
+          "totalCostUsd"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Telemetry conversation id; use to fetch detail or deep-link to `/sessions/{id}`."
+          },
+          "harness": {
+            "type": "string",
+            "description": "Harness family — `claude-code`, `codex`, `copilot-chat`, etc."
+          },
+          "harnessVariant": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Codex `originator` or Claude `terminal.type`, when reported."
+          },
+          "repoRemoteUrl": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Canonical `owner/repo` identity, when the harness reported one."
+          },
+          "headBranch": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Git branch active during the conversation, when reported."
+          },
+          "ownerEmail": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Harness-reported owner email, raw (not alias-resolved)."
+          },
+          "createdById": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Zeeq user id of the authenticated ingest principal, when trusted."
+          },
+          "startedAtUtc": {
+            "type": "string",
+            "description": "Earliest accepted event timestamp.",
+            "format": "date-time"
+          },
+          "completedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "`null` while the conversation is still active.",
+            "format": "date-time"
+          },
+          "totalInputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "NOTE: not reliably populated by ingestion today — often 0 even for conversations with real\ncompletion events. Prefer AgentConversationTokenUsageDto from the detail\nendpoint for an accurate live total.",
+            "format": "int32"
+          },
+          "totalOutputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "See int AgentConversationListItemDto.TotalInputTokens caveat.",
+            "format": "int32"
+          },
+          "totalCostUsd": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "description": "See int AgentConversationListItemDto.TotalInputTokens caveat.",
+            "format": "double"
+          }
+        },
+        "description": "Conversation row returned to the Sessions inbox. `OwnerEmail`/`CreatedById` are\nraw — the client resolves a display name against the organization member list it already\nloads, rather than the server joining one here."
+      },
+      "AgentConversationListResponse": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentConversationListItemDto"
+            },
+            "description": "Rows for this page, newest first."
+          },
+          "nextCursor": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "Pass back as `cursorStartedAtUtc`/`cursorId` to fetch the next page; `null` at the end of the stream.",
+                "$ref": "#/components/schemas/AgentConversationStreamCursorDto"
+              }
+            ]
+          }
+        },
+        "description": "Cursor-paginated page of Sessions inbox rows."
+      },
+      "AgentConversationPromptEventDto": {
+        "required": [
+          "id",
+          "occurredAtUtc",
+          "promptGroupId",
+          "promptText",
+          "promptLength",
+          "inputTokens",
+          "outputTokens"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Event id."
+          },
+          "occurredAtUtc": {
+            "type": "string",
+            "description": "Event timestamp; timeline ordering key.",
+            "format": "date-time"
+          },
+          "promptGroupId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Correlates this prompt to its turn's tool calls/completions."
+          },
+          "promptText": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "User prompt text, subject to the harness's obfuscation policy."
+          },
+          "promptLength": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "description": "Prompt text length, reported independent of truncated storage.",
+            "format": "int32"
+          },
+          "inputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "description": "Sum of input tokens across this turn's completions; `null` if none yet.",
+            "format": "int64"
+          },
+          "outputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "description": "Sum of output tokens across this turn's completions; `null` if none yet.",
+            "format": "int64"
+          }
+        },
+        "description": "One prompt event rendered in the conversation timeline — the only event type with a\nmessage payload from the user."
+      },
+      "AgentConversationStreamCursorDto": {
+        "required": [
+          "startedAtUtc",
+          "id"
+        ],
+        "type": "object",
+        "properties": {
+          "startedAtUtc": {
+            "type": "string",
+            "description": "Conversation start timestamp for the last row in the page.",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "description": "Stable conversation id used as the cursor tie-breaker."
+          }
+        },
+        "description": "DTO cursor for the conversation stream, ordered newest first by\n`StartedAtUtc, Id`."
+      },
+      "AgentConversationTokenUsageDto": {
+        "required": [
+          "completionEventCount",
+          "peakInputTokens",
+          "peakCachedInputTokens",
+          "billedFreshInputTokens",
+          "billedCachedInputTokens",
+          "billedInputTokens",
+          "billedOutputTokens",
+          "billedReasoningTokens",
+          "billedToolTokens",
+          "cacheHitRate",
+          "reasoningShareOfOutput",
+          "totalCostUsd",
+          "averageCostPerEventUsd",
+          "freshInputCostUsd",
+          "cachedInputCostUsd",
+          "outputCostUsd",
+          "cacheSavingsUsd"
+        ],
+        "type": "object",
+        "properties": {
+          "completionEventCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Number of completion events summarized.",
+            "format": "int32"
+          },
+          "peakInputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Largest single-event input token count observed.",
+            "format": "int32"
+          },
+          "peakCachedInputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Largest single-event cached-input token count observed.",
+            "format": "int32"
+          },
+          "billedFreshInputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Sum of non-cached input tokens across all events.",
+            "format": "int64"
+          },
+          "billedCachedInputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Sum of cached input tokens across all events.",
+            "format": "int64"
+          },
+          "billedInputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Sum of total input tokens (fresh + cached) across all events.",
+            "format": "int64"
+          },
+          "billedOutputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Sum of output tokens across all events.",
+            "format": "int64"
+          },
+          "billedReasoningTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Sum of reasoning tokens (subset of output; Copilot only).",
+            "format": "int64"
+          },
+          "billedToolTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Sum of tool tokens (Codex only).",
+            "format": "int64"
+          },
+          "cacheHitRate": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "description": "Cached input tokens as a share of total input tokens.",
+            "format": "double"
+          },
+          "reasoningShareOfOutput": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "description": "Reasoning tokens as a share of total output tokens.",
+            "format": "double"
+          },
+          "totalCostUsd": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "description": "Authoritative total — sum of each event's already-persisted cost.",
+            "format": "double"
+          },
+          "averageCostPerEventUsd": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "description": "TotalCostUsd divided by CompletionEventCount.",
+            "format": "double"
+          },
+          "freshInputCostUsd": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "description": "Independent catalog-rate estimate for fresh input tokens. NOT a component of\nTotalCostUsd — the two can (and often do) disagree, since\nTotalCostUsd is whatever cost was actually persisted per event\n(reported or estimated at ingest by a possibly different rate source), while this is\n\"what it would cost at today's catalog rates.\" Do not render these as if they sum to\nTotalCostUsd.",
+            "format": "double"
+          },
+          "cachedInputCostUsd": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "description": "Independent catalog-rate estimate for cached input tokens; see FreshInputCostUsd.",
+            "format": "double"
+          },
+          "outputCostUsd": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "description": "Independent catalog-rate estimate for output tokens; see FreshInputCostUsd.",
+            "format": "double"
+          },
+          "cacheSavingsUsd": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "description": "Estimated USD saved versus pricing all input tokens at the fresh rate.",
+            "format": "double"
+          }
+        },
+        "description": "Token usage and cost summary for one conversation. See\nAgentConversationTokenUsageSummary for field derivation."
       },
       "AgentEventKind": {
         "enum": [
@@ -13464,6 +14040,9 @@
     },
     {
       "name": "Metrics"
+    },
+    {
+      "name": "Sessions"
     },
     {
       "name": "Telemetry"

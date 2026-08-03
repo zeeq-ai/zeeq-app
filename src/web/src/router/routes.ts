@@ -134,18 +134,16 @@ export const routes: Array<RouteRecordRaw> = [
         ],
       },
       {
-        path: "telemetry",
-        component: () => import("@/views/telemetry/Telemetry.vue"),
-        redirect: "/telemetry/my-conversations",
-        meta: { title: "Telemetry" },
-        children: [
-          {
-            path: "my-conversations",
-            name: "MyConversations",
-            component: () => import("@/views/telemetry/MyConversations.vue"),
-            meta: { title: "Telemetry" },
-          },
-        ],
+        // Optional path param (not a query string) so each conversation gets its own
+        // canonical, bookmarkable URL — /sessions/<id> loads that conversation directly,
+        // independent of whatever page the inbox list happens to be on.
+        path: "sessions/:conversationId?",
+        name: "Sessions",
+        component: () => import("@/views/sessions/Sessions.vue"),
+        meta: { title: "Sessions" },
+        props: (route) => ({
+          conversationId: (route.params.conversationId as string) || undefined,
+        }),
       },
       {
         path: "system",

@@ -132,6 +132,23 @@ public sealed class ClaudeCodeTelemetryAdapter : AgentTelemetryAdapterBase, ITel
         };
     }
 
+    // TODO: `PromptText` can be a Claude Code-injected background-task lifecycle ping
+    // (wrapped in a literal `<task-notification>...</task-notification>` block) rather
+    // than something the user typed. There is no structural OTel attribute to key off
+    // instead: the CLI's local JSONL transcript format has an `isMeta` flag for this,
+    // but it never crosses into the `claude_code.user_prompt` OTLP event we ingest here
+    // (confirmed against a raw wire sample — see
+    // .agents/scratch/2026-07-13-claude-code-raw-message-stream.json — and against live
+    // `agent_session_events` rows, where `query_source`/`is_housekeeping` are empty/false
+    // on both real and synthetic prompts alike). Today the Sessions UI hides these with a
+    // frontend content check (`isTaskNotificationPrompt` in
+    // src/web/src/views/sessions/session-display.ts). If this needs to be classified
+    // properly one day: match `PromptText` here with an anchored regex
+    // (`^\s*<task-notification>`, not a naive `StartsWith`), store it as a new dedicated
+    // column (e.g. `IsBackgroundTaskNotification` — don't overload `IsHousekeeping`, which
+    // already means "non-main-thread side call" and is a different concept), then filter
+    // on that column in `PostgresAgentConversationQueryStore.GetDetailAsync`'s prompts
+    // query so it's classified once at ingest instead of re-derived by every consumer.
     private static AgentSessionEventRecord AdaptPrompt(
         TelemetryLogRecordContext record,
         DateTimeOffset occurredAtUtc,
