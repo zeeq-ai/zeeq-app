@@ -237,22 +237,20 @@ const items = computed<DropdownMenuItem[][]>(() => [
       ],
     },
   ],
-  /*
   [
     {
-      label: "Documentation",
-      icon: "i-hugeicons-book-open-01",
-      to: "https://ui.nuxt.com/docs/getting-started/installation/vue",
+      label: "Terms of Service",
+      icon: "i-hugeicons-policy",
+      to: "https://zeeq.ai/docs/policy/terms-of-service",
       target: "_blank",
     },
     {
-      label: "GitHub repository",
-      icon: "simple-icons:github",
-      to: "https://github.com/nuxt-ui-templates/dashboard-vue",
+      label: "Privacy Policy",
+      icon: "i-hugeicons-policy",
+      to: "https://zeeq.ai/docs/policy/privacy-policy",
       target: "_blank",
     },
   ],
-  */
   [
     {
       label: backendVersionLabel.value,

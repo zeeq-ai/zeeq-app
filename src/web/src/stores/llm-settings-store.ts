@@ -24,7 +24,7 @@ export const llmModelCatalog = {
   Fireworks: [
     "accounts/fireworks/models/glm-5p2",
     "accounts/fireworks/models/deepseek-v4-pro",
-    "accounts/fireworks/models/deepseek-v4-flash",
+    "accounts/fireworks/models/deepseek-v4-flash-0731",
   ],
   OpenAI: [
     "gpt-5.4-mini",
@@ -60,7 +60,7 @@ export const llmModelLabels: Record<string, string> = {
   // Fireworks
   "accounts/fireworks/models/glm-5p2": "GLM 5.2",
   "accounts/fireworks/models/deepseek-v4-pro": "DeepSeek v4 Pro (Fireworks)",
-  "accounts/fireworks/models/deepseek-v4-flash":
+  "accounts/fireworks/models/deepseek-v4-flash-0731":
     "DeepSeek v4 Flash (Fireworks)",
   // OpenAI
   "gpt-5.4-mini": "GPT 5.4 Mini",

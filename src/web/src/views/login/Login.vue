@@ -39,7 +39,7 @@
           No sign-in providers are available.
         </p>
 
-        <USeparator label="Reach out" class="my-4" />
+        <USeparator label="Support and early access" class="my-4" />
 
         <UButton
           block
@@ -53,8 +53,32 @@
           }"
           external
         >
-          Contact
+          Contact / Request activation key
         </UButton>
+
+        <span class="text-dimmed text-xs">
+          New organizations will require a one time activation key after sign
+          up.
+        </span>
+
+        <USeparator label="Notices" class="my-4" />
+
+        <span class="text-dimmed text-xs"
+          >By signing in, you agree to our
+          <a
+            href="https://zeeq.ai/docs/policy/terms-of-service"
+            target="_blank"
+            class="underline font-bold"
+            >Terms of Service</a
+          >
+          and
+          <a
+            href="https://zeeq.ai/docs/policy/privacy-policy"
+            target="_blank"
+            class="underline font-bold"
+            >Privacy Policy</a
+          >.</span
+        >
       </div>
     </UPageCard>
 
@@ -105,6 +129,27 @@
           >
             Activate
           </UButton>
+
+          <USeparator label="Support and early access" class="my-4" />
+
+          <UButton
+            block
+            size="lg"
+            color="neutral"
+            variant="subtle"
+            to="mailto:hello@zeeq.ai"
+            :avatar="{
+              src: avatarSrc,
+              loading: 'lazy',
+            }"
+            external
+          >
+            Contact / Request activation key
+          </UButton>
+
+          <span class="text-dimmed text-xs">
+            New organizations require a one time activation key after sign up.
+          </span>
         </UForm>
 
         <template #footer>

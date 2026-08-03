@@ -1,7 +1,7 @@
 using System.Text;
+using Microsoft.Extensions.Caching.Memory;
 using Zeeq.Core.Common;
 using Zeeq.Core.Models;
-using Microsoft.Extensions.Caching.Memory;
 
 namespace Zeeq.Core.Llm.Tests;
 
@@ -254,7 +254,7 @@ public sealed class KeyEncryptionServiceTests
                 Fast = new LlmModelDefault
                 {
                     ApiKey = "default-key",
-                    Model = "deepseek-v4-flash",
+                    Model = "deepseek-v4-flash-0731",
                     Endpoint = "https://api.deepseek.com",
                 },
             },

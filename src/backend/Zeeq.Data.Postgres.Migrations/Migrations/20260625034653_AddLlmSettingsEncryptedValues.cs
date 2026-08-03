@@ -12,7 +12,7 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
             {
               "Fast": {
                 "Provider": "DeepSeek",
-                "Model": "deepseek-v4-flash",
+                "Model": "deepseek-v4-flash-0731",
                 "KeyId": null
               },
               "High": {
