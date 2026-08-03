@@ -48,8 +48,7 @@ internal sealed class PostgresAgentTelemetryDomainStore(PostgresDbContext db)
         CancellationToken cancellationToken
     )
     {
-        var exists = await db
-            .Set<AgentPullRequestSessionLink>()
+        var exists = await db.Set<AgentPullRequestSessionLink>()
             .AsNoTracking()
             .TagWithOperationCallSite("telemetry.pull_request_session_link.exists")
             .AnyAsync(
@@ -89,6 +88,10 @@ internal sealed class PostgresAgentTelemetryDomainStore(PostgresDbContext db)
     {
         var newKeys = new HashSet<AgentConversationKey>();
         var eventRows = events.ToList();
+        var conversationRows = conversations
+            .OrderBy(conversation => conversation.OrganizationId, StringComparer.Ordinal)
+            .ThenBy(conversation => conversation.Id, StringComparer.Ordinal)
+            .ToArray();
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
@@ -96,7 +99,7 @@ internal sealed class PostgresAgentTelemetryDomainStore(PostgresDbContext db)
         // later slice (Phase 13) with a single-round-trip xmax = 0 SQL upsert
         // that returns newly inserted keys directly.
 
-        foreach (var conversation in conversations)
+        foreach (var conversation in conversationRows)
         {
             conversation.RepoRemoteUrl = CanonicalRepositoryOrNull(conversation.RepoRemoteUrl);
 
@@ -108,6 +111,7 @@ internal sealed class PostgresAgentTelemetryDomainStore(PostgresDbContext db)
 
             if (existing is null)
             {
+                conversation.RollupVersion = AgentConversationRollupVersion.Current;
                 db.Set<AgentConversation>().Add(conversation);
 
                 newKeys.Add(new(conversation.OrganizationId, conversation.Id));
@@ -122,7 +126,9 @@ internal sealed class PostgresAgentTelemetryDomainStore(PostgresDbContext db)
         // CommitAsync follow — both commit atomically.
         await db.SaveChangesAsync(cancellationToken);
 
-        var newEventIds = await InsertNewEventsAsync(eventRows, cancellationToken);
+        var insertedEvents = await InsertNewEventsAsync(eventRows, cancellationToken);
+        var rollupDeltas = BuildRollupDeltas(insertedEvents);
+        await ApplyRollupDeltasAsync(rollupDeltas, cancellationToken);
 
         foreach (var raw in rawRows)
         {
@@ -146,15 +152,21 @@ internal sealed class PostgresAgentTelemetryDomainStore(PostgresDbContext db)
 
         await transaction.CommitAsync(cancellationToken);
 
-        return new(newKeys, newEventIds);
+        return new(
+            newKeys,
+            insertedEvents
+                .Select(row => row.Id)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToHashSet(StringComparer.Ordinal)
+        );
     }
 
-    private async Task<IReadOnlySet<string>> InsertNewEventsAsync(
+    private async Task<IReadOnlyList<InsertedAgentSessionEventRow>> InsertNewEventsAsync(
         IReadOnlyList<AgentSessionEvent> events,
         CancellationToken cancellationToken
     )
     {
-        var inserted = new HashSet<string>(StringComparer.Ordinal);
+        var inserted = new List<InsertedAgentSessionEventRow>();
 
         foreach (var chunk in events.Chunk(EventInsertChunkSize))
         {
@@ -288,25 +300,136 @@ internal sealed class PostgresAgentTelemetryDomainStore(PostgresDbContext db)
                     is_housekeeping
                 FROM rows
                 ON CONFLICT DO NOTHING
-                RETURNING id AS "Value"
+                RETURNING
+                    id,
+                    occurred_at_utc,
+                    source_sequence,
+                    organization_id,
+                    conversation_id,
+                    event_type,
+                    prompt_text,
+                    input_tokens,
+                    output_tokens,
+                    cost_usd,
+                    is_housekeeping
                 """;
 
-            var insertedIds = await db
-                .Database.SqlQuery<string>(sql)
+            var insertedRows = await db
+                .Database.SqlQuery<InsertedAgentSessionEventRow>(sql)
                 .TagWithOperationCallSite("telemetry.agent_session_events.insert_new")
                 .ToListAsync(cancellationToken);
 
-            foreach (var insertedId in insertedIds)
-            {
-                if (!string.IsNullOrWhiteSpace(insertedId))
-                {
-                    inserted.Add(insertedId);
-                }
-            }
+            inserted.AddRange(insertedRows);
         }
 
         return inserted;
     }
+
+    private async Task ApplyRollupDeltasAsync(
+        IReadOnlyList<AgentConversationRollupDelta> deltas,
+        CancellationToken cancellationToken
+    )
+    {
+        foreach (var chunk in deltas.Chunk(EventInsertChunkSize))
+        {
+            var rows = chunk.ToArray();
+            if (rows.Length == 0)
+            {
+                continue;
+            }
+
+            var rowsJson = JsonSerializer.Serialize(
+                rows,
+                PostgresAgentTelemetryJsonContext.Default.AgentConversationRollupDeltaArray
+            );
+
+            FormattableString sql = $"""
+                /* telemetry.agent_conversations.apply_rollup_delta */
+                WITH rows AS (
+                    SELECT *
+                    FROM jsonb_to_recordset(CAST({rowsJson} AS jsonb)) AS row(
+                        organization_id text,
+                        conversation_id text,
+                        title text,
+                        input_tokens_delta bigint,
+                        output_tokens_delta bigint,
+                        known_cost_usd_delta numeric,
+                        completion_count_delta bigint,
+                        missing_cost_completion_count_delta bigint
+                    )
+                )
+                UPDATE zeeq.agent_conversations AS conversation
+                SET
+                    title = COALESCE(conversation.title, rows.title),
+                    total_input_tokens = conversation.total_input_tokens + rows.input_tokens_delta,
+                    total_output_tokens = conversation.total_output_tokens + rows.output_tokens_delta,
+                    missing_cost_completion_count =
+                        conversation.missing_cost_completion_count
+                        + rows.missing_cost_completion_count_delta,
+                    total_cost_usd = CASE
+                        WHEN
+                            conversation.missing_cost_completion_count
+                            + rows.missing_cost_completion_count_delta > 0
+                            THEN NULL
+                        WHEN rows.completion_count_delta = 0
+                            THEN conversation.total_cost_usd
+                        ELSE COALESCE(conversation.total_cost_usd, 0) + rows.known_cost_usd_delta
+                    END
+                FROM rows
+                WHERE
+                    conversation.organization_id = rows.organization_id
+                    AND conversation.id = rows.conversation_id
+                """;
+
+            await db.Database.ExecuteSqlInterpolatedAsync(sql, cancellationToken);
+        }
+    }
+
+    private static IReadOnlyList<AgentConversationRollupDelta> BuildRollupDeltas(
+        IReadOnlyList<InsertedAgentSessionEventRow> insertedEvents
+    )
+    {
+        var groups = insertedEvents
+            .GroupBy(row => new AgentConversationKey(row.OrganizationId, row.ConversationId))
+            .OrderBy(group => group.Key.OrganizationId, StringComparer.Ordinal)
+            .ThenBy(group => group.Key.ConversationId, StringComparer.Ordinal);
+        var deltas = new List<AgentConversationRollupDelta>();
+
+        foreach (var group in groups)
+        {
+            var title = group
+                .Where(row =>
+                    row.EventType == (byte)AgentSessionEventType.Prompt
+                    && !row.IsHousekeeping
+                    && !string.IsNullOrWhiteSpace(row.PromptText)
+                )
+                .OrderBy(row => row.OccurredAtUtc)
+                .ThenBy(row => row.SourceSequence ?? long.MaxValue)
+                .ThenBy(row => row.Id, StringComparer.Ordinal)
+                .Select(row => TruncateTitle(row.PromptText!))
+                .FirstOrDefault();
+            var completions = group
+                .Where(row => row.EventType == (byte)AgentSessionEventType.Completion)
+                .ToArray();
+
+            deltas.Add(
+                new AgentConversationRollupDelta(
+                    group.Key.OrganizationId,
+                    group.Key.ConversationId,
+                    title,
+                    completions.Sum(row => (long)(row.InputTokens ?? 0)),
+                    completions.Sum(row => (long)(row.OutputTokens ?? 0)),
+                    completions.Sum(row => row.CostUsd ?? 0m),
+                    completions.Length,
+                    completions.Count(row => row.CostUsd is null)
+                )
+            );
+        }
+
+        return deltas;
+    }
+
+    private static string TruncateTitle(string title) => title.Length <= 200 ? title : title[..200];
 
     private static AgentSessionEventInsertRow ToInsertRow(AgentSessionEvent e) =>
         new(

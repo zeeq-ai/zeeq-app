@@ -136,45 +136,27 @@ public sealed class TelemetryRawRequestStoreIntegrationTests(PgDatabaseFixture p
         var conversationId = $"conversation-{linkKey}";
         var links = new[]
         {
-            Link(
-                $"link-a-{linkKey}",
-                organizationId,
-                pullRequestRecordId,
-                conversationId
-            ),
-            Link(
-                $"link-b-{linkKey}",
-                organizationId,
-                pullRequestRecordId,
-                conversationId
-            ),
+            Link($"link-a-{linkKey}", organizationId, pullRequestRecordId, conversationId),
+            Link($"link-b-{linkKey}", organizationId, pullRequestRecordId, conversationId),
         };
 
         await Assert
             .That(
-                await store.TryCreatePullRequestSessionLinkAsync(
-                    links[0],
-                    CancellationToken.None
-                )
+                await store.TryCreatePullRequestSessionLinkAsync(links[0], CancellationToken.None)
             )
             .IsTrue();
         await Assert
             .That(
-                await store.TryCreatePullRequestSessionLinkAsync(
-                    links[1],
-                    CancellationToken.None
-                )
+                await store.TryCreatePullRequestSessionLinkAsync(links[1], CancellationToken.None)
             )
             .IsFalse();
 
-        var persistedCount = await db
-            .Set<AgentPullRequestSessionLink>()
+        var persistedCount = await db.Set<AgentPullRequestSessionLink>()
             .AsNoTracking()
-            .CountAsync(
-                link =>
-                    link.OrganizationId == organizationId
-                    && link.PullRequestRecordId == pullRequestRecordId
-                    && link.ConversationId == conversationId
+            .CountAsync(link =>
+                link.OrganizationId == organizationId
+                && link.PullRequestRecordId == pullRequestRecordId
+                && link.ConversationId == conversationId
             );
 
         await Assert.That(persistedCount).IsEqualTo(1);
@@ -578,6 +560,239 @@ public sealed class TelemetryRawRequestStoreIntegrationTests(PgDatabaseFixture p
         await Assert.That(orgB.Harness).IsEqualTo("claude-code");
     }
 
+    [Test]
+    public async Task UpsertConversationsEventsAndAcknowledgeRaw_AppliesInlineRollupForInsertedEventsOnly()
+    {
+        await using var provider = CreateProvider(postgres.ConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var rawStore = scope.ServiceProvider.GetRequiredService<ITelemetryRawRequestStore>();
+        var domainStore = scope.ServiceProvider.GetRequiredService<IAgentTelemetryDomainStore>();
+        var db = scope.ServiceProvider.GetRequiredService<PostgresDbContext>();
+        var orgId = $"org-{Guid.CreateVersion7():N}";
+        var conversationId = $"conversation-{Guid.CreateVersion7():N}";
+        var now = DateTimeOffset.UtcNow;
+        var conversation = new AgentConversation
+        {
+            Id = conversationId,
+            OrganizationId = orgId,
+            Harness = "codex",
+            StartedAtUtc = now,
+        };
+        var firstPrompt = PromptEvent(
+            orgId,
+            conversationId,
+            "event-rollup-prompt-first",
+            now.AddSeconds(1),
+            "first user prompt"
+        );
+        firstPrompt.SourceSequence = 2;
+        var blankPrompt = PromptEvent(
+            orgId,
+            conversationId,
+            "event-rollup-prompt-blank",
+            now.AddMilliseconds(500),
+            "   "
+        );
+        var housekeepingPrompt = PromptEvent(
+            orgId,
+            conversationId,
+            "event-rollup-prompt-housekeeping",
+            now,
+            "housekeeping prompt"
+        );
+        housekeepingPrompt.IsHousekeeping = true;
+        var completionWithCost = CompletionEvent(
+            orgId,
+            conversationId,
+            "event-rollup-completion-cost",
+            now.AddSeconds(2),
+            inputTokens: 100,
+            outputTokens: 20,
+            costUsd: 0.03m
+        );
+        var completionMissingCost = CompletionEvent(
+            orgId,
+            conversationId,
+            "event-rollup-completion-missing-cost",
+            now.AddSeconds(3),
+            inputTokens: 50,
+            outputTokens: 10,
+            costUsd: null
+        );
+        var raw = await ClaimStoredRawAsync(rawStore);
+
+        await domainStore.UpsertConversationsEventsAndAcknowledgeRawAsync(
+            [conversation],
+            [
+                housekeepingPrompt,
+                blankPrompt,
+                firstPrompt,
+                completionWithCost,
+                Duplicate(completionWithCost),
+                completionMissingCost,
+            ],
+            [raw],
+            CancellationToken.None
+        );
+        db.ChangeTracker.Clear();
+
+        var persisted = await db.AgentConversations.SingleAsync(row =>
+            row.OrganizationId == orgId && row.Id == conversationId
+        );
+        await Assert.That(persisted.Title).IsEqualTo("first user prompt");
+        await Assert.That(persisted.TotalInputTokens).IsEqualTo(150L);
+        await Assert.That(persisted.TotalOutputTokens).IsEqualTo(30L);
+        await Assert.That(persisted.MissingCostCompletionCount).IsEqualTo(1L);
+        await Assert.That(persisted.TotalCostUsd).IsNull();
+        await Assert
+            .That(persisted.RollupVersion)
+            .IsEqualTo(AgentConversationRollupVersion.Current);
+
+        var replayRaw = await ClaimStoredRawAsync(rawStore);
+        await domainStore.UpsertConversationsEventsAndAcknowledgeRawAsync(
+            [conversation],
+            [completionWithCost, completionMissingCost],
+            [replayRaw],
+            CancellationToken.None
+        );
+        db.ChangeTracker.Clear();
+
+        var replayed = await db.AgentConversations.SingleAsync(row =>
+            row.OrganizationId == orgId && row.Id == conversationId
+        );
+        await Assert.That(replayed.TotalInputTokens).IsEqualTo(150L);
+        await Assert.That(replayed.TotalOutputTokens).IsEqualTo(30L);
+        await Assert.That(replayed.MissingCostCompletionCount).IsEqualTo(1L);
+        await Assert.That(replayed.TotalCostUsd).IsNull();
+    }
+
+    [Test]
+    public async Task UpsertConversationsEventsAndAcknowledgeRaw_DoesNotOverwriteExistingTitle()
+    {
+        await using var provider = CreateProvider(postgres.ConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var rawStore = scope.ServiceProvider.GetRequiredService<ITelemetryRawRequestStore>();
+        var domainStore = scope.ServiceProvider.GetRequiredService<IAgentTelemetryDomainStore>();
+        var db = scope.ServiceProvider.GetRequiredService<PostgresDbContext>();
+        var orgId = $"org-{Guid.CreateVersion7():N}";
+        var conversationId = $"conversation-{Guid.CreateVersion7():N}";
+        var now = DateTimeOffset.UtcNow;
+        var conversation = new AgentConversation
+        {
+            Id = conversationId,
+            OrganizationId = orgId,
+            Harness = "codex",
+            StartedAtUtc = now,
+            Title = "existing title",
+        };
+        var prompt = PromptEvent(
+            orgId,
+            conversationId,
+            "event-rollup-late-prompt",
+            now.AddSeconds(-10),
+            "older prompt"
+        );
+        var raw = await ClaimStoredRawAsync(rawStore);
+
+        await domainStore.UpsertConversationsEventsAndAcknowledgeRawAsync(
+            [conversation],
+            [prompt],
+            [raw],
+            CancellationToken.None
+        );
+        db.ChangeTracker.Clear();
+
+        var persisted = await db.AgentConversations.SingleAsync(row =>
+            row.OrganizationId == orgId && row.Id == conversationId
+        );
+        await Assert.That(persisted.Title).IsEqualTo("existing title");
+    }
+
+    [Test]
+    public async Task BackfillNextAsync_RecomputesOneStaleConversationAbsolutely()
+    {
+        await using var provider = CreateProvider(postgres.ConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var store =
+            scope.ServiceProvider.GetRequiredService<IAgentConversationRollupBackfillStore>();
+        var db = scope.ServiceProvider.GetRequiredService<PostgresDbContext>();
+        var orgId = $"org-{Guid.CreateVersion7():N}";
+        var conversationId = $"conversation-{Guid.CreateVersion7():N}";
+        var now = DateTimeOffset.UtcNow;
+        db.AgentConversations.Add(
+            new AgentConversation
+            {
+                Id = conversationId,
+                OrganizationId = orgId,
+                Harness = "codex",
+                StartedAtUtc = now,
+                TotalInputTokens = 999,
+                TotalOutputTokens = 999,
+                TotalCostUsd = 999,
+                MissingCostCompletionCount = 99,
+                RollupVersion = -1,
+            }
+        );
+        var housekeepingPrompt = PromptEvent(
+            orgId,
+            conversationId,
+            "event-backfill-housekeeping",
+            now,
+            "housekeeping title"
+        );
+        housekeepingPrompt.IsHousekeeping = true;
+        db.AgentSessionEvents.AddRange(
+            housekeepingPrompt,
+            PromptEvent(
+                orgId,
+                conversationId,
+                "event-backfill-blank-title",
+                now.AddSeconds(-3),
+                ""
+            ),
+            PromptEvent(
+                orgId,
+                conversationId,
+                "event-backfill-title",
+                now.AddSeconds(-1),
+                "backfilled title"
+            ),
+            CompletionEvent(
+                orgId,
+                conversationId,
+                "event-backfill-completion-cost",
+                now.AddSeconds(-2),
+                inputTokens: 30,
+                outputTokens: 7,
+                costUsd: 0.02m
+            )
+        );
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = await store.BackfillNextAsync(
+            targetVersion: 0,
+            statementTimeout: TimeSpan.FromSeconds(30),
+            excludedKeys: new HashSet<AgentConversationKey>(),
+            CancellationToken.None
+        );
+        db.ChangeTracker.Clear();
+
+        await Assert.That(result.Status).IsEqualTo(AgentConversationRollupBackfillStatus.Completed);
+        await Assert
+            .That(result.ConversationKey)
+            .IsEqualTo(new AgentConversationKey(orgId, conversationId));
+        var persisted = await db.AgentConversations.SingleAsync(row =>
+            row.OrganizationId == orgId && row.Id == conversationId
+        );
+        await Assert.That(persisted.Title).IsEqualTo("backfilled title");
+        await Assert.That(persisted.TotalInputTokens).IsEqualTo(30L);
+        await Assert.That(persisted.TotalOutputTokens).IsEqualTo(7L);
+        await Assert.That(persisted.MissingCostCompletionCount).IsEqualTo(0L);
+        await Assert.That(persisted.TotalCostUsd).IsEqualTo(0.02m);
+        await Assert.That(persisted.RollupVersion).IsEqualTo(0);
+    }
+
     private static ServiceProvider CreateProvider(string connectionString)
     {
         var services = new ServiceCollection();
@@ -645,6 +860,62 @@ public sealed class TelemetryRawRequestStoreIntegrationTests(PgDatabaseFixture p
 
         return await store.TryCreatePullRequestSessionLinkAsync(link, CancellationToken.None);
     }
+
+    private static async Task<TelemetryRawRequest> ClaimStoredRawAsync(
+        ITelemetryRawRequestStore rawStore
+    )
+    {
+        var rawId = await rawStore.StoreLogsAsync(
+            payload: [1, 2, 3],
+            signalType: TelemetrySignalType.Logs,
+            metadata: Metadata(TelemetrySignalType.Logs),
+            ingestUserId: "telemetry-user",
+            ingestOrganizationId: "telemetry-org"
+        );
+
+        return (await rawStore.ClaimBatchAsync(1_000, TimeSpan.FromMinutes(1))).Single(row =>
+            row.Id == rawId
+        );
+    }
+
+    private static AgentSessionEvent PromptEvent(
+        string organizationId,
+        string conversationId,
+        string id,
+        DateTimeOffset occurredAtUtc,
+        string promptText
+    ) =>
+        new()
+        {
+            Id = id,
+            OrganizationId = organizationId,
+            ConversationId = conversationId,
+            OccurredAtUtc = occurredAtUtc,
+            EventType = AgentSessionEventType.Prompt,
+            PromptText = promptText,
+        };
+
+    private static AgentSessionEvent CompletionEvent(
+        string organizationId,
+        string conversationId,
+        string id,
+        DateTimeOffset occurredAtUtc,
+        int inputTokens,
+        int outputTokens,
+        decimal? costUsd
+    ) =>
+        new()
+        {
+            Id = id,
+            OrganizationId = organizationId,
+            ConversationId = conversationId,
+            OccurredAtUtc = occurredAtUtc,
+            EventType = AgentSessionEventType.Completion,
+            InputTokens = inputTokens,
+            OutputTokens = outputTokens,
+            CostUsd = costUsd,
+            CostSource = costUsd is null ? null : AgentSessionEventCostSource.EstimatedFromTokens,
+        };
 
     private static AgentSessionEvent Duplicate(AgentSessionEvent source) =>
         new()

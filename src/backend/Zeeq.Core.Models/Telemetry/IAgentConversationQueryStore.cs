@@ -114,8 +114,8 @@ public sealed record AgentConversationSummary(
     string? CreatedById,
     DateTimeOffset StartedAtUtc,
     DateTimeOffset? CompletedAtUtc,
-    int TotalInputTokens,
-    int TotalOutputTokens,
+    long TotalInputTokens,
+    long TotalOutputTokens,
     decimal? TotalCostUsd
 );
 
