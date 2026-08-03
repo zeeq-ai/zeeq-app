@@ -110,6 +110,10 @@ public static class PostgresSetupExtension
             services.AddScoped<IMetricEventStore, PostgresMetricEventStore>();
             services.AddScoped<ITelemetryRawRequestStore, PostgresTelemetryRawRequestStore>();
             services.AddScoped<IAgentTelemetryDomainStore, PostgresAgentTelemetryDomainStore>();
+            services.AddScoped<
+                IAgentConversationQueryStore,
+                PostgresAgentConversationQueryStore
+            >();
             services.AddScoped<IMetricsQueryStore, PostgresMetricsQueryStore>();
             services.AddScoped<
                 ICodeReviewOrganizationSettingsStore,

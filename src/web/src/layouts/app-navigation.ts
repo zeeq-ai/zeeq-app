@@ -45,6 +45,11 @@ const mainSection: AppNavigationSection = {
       icon: "i-hugeicons-github",
       to: "/repositories",
     },
+    {
+      label: "Sessions",
+      icon: "i-hugeicons-chat-user-01",
+      to: "/sessions",
+    },
   ],
 };
 
