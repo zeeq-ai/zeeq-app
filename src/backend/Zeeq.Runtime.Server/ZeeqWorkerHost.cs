@@ -81,6 +81,7 @@ internal static class ZeeqWorkerHost
                 .AddZeeqCodeReviews(workerAppSettings.CodeReview)
                 .AddZeeqIngest(workerAppSettings)
                 .AddTelemetryIngest(workerAppSettings.Telemetry)
+                .AddAgentConversationRollupBackfill()
                 .AddZeeqIngestScheduler()
                 .AddZeeqStalledIngestSyncCleanup()
                 .AddZeeqDispatchProcess();
