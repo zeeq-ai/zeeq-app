@@ -49,14 +49,23 @@ public sealed class AgentConversation
     /// <summary>Latest accepted event timestamp.</summary>
     public DateTimeOffset? CompletedAtUtc { get; set; }
 
+    /// <summary>First accepted non-housekeeping user prompt, set once.</summary>
+    public string? Title { get; set; }
+
     /// <summary>Total input tokens across all completions.</summary>
-    public int TotalInputTokens { get; set; }
+    public long TotalInputTokens { get; set; }
 
     /// <summary>Total output tokens across all completions.</summary>
-    public int TotalOutputTokens { get; set; }
+    public long TotalOutputTokens { get; set; }
 
     /// <summary>Total estimated or reported cost in USD.</summary>
     public decimal? TotalCostUsd { get; set; }
+
+    /// <summary>Completion events that did not have a persisted cost.</summary>
+    public long MissingCostCompletionCount { get; set; }
+
+    /// <summary>Conversation rollup algorithm version applied to this row.</summary>
+    public int RollupVersion { get; set; }
 
     /// <summary>Harness-reported owner email.</summary>
     public string? OwnerEmail { get; set; }
@@ -100,6 +109,7 @@ public sealed class AgentConversation
         RepoRemoteUrl = PreferExisting(RepoRemoteUrl, other.RepoRemoteUrl);
         HeadBranch = PreferExisting(HeadBranch, other.HeadBranch);
         HeadSha = PreferExisting(HeadSha, other.HeadSha);
+        Title = PreferExisting(Title, other.Title);
         OwnerEmail = PreferExisting(OwnerEmail, other.OwnerEmail);
 
         if (ShouldUpgradeOwnership(other))

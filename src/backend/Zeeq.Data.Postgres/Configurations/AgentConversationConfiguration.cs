@@ -1,7 +1,7 @@
 using System.Text.Json;
-using Zeeq.Core.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Data.Postgres.Configurations;
 
@@ -24,9 +24,12 @@ internal sealed class AgentConversationConfiguration : IEntityTypeConfiguration<
         entity.Property(c => c.HeadBranch).HasMaxLength(256);
         entity.Property(c => c.HeadSha).HasMaxLength(64);
         entity.Property(c => c.StartedAtUtc).IsRequired();
+        entity.Property(c => c.Title).HasMaxLength(200);
         entity.Property(c => c.TotalInputTokens).HasDefaultValue(0);
         entity.Property(c => c.TotalOutputTokens).HasDefaultValue(0);
         entity.Property(c => c.TotalCostUsd).HasColumnType("numeric(14,6)");
+        entity.Property(c => c.MissingCostCompletionCount).HasDefaultValue(0L);
+        entity.Property(c => c.RollupVersion).HasDefaultValue(0);
         entity.Property(c => c.OwnerEmail).HasMaxLength(320);
         entity.Property(c => c.CreatedById).HasMaxLength(128);
         entity
@@ -43,6 +46,15 @@ internal sealed class AgentConversationConfiguration : IEntityTypeConfiguration<
             c.StartedAtUtc,
         });
         entity.HasIndex(c => new { c.OrganizationId, c.OwnerEmail });
+        entity
+            .HasIndex(c => new
+            {
+                c.RollupVersion,
+                c.StartedAtUtc,
+                c.OrganizationId,
+                c.Id,
+            })
+            .HasDatabaseName("ix_agent_conversations_rollup_backfill");
         entity
             .HasIndex(c => new
             {
