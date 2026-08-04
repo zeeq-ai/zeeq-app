@@ -299,21 +299,25 @@ jobs:
             ai.zeeq.version-tag=${{ needs.plan.outputs.tag }}
           cache-from: type=gha,scope=zeeq-runtime-linux-amd64
 
-      # Deploy the HTTP web runtime by exact SemVer image tag.
-      - name: Deploy web service
-        env:
-          GCP_PROJECT_ID: ${{ env.PROJECT_ID }}
-          GCP_REGION: ${{ env.REGION }}
-          ZEEQ_RUNTIME_IMAGE: ${{ needs.plan.outputs.image_uri }}:${{ needs.plan.outputs.tag }}
-        run: ./build/ship.sh
-
-      # Deploy the Cloud Run worker pool by the same exact image tag.
+      # Deploy the Cloud Run worker pool by the exact SemVer image tag first so
+      # startup migrations complete before the HTTP web runtime receives traffic.
       - name: Deploy worker pool
         env:
           GCP_PROJECT_ID: ${{ env.PROJECT_ID }}
           GCP_REGION: ${{ env.REGION }}
           ZEEQ_RUNTIME_IMAGE: ${{ needs.plan.outputs.image_uri }}:${{ needs.plan.outputs.tag }}
         run: ./build/ship-worker.sh
+
+      - name: Wait before deploying web service
+        run: sleep 10
+
+      # Deploy the HTTP web runtime by the same exact image tag.
+      - name: Deploy web service
+        env:
+          GCP_PROJECT_ID: ${{ env.PROJECT_ID }}
+          GCP_REGION: ${{ env.REGION }}
+          ZEEQ_RUNTIME_IMAGE: ${{ needs.plan.outputs.image_uri }}:${{ needs.plan.outputs.tag }}
+        run: ./build/ship.sh
 
   publish:
     name: Publish GitHub Release
