@@ -1,4 +1,5 @@
 using Zeeq.Core.Models;
+using System.Text.Json.Serialization;
 
 namespace Zeeq.Platform.Telemetry.Read;
 
@@ -31,13 +32,23 @@ public sealed record AgentConversationStreamCursorDto(DateTimeOffset StartedAtUt
 /// <param name="CreatedById">Zeeq user id of the authenticated ingest principal, when trusted.</param>
 /// <param name="StartedAtUtc">Earliest accepted event timestamp.</param>
 /// <param name="CompletedAtUtc"><see langword="null"/> while the conversation is still active.</param>
-/// <param name="TotalInputTokens">
-/// NOTE: not reliably populated by ingestion today — often 0 even for conversations with real
-/// completion events. Prefer <see cref="AgentConversationTokenUsageDto"/> from the detail
-/// endpoint for an accurate live total.
+/// <param name="Title">First non-null, non-empty user prompt captured for the conversation.</param>
+/// <param name="RollupStatus">
+/// <c>ready</c> when conversation-level totals match the current rollup algorithm;
+/// <c>recomputing</c> while the backfill worker is still advancing this row.
 /// </param>
-/// <param name="TotalOutputTokens">See <see cref="TotalInputTokens"/> caveat.</param>
-/// <param name="TotalCostUsd">See <see cref="TotalInputTokens"/> caveat.</param>
+/// <param name="TotalInputTokens">
+/// Current rollup input-token total, or <see langword="null"/> while
+/// <paramref name="RollupStatus"/> is <c>recomputing</c>.
+/// </param>
+/// <param name="TotalOutputTokens">
+/// Current rollup output-token total, or <see langword="null"/> while
+/// <paramref name="RollupStatus"/> is <c>recomputing</c>.
+/// </param>
+/// <param name="TotalCostUsd">
+/// Current rollup cost total, or <see langword="null"/> while
+/// <paramref name="RollupStatus"/> is <c>recomputing</c> or cost is unknown.
+/// </param>
 public sealed record AgentConversationListItemDto(
     string Id,
     string Harness,
@@ -48,10 +59,26 @@ public sealed record AgentConversationListItemDto(
     string? CreatedById,
     DateTimeOffset StartedAtUtc,
     DateTimeOffset? CompletedAtUtc,
-    long TotalInputTokens,
-    long TotalOutputTokens,
+    string? Title,
+    AgentConversationRollupStatusDto RollupStatus,
+    long? TotalInputTokens,
+    long? TotalOutputTokens,
     decimal? TotalCostUsd
 );
+
+/// <summary>
+/// API rollup status values for the conversation row's stored aggregate.
+/// </summary>
+public enum AgentConversationRollupStatusDto
+{
+    /// <summary>The stored aggregate matches the current rollup algorithm version.</summary>
+    [JsonStringEnumMemberName("ready")]
+    Ready = 0,
+
+    /// <summary>The row is visible, but the stored aggregate is not current.</summary>
+    [JsonStringEnumMemberName("recomputing")]
+    Recomputing = 1,
+}
 
 /// <summary>
 /// Cursor-paginated page of Sessions inbox rows.
@@ -167,10 +194,21 @@ internal static class AgentConversationEndpointMapping
             summary.CreatedById,
             summary.StartedAtUtc,
             summary.CompletedAtUtc,
+            summary.Title,
+            ToDto(summary.RollupStatus),
             summary.TotalInputTokens,
             summary.TotalOutputTokens,
             summary.TotalCostUsd
         );
+
+    private static AgentConversationRollupStatusDto ToDto(AgentConversationRollupStatus status) =>
+        status switch
+        {
+            AgentConversationRollupStatus.Ready => AgentConversationRollupStatusDto.Ready,
+            AgentConversationRollupStatus.Recomputing =>
+                AgentConversationRollupStatusDto.Recomputing,
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
+        };
 
     /// <summary>Maps a stream cursor to its API representation.</summary>
     public static AgentConversationStreamCursorDto? ToDto(AgentConversationStreamCursor? cursor) =>

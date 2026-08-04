@@ -7053,6 +7053,8 @@
           "createdById",
           "startedAtUtc",
           "completedAtUtc",
+          "title",
+          "rollupStatus",
           "totalInputTokens",
           "totalOutputTokens",
           "totalCostUsd"
@@ -7115,22 +7117,35 @@
             "description": "`null` while the conversation is still active.",
             "format": "date-time"
           },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "First non-null, non-empty user prompt captured for the conversation."
+          },
+          "rollupStatus": {
+            "description": "`ready` when conversation-level totals match the current rollup algorithm;\n        `recomputing` while the backfill worker is still advancing this row.",
+            "$ref": "#/components/schemas/AgentConversationRollupStatusDto"
+          },
           "totalInputTokens": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "type": [
+              "null",
               "integer",
               "string"
             ],
-            "description": "NOTE: not reliably populated by ingestion today — often 0 even for conversations with real\ncompletion events. Prefer AgentConversationTokenUsageDto from the detail\nendpoint for an accurate live total.",
+            "description": "Current rollup input-token total, or `null` while\nRollupStatus is `recomputing`.",
             "format": "int64"
           },
           "totalOutputTokens": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "type": [
+              "null",
               "integer",
               "string"
             ],
-            "description": "See long AgentConversationListItemDto.TotalInputTokens caveat.",
+            "description": "Current rollup output-token total, or `null` while\nRollupStatus is `recomputing`.",
             "format": "int64"
           },
           "totalCostUsd": {
@@ -7140,7 +7155,7 @@
               "number",
               "string"
             ],
-            "description": "See long AgentConversationListItemDto.TotalInputTokens caveat.",
+            "description": "Current rollup cost total, or `null` while\nRollupStatus is `recomputing` or cost is unknown.",
             "format": "double"
           }
         },
@@ -7241,6 +7256,13 @@
           }
         },
         "description": "One prompt event rendered in the conversation timeline — the only event type with a\nmessage payload from the user."
+      },
+      "AgentConversationRollupStatusDto": {
+        "enum": [
+          "ready",
+          "recomputing"
+        ],
+        "description": "API rollup status values for the conversation row's stored aggregate."
       },
       "AgentConversationStreamCursorDto": {
         "required": [

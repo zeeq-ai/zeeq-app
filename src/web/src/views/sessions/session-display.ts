@@ -129,7 +129,7 @@ export function formatDuration(
 
   const elapsedMs = new Date(endAtUtc).getTime() - new Date(startedAtUtc).getTime();
   if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) {
-    return "0s";
+    return "N/A";
   }
 
   const elapsedSeconds = Math.round(elapsedMs / 1000);

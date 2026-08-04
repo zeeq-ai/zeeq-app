@@ -86,6 +86,7 @@ public static class SetupTelemetryIngestExtension
                 TelemetryPullRequestLinkingService
             >();
             services.AddHostedService<TelemetryProcessingService>();
+            services.AddHostedService<AgentConversationRollupBackfillService>();
 
             return services;
         }

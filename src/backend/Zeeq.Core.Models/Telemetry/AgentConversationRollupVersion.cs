@@ -4,11 +4,11 @@ namespace Zeeq.Core.Models;
 /// Current conversation rollup algorithm version recognized by the running code.
 /// </summary>
 /// <remarks>
-/// Release A deliberately keeps this at zero while inline writes are deployed. Release B bumps
-/// it to one, enables the backfill worker, and makes API reads treat version-one rows as ready.
+/// Release B treats version-one rows as current. Older rows remain readable but their stored
+/// rollup totals are projected as recomputing until the backfill worker advances them.
 /// </remarks>
 public static class AgentConversationRollupVersion
 {
     /// <summary>Version of the rollup algorithm treated as current by this binary.</summary>
-    public const int Current = 0;
+    public const int Current = 1;
 }

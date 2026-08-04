@@ -344,10 +344,9 @@ watch(
 );
 
 /**
- * The conversation row's rollup columns (`totalInputTokens`/`totalOutputTokens`/
- * `totalCostUsd`) are not reliably maintained by ingestion today, so prefer the
- * live sums the calculator just derived from this conversation's actual
- * completion events whenever they're available.
+ * Prefer live detail aggregates over the conversation row's rollup columns. During
+ * backfill, list/detail summary rollup counters are null and detail's event-derived
+ * tokenUsage remains authoritative for an opened conversation.
  */
 const inputTokens = computed(() =>
   tokenUsage.value

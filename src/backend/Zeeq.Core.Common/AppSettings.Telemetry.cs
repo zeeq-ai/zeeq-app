@@ -32,4 +32,24 @@ public sealed record TelemetrySettings
     /// rows are available.
     /// </summary>
     public int ProcessingPollIntervalMs { get; init; } = 5000;
+
+    /// <summary>
+    /// Enables the finite conversation rollup backfill worker.
+    /// </summary>
+    public bool ConversationRollupBackfillEnabled { get; init; }
+
+    /// <summary>
+    /// Maximum number of stale conversations one worker instance recomputes per cycle.
+    /// </summary>
+    public int ConversationRollupBackfillMaxConversationsPerCycle { get; init; } = 25;
+
+    /// <summary>
+    /// Delay between backfill cycles when no work is available or after an error.
+    /// </summary>
+    public int ConversationRollupBackfillIdleDelayMs { get; init; } = 5000;
+
+    /// <summary>
+    /// Statement timeout applied to each claimed conversation recomputation.
+    /// </summary>
+    public int ConversationRollupBackfillStatementTimeoutSeconds { get; init; } = 30;
 }

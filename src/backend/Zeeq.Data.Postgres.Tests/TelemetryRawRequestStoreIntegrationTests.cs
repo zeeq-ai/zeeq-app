@@ -771,7 +771,7 @@ public sealed class TelemetryRawRequestStoreIntegrationTests(PgDatabaseFixture p
         db.ChangeTracker.Clear();
 
         var result = await store.BackfillNextAsync(
-            targetVersion: 0,
+            targetVersion: AgentConversationRollupVersion.Current,
             statementTimeout: TimeSpan.FromSeconds(30),
             excludedKeys: new HashSet<AgentConversationKey>(),
             CancellationToken.None
@@ -790,7 +790,7 @@ public sealed class TelemetryRawRequestStoreIntegrationTests(PgDatabaseFixture p
         await Assert.That(persisted.TotalOutputTokens).IsEqualTo(7L);
         await Assert.That(persisted.MissingCostCompletionCount).IsEqualTo(0L);
         await Assert.That(persisted.TotalCostUsd).IsEqualTo(0.02m);
-        await Assert.That(persisted.RollupVersion).IsEqualTo(0);
+        await Assert.That(persisted.RollupVersion).IsEqualTo(AgentConversationRollupVersion.Current);
     }
 
     private static ServiceProvider CreateProvider(string connectionString)
