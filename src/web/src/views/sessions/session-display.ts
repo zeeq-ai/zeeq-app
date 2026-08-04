@@ -73,7 +73,7 @@ export function formatTokenCount(value: ApiNumber): string {
 
 /**
  * Compact per-turn token summary for a timeline row, e.g. `1,234 in / 56 out tokens`.
- * Renders "No completions yet" when neither side has a value — the turn's still in flight.
+ * Renders "No completions" when neither side has a value — the turn's still in flight.
  */
 export function formatTurnTokens(
   inputTokens: ApiNumber,
@@ -83,7 +83,7 @@ export function formatTurnTokens(
     (inputTokens === null || inputTokens === undefined) &&
     (outputTokens === null || outputTokens === undefined)
   ) {
-    return "No completions yet";
+    return "No completions";
   }
 
   return `${formatTokenCount(inputTokens)} in / ${formatTokenCount(outputTokens)} out tokens`;
@@ -127,7 +127,8 @@ export function formatDuration(
     return "—";
   }
 
-  const elapsedMs = new Date(endAtUtc).getTime() - new Date(startedAtUtc).getTime();
+  const elapsedMs =
+    new Date(endAtUtc).getTime() - new Date(startedAtUtc).getTime();
   if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) {
     return "N/A";
   }

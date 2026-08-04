@@ -86,6 +86,20 @@ public static class SetupTelemetryIngestExtension
                 TelemetryPullRequestLinkingService
             >();
             services.AddHostedService<TelemetryProcessingService>();
+
+            return services;
+        }
+
+        /// <summary>
+        /// Registers the finite conversation rollup backfill sweep hosted service.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately separate from <see cref="AddTelemetryIngest"/> because this registers
+        /// live background work. Call it from the worker host only; web API processes need the
+        /// shared telemetry ingest services, but should not run the rollup sweep.
+        /// </remarks>
+        public IServiceCollection AddAgentConversationRollupBackfill()
+        {
             services.AddHostedService<AgentConversationRollupBackfillService>();
 
             return services;
