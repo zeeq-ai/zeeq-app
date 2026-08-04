@@ -94,6 +94,58 @@ public sealed class PostgresAgentConversationQueryStoreIntegrationTests(PgDataba
     }
 
     [Test]
+    public async Task ListRecentAsync_ProjectsReadyAndRecomputingRollupState()
+    {
+        await using var provider = CreateProvider(postgres.ConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAgentConversationQueryStore>();
+        var db = scope.ServiceProvider.GetRequiredService<PostgresDbContext>();
+        var orgId = $"org-{Guid.CreateVersion7():N}";
+        const string subjectUserId = "user-a";
+        var now = DateTimeOffset.UtcNow;
+
+        var ready = Conversation(orgId, "ready", now);
+        ready.CreatedById = subjectUserId;
+        ready.Title = "first real prompt";
+        ready.TotalInputTokens = 100;
+        ready.TotalOutputTokens = 20;
+        ready.TotalCostUsd = 0.12m;
+        ready.RollupVersion = AgentConversationRollupVersion.Current;
+
+        var recomputing = Conversation(orgId, "recomputing", now.AddSeconds(-1));
+        recomputing.CreatedById = subjectUserId;
+        recomputing.Title = "already captured title";
+        recomputing.TotalInputTokens = 999;
+        recomputing.TotalOutputTokens = 999;
+        recomputing.TotalCostUsd = 999;
+        recomputing.RollupVersion = AgentConversationRollupVersion.Current + 1;
+
+        db.AgentConversations.AddRange(ready, recomputing);
+        await db.SaveChangesAsync();
+
+        var page = await store.ListRecentAsync(
+            new AgentConversationStreamQuery(orgId, subjectUserId),
+            CancellationToken.None
+        );
+
+        var readySummary = page.Items.Single(item => item.Id == "ready");
+        await Assert.That(readySummary.Title).IsEqualTo("first real prompt");
+        await Assert.That(readySummary.RollupStatus).IsEqualTo(AgentConversationRollupStatus.Ready);
+        await Assert.That(readySummary.TotalInputTokens).IsEqualTo(100L);
+        await Assert.That(readySummary.TotalOutputTokens).IsEqualTo(20L);
+        await Assert.That(readySummary.TotalCostUsd).IsEqualTo(0.12m);
+
+        var recomputingSummary = page.Items.Single(item => item.Id == "recomputing");
+        await Assert.That(recomputingSummary.Title).IsEqualTo("already captured title");
+        await Assert
+            .That(recomputingSummary.RollupStatus)
+            .IsEqualTo(AgentConversationRollupStatus.Recomputing);
+        await Assert.That(recomputingSummary.TotalInputTokens).IsNull();
+        await Assert.That(recomputingSummary.TotalOutputTokens).IsNull();
+        await Assert.That(recomputingSummary.TotalCostUsd).IsNull();
+    }
+
+    [Test]
     public async Task GetDetailAsync_ReturnsPromptsAscendingAndCompletionUsageRowsOnly()
     {
         await using var provider = CreateProvider(postgres.ConnectionString);
@@ -355,6 +407,7 @@ public sealed class PostgresAgentConversationQueryStoreIntegrationTests(PgDataba
             Id = id,
             Harness = "claude-code",
             StartedAtUtc = startedAtUtc,
+            RollupVersion = AgentConversationRollupVersion.Current,
         };
 
     private static AgentSessionEvent PromptEvent(

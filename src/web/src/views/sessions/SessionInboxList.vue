@@ -12,7 +12,9 @@ rows, and an alias-info popover pointing at Settings → Me for email-alias setu
       <div
         class="flex min-h-16 items-center justify-between gap-3 px-4 py-3 sm:px-6"
       >
-        <h2 class="text-base font-semibold text-highlighted">Inbox</h2>
+        <h2 class="min-w-0 truncate text-base font-semibold text-highlighted">
+          {{ inboxTitle }}
+        </h2>
 
         <div class="flex shrink-0 items-center gap-1">
           <UPopover
@@ -87,7 +89,7 @@ rows, and an alias-info popover pointing at Settings → Me for email-alias setu
       >
         <div class="flex min-w-0 items-center justify-between gap-3">
           <span class="min-w-0 truncate text-sm font-bold text-highlighted">
-            {{ row.ownerLabel }}
+            {{ row.costLabel }}
           </span>
           <UBadge
             :label="row.conversation.harness"
@@ -98,10 +100,24 @@ rows, and an alias-info popover pointing at Settings → Me for email-alias setu
           />
         </div>
 
+        <div v-if="row.title" class="min-w-0">
+          <p class="truncate text-sm leading-5 text-highlighted">
+            {{ row.title }}
+          </p>
+        </div>
+
         <div class="flex min-w-0 items-center justify-between gap-3">
-          <span class="truncate text-xs leading-4 text-muted">
+          <span v-if="row.isReady" class="truncate text-xs leading-4 text-muted">
             {{ formatTokenCount(row.totalTokens) }} tokens
           </span>
+          <UBadge
+            v-else
+            label="Recomputing"
+            color="neutral"
+            variant="soft"
+            size="sm"
+            class="shrink-0 rounded-full"
+          />
           <span class="shrink-0 text-xs leading-4 text-muted">
             {{ row.timeAgo }}
           </span>
@@ -131,7 +147,7 @@ import { storeToRefs } from "pinia";
 import { formatTimeAgo } from "@vueuse/core";
 import type { AgentConversationListItemDto, MemberResponse } from "@/api/generated";
 import { useAppStore } from "@/stores/app-store";
-import { formatTokenCount, resolveOwnerLabel, toApiNumber } from "./session-display";
+import { formatTokenCount, formatUsd, toApiNumber } from "./session-display";
 
 const props = defineProps<{
   conversations: AgentConversationListItemDto[];
@@ -178,10 +194,18 @@ const aliasPopoverOpenDelay = computed(() =>
   hasEmailAlias.value ? 2_147_483_647 : 300,
 );
 
+const inboxTitle = computed(() => {
+  const name = me.value?.name?.trim() || me.value?.email?.trim();
+
+  return name ? `${name}'s sessions` : "My sessions";
+});
+
 type SessionInboxRow = {
   conversation: AgentConversationListItemDto;
   classes: string[];
-  ownerLabel: string;
+  costLabel: string;
+  title: string | null;
+  isReady: boolean;
   totalTokens: number;
   timeAgo: string;
 };
@@ -195,37 +219,34 @@ const defaultClasses = [
 
 /**
  * Cached template-ready projection keeps row state and styling out of the markup.
- * NOTE: totalTokens sums the conversation row's own rollup columns, which aren't
- * reliably populated by ingestion today — see SessionDetailPanel.vue, which prefers
- * the detail endpoint's live-computed totals once a conversation is opened.
+ * totalTokens sums only ready conversation rollup columns. Recomputing rows remain
+ * visible, but their server-projected counters are null until backfill catches up.
  * timeAgo uses VueUse's pure `formatTimeAgo` (not the reactive `useTimeAgo` composable) —
  * a one-shot relative-time string per row is all a paginated list needs, and calling a
  * composable inside `.map()` would spin up an unnecessary live-updating ref per row.
  *
  * TODO: the inbox row also doesn't render repoRemoteUrl/headBranch (available on the DTO
- * today) or a cost figure — deferred pending a server-side fix to make the rollup columns
- * above (and an equivalent cost rollup) reliably populated/indexed at ingest, so the inbox
- * can show accurate live numbers without a per-row aggregate query across
- * agent_session_events. Once that lands, add repo/branch to the template and reconsider
- * whether totalTokens/cost belong in the row at all given they were provably wrong (0)
- * for populated conversations before this fix.
+ * today); title, cost, and tokens are the first ready rollup projection.
  */
 const inboxRows = computed<SessionInboxRow[]>(() =>
-  props.conversations.map((conversation) => ({
-    conversation,
-    classes:
-      conversation.id === props.selectedConversationId
-        ? activeClasses
-        : defaultClasses,
-    ownerLabel: resolveOwnerLabel(
-      props.members,
-      conversation.ownerEmail,
-      conversation.createdById,
-    ),
-    totalTokens:
-      toApiNumber(conversation.totalInputTokens) +
-      toApiNumber(conversation.totalOutputTokens),
-    timeAgo: formatTimeAgo(new Date(conversation.startedAtUtc)),
-  })),
+  props.conversations.map((conversation) => {
+    const isReady = conversation.rollupStatus === "ready";
+
+    return {
+      conversation,
+      classes:
+        conversation.id === props.selectedConversationId
+          ? activeClasses
+          : defaultClasses,
+      costLabel: isReady ? formatUsd(conversation.totalCostUsd) : "Recomputing",
+      title: conversation.title?.trim() || null,
+      isReady,
+      totalTokens: isReady
+        ? toApiNumber(conversation.totalInputTokens) +
+          toApiNumber(conversation.totalOutputTokens)
+        : 0,
+      timeAgo: formatTimeAgo(new Date(conversation.startedAtUtc)),
+    };
+  }),
 );
 </script>

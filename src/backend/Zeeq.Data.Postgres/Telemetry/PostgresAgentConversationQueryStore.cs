@@ -33,9 +33,19 @@ internal sealed class PostgresAgentConversationQueryStore(PostgresDbContext db)
             conversation.CreatedById,
             conversation.StartedAtUtc,
             conversation.CompletedAtUtc,
-            conversation.TotalInputTokens,
-            conversation.TotalOutputTokens,
-            conversation.TotalCostUsd
+            conversation.Title,
+            conversation.RollupVersion == AgentConversationRollupVersion.Current
+                ? AgentConversationRollupStatus.Ready
+                : AgentConversationRollupStatus.Recomputing,
+            conversation.RollupVersion == AgentConversationRollupVersion.Current
+                ? conversation.TotalInputTokens
+                : null,
+            conversation.RollupVersion == AgentConversationRollupVersion.Current
+                ? conversation.TotalOutputTokens
+                : null,
+            conversation.RollupVersion == AgentConversationRollupVersion.Current
+                ? conversation.TotalCostUsd
+                : null
         );
 
     /// <inheritdoc />

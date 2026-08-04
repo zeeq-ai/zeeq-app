@@ -38,6 +38,10 @@ public static class AgentTelemetryMetrics
     /// <summary>Counts newly created pull-request to conversation links.</summary>
     public const string PullRequestLinkCounterName = "zeeq_agent_pr_link_counter";
 
+    /// <summary>Counts finite conversation rollup backfill attempts by outcome.</summary>
+    public const string ConversationRollupBackfillCounterName =
+        "zeeq_agent_conversation_rollup_backfill_counter";
+
     private static readonly Counter<int> SessionCounter =
         ZeeqTelemetry.Metrics.CreateCounter<int>(SessionCounterName);
 
@@ -59,6 +63,9 @@ public static class AgentTelemetryMetrics
 
     private static readonly Counter<int> PullRequestLinkCounter =
         ZeeqTelemetry.Metrics.CreateCounter<int>(PullRequestLinkCounterName);
+
+    private static readonly Counter<int> ConversationRollupBackfillCounter =
+        ZeeqTelemetry.Metrics.CreateCounter<int>(ConversationRollupBackfillCounterName);
 
     /// <summary>
     /// Emits one session metric for a conversation that was inserted by the domain store.
@@ -122,6 +129,23 @@ public static class AgentTelemetryMetrics
         };
 
         PullRequestLinkCounter.Add(1, tags);
+    }
+
+    /// <summary>
+    /// Emits one rollup backfill metric after the worker attempts a claimed conversation.
+    /// </summary>
+    /// <param name="outcome">Finite backfill outcome to publish as a bounded status tag.</param>
+    public static void RecordConversationRollupBackfill(ConversationRollupBackfillOutcome outcome)
+    {
+        var status = outcome switch
+        {
+            ConversationRollupBackfillOutcome.Completed => "completed",
+            ConversationRollupBackfillOutcome.TimedOut => "timed_out",
+            _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null),
+        };
+        var tags = new TagList { { "status", status } };
+
+        ConversationRollupBackfillCounter.Add(1, tags);
     }
 
     private static void RecordCompletion(
@@ -193,4 +217,16 @@ public static class AgentTelemetryMetrics
         !string.IsNullOrWhiteSpace(conversation.OwnerEmail)
             ? conversation.OwnerEmail
             : conversation.CreatedById;
+}
+
+/// <summary>
+/// Finite outcomes emitted by the conversation rollup backfill worker.
+/// </summary>
+public enum ConversationRollupBackfillOutcome
+{
+    /// <summary>A stale conversation was recomputed and marked current.</summary>
+    Completed = 0,
+
+    /// <summary>A claimed conversation exceeded the configured statement timeout.</summary>
+    TimedOut = 1,
 }

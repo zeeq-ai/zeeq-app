@@ -95,15 +95,21 @@ public sealed record AgentConversationStreamPage(
 /// <param name="CreatedById">Zeeq user id of the authenticated ingest principal, when trusted.</param>
 /// <param name="StartedAtUtc">Earliest accepted event timestamp; also the pagination sort key.</param>
 /// <param name="CompletedAtUtc"><see langword="null"/> while the conversation is still active.</param>
-/// <param name="TotalInputTokens">
-/// Rollup column on <c>agent_conversations</c>. NOTE: not reliably maintained by ingestion
-/// today (observed as 0 even for conversations with real completion events) — prefer
-/// <see cref="AgentCompletionModelAggregate"/> (from <see cref="AgentConversationDetail"/>)
-/// when a live total is needed. This inbox row does not have that available; see the
-/// deferred fix noted on <c>SessionInboxList.vue</c>'s row projection.
+/// <param name="Title">First non-null, non-empty user prompt captured for the conversation.</param>
+/// <param name="RollupStatus">
+/// Whether the stored conversation-level rollup matches the current algorithm version.
+/// Recomputing rows remain visible but their summary counters are intentionally null.
 /// </param>
-/// <param name="TotalOutputTokens">See <see cref="TotalInputTokens"/> caveat.</param>
-/// <param name="TotalCostUsd">See <see cref="TotalInputTokens"/> caveat.</param>
+/// <param name="TotalInputTokens">
+/// Current rollup input-token total, or <see langword="null"/> while the row is recomputing.
+/// </param>
+/// <param name="TotalOutputTokens">
+/// Current rollup output-token total, or <see langword="null"/> while the row is recomputing.
+/// </param>
+/// <param name="TotalCostUsd">
+/// Current rollup cost total, or <see langword="null"/> while the row is recomputing or
+/// while cost is unknown.
+/// </param>
 public sealed record AgentConversationSummary(
     string Id,
     string Harness,
@@ -114,10 +120,24 @@ public sealed record AgentConversationSummary(
     string? CreatedById,
     DateTimeOffset StartedAtUtc,
     DateTimeOffset? CompletedAtUtc,
-    long TotalInputTokens,
-    long TotalOutputTokens,
+    string? Title,
+    AgentConversationRollupStatus RollupStatus,
+    long? TotalInputTokens,
+    long? TotalOutputTokens,
     decimal? TotalCostUsd
 );
+
+/// <summary>
+/// Read-side status for the conversation row's stored aggregate.
+/// </summary>
+public enum AgentConversationRollupStatus
+{
+    /// <summary>The stored aggregate matches the current rollup algorithm version.</summary>
+    Ready = 0,
+
+    /// <summary>The row is visible, but its stored aggregate is older than the current algorithm.</summary>
+    Recomputing = 1,
+}
 
 /// <summary>
 /// One prompt event's timeline-relevant fields — the only event type with a message
