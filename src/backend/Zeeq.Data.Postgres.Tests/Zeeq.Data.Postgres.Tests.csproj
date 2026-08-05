@@ -20,5 +20,6 @@
     <ProjectReference Include="..\Zeeq.Core.Llm\Zeeq.Core.Llm.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.CodeReviews\Zeeq.Platform.CodeReviews.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Telemetry\Zeeq.Platform.Telemetry.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.WorldModel\Zeeq.Platform.WorldModel.csproj" />
   </ItemGroup>
 </Project>

@@ -4,6 +4,7 @@ using Zeeq.Core.Carts;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Snippets;
 using Zeeq.Core.Models;
+using Zeeq.Data.Postgres.WorldModel;
 
 namespace Zeeq.Data.Postgres;
 
@@ -222,6 +223,18 @@ public class PostgresDbContext(DbContextOptions<PostgresDbContext> options)
     /// Local Postgres-backed object storage rows.
     /// </summary>
     internal DbSet<PostgresStorageObject> StorageObjects => Set<PostgresStorageObject>();
+
+    /// <summary>
+    /// Durable organization state for world-model deficit-round-robin scheduling.
+    /// </summary>
+    internal DbSet<WorldModelSchedulerQueueStateRow> WorldModelSchedulerQueueStates =>
+        Set<WorldModelSchedulerQueueStateRow>();
+
+    /// <summary>
+    /// Durable consumer-scoped world-model target aggregates and leases.
+    /// </summary>
+    internal DbSet<WorldModelSchedulerPendingTargetRow> WorldModelSchedulerPendingTargets =>
+        Set<WorldModelSchedulerPendingTargetRow>();
 
     /// <summary>
     /// Configures the EF Core model with Postgres-specific extensions and settings.
