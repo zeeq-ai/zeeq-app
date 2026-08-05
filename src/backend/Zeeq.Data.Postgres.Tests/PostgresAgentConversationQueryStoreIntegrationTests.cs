@@ -146,6 +146,47 @@ public sealed class PostgresAgentConversationQueryStoreIntegrationTests(PgDataba
     }
 
     [Test]
+    public async Task ListRecentAsync_HidesReadyConversationBelowMinimumCostButKeepsUnknownAndRecomputing()
+    {
+        await using var provider = CreateProvider(postgres.ConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAgentConversationQueryStore>();
+        var db = scope.ServiceProvider.GetRequiredService<PostgresDbContext>();
+        var orgId = $"org-{Guid.CreateVersion7():N}";
+        const string subjectUserId = "user-a";
+        var now = DateTimeOffset.UtcNow;
+
+        var cheap = Conversation(orgId, "cheap", now);
+        cheap.CreatedById = subjectUserId;
+        cheap.TotalCostUsd = 0.01m;
+
+        var expensive = Conversation(orgId, "expensive", now.AddSeconds(-1));
+        expensive.CreatedById = subjectUserId;
+        expensive.TotalCostUsd = 0.10m;
+
+        var unknownCost = Conversation(orgId, "unknown-cost", now.AddSeconds(-2));
+        unknownCost.CreatedById = subjectUserId;
+        unknownCost.TotalCostUsd = null;
+
+        var recomputingCheap = Conversation(orgId, "recomputing-cheap", now.AddSeconds(-3));
+        recomputingCheap.CreatedById = subjectUserId;
+        recomputingCheap.TotalCostUsd = 0.01m;
+        recomputingCheap.RollupVersion = AgentConversationRollupVersion.Current + 1;
+
+        db.AgentConversations.AddRange(cheap, expensive, unknownCost, recomputingCheap);
+        await db.SaveChangesAsync();
+
+        var page = await store.ListRecentAsync(
+            new AgentConversationStreamQuery(orgId, subjectUserId),
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(page.Items.Select(item => item.Id))
+            .IsEquivalentTo(["expensive", "unknown-cost", "recomputing-cheap"]);
+    }
+
+    [Test]
     public async Task GetDetailAsync_ReturnsPromptsAscendingAndCompletionUsageRowsOnly()
     {
         await using var provider = CreateProvider(postgres.ConnectionString);
