@@ -25,6 +25,13 @@ public interface IAgentConversationQueryStore
     /// <summary>
     /// Lists the caller's recent conversations using a partition-aware seek cursor, newest first.
     /// </summary>
+    /// <remarks>
+    /// Hides a conversation whose <em>current</em> rolled-up cost is known and below $0.10 —
+    /// trivial/test conversations are mostly noise in a list meant for reviewing real agent
+    /// work. A conversation with unknown cost (still recomputing, or genuinely no priced
+    /// events yet) is never hidden by this filter. Detail links are unaffected —
+    /// <see cref="GetDetailAsync"/> stays unscoped by cost.
+    /// </remarks>
     Task<AgentConversationStreamPage> ListRecentAsync(
         AgentConversationStreamQuery query,
         CancellationToken cancellationToken

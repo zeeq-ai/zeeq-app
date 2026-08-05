@@ -20,6 +20,14 @@ internal sealed class PostgresAgentConversationQueryStore(PostgresDbContext db)
     : IAgentConversationQueryStore
 {
     /// <summary>
+    /// Inbox rows below this cost are hidden by default — trivial/test conversations (a
+    /// couple of prompts, no real work) are mostly noise in a list meant for reviewing what an
+    /// agent actually did. Detail links are unaffected: <see cref="GetDetailAsync"/> stays
+    /// unscoped, so a direct link to a cheap conversation still works.
+    /// </summary>
+    private const decimal MinimumInboxCostUsd = 0.10m;
+
+    /// <summary>
     /// Shared projection so list and detail queries stay in lockstep as summary fields change.
     /// </summary>
     private static readonly Expression<Func<AgentConversation, AgentConversationSummary>> ToSummary =
@@ -90,6 +98,14 @@ internal sealed class PostgresAgentConversationQueryStore(PostgresDbContext db)
                     conversation.OwnerEmail != null
                     && emailKeys.Contains(conversation.OwnerEmail.Trim().ToLower())
                 )
+            )
+            // A recomputing row's stored total can be stale/incomplete, so it's never enough
+            // on its own to hide the row — same for a Ready row with no priced events yet
+            // (null). Only a *current, known* total below the floor hides the row.
+            .Where(conversation =>
+                conversation.RollupVersion != AgentConversationRollupVersion.Current
+                || conversation.TotalCostUsd == null
+                || conversation.TotalCostUsd >= MinimumInboxCostUsd
             );
 
         if (query.Cursor is { } cursor)
