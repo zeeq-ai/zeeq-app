@@ -237,6 +237,16 @@ public class PostgresDbContext(DbContextOptions<PostgresDbContext> options)
         Set<WorldModelSchedulerPendingTargetRow>();
 
     /// <summary>
+    /// Durable Area/Feature/Action taxonomy nodes.
+    /// </summary>
+    internal DbSet<WorldModelNodeRow> WorldModelNodes => Set<WorldModelNodeRow>();
+
+    /// <summary>
+    /// Rules and flows attached to world-model Action nodes.
+    /// </summary>
+    internal DbSet<WorldModelBodyItemRow> WorldModelBodyItems => Set<WorldModelBodyItemRow>();
+
+    /// <summary>
     /// Configures the EF Core model with Postgres-specific extensions and settings.
     /// </summary>
     protected override void ConfigureProviderModel(ModelBuilder modelBuilder)
@@ -248,6 +258,7 @@ public class PostgresDbContext(DbContextOptions<PostgresDbContext> options)
         modelBuilder.HasPostgresExtension("pg_partman");
         modelBuilder.HasPostgresExtension("pg_cron");
         modelBuilder.HasPostgresExtension("btree_gin");
+        modelBuilder.HasSequence<long>("awm_revision_seq");
 
         modelBuilder.HasDefaultSchema("zeeq");
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(PostgresDbContext).Assembly);

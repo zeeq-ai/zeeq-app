@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using NpgsqlTypes;
@@ -15,9 +16,11 @@ using Zeeq.Data.Postgres;
 namespace Zeeq.Data.Postgres.Migrations.Migrations
 {
     [DbContext(typeof(PostgresDbContext))]
-    partial class PostgresDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260805232410_Add_World_Model_Afa_Storage")]
+    partial class Add_World_Model_Afa_Storage
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -4125,8 +4128,7 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                         .HasFilter("leased_by IS NOT NULL");
 
                     b.HasIndex("OrganizationId", "Tier", "Bucket", "OldestEventAtUtc", "Consumer", "TargetId")
-                        .HasDatabaseName("ix_awm_scheduler_pending_targets_available")
-                        .HasFilter("leased_by IS NULL");
+                        .HasDatabaseName("ix_awm_scheduler_pending_targets_order");
 
                     b.ToTable("awm_scheduler_pending_targets", "zeeq");
                 });

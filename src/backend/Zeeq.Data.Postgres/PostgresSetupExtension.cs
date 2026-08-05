@@ -20,6 +20,7 @@ using Zeeq.Data.Postgres.Metrics;
 using Zeeq.Data.Postgres.Telemetry;
 using Zeeq.Data.Postgres.WorldModel;
 using Zeeq.Platform.CodeReviews;
+using Zeeq.Platform.WorldModel.Afa;
 using Zeeq.Platform.WorldModel.Scheduling;
 
 namespace Zeeq.Data.Postgres;
@@ -111,6 +112,14 @@ public static class PostgresSetupExtension
             services.AddScoped<ICodeReviewRecordStore, PostgresCodeReviewRecordStore>();
             services.AddScoped<IMetricEventStore, PostgresMetricEventStore>();
             services.AddScoped<IWorldModelPendingWorkStore, PostgresWorldModelPendingWorkStore>();
+            services.AddScoped<PostgresWorldModelAfaStore>();
+            services.AddScoped<IWorldModelMutationStore>(provider =>
+                provider.GetRequiredService<PostgresWorldModelAfaStore>()
+            );
+            services.AddScoped<IWorldModelQueryStore>(provider =>
+                provider.GetRequiredService<PostgresWorldModelAfaStore>()
+            );
+            services.AddScoped<WorldModelMutationService>();
             services.AddScoped<ITelemetryRawRequestStore, PostgresTelemetryRawRequestStore>();
             services.AddScoped<IAgentTelemetryDomainStore, PostgresAgentTelemetryDomainStore>();
             services.AddScoped<
