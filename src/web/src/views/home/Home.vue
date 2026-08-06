@@ -166,7 +166,12 @@
               :loading-cost-usd="loading['agentCostUsdSeries'] ?? false"
               :members="organizationMembers"
               :loading-members="membersLoading"
+              :member-conversations="memberConversations"
+              :loading-member-conversations="loadingMemberConversations"
+              :member-conversations-error="memberConversationsError"
               :window="window"
+              @select-member="onSelectAgentUsageMember"
+              @close-member-sessions="sessionsStore.clearMemberConversations"
             />
           </template>
 
@@ -198,6 +203,7 @@ import {
 } from "@/stores/metrics-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
+import { useSessionsStore } from "@/stores/sessions-store";
 import MetricsWindowSelect from "./MetricsWindowSelect.vue";
 import OverviewTab from "./OverviewTab.vue";
 import CodeReviewsTab from "./CodeReviewsTab.vue";
@@ -268,6 +274,12 @@ const organizationSettingsStore = useOrganizationSettingsStore();
 const { members: organizationMembers, membersLoading } = storeToRefs(
   organizationSettingsStore,
 );
+const sessionsStore = useSessionsStore();
+const {
+  memberConversations,
+  loadingMemberConversations,
+  memberConversationsError,
+} = storeToRefs(sessionsStore);
 const libraryItems = computed(() => [
   { label: "All libraries", value: allFilterValue },
   ...libraries.value.map((library) => ({
@@ -535,6 +547,21 @@ function onPromptUsersChange(value: string[]) {
 function onPromptLibraryChange(value: string) {
   promptLibrary.value = value === allFilterValue ? null : value;
   void refreshNow().catch(() => {});
+}
+
+/** Loads the dashboard session drill-down without touching the Sessions inbox slice. */
+function onSelectAgentUsageMember(userId: string, minimumCostUsd: number) {
+  void sessionsStore
+    .loadMemberConversations(userId, minimumCostUsd)
+    .catch((err: unknown) => {
+      toast.add({
+        title: "Could not load member conversations",
+        description:
+          err instanceof Error ? err.message : "Sessions request failed.",
+        icon: "i-hugeicons-alert-02",
+        color: "error",
+      });
+    });
 }
 
 /** Applies the MCP user filter and reloads the active tab. */

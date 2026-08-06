@@ -14,8 +14,8 @@ namespace Zeeq.Platform.Telemetry.Read;
 /// </summary>
 /// <remarks>
 /// Organization scope comes from the route <c>{orgId}</c> validated against the auth
-/// cookie, the same shape <c>MetricsEndpoints</c> uses — read-only telemetry with no
-/// extra membership/role lookup beyond that route-level check.
+/// cookie, the same shape <c>MetricsEndpoints</c> uses. The list endpoint additionally
+/// validates an explicitly requested subject against active organization membership.
 /// </remarks>
 public sealed class AgentConversationEndpoints : IEndpoint
 {
@@ -41,24 +41,36 @@ public sealed class AgentConversationEndpoints : IEndpoint
                     [FromQuery] DateTimeOffset? cursorStartedAtUtc,
                     [FromQuery] string? cursorId,
                     [FromQuery] int? pageSize,
+                    [FromQuery] string? subjectUserId,
+                    [FromQuery] decimal? minimumCostUsd,
                     ClaimsPrincipal user,
                     [FromServices] ListAgentConversationsHandler handler,
                     CancellationToken ct
-                ) => handler.HandleAsync(orgId, cursorStartedAtUtc, cursorId, pageSize, user, ct)
+                ) =>
+                    handler.HandleAsync(
+                        orgId,
+                        cursorStartedAtUtc,
+                        cursorId,
+                        pageSize,
+                        subjectUserId,
+                        minimumCostUsd,
+                        user,
+                        ct
+                    )
             )
             .WithName("ListAgentConversations")
             .Produces<AgentConversationListResponse>()
             .Produces<AgentConversationEndpointError>(StatusCodes.Status400BadRequest)
-            .WithSummary("List my agent conversations.")
+            .WithSummary("List an organization member's agent conversations.")
             .WithDescription(
                 """
-                Returns a cursor-paginated page of the caller's own recent agent conversations
-                (matched by ingest principal, sign-in email, or an active email alias),
-                newest first. There is no "all conversations" option — sharing one conversation
-                with a teammate is done by sending them its direct `/sessions/{id}` link, which
-                the detail endpoint below serves to any organization member. Pass the cursor
-                fields from the previous page (`cursorStartedAtUtc`, `cursorId`) to fetch the
-                next page.
+                Returns a cursor-paginated page of one organization member's recent agent
+                conversations (matched by ingest principal, sign-in email, or an active email
+                alias), newest first. Omit `subjectUserId` to list the caller's own conversations;
+                an explicit subject must be an active member of the route organization. Omit
+                `minimumCostUsd` to preserve inbox behavior; pass zero for the known-cost default
+                ($0.10), or a value up to 100 for a literal USD floor. Pass the cursor fields from
+                the previous page (`cursorStartedAtUtc`, `cursorId`) to fetch the next page.
                 """
             );
 

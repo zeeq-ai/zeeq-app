@@ -25,36 +25,37 @@ internal sealed class PostgresAgentConversationQueryStore(PostgresDbContext db)
     /// agent actually did. Detail links are unaffected: <see cref="GetDetailAsync"/> stays
     /// unscoped, so a direct link to a cheap conversation still works.
     /// </summary>
-    private const decimal MinimumInboxCostUsd = 0.10m;
+    private const decimal DefaultMinimumCostUsd = 0.10m;
 
     /// <summary>
     /// Shared projection so list and detail queries stay in lockstep as summary fields change.
     /// </summary>
-    private static readonly Expression<Func<AgentConversation, AgentConversationSummary>> ToSummary =
-        conversation => new AgentConversationSummary(
-            conversation.Id,
-            conversation.Harness,
-            conversation.HarnessVariant,
-            conversation.RepoRemoteUrl,
-            conversation.HeadBranch,
-            conversation.OwnerEmail,
-            conversation.CreatedById,
-            conversation.StartedAtUtc,
-            conversation.CompletedAtUtc,
-            conversation.Title,
-            conversation.RollupVersion == AgentConversationRollupVersion.Current
-                ? AgentConversationRollupStatus.Ready
-                : AgentConversationRollupStatus.Recomputing,
-            conversation.RollupVersion == AgentConversationRollupVersion.Current
-                ? conversation.TotalInputTokens
-                : null,
-            conversation.RollupVersion == AgentConversationRollupVersion.Current
-                ? conversation.TotalOutputTokens
-                : null,
-            conversation.RollupVersion == AgentConversationRollupVersion.Current
-                ? conversation.TotalCostUsd
-                : null
-        );
+    private static readonly Expression<
+        Func<AgentConversation, AgentConversationSummary>
+    > ToSummary = conversation => new AgentConversationSummary(
+        conversation.Id,
+        conversation.Harness,
+        conversation.HarnessVariant,
+        conversation.RepoRemoteUrl,
+        conversation.HeadBranch,
+        conversation.OwnerEmail,
+        conversation.CreatedById,
+        conversation.StartedAtUtc,
+        conversation.CompletedAtUtc,
+        conversation.Title,
+        conversation.RollupVersion == AgentConversationRollupVersion.Current
+            ? AgentConversationRollupStatus.Ready
+            : AgentConversationRollupStatus.Recomputing,
+        conversation.RollupVersion == AgentConversationRollupVersion.Current
+            ? conversation.TotalInputTokens
+            : null,
+        conversation.RollupVersion == AgentConversationRollupVersion.Current
+            ? conversation.TotalOutputTokens
+            : null,
+        conversation.RollupVersion == AgentConversationRollupVersion.Current
+            ? conversation.TotalCostUsd
+            : null
+    );
 
     /// <inheritdoc />
     /// <remarks>
@@ -86,7 +87,7 @@ internal sealed class PostgresAgentConversationQueryStore(PostgresDbContext db)
         // `CREATE INDEX ... (lower(trim(owner_email)))` expression index — a migration, out
         // of scope here. Revisit if this query shows up in slow-query logs as
         // agent_conversations grows.
-        // 👈 Intentionally caller-scoped — this is the inbox listing, not the detail fetch.
+        // 👈 Intentionally subject-scoped — this is a listing, not the detail fetch.
         // See IAgentConversationQueryStore's remarks: GetDetailAsync below is the unscoped
         // one that makes link-sharing work; this filter must stay.
         var rows = db
@@ -98,15 +99,29 @@ internal sealed class PostgresAgentConversationQueryStore(PostgresDbContext db)
                     conversation.OwnerEmail != null
                     && emailKeys.Contains(conversation.OwnerEmail.Trim().ToLower())
                 )
-            )
+            );
+
+        if (query.MinimumCostUsd is { } requestedMinimumCostUsd)
+        {
+            var minimumCostUsd =
+                requestedMinimumCostUsd == 0 ? DefaultMinimumCostUsd : requestedMinimumCostUsd;
+
+            rows = rows.Where(conversation =>
+                conversation.RollupVersion == AgentConversationRollupVersion.Current
+                && conversation.TotalCostUsd >= minimumCostUsd
+            );
+        }
+        else
+        {
             // A recomputing row's stored total can be stale/incomplete, so it's never enough
             // on its own to hide the row — same for a Ready row with no priced events yet
-            // (null). Only a *current, known* total below the floor hides the row.
-            .Where(conversation =>
+            // (null). Only a *current, known* total below the default floor hides the row.
+            rows = rows.Where(conversation =>
                 conversation.RollupVersion != AgentConversationRollupVersion.Current
                 || conversation.TotalCostUsd == null
-                || conversation.TotalCostUsd >= MinimumInboxCostUsd
+                || conversation.TotalCostUsd >= DefaultMinimumCostUsd
             );
+        }
 
         if (query.Cursor is { } cursor)
         {
@@ -125,8 +140,9 @@ internal sealed class PostgresAgentConversationQueryStore(PostgresDbContext db)
         // Fetch one extra row as a sentinel: only its presence tells us whether another
         // page exists, so a full-but-final page doesn't emit a cursor that would otherwise
         // send the client on one guaranteed-empty "load more" request.
-        var rowsWithSentinel = await rows
-            .OrderByDescending(conversation => conversation.StartedAtUtc)
+        var rowsWithSentinel = await rows.OrderByDescending(conversation =>
+                conversation.StartedAtUtc
+            )
             .ThenByDescending(conversation => conversation.Id)
             .Take(pageSize + 1)
             .Select(ToSummary)
@@ -225,35 +241,36 @@ internal sealed class PostgresAgentConversationQueryStore(PostgresDbContext db)
         // land on a trimmed-off prompt anyway (AttachTurnTokens already skips anything earlier
         // — see its remarks). Scales with how many completions happened during the visible
         // window, not with the conversation's total history, unlike the aggregate query below.
-        var completionsForTurnAttribution = rawPrompts.Length == 0
-            ? []
-            : await db
-                .AgentSessionEvents.TagWithOperationCallSite(
-                    "agent_conversation.get_detail.completions_for_turns"
-                )
-                .AsNoTracking()
-                .Where(e =>
-                    e.OrganizationId == organizationId
-                    && e.ConversationId == conversationId
-                    && e.OccurredAtUtc >= rawPrompts[0].OccurredAtUtc
-                    && (
-                        conversation.CompletedAtUtc == null
-                        || e.OccurredAtUtc <= conversation.CompletedAtUtc
+        var completionsForTurnAttribution =
+            rawPrompts.Length == 0
+                ? []
+                : await db
+                    .AgentSessionEvents.TagWithOperationCallSite(
+                        "agent_conversation.get_detail.completions_for_turns"
                     )
-                    && e.EventType == AgentSessionEventType.Completion
-                )
-                .OrderBy(e => e.OccurredAtUtc)
-                .Select(e => new AgentCompletionEventForUsage(
-                    e.Model,
-                    e.InputTokens,
-                    e.CachedTokens,
-                    e.OutputTokens,
-                    e.ReasoningTokens,
-                    e.ToolTokens,
-                    e.CostUsd,
-                    e.OccurredAtUtc
-                ))
-                .ToArrayAsync(cancellationToken);
+                    .AsNoTracking()
+                    .Where(e =>
+                        e.OrganizationId == organizationId
+                        && e.ConversationId == conversationId
+                        && e.OccurredAtUtc >= rawPrompts[0].OccurredAtUtc
+                        && (
+                            conversation.CompletedAtUtc == null
+                            || e.OccurredAtUtc <= conversation.CompletedAtUtc
+                        )
+                        && e.EventType == AgentSessionEventType.Completion
+                    )
+                    .OrderBy(e => e.OccurredAtUtc)
+                    .Select(e => new AgentCompletionEventForUsage(
+                        e.Model,
+                        e.InputTokens,
+                        e.CachedTokens,
+                        e.OutputTokens,
+                        e.ReasoningTokens,
+                        e.ToolTokens,
+                        e.CostUsd,
+                        e.OccurredAtUtc
+                    ))
+                    .ToArrayAsync(cancellationToken);
 
         var prompts = AttachTurnTokens(rawPrompts, completionsForTurnAttribution);
 
