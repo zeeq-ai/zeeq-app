@@ -97,7 +97,7 @@
         />
         <div v-else class="h-96">
           <UListbox
-            v-model="selectedMemberEmail"
+            :model-value="selectedMemberId"
             value-key="value"
             :items="memberUsageItems"
             :loading="loadingMembers"
@@ -114,6 +114,7 @@
               group: 'p-0',
               item: 'px-4 py-1.5',
             }"
+            @update:model-value="onMemberSelected"
           >
             <template #item-trailing="{ item }">
               <span v-if="!item.hasData" class="text-xs text-muted">
@@ -146,6 +147,16 @@
         </div>
       </UCard>
 
+      <MemberSessionsSlideover
+        v-model:open="memberSessionsOpen"
+        :member-name="selectedMemberName"
+        :conversations="memberConversations"
+        :loading="loadingMemberConversations"
+        :error="memberConversationsError"
+        @minimum-cost-change="onMemberMinimumCostChange"
+        @after-leave="onMemberSessionsAfterLeave"
+      />
+
       <UCard :ui="{ body: 'p-0 sm:p-0' }" class="xl:col-span-2">
         <template #header>
           <span class="font-medium">Aggregate cost by user over time</span>
@@ -167,6 +178,7 @@
 <script setup lang="ts">
 import type { ListboxItem, TabsItem } from "@nuxt/ui";
 import type {
+  AgentConversationListItemDto,
   MemberResponse,
   MetricSeriesPoint,
   MetricTwoDimensionalSeriesPoint,
@@ -178,6 +190,7 @@ import {
   type MetricWindowToken,
 } from "@/stores/metrics-store";
 import MetricChart from "./MetricChart.vue";
+import MemberSessionsSlideover from "./MemberSessionsSlideover.vue";
 import { pivotByBucket, timeSeriesOption } from "./chart-options";
 
 const props = defineProps<{
@@ -191,7 +204,15 @@ const props = defineProps<{
   loadingTokenByUser: boolean;
   loadingCostUsd: boolean;
   loadingMembers: boolean;
+  memberConversations: AgentConversationListItemDto[];
+  loadingMemberConversations: boolean;
+  memberConversationsError: string | null;
   window: MetricWindowToken;
+}>();
+
+const emits = defineEmits<{
+  selectMember: [userId: string, minimumCostUsd: number];
+  closeMemberSessions: [];
 }>();
 
 type TokenUserPanel = "chart" | "members";
@@ -206,7 +227,8 @@ type MemberUsageItem = ListboxItem & {
 
 const tokenUserPanel = ref<TokenUserPanel>("members");
 const tokenModelMode = ref<"total" | "byUser">("byUser");
-const selectedMemberEmail = ref<string | undefined>();
+const selectedMemberId = ref("");
+const memberSessionsOpen = ref(false);
 
 const tokenUserPanelItems: TabsItem[] = [
   { label: "Members", value: "members" },
@@ -290,7 +312,7 @@ const memberUsageItems = computed<MemberUsageItem[]>(() => {
 
       return {
         label: member.displayName || member.email || member.userId,
-        value: usageKey,
+        value: member.userId,
         avatar: {
           src: member.pictureUrl || undefined,
           alt: member.displayName || member.email || member.userId,
@@ -310,6 +332,12 @@ const memberUsageItems = computed<MemberUsageItem[]>(() => {
       return (left.label ?? "").localeCompare(right.label ?? "");
     });
 });
+
+const selectedMemberName = computed(
+  () =>
+    memberUsageItems.value.find((item) => item.value === selectedMemberId.value)
+      ?.label ?? null,
+);
 
 /** Token charts use millions on the value axis so 1M+ usage remains scannable. */
 const tokenMillionAxisOptions = {
@@ -428,6 +456,32 @@ function formatUsd(value: number): string {
     currency: "USD",
     maximumFractionDigits: 2,
   });
+}
+
+/** Opens the member drill-down and asks the root view to load its data. */
+function onMemberSelected(userId: string | undefined) {
+  if (!userId) {
+    return;
+  }
+
+  selectedMemberId.value = userId;
+  memberSessionsOpen.value = true;
+  emits("selectMember", userId, 0);
+}
+
+/** Reloads the open member drill-down at the committed server-side cost floor. */
+function onMemberMinimumCostChange(minimumCostUsd: number) {
+  if (!selectedMemberId.value) {
+    return;
+  }
+
+  emits("selectMember", selectedMemberId.value, minimumCostUsd);
+}
+
+/** Resets selection after the close transition so the same member can be opened again. */
+function onMemberSessionsAfterLeave() {
+  selectedMemberId.value = "";
+  emits("closeMemberSessions");
 }
 
 /** Deterministic non-cryptographic 24-bit label hash for chart legends. */

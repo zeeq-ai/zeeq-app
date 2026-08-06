@@ -13,12 +13,10 @@ namespace Zeeq.Core.Models;
 /// The store does aggregate at the SQL level (<c>GROUP BY</c> model), though, rather than
 /// materializing every completion event into memory — see <see cref="GetDetailAsync"/>.
 ///
-/// NOTE: <see cref="ListRecentAsync"/> is always caller-scoped (no "All" — every
-/// conversation belongs to the person who ran it, unlike a PR anyone on the team might
-/// review), but <see cref="GetDetailAsync"/> deliberately does not filter by ownership at
-/// all: any org member with a direct link to a conversation can open it. That split is
-/// intentional — it lets a conversation be shared by URL without exposing every other
-/// member's conversations in the inbox listing.
+/// NOTE: <see cref="ListRecentAsync"/> is always subject-scoped (there is no unfiltered
+/// "All" query), while <see cref="GetDetailAsync"/> deliberately does not filter by ownership:
+/// any org member with a direct link to a conversation can open it. Endpoint handlers must
+/// validate a requested subject before constructing the query.
 /// </remarks>
 public interface IAgentConversationQueryStore
 {
@@ -57,8 +55,8 @@ public interface IAgentConversationQueryStore
 public sealed record AgentConversationStreamCursor(DateTimeOffset StartedAtUtc, string Id);
 
 /// <summary>
-/// Filter for the Sessions inbox stream query. The inbox is always scoped to the caller —
-/// there is no "All" option (see remarks on <see cref="IAgentConversationQueryStore"/>).
+/// Filter for a subject-scoped Sessions stream query. There is no unfiltered "All" option
+/// (see remarks on <see cref="IAgentConversationQueryStore"/>).
 /// </summary>
 /// <param name="OrganizationId">Owning organization; every query is single-organization.</param>
 /// <param name="SubjectUserId">
@@ -67,11 +65,16 @@ public sealed record AgentConversationStreamCursor(DateTimeOffset StartedAtUtc, 
 /// </param>
 /// <param name="Cursor">Seek boundary from a previous page; <see langword="null"/> starts from newest.</param>
 /// <param name="PageSize">Requested page size, clamped to [1, 100] by the store.</param>
+/// <param name="MinimumCostUsd">
+/// Optional known-cost filter. <see langword="null"/> preserves inbox behavior, while zero
+/// selects the default $0.10 floor and a positive value selects that literal USD floor.
+/// </param>
 public sealed record AgentConversationStreamQuery(
     string OrganizationId,
     string SubjectUserId,
     AgentConversationStreamCursor? Cursor = null,
-    int PageSize = 50
+    int PageSize = 50,
+    decimal? MinimumCostUsd = null
 );
 
 /// <summary>

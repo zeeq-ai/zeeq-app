@@ -187,6 +187,64 @@ public sealed class PostgresAgentConversationQueryStoreIntegrationTests(PgDataba
     }
 
     [Test]
+    public async Task ListRecentAsync_WithMinimumCost_RequiresKnownCurrentCostAtOrAboveFloor()
+    {
+        await using var provider = CreateProvider(postgres.ConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAgentConversationQueryStore>();
+        var db = scope.ServiceProvider.GetRequiredService<PostgresDbContext>();
+        var orgId = $"org-{Guid.CreateVersion7():N}";
+        const string subjectUserId = "user-a";
+        var now = DateTimeOffset.UtcNow;
+
+        var belowDefault = Conversation(orgId, "below-default", now);
+        belowDefault.CreatedById = subjectUserId;
+        belowDefault.TotalCostUsd = 0.01m;
+
+        var defaultFloor = Conversation(orgId, "default-floor", now.AddSeconds(-1));
+        defaultFloor.CreatedById = subjectUserId;
+        defaultFloor.TotalCostUsd = 0.10m;
+
+        var customFloor = Conversation(orgId, "custom-floor", now.AddSeconds(-2));
+        customFloor.CreatedById = subjectUserId;
+        customFloor.TotalCostUsd = 5m;
+
+        var unknownCost = Conversation(orgId, "unknown-cost", now.AddSeconds(-3));
+        unknownCost.CreatedById = subjectUserId;
+        unknownCost.TotalCostUsd = null;
+
+        var recomputing = Conversation(orgId, "recomputing", now.AddSeconds(-4));
+        recomputing.CreatedById = subjectUserId;
+        recomputing.TotalCostUsd = 10m;
+        recomputing.RollupVersion = AgentConversationRollupVersion.Current + 1;
+
+        db.AgentConversations.AddRange(
+            belowDefault,
+            defaultFloor,
+            customFloor,
+            unknownCost,
+            recomputing
+        );
+        await db.SaveChangesAsync();
+
+        var defaultPage = await store.ListRecentAsync(
+            new AgentConversationStreamQuery(orgId, subjectUserId, MinimumCostUsd: 0m),
+            CancellationToken.None
+        );
+        var customPage = await store.ListRecentAsync(
+            new AgentConversationStreamQuery(orgId, subjectUserId, MinimumCostUsd: 5m),
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(defaultPage.Items.Select(item => item.Id))
+            .IsEquivalentTo(["default-floor", "custom-floor"]);
+        await Assert
+            .That(customPage.Items.Select(item => item.Id))
+            .IsEquivalentTo(["custom-floor"]);
+    }
+
+    [Test]
     public async Task GetDetailAsync_ReturnsPromptsAscendingAndCompletionUsageRowsOnly()
     {
         await using var provider = CreateProvider(postgres.ConnectionString);
@@ -202,8 +260,20 @@ public sealed class PostgresAgentConversationQueryStoreIntegrationTests(PgDataba
             PromptEvent(orgId, conversationId, startedAtUtc.AddSeconds(2), "second prompt"),
             PromptEvent(orgId, conversationId, startedAtUtc.AddSeconds(1), "first prompt"),
             ToolResultEvent(orgId, conversationId, startedAtUtc.AddSeconds(3)),
-            CompletionEvent(orgId, conversationId, startedAtUtc.AddSeconds(4), inputTokens: 100, outputTokens: 20),
-            CompletionEvent(orgId, conversationId, startedAtUtc.AddSeconds(5), inputTokens: 50, outputTokens: 10)
+            CompletionEvent(
+                orgId,
+                conversationId,
+                startedAtUtc.AddSeconds(4),
+                inputTokens: 100,
+                outputTokens: 20
+            ),
+            CompletionEvent(
+                orgId,
+                conversationId,
+                startedAtUtc.AddSeconds(5),
+                inputTokens: 50,
+                outputTokens: 10
+            )
         );
         await db.SaveChangesAsync();
 
@@ -239,11 +309,29 @@ public sealed class PostgresAgentConversationQueryStoreIntegrationTests(PgDataba
         db.AgentSessionEvents.AddRange(
             // First turn: prompt at +1s, its completion at +2s (before the next prompt).
             PromptEvent(orgId, conversationId, startedAtUtc.AddSeconds(1), "first prompt"),
-            CompletionEvent(orgId, conversationId, startedAtUtc.AddSeconds(2), inputTokens: 100, outputTokens: 20),
+            CompletionEvent(
+                orgId,
+                conversationId,
+                startedAtUtc.AddSeconds(2),
+                inputTokens: 100,
+                outputTokens: 20
+            ),
             // Second turn: prompt at +3s, two completions after it (last one open-ended).
             PromptEvent(orgId, conversationId, startedAtUtc.AddSeconds(3), "second prompt"),
-            CompletionEvent(orgId, conversationId, startedAtUtc.AddSeconds(4), inputTokens: 50, outputTokens: 10),
-            CompletionEvent(orgId, conversationId, startedAtUtc.AddSeconds(5), inputTokens: 25, outputTokens: 5),
+            CompletionEvent(
+                orgId,
+                conversationId,
+                startedAtUtc.AddSeconds(4),
+                inputTokens: 50,
+                outputTokens: 10
+            ),
+            CompletionEvent(
+                orgId,
+                conversationId,
+                startedAtUtc.AddSeconds(5),
+                inputTokens: 25,
+                outputTokens: 5
+            ),
             // Third turn: prompt at +6s, no completions yet (still in flight).
             PromptEvent(orgId, conversationId, startedAtUtc.AddSeconds(6), "third prompt")
         );

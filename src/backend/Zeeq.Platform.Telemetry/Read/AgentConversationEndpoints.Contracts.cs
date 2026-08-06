@@ -1,5 +1,6 @@
-using Zeeq.Core.Models;
 using System.Text.Json.Serialization;
+using Humanizer;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.Telemetry.Read;
 
@@ -194,7 +195,7 @@ internal static class AgentConversationEndpointMapping
             summary.CreatedById,
             summary.StartedAtUtc,
             summary.CompletedAtUtc,
-            summary.Title,
+            summary.Title.Truncate(64),
             ToDto(summary.RollupStatus),
             summary.TotalInputTokens,
             summary.TotalOutputTokens,

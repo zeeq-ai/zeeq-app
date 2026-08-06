@@ -6716,8 +6716,8 @@
         "tags": [
           "Sessions"
         ],
-        "summary": "List my agent conversations.",
-        "description": "Returns a cursor-paginated page of the caller's own recent agent conversations\n(matched by ingest principal, sign-in email, or an active email alias),\nnewest first. There is no \"all conversations\" option — sharing one conversation\nwith a teammate is done by sending them its direct `/sessions/{id}` link, which\nthe detail endpoint below serves to any organization member. Pass the cursor\nfields from the previous page (`cursorStartedAtUtc`, `cursorId`) to fetch the\nnext page.",
+        "summary": "List an organization member's agent conversations.",
+        "description": "Returns a cursor-paginated page of one organization member's recent agent\nconversations (matched by ingest principal, sign-in email, or an active email\nalias), newest first. Omit `subjectUserId` to list the caller's own conversations;\nan explicit subject must be an active member of the route organization. Omit\n`minimumCostUsd` to preserve inbox behavior; pass zero for the known-cost default\n($0.10), or a value up to 100 for a literal USD floor. Pass the cursor fields from\nthe previous page (`cursorStartedAtUtc`, `cursorId`) to fetch the next page.",
         "operationId": "ListAgentConversations",
         "parameters": [
           {
@@ -6753,6 +6753,25 @@
                 "string"
               ],
               "format": "int32"
+            }
+          },
+          {
+            "name": "subjectUserId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "minimumCostUsd",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+              "type": [
+                "number",
+                "string"
+              ],
+              "format": "double"
             }
           }
         ],
