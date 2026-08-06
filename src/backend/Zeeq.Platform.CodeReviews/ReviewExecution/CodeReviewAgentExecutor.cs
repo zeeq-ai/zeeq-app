@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Reflection;
 using System.Xml.Linq;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
@@ -7,9 +6,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Zeeq.Core.Common;
-using Zeeq.Core.Documents;
 using Zeeq.Core.Llm;
-using Zeeq.Mcp.Documents;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -31,6 +28,7 @@ public sealed partial class CodeReviewAgentExecutor(
     CodeReviewLlmTierResolver llmTierResolver,
     CodeReviewWorkflowFactory workflowFactory,
     CodeReviewXmlOutputValidator xmlValidator,
+    ICodeReviewToolsetProvider toolsetProvider,
     ILoggerFactory loggerFactory,
     IServiceProvider services
 ) : ICodeReviewAgentExecutor
@@ -111,9 +109,8 @@ public sealed partial class CodeReviewAgentExecutor(
         //
         // This per-reviewer scope only isolates reviewers from each other. A single
         // reviewer can also fan its own tool calls out concurrently
-        // (AllowConcurrentInvocation), so BuildLibraryTools wraps each tool in a
-        // ScopedServiceAIFunction that opens a fresh child scope per invocation to
-        // keep concurrent calls off a shared DbContext.
+        // (AllowConcurrentInvocation), so the provided toolset opens a fresh child scope per
+        // invocation to keep concurrent calls off a shared DbContext.
         var reviewerScopes = new List<AsyncServiceScope>(activeReviewers.Count);
 
         try
@@ -144,7 +141,10 @@ public sealed partial class CodeReviewAgentExecutor(
                                 instructions: BuildAgentSystemInstructions(reviewer),
                                 name: reviewer.DisplayName,
                                 description: $"Zeeq code-review agent for {reviewer.ReviewFacet}.",
-                                tools: BuildLibraryTools(callerIdentity, reviewerServices),
+                                tools: toolsetProvider.CreateTools(
+                                    callerIdentity,
+                                    reviewerServices
+                                ),
                                 loggerFactory: loggerFactory,
                                 services: reviewerServices
                             )
@@ -472,126 +472,6 @@ public sealed partial class CodeReviewAgentExecutor(
             {reviewer.Prompt}
             </reviewer_instructions>
             """;
-
-    /// <summary>
-    /// Wraps <see cref="DocumentLibraryMcpTools"/> static methods as
-    /// <see cref="AITool"/>s, hiding the <see cref="ClaimsPrincipal"/> and any
-    /// DI-backed service parameters from the model-visible JSON schema and
-    /// binding them server-side.
-    /// </summary>
-    /// <remarks>
-    /// These methods are also MCP tools, where the MCP server resolves service
-    /// parameters such as <see cref="ILibraryDocumentStore"/> from DI. When the
-    /// review agent wraps them as <see cref="AIFunction"/> instances, that binding
-    /// must be reproduced here: otherwise the AI SDK exposes the service parameter
-    /// in the tool schema and tries to deserialize model-supplied JSON into the
-    /// interface at call time, which throws
-    /// <see cref="NotSupportedException"/> ("Deserialization of interface or
-    /// abstract types is not supported"). The <see cref="IServiceProviderIsService"/>
-    /// check mirrors the MCP server's own service-parameter detection.
-    /// </remarks>
-    /// <param name="callerIdentity">The fixed identity bound to every tool call.</param>
-    /// <param name="services">
-    /// The scoped provider used to detect service parameters and, at invocation
-    /// time via <see cref="AIFunctionArguments.Services"/>, resolve them.
-    /// </param>
-    internal static IList<AITool> BuildLibraryTools(
-        ClaimsPrincipal callerIdentity,
-        IServiceProvider services
-    )
-    {
-        var serviceInspector = services.GetService<IServiceProviderIsService>();
-
-        var options = new AIFunctionFactoryOptions
-        {
-            ConfigureParameterBinding = parameter =>
-            {
-                // The caller identity is bound server-side and never exposed to the model.
-                if (parameter.ParameterType == typeof(ClaimsPrincipal))
-                {
-                    return new()
-                    {
-                        ExcludeFromSchema = true,
-                        BindParameter = (_, _) => callerIdentity,
-                    };
-                }
-
-                // DI-backed parameters (for example ILibraryDocumentStore) are
-                // resolved from the invocation service provider instead of being
-                // deserialized from tool-call JSON.
-                if (serviceInspector?.IsService(parameter.ParameterType) == true)
-                {
-                    return new() { ExcludeFromSchema = true, BindParameter = BindServiceParameter };
-                }
-
-                return default;
-            },
-        };
-
-        // Each function is wrapped with WithScopedServices so a fresh DI scope is created per
-        // invocation. Reviewer agents allow concurrent tool invocation, and the wrapped tools
-        // resolve a scoped PostgresDbContext; a per-call scope keeps concurrent calls off a shared,
-        // non-thread-safe DbContext. See ScopedServiceAIFunction.
-        //
-        // MarkCodeReviewExecutionScope stamps every per-invocation scope so the document stores
-        // hide ExcludedFromCodeReviews documents from list/search on this path only — reviewers
-        // never consult operational/informational documents. read_document_by_path is unaffected
-        // by design: direct path resolution ignores the scope (see DocumentSearchScope).
-        return
-        [
-            AIFunctionFactory
-                .Create(DocumentLibraryMcpTools.ListDocuments, options)
-                .WithScopedServices(services, MarkCodeReviewExecutionScope),
-            AIFunctionFactory
-                .Create(DocumentLibraryMcpTools.ReadDocumentByPath, options)
-                .WithScopedServices(services, MarkCodeReviewExecutionScope),
-            AIFunctionFactory
-                .Create(DocumentLibraryMcpTools.SearchDocuments, options)
-                .WithScopedServices(services, MarkCodeReviewExecutionScope),
-            AIFunctionFactory
-                .Create(DocumentLibraryMcpTools.SearchCodeSnippets, options)
-                .WithScopedServices(services, MarkCodeReviewExecutionScope),
-            AIFunctionFactory
-                .Create(DocumentLibraryMcpTools.SearchSections, options)
-                .WithScopedServices(services, MarkCodeReviewExecutionScope),
-        ];
-    }
-
-    /// <summary>
-    /// Marks a per-invocation tool scope as code-review execution so document stores apply the
-    /// <see cref="LibraryDocument.ExcludedFromCodeReviews"/> filter to list and search results.
-    /// </summary>
-    /// <remarks>
-    /// Passed to <see cref="AIFunctionScopingExtensions.WithScopedServices"/> for every library
-    /// tool in <see cref="BuildLibraryTools"/>. The scope object defaults to unmarked, so the
-    /// interactive MCP server and HTTP endpoints (which never run this hook) stay unfiltered.
-    /// </remarks>
-    /// <param name="scopedServices">The fresh child scope created for one tool invocation.</param>
-    internal static void MarkCodeReviewExecutionScope(IServiceProvider scopedServices) =>
-        scopedServices.GetRequiredService<DocumentSearchScope>().ForCodeReviewExecution = true;
-
-    /// <summary>
-    /// Resolves a wrapped MCP tool service parameter from the invocation service provider.
-    /// </summary>
-    private static object BindServiceParameter(
-        ParameterInfo parameter,
-        AIFunctionArguments arguments
-    )
-    {
-        var invocationServices =
-            arguments.Services
-            ?? throw new InvalidOperationException(
-                $"Unable to resolve service parameter '{parameter.Name}' of type "
-                    + $"'{parameter.ParameterType.FullName}' for a code-review tool invocation "
-                    + "because no service provider was supplied to the agent."
-            );
-
-        return invocationServices.GetService(parameter.ParameterType)
-            ?? throw new InvalidOperationException(
-                $"Unable to resolve service parameter '{parameter.Name}' of type "
-                    + $"'{parameter.ParameterType.FullName}' for a code-review tool invocation."
-            );
-    }
 
     internal static string BuildPreviousReviewsSection(
         IReadOnlyList<CodeReviewPreviousReview> previousReviews

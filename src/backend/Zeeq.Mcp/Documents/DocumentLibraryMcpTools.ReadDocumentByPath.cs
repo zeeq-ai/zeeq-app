@@ -1,9 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics.Metrics;
 using System.Security.Claims;
+using ModelContextProtocol.Server;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
-using ModelContextProtocol.Server;
 
 namespace Zeeq.Mcp.Documents;
 

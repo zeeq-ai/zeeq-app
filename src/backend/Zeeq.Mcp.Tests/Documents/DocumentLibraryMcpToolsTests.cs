@@ -3,9 +3,8 @@ using System.Text.Json;
 using Microsoft.Extensions.Caching.Hybrid;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
-using Zeeq.Mcp.Documents;
 
-namespace Zeeq.Mcp.Docs.Tests;
+namespace Zeeq.Mcp.Documents.Tests;
 
 public sealed class DocumentLibraryMcpToolsTests
 {

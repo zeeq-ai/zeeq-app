@@ -146,7 +146,7 @@ public class LibraryDocument
     /// </summary>
     /// <remarks>
     /// The filter applies only when <see cref="DocumentSearchScope.ForCodeReviewExecution"/>
-    /// is marked (the reviewer tool call path in <c>CodeReviewAgentExecutor.BuildLibraryTools</c>);
+    /// is marked by the code-review toolset provider;
     /// the interactive MCP server and HTTP endpoints see excluded documents normally, and
     /// direct path resolution (<c>read_document_by_path</c>) always succeeds. This applies to
     /// all organization/library-owned <see cref="LibraryDocument"/> rows, including private

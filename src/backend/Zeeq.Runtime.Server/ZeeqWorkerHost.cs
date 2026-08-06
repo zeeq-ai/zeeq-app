@@ -79,6 +79,7 @@ internal static class ZeeqWorkerHost
                 .AddZeeqLlmPlatform()
                 .AddGoogleKmsDataEncryption(workerAppSettings.Llm)
                 .AddZeeqCodeReviews(workerAppSettings.CodeReview)
+                .AddZeeqCodeReviewToolset()
                 .AddZeeqIngest(workerAppSettings)
                 .AddTelemetryIngest(workerAppSettings.Telemetry)
                 .AddAgentConversationRollupBackfill()

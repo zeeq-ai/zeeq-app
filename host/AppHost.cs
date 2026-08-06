@@ -238,7 +238,7 @@ var tunnel = builder
 
 // Add the MCP inspector; manual start to run
 var inspector = builder
-    .AddExecutable("mcp-inspector", "npx", ".", ["@modelcontextprotocol/inspector"])
+    .AddExecutable("mcp-inspector", "npx", ".", ["@modelcontextprotocol/inspector@1.0.0"])
     .WithEnvironment("MCP_AUTO_OPEN_ENABLED", "false")
     .WithEnvironment("DANGEROUSLY_OMIT_AUTH", "true")
     .WithEnvironment("ALLOWED_ORIGINS", "http://zeeq-inspector.localhost:8095")

@@ -309,10 +309,12 @@ public sealed partial class DocumentLibraryMcpTools
         // so document importance can aggregate from snippet hits in the review snapshot. See
         // Zeeq.Platform.CodeReviews.CodeReviewSourceTelemetry.
         var toolName = kind == SnippetKind.Code ? "search_code_snippets" : "search_sections";
+
         var sourceKind =
             kind == SnippetKind.Code
                 ? ToolKnowledgeSourceKind.CodeSample
                 : ToolKnowledgeSourceKind.Section;
+
         var readCounter = kind == SnippetKind.Code ? SnippetReadCounter : SectionReadCounter;
 
         if (result.Rows.Count == 0)
@@ -384,38 +386,51 @@ public sealed partial class DocumentLibraryMcpTools
     {
         if (result.Rows.Count == 0)
         {
-            return $"No results for \"{query}\" in library '{result.LibraryName}'. "
-                + "Try broader terms, fewer excluded paths, or a different library.";
+            return $"""No results for "{query}" in library '{result.LibraryName}'. Try broader terms, fewer excluded paths, or a different library.""";
         }
 
         var markdown = new StringBuilder();
-        markdown.AppendLine($"# Results for: \"{query}\"");
         markdown.AppendLine(
-            "(Use read_document_by_path with the source path to read the full document)"
+            $"""
+            # Results for: "{query}"
+            (Use read_document_by_path with the source path to read the full document)
+            """
         );
         markdown.AppendLine();
 
         foreach (var group in result.Rows.GroupBy(row => (row.DocumentPath, row.DocumentTitle)))
         {
             markdown.AppendLine(
-                $"## {group.Key.DocumentTitle} — `zeeq://{group.Key.DocumentPath.TrimStart('/')}` (library: {result.LibraryName})"
+                $"""
+                ## {group.Key.DocumentTitle} — `zeeq://{group.Key.DocumentPath.TrimStart(
+                    '/'
+                )}` (library: {result.LibraryName})
+                """
             );
             markdown.AppendLine();
 
             foreach (var row in group)
             {
-                markdown.AppendLine($"### {row.HeadingPath}");
-
                 if (row.Language is not null)
                 {
                     var fence = CodeFence(row.Content);
-                    markdown.AppendLine($"{fence}{row.Language}");
-                    markdown.AppendLine(row.Content);
-                    markdown.AppendLine(fence);
+                    markdown.AppendLine(
+                        $"""
+                        ### {row.HeadingPath}
+                        {fence}{row.Language}
+                        {row.Content}
+                        {fence}
+                        """
+                    );
                 }
                 else
                 {
-                    markdown.AppendLine(row.Content);
+                    markdown.AppendLine(
+                        $"""
+                        ### {row.HeadingPath}
+                        {row.Content}
+                        """
+                    );
                 }
 
                 markdown.AppendLine();
@@ -425,7 +440,7 @@ public sealed partial class DocumentLibraryMcpTools
         if (result.Degraded)
         {
             markdown.AppendLine(
-                "_Semantic ranking was unavailable for this search; results are full-text only._"
+                """_Semantic ranking was unavailable for this search; results are full-text only._"""
             );
         }
 

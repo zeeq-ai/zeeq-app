@@ -1,15 +1,14 @@
 using System.Security.Claims;
-using Zeeq.Core.Common;
-using Zeeq.Core.Documents;
-using Zeeq.Core.Documents.Snippets;
-using Zeeq.Core.Identity;
-using Zeeq.Mcp.Documents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Zeeq.Core.Common;
+using Zeeq.Core.Documents;
+using Zeeq.Core.Documents.Snippets;
+using Zeeq.Core.Identity;
 
-namespace Zeeq.Mcp.Docs.Tests;
+namespace Zeeq.Mcp.Documents.Tests;
 
 public sealed class DocumentLibraryMcpToolsSearchSnippetsTests
 {

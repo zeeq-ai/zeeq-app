@@ -1,0 +1,12 @@
+{
+  "__comment__": "See: https://github.com/modelcontextprotocol/inspector/blob/main/docs/mcp-server-configuration.md",
+  "mcpServers": {
+    "zeeq-local-dev": {
+      "type": "http",
+      "url": "http://zeeq-web.localhost:8095/mcp",
+      "headers": {
+        "x-zeeq-beta-enable-beta": "true"
+      }
+    }
+  }
+}

@@ -1,9 +1,5 @@
-using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Zeeq.Mcp.Carts;
-using Zeeq.Mcp.CodeReviews;
-using Zeeq.Mcp.Documents;
 
 namespace Zeeq.Mcp;
 
@@ -23,9 +19,9 @@ public static class SetupMcpExtensions
         var name = environment.IsDevelopment() ? "Zeeq MCP (local dev)" : "Zeeq MCP";
 
         services
+            .AddZeeqCodeReviewToolset()
             .AddScoped<RepositoryPromptRenderer>()
             .AddScoped<IDynamicPromptsService, DynamicPromptsService>()
-            .AddZeeqCodeReviewMcp()
             .AddMcpServer(options =>
             {
                 options.ServerInfo = new()
@@ -89,11 +85,7 @@ public static class SetupMcpExtensions
             .AddAuthorizationFilters()
             .WithZeeqMcpFilters()
             .WithZeeqDynamicPrompts()
-            // 👇 Add other assemblies here to include tools
-            .WithToolsFromAssembly(Assembly.GetAssembly(typeof(SetupMcpExtensions)))
-            .WithToolsFromAssembly(Assembly.GetAssembly(typeof(DocumentLibraryMcpTools)))
-            .WithToolsFromAssembly(Assembly.GetAssembly(typeof(SetupCodeReviewMcp)))
-            .WithToolsFromAssembly(Assembly.GetAssembly(typeof(CartMcpTools)));
+            .WithToolsFromAssembly(typeof(SetupMcpExtensions).Assembly);
 
         return services;
     }

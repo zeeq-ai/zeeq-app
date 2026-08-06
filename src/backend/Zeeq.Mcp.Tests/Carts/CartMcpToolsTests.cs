@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using Zeeq.Core.Carts;
 using Zeeq.Core.Identity;
-using Zeeq.Mcp.Carts;
 
 namespace Zeeq.Mcp.Carts.Tests;
 
