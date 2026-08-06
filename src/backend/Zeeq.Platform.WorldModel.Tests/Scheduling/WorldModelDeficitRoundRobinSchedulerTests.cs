@@ -414,6 +414,7 @@ public sealed class WorldModelDeficitRoundRobinSchedulerTests
         var target = await AssertOkAsync(
             WorldModelTargetWorkItem.Create(
                 "org_a",
+                WorldModelWorkConsumer.Curator,
                 "target-a1",
                 OrganizationTier.Priority,
                 bucket: 0,
@@ -560,6 +561,7 @@ public sealed class WorldModelDeficitRoundRobinSchedulerTests
         var addResult = store.AddPendingWork(
             new WorldModelTargetWorkItem(
                 "",
+                WorldModelWorkConsumer.Curator,
                 "target-a1",
                 OrganizationTier.Default,
                 Bucket: 0,
@@ -580,6 +582,147 @@ public sealed class WorldModelDeficitRoundRobinSchedulerTests
         await Assert.That(addResult.TryGetError(out var error)).IsTrue();
         await Assert.That(error).IsEqualTo("Organization id is required.");
         await Assert.That(activeOrganizations).IsEmpty();
+    }
+
+    [Test]
+    public async Task ReleaseLeaseAsync_RequeuesTargetForAnotherWorker()
+    {
+        var store = new InMemoryWorldModelPendingWorkStore();
+        await AddTargetAsync(store, "org_a", "target-a1", OrganizationTier.Default, cost: 2);
+        var scheduler = await SchedulerAsync(store);
+        var lane = await AssertOkAsync(
+            WorldModelSchedulerLane.Create(OrganizationTier.Default, bucket: 0)
+        );
+        var firstLease = (
+            await AssertOkAsync(
+                await scheduler.LeaseNextAsync(
+                    lane,
+                    await LeaseAsync(),
+                    maxWorkItems: 1,
+                    CancellationToken.None
+                )
+            )
+        ).Single();
+
+        await AssertOkAsync(await store.ReleaseLeaseAsync(firstLease, CancellationToken.None));
+        var secondLease = (
+            await AssertOkAsync(
+                await scheduler.LeaseNextAsync(
+                    lane,
+                    await LeaseAsync(),
+                    maxWorkItems: 1,
+                    CancellationToken.None
+                )
+            )
+        ).Single();
+
+        await Assert.That(secondLease.WorkItem.TargetId).IsEqualTo("target-a1");
+        await Assert.That(secondLease.LeaseId).IsNotEqualTo(firstLease.LeaseId);
+    }
+
+    [Test]
+    public async Task AddPendingWork_WhenLeasedTargetChangesLane_RejectsUntilCompletion()
+    {
+        var store = new InMemoryWorldModelPendingWorkStore();
+        await AddTargetAsync(store, "org_a", "target-a1", OrganizationTier.Default, cost: 2);
+        var scheduler = await SchedulerAsync(store);
+        var lane = await AssertOkAsync(
+            WorldModelSchedulerLane.Create(OrganizationTier.Default, bucket: 0)
+        );
+        var lease = (
+            await AssertOkAsync(
+                await scheduler.LeaseNextAsync(
+                    lane,
+                    await LeaseAsync(),
+                    maxWorkItems: 1,
+                    CancellationToken.None
+                )
+            )
+        ).Single();
+        var rerouted = await AssertOkAsync(
+            WorldModelTargetWorkItem.Create(
+                "org_a",
+                WorldModelWorkConsumer.Curator,
+                "target-a1",
+                OrganizationTier.Default,
+                bucket: 1,
+                eventCount: 1,
+                estimatedCost: 1,
+                oldestEventAtUtc: Now,
+                newestEventAtUtc: Now
+            )
+        );
+
+        var result = store.AddPendingWork(rerouted);
+
+        await Assert.That(result.TryGetError(out var error)).IsTrue();
+        await Assert.That(error).IsEqualTo("Target already exists in a different scheduler lane.");
+        await AssertOkAsync(await store.CompleteLeaseAsync(lease, CancellationToken.None));
+        await AssertOkAsync(store.AddPendingWork(rerouted));
+    }
+
+    [Test]
+    public async Task ReclaimExpiredLeasesAsync_RequeuesOnlyExpiredTargets()
+    {
+        var store = new InMemoryWorldModelPendingWorkStore();
+        await AddTargetAsync(store, "org_a", "target-a1", OrganizationTier.Default, cost: 2);
+        var scheduler = await SchedulerAsync(store);
+        var lane = await AssertOkAsync(
+            WorldModelSchedulerLane.Create(OrganizationTier.Default, bucket: 0)
+        );
+        await AssertOkAsync(
+            await scheduler.LeaseNextAsync(
+                lane,
+                await LeaseAsync(),
+                maxWorkItems: 1,
+                CancellationToken.None
+            )
+        );
+
+        var reclaimed = await AssertOkAsync(
+            await store.ReclaimExpiredLeasesAsync(
+                Now.AddMinutes(6),
+                maxLeases: 10,
+                CancellationToken.None
+            )
+        );
+        var next = await AssertOkAsync(
+            await scheduler.LeaseNextAsync(
+                lane,
+                await LeaseAsync(),
+                maxWorkItems: 1,
+                CancellationToken.None
+            )
+        );
+
+        await Assert.That(reclaimed).IsEqualTo(1);
+        await Assert.That(next).HasSingleItem();
+    }
+
+    [Test]
+    public async Task RenewLeaseAsync_WhenExpiryDoesNotMoveForward_ReturnsError()
+    {
+        var store = new InMemoryWorldModelPendingWorkStore();
+        await AddTargetAsync(store, "org_a", "target-a1", OrganizationTier.Default, cost: 2);
+        var scheduler = await SchedulerAsync(store);
+        var lane = await AssertOkAsync(
+            WorldModelSchedulerLane.Create(OrganizationTier.Default, bucket: 0)
+        );
+        var lease = (
+            await AssertOkAsync(
+                await scheduler.LeaseNextAsync(
+                    lane,
+                    await LeaseAsync(),
+                    maxWorkItems: 1,
+                    CancellationToken.None
+                )
+            )
+        ).Single();
+
+        var result = await store.RenewLeaseAsync(lease, lease.ExpiresAtUtc, CancellationToken.None);
+
+        await Assert.That(result.TryGetError(out var error)).IsTrue();
+        await Assert.That(error).IsEqualTo("Lease expiration must move forward.");
     }
 
     private static async Task<WorldModelDeficitRoundRobinScheduler> SchedulerAsync(
@@ -605,6 +748,7 @@ public sealed class WorldModelDeficitRoundRobinSchedulerTests
         var target = await AssertOkAsync(
             WorldModelTargetWorkItem.Create(
                 organizationId,
+                WorldModelWorkConsumer.Curator,
                 targetId,
                 tier,
                 bucket: 0,
@@ -631,6 +775,11 @@ public sealed class WorldModelDeficitRoundRobinSchedulerTests
     ) : IWorldModelPendingWorkStore
     {
         public List<string> AttemptedOrganizationIds { get; } = [];
+
+        public Task<Result<Unit, string>> EnqueueAsync(
+            WorldModelTargetWorkItem item,
+            CancellationToken cancellationToken
+        ) => inner.EnqueueAsync(item, cancellationToken);
 
         public Task<
             Result<IReadOnlyList<WorldModelOrganizationQueueState>, string>
@@ -669,6 +818,28 @@ public sealed class WorldModelDeficitRoundRobinSchedulerTests
                 cancellationToken
             );
         }
+
+        public Task<Result<Unit, string>> RenewLeaseAsync(
+            WorldModelWorkLease lease,
+            DateTimeOffset expiresAtUtc,
+            CancellationToken cancellationToken
+        ) => inner.RenewLeaseAsync(lease, expiresAtUtc, cancellationToken);
+
+        public Task<Result<Unit, string>> CompleteLeaseAsync(
+            WorldModelWorkLease lease,
+            CancellationToken cancellationToken
+        ) => inner.CompleteLeaseAsync(lease, cancellationToken);
+
+        public Task<Result<Unit, string>> ReleaseLeaseAsync(
+            WorldModelWorkLease lease,
+            CancellationToken cancellationToken
+        ) => inner.ReleaseLeaseAsync(lease, cancellationToken);
+
+        public Task<Result<int, string>> ReclaimExpiredLeasesAsync(
+            DateTimeOffset expiredAtUtc,
+            int maxLeases,
+            CancellationToken cancellationToken
+        ) => inner.ReclaimExpiredLeasesAsync(expiredAtUtc, maxLeases, cancellationToken);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

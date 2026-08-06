@@ -18,7 +18,9 @@ using Zeeq.Data.Postgres.Identity;
 using Zeeq.Data.Postgres.LlmSettings;
 using Zeeq.Data.Postgres.Metrics;
 using Zeeq.Data.Postgres.Telemetry;
+using Zeeq.Data.Postgres.WorldModel;
 using Zeeq.Platform.CodeReviews;
+using Zeeq.Platform.WorldModel.Scheduling;
 
 namespace Zeeq.Data.Postgres;
 
@@ -108,6 +110,7 @@ public static class PostgresSetupExtension
             services.AddScoped<IPullRequestLookupStore, PostgresPullRequestLookupStore>();
             services.AddScoped<ICodeReviewRecordStore, PostgresCodeReviewRecordStore>();
             services.AddScoped<IMetricEventStore, PostgresMetricEventStore>();
+            services.AddScoped<IWorldModelPendingWorkStore, PostgresWorldModelPendingWorkStore>();
             services.AddScoped<ITelemetryRawRequestStore, PostgresTelemetryRawRequestStore>();
             services.AddScoped<IAgentTelemetryDomainStore, PostgresAgentTelemetryDomainStore>();
             services.AddScoped<

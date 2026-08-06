@@ -17,6 +17,7 @@
     <ProjectReference Include="..\Zeeq.Core.Llm\Zeeq.Core.Llm.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Models\Zeeq.Core.Models.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.CodeReviews\Zeeq.Platform.CodeReviews.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.WorldModel\Zeeq.Platform.WorldModel.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="EFCore.NamingConventions" />

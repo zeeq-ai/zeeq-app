@@ -4,18 +4,19 @@ using Danom;
 namespace Zeeq.Platform.WorldModel.Scheduling;
 
 /// <summary>
-/// In-memory pending work store used to prove scheduler behavior before the Postgres store exists.
+/// In-memory pending work store used to exercise scheduler behavior without durable storage.
 /// </summary>
 /// <remarks>
-/// This store is a behavioral test double, not a production queue. It models the same boundaries
-/// the Postgres store should expose: target groups are queued per organization-lane key, leases
-/// claim one target group, and organization deficit is saved separately from the raw pending work.
+/// This store is a behavioral test double, not a production queue. It models the durable store's
+/// boundaries: target groups are queued per organization-lane key, leases claim one target group,
+/// and organization deficit is saved separately from raw pending work.
 /// </remarks>
 public sealed class InMemoryWorldModelPendingWorkStore : IWorldModelPendingWorkStore
 {
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private readonly Dictionary<OrganizationLaneKey, WorldModelOrganizationQueueState> _states = [];
     private readonly Dictionary<OrganizationLaneKey, Queue<WorldModelTargetWorkItem>> _pending = [];
+    private readonly Dictionary<WorldModelTargetKey, WorldModelSchedulerLane> _targetLanes = [];
     private readonly ConcurrentDictionary<Guid, WorldModelWorkLease> _leases = [];
 
     /// <summary>
@@ -30,6 +31,7 @@ public sealed class InMemoryWorldModelPendingWorkStore : IWorldModelPendingWorkS
     {
         var itemResult = WorldModelTargetWorkItem.Create(
             item.OrganizationId,
+            item.Consumer,
             item.TargetId,
             item.Tier,
             item.Bucket,
@@ -80,22 +82,30 @@ public sealed class InMemoryWorldModelPendingWorkStore : IWorldModelPendingWorkS
 
         lock (_gate)
         {
+            var targetKey = WorldModelTargetKey.From(validatedItem);
+            if (_targetLanes.TryGetValue(targetKey, out var existingLane) && existingLane != lane)
+            {
+                return Result<Unit, string>.Error(
+                    "Target already exists in a different scheduler lane."
+                );
+            }
+
             if (!_pending.TryGetValue(key, out var queue))
             {
                 queue = new Queue<WorldModelTargetWorkItem>();
                 _pending[key] = queue;
             }
 
-            // Target order inside an organization is intentionally FIFO by enqueue order here.
-            // A Postgres store should use oldest_event_at or an equivalent stable ordering.
-            // NOTE: The work item and initial queue state are validated before this mutation so
-            // direct public-record construction cannot leave unreachable pending work behind.
+            // Validate before mutating so direct record construction cannot leave unreachable work.
+            // Queue position is stable when an existing consumer-target aggregate is replaced.
             var upsertResult = UpsertPendingTarget(queue, validatedItem);
             if (upsertResult.TryGetError(out var upsertError))
             {
                 return Result<Unit, string>.Error(upsertError);
             }
 
+            // Lane ownership survives dequeue while a lease is active, matching the durable key.
+            _targetLanes[targetKey] = lane;
             var activeTargetCount = queue.Count;
             if (_states.TryGetValue(key, out var state))
             {
@@ -109,6 +119,17 @@ public sealed class InMemoryWorldModelPendingWorkStore : IWorldModelPendingWorkS
             return Result<Unit, string>.Ok(Unit.Value);
         }
     }
+
+    /// <inheritdoc />
+    public Task<Result<Unit, string>> EnqueueAsync(
+        WorldModelTargetWorkItem item,
+        CancellationToken cancellationToken
+    ) =>
+        Task.FromResult(
+            cancellationToken.IsCancellationRequested
+                ? Result<Unit, string>.Error("Enqueue was canceled.")
+                : AddPendingWork(item)
+        );
 
     /// <inheritdoc />
     public Task<
@@ -239,6 +260,7 @@ public sealed class InMemoryWorldModelPendingWorkStore : IWorldModelPendingWorkS
                     Guid.CreateVersion7(),
                     lease.OwnerId,
                     lease.ExpiresAtUtc,
+                    aggregateRevision: 1,
                     next
                 );
                 if (workLeaseResult.TryGetError(out var error))
@@ -298,14 +320,132 @@ public sealed class InMemoryWorldModelPendingWorkStore : IWorldModelPendingWorkS
         }
     }
 
+    /// <inheritdoc />
+    public Task<Result<Unit, string>> RenewLeaseAsync(
+        WorldModelWorkLease lease,
+        DateTimeOffset expiresAtUtc,
+        CancellationToken cancellationToken
+    )
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromResult(Result<Unit, string>.Error("Lease renewal was canceled."));
+        }
+
+        lock (_gate)
+        {
+            if (
+                !_leases.TryGetValue(lease.LeaseId, out var current)
+                || current.OwnerId != lease.OwnerId
+            )
+            {
+                return Task.FromResult(
+                    Result<Unit, string>.Error("Lease is not owned by this worker.")
+                );
+            }
+
+            if (expiresAtUtc <= current.ExpiresAtUtc)
+            {
+                return Task.FromResult(
+                    Result<Unit, string>.Error("Lease expiration must move forward.")
+                );
+            }
+
+            var renewedResult = WorldModelWorkLease.Create(
+                current.LeaseId,
+                current.OwnerId,
+                expiresAtUtc,
+                current.AggregateRevision,
+                current.WorkItem
+            );
+            if (!renewedResult.TryGet(out var renewed))
+            {
+                return Task.FromResult(Result<Unit, string>.Error("Renewed lease is invalid."));
+            }
+
+            _leases[lease.LeaseId] = renewed;
+
+            return Task.FromResult(Result<Unit, string>.Ok(Unit.Value));
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<Result<Unit, string>> CompleteLeaseAsync(
+        WorldModelWorkLease lease,
+        CancellationToken cancellationToken
+    ) => RemoveLeaseAsync(lease, requeue: false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<Result<Unit, string>> ReleaseLeaseAsync(
+        WorldModelWorkLease lease,
+        CancellationToken cancellationToken
+    ) => RemoveLeaseAsync(lease, requeue: true, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<Result<int, string>> ReclaimExpiredLeasesAsync(
+        DateTimeOffset expiredAtUtc,
+        int maxLeases,
+        CancellationToken cancellationToken
+    )
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromResult(Result<int, string>.Error("Lease reclamation was canceled."));
+        }
+
+        if (maxLeases < 1)
+        {
+            return Task.FromResult(
+                Result<int, string>.Error("Max leases must be greater than zero.")
+            );
+        }
+
+        lock (_gate)
+        {
+            var expired = _leases
+                .Values.Where(lease => lease.ExpiresAtUtc <= expiredAtUtc)
+                .OrderBy(lease => lease.ExpiresAtUtc)
+                .ThenBy(lease => lease.LeaseId)
+                .Take(maxLeases)
+                .ToArray();
+            foreach (var lease in expired)
+            {
+                _leases.TryRemove(lease.LeaseId, out _);
+                // System.Threading.Lock is recursive; AddPendingWork re-enters the same gate while
+                // restoring the aggregate and its organization state as one in-memory transition.
+                var addResult = AddPendingWork(lease.WorkItem);
+                if (addResult.TryGetError(out var error))
+                {
+                    return Task.FromResult(Result<int, string>.Error(error));
+                }
+            }
+
+            return Task.FromResult(Result<int, string>.Ok(expired.Length));
+        }
+    }
+
     private sealed record OrganizationLaneKey(WorldModelSchedulerLane Lane, string OrganizationId);
+
+    private readonly record struct WorldModelTargetKey(
+        string OrganizationId,
+        WorldModelWorkConsumer Consumer,
+        string TargetId
+    )
+    {
+        public static WorldModelTargetKey From(WorldModelTargetWorkItem item) =>
+            new(item.OrganizationId, item.Consumer, item.TargetId);
+    }
 
     private static Result<Unit, string> UpsertPendingTarget(
         Queue<WorldModelTargetWorkItem> queue,
         WorldModelTargetWorkItem item
     )
     {
-        if (!queue.Any(pending => pending.TargetId == item.TargetId))
+        if (
+            !queue.Any(pending =>
+                pending.Consumer == item.Consumer && pending.TargetId == item.TargetId
+            )
+        )
         {
             queue.Enqueue(item);
 
@@ -316,7 +456,7 @@ public sealed class InMemoryWorldModelPendingWorkStore : IWorldModelPendingWorkS
         var replacementItems = new List<WorldModelTargetWorkItem>(pendingItems.Length);
         foreach (var pending in pendingItems)
         {
-            if (pending.TargetId != item.TargetId)
+            if (pending.Consumer != item.Consumer || pending.TargetId != item.TargetId)
             {
                 replacementItems.Add(pending);
                 continue;
@@ -352,6 +492,7 @@ public sealed class InMemoryWorldModelPendingWorkStore : IWorldModelPendingWorkS
         WorldModelTargetWorkItem incoming
     )
     {
+        // Saturation keeps repeated aggregation from overflowing into an invalid negative cost.
         var eventCount = (int)
             Math.Min(int.MaxValue, (long)current.EventCount + incoming.EventCount);
         var estimatedCost = (int)
@@ -359,6 +500,7 @@ public sealed class InMemoryWorldModelPendingWorkStore : IWorldModelPendingWorkS
 
         return WorldModelTargetWorkItem.Create(
             current.OrganizationId,
+            current.Consumer,
             current.TargetId,
             current.Tier,
             current.Bucket,
@@ -371,5 +513,66 @@ public sealed class InMemoryWorldModelPendingWorkStore : IWorldModelPendingWorkS
                 ? current.NewestEventAtUtc
                 : incoming.NewestEventAtUtc
         );
+    }
+
+    private Task<Result<Unit, string>> RemoveLeaseAsync(
+        WorldModelWorkLease lease,
+        bool requeue,
+        CancellationToken cancellationToken
+    )
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromResult(Result<Unit, string>.Error("Lease operation was canceled."));
+        }
+
+        lock (_gate)
+        {
+            if (
+                !_leases.TryGetValue(lease.LeaseId, out var current)
+                || current.OwnerId != lease.OwnerId
+            )
+            {
+                return Task.FromResult(
+                    Result<Unit, string>.Error("Lease is not owned by this worker.")
+                );
+            }
+
+            _leases.TryRemove(lease.LeaseId, out _);
+            if (requeue)
+            {
+                // Requeue through the aggregation path so organization state and target identity
+                // follow the same rules as newly arrived work.
+                var addResult = AddPendingWork(current.WorkItem);
+                if (addResult.TryGetError(out var error))
+                {
+                    return Task.FromResult(Result<Unit, string>.Error(error));
+                }
+            }
+            else
+            {
+                RemoveLaneOwnershipIfInactive(current.WorkItem);
+            }
+
+            return Task.FromResult(Result<Unit, string>.Ok(Unit.Value));
+        }
+    }
+
+    private void RemoveLaneOwnershipIfInactive(WorldModelTargetWorkItem item)
+    {
+        var targetKey = WorldModelTargetKey.From(item);
+        var lane = new WorldModelSchedulerLane(item.Tier, item.Bucket);
+        var organizationLaneKey = new OrganizationLaneKey(lane, item.OrganizationId);
+        var hasPending =
+            _pending.TryGetValue(organizationLaneKey, out var queue)
+            && queue.Any(pending => WorldModelTargetKey.From(pending) == targetKey);
+        var hasLease = _leases.Values.Any(lease =>
+            WorldModelTargetKey.From(lease.WorkItem) == targetKey
+        );
+
+        if (!hasPending && !hasLease)
+        {
+            _targetLanes.Remove(targetKey);
+        }
     }
 }

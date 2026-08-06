@@ -8,12 +8,12 @@ namespace Zeeq.Platform.WorldModel.Scheduling;
 /// </summary>
 /// <remarks>
 /// This is the atomic scheduling unit for the world model pipeline. It represents all pending
-/// events for one <c>(organizationId, targetId)</c> group so Curator and Cluster Index Builder
-/// workers can process related mutations together, dedupe them, and make a single coordinated
-/// LLM or embedding pass when needed.
+/// events for one <c>(organizationId, consumer, targetId)</c> group. Keeping the consumer in the
+/// identity lets Curator and Cluster Index workers aggregate and lease the same target independently.
 /// </remarks>
 public sealed record WorldModelTargetWorkItem(
     string OrganizationId,
+    WorldModelWorkConsumer Consumer,
     string TargetId,
     OrganizationTier Tier,
     int Bucket,
@@ -27,6 +27,7 @@ public sealed record WorldModelTargetWorkItem(
     /// Validates and creates a target-scoped work item.
     /// </summary>
     /// <param name="organizationId">Organization that owns the target and pending events.</param>
+    /// <param name="consumer">Worker type that owns the target namespace.</param>
     /// <param name="targetId">Identifier of the thing being mutated by the event group.</param>
     /// <param name="tier">Resolved organization tier used to choose the scheduler lane.</param>
     /// <param name="bucket">Stable route bucket within the tier.</param>
@@ -36,6 +37,7 @@ public sealed record WorldModelTargetWorkItem(
     /// <param name="newestEventAtUtc">UTC timestamp of the newest event in the group.</param>
     public static Result<WorldModelTargetWorkItem, string> Create(
         string organizationId,
+        WorldModelWorkConsumer consumer,
         string targetId,
         OrganizationTier tier,
         int bucket,
@@ -48,6 +50,13 @@ public sealed record WorldModelTargetWorkItem(
         if (string.IsNullOrWhiteSpace(organizationId))
         {
             return Result<WorldModelTargetWorkItem, string>.Error("Organization id is required.");
+        }
+
+        if (!Enum.IsDefined(consumer))
+        {
+            return Result<WorldModelTargetWorkItem, string>.Error(
+                "World model work consumer is invalid."
+            );
         }
 
         if (string.IsNullOrWhiteSpace(targetId))
@@ -86,6 +95,7 @@ public sealed record WorldModelTargetWorkItem(
         return Result<WorldModelTargetWorkItem, string>.Ok(
             new(
                 organizationId.Trim(),
+                consumer,
                 targetId.Trim(),
                 tier,
                 bucket,
