@@ -1,15 +1,9 @@
-using System.Security.Claims;
-using Microsoft.Extensions.AI;
-using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
-using OpenIddict.Abstractions;
-using Zeeq.Core.Documents;
 using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews.Tests;
 
 /// <summary>
-/// Tests for <see cref="CodeReviewAgentExecutor"/> instruction building and tool wiring.
+/// Tests for <see cref="CodeReviewAgentExecutor"/> instruction building.
 ///
 /// dotnet run --project src/backend/Zeeq.Platform.CodeReviews.Tests --output detailed --disable-logo --treenode-filter "/*/*/CodeReviewAgentExecutorTests/*"
 /// </summary>
@@ -66,99 +60,5 @@ public sealed class CodeReviewAgentExecutorTests
 
         await Assert.That(identityIndex).IsLessThan(bodyIndex);
         await Assert.That(bodyIndex).IsLessThan(previousIndex);
-    }
-
-    [Test]
-    public async Task ScopedServiceAIFunction_InvokeAsync_ResolvesDistinctScopePerInvocation()
-    {
-        // A scoped marker yields a distinct instance per DI scope. If the wrapper reused one
-        // scope, both invocations would resolve the same marker (the production DbContext-sharing
-        // bug); a fresh scope per call resolves distinct markers.
-        var services = new ServiceCollection().AddScoped<ScopeMarker>().BuildServiceProvider();
-
-        // AIFunctionFactory injects the invocation AIFunctionArguments, so the probe reports which
-        // scoped marker its call resolved.
-        var probe = AIFunctionFactory.Create(
-            (AIFunctionArguments arguments) =>
-                arguments.Services!.GetRequiredService<ScopeMarker>().Id,
-            name: "probe"
-        );
-
-        var wrapped = new ScopedServiceAIFunction(probe, services);
-
-        var first = await wrapped.InvokeAsync([]);
-        var second = await wrapped.InvokeAsync([]);
-
-        await Assert.That(first).IsNotEqualTo(second);
-    }
-
-    [Test]
-    public async Task BuildLibraryTools_WrapsEveryToolWithCodeReviewScopeConfigurator()
-    {
-        // Locks the production wiring end-to-end: every library tool handed to a reviewer agent
-        // must be a ScopedServiceAIFunction carrying MarkCodeReviewExecutionScope, otherwise that
-        // tool's store queries would run unmarked and leak review-excluded documents. Delegate
-        // equality compares method + target, so the method-group comparison holds.
-        var principal = new ClaimsPrincipal(
-            new ClaimsIdentity([new Claim(OpenIddictConstants.Claims.Subject, "usr_123")], "test")
-        );
-        var services = new ServiceCollection()
-            .AddScoped(_ => Substitute.For<ILibraryDocumentStore>())
-            .BuildServiceProvider();
-
-        var tools = CodeReviewAgentExecutor.BuildLibraryTools(principal, services);
-
-        await Assert.That(tools.Count).IsEqualTo(5);
-
-        foreach (var tool in tools)
-        {
-            var wrapped = tool as ScopedServiceAIFunction;
-
-            await Assert.That(wrapped).IsNotNull();
-            await Assert
-                .That(wrapped!.ScopeConfigurator)
-                .IsEqualTo(CodeReviewAgentExecutor.MarkCodeReviewExecutionScope);
-        }
-    }
-
-    [Test]
-    public async Task ScopedServiceAIFunction_InvokeAsync_WithScopeConfigurator_MarksInvocationScope()
-    {
-        // Locks the review-path wiring: BuildLibraryTools passes MarkCodeReviewExecutionScope to
-        // every library tool wrapper, and that hook must flip DocumentSearchScope inside the
-        // per-invocation child scope (the stores read it there). A wrapper without the hook must
-        // leave the scope unmarked — that is the interactive default.
-        var services = new ServiceCollection()
-            .AddScoped<DocumentSearchScope>()
-            .BuildServiceProvider();
-
-        var probe = AIFunctionFactory.Create(
-            (AIFunctionArguments arguments) =>
-                arguments.Services!.GetRequiredService<DocumentSearchScope>().ForCodeReviewExecution
-                    ? "marked"
-                    : "unmarked",
-            name: "probe"
-        );
-
-        var codeReviewTool = new ScopedServiceAIFunction(
-            probe,
-            services,
-            CodeReviewAgentExecutor.MarkCodeReviewExecutionScope
-        );
-        var defaultTool = new ScopedServiceAIFunction(probe, services);
-
-        var codeReviewResult = await codeReviewTool.InvokeAsync(new AIFunctionArguments());
-        var defaultResult = await defaultTool.InvokeAsync(new AIFunctionArguments());
-
-        await Assert.That(codeReviewResult?.ToString()).IsEqualTo("marked");
-        await Assert.That(defaultResult?.ToString()).IsEqualTo("unmarked");
-    }
-
-    /// <summary>
-    /// Scoped marker whose identity is unique per DI scope, used to detect scope reuse.
-    /// </summary>
-    private sealed class ScopeMarker
-    {
-        public Guid Id { get; } = Guid.NewGuid();
     }
 }

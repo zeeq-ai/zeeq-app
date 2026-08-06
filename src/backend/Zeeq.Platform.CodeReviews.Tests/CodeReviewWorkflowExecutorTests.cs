@@ -291,6 +291,7 @@ public sealed class CodeReviewWorkflowExecutorTests
             null!,
             new(_xmlValidator),
             _xmlValidator,
+            null!,
             NullLoggerFactory.Instance,
             EmptyServiceProvider.Instance
         );

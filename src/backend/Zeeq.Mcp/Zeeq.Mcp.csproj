@@ -5,12 +5,18 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Zeeq.Mcp.Carts\Zeeq.Mcp.Carts.csproj" />
-    <ProjectReference Include="..\Zeeq.Mcp.CodeReviews\Zeeq.Mcp.CodeReviews.csproj" />
-    <ProjectReference Include="..\Zeeq.Mcp.Documents\Zeeq.Mcp.Documents.csproj" />
+    <InternalsVisibleTo Include="Zeeq.Mcp.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Zeeq.Platform.Carts\Zeeq.Platform.Carts.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.CodeReviews\Zeeq.Platform.CodeReviews.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Documents\Zeeq.Platform.Documents.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Danom" />
+    <PackageReference Include="ModelContextProtocol" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <PackageReference Include="System.Security.Cryptography.Xml" />
+    <PackageReference Include="ToonSharp" />
   </ItemGroup>
 </Project>

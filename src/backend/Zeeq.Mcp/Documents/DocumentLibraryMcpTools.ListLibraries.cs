@@ -6,7 +6,6 @@ using ModelContextProtocol.Server;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
-using Zeeq.Platform.Documents;
 
 namespace Zeeq.Mcp.Documents;
 

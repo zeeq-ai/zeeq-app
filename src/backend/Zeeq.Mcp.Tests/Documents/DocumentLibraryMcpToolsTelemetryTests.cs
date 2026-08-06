@@ -1,22 +1,21 @@
 using System.Security.Claims;
-using Zeeq.Core.Common;
-using Zeeq.Core.Documents;
-using Zeeq.Core.Documents.Snippets;
-using Zeeq.Core.Identity;
-using Zeeq.Mcp.Documents;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Zeeq.Core.Common;
+using Zeeq.Core.Documents;
+using Zeeq.Core.Documents.Snippets;
+using Zeeq.Core.Identity;
 
-namespace Zeeq.Mcp.Docs.Tests;
+namespace Zeeq.Mcp.Documents.Tests;
 
 /// <summary>
 /// Tests that the document MCP tools emit best-effort knowledge-source telemetry — one source per
 /// surfaced row (snippet + owning document), missed queries on zero results, and reads — while a
 /// <see cref="ToolTelemetrySink" /> scope is active, and stay silent no-ops otherwise.
 ///
-/// dotnet run --project src/backend/Zeeq.Mcp.DocumentsTests --output detailed --disable-logo --treenode-filter "/*/*/DocumentLibraryMcpToolsTelemetryTests/*"
+/// dotnet run --project src/backend/Zeeq.Mcp.Tests --output detailed --disable-logo --treenode-filter "/*/*/DocumentLibraryMcpToolsTelemetryTests/*"
 /// </summary>
 public sealed class DocumentLibraryMcpToolsTelemetryTests
 {

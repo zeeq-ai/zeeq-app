@@ -8,9 +8,11 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Danom" />
+    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="System.Security.Cryptography.Xml" />
     <PackageReference Include="TUnit" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Zeeq.Mcp.CodeReviews\Zeeq.Mcp.CodeReviews.csproj" />
+    <ProjectReference Include="..\Zeeq.Mcp\Zeeq.Mcp.csproj" />
   </ItemGroup>
 </Project>

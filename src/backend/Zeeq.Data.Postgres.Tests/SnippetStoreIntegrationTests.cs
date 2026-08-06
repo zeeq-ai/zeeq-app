@@ -804,7 +804,7 @@ public sealed class SnippetStoreIntegrationTests : PgTransactionalTestBase
 
     /// <summary>
     /// Builds a snippet store whose scope is marked as code-review execution — the same marking
-    /// <c>CodeReviewAgentExecutor.MarkCodeReviewExecutionScope</c> applies per tool invocation.
+    /// The code-review toolset provider applies the marker per tool invocation.
     /// </summary>
     private PostgresLibraryDocumentSnippetStore CreateCodeReviewScopedSnippetStore() =>
         new(_context, new DocumentSearchScope { ForCodeReviewExecution = true });

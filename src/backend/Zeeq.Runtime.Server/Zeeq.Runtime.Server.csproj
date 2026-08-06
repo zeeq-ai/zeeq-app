@@ -48,7 +48,6 @@
     <ProjectReference Include="..\Zeeq.Data.Postgres.Migrations\Zeeq.Data.Postgres.Migrations.csproj" />
     <ProjectReference Include="..\Zeeq.Data.Postgres\Zeeq.Data.Postgres.csproj" />
     <ProjectReference Include="..\Zeeq.Integrations.GitHub\Zeeq.Integrations.GitHub.csproj" />
-    <ProjectReference Include="..\Zeeq.Mcp.Carts\Zeeq.Mcp.Carts.csproj" />
     <ProjectReference Include="..\Zeeq.Mcp\Zeeq.Mcp.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Membership\Zeeq.Platform.Membership.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Carts\Zeeq.Platform.Carts.csproj" />

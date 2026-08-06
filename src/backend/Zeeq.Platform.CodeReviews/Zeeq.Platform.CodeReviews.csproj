@@ -23,7 +23,6 @@
     <ProjectReference Include="..\Zeeq.Core.Identity\Zeeq.Core.Identity.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Llm\Zeeq.Core.Llm.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Models\Zeeq.Core.Models.csproj" />
-    <ProjectReference Include="..\Zeeq.Mcp.Documents\Zeeq.Mcp.Documents.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Messaging\Zeeq.Platform.Messaging.csproj" />
   </ItemGroup>
 </Project>

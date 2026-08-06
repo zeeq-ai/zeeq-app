@@ -1,3 +1,4 @@
 # Zeeq MCP
 
-The core MCP library shared by all MCP tools.  Responsible for the base setup of MCP tools.
+The single assembly for Zeeq MCP server setup and tools. Tool implementations are grouped by
+feature under `Carts`, `CodeReviews`, `Documents`, and `Memories`.

@@ -1,7 +1,8 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Zeeq.Platform.CodeReviews;
 
-namespace Zeeq.Platform.CodeReviews;
+namespace Zeeq.Mcp.CodeReviews;
 
 /// <summary>
 /// Wraps a document-library <see cref="AIFunction"/> so that every invocation runs
@@ -19,7 +20,7 @@ namespace Zeeq.Platform.CodeReviews;
 ///
 /// This wrapper opens a fresh child scope per invocation and points
 /// <see cref="AIFunctionArguments.Services"/> at it, so
-/// <see cref="CodeReviewAgentExecutor.BindServiceParameter"/> resolves a per-call store and
+/// <see cref="CodeReviewToolsetProvider"/> resolves a per-call store and
 /// context. The scope — and the context it owns — is disposed when the call returns, which is
 /// safe because the store materializes its results (mostly <c>AsNoTracking</c>) before the
 /// call completes. The per-reviewer scope in
@@ -43,8 +44,8 @@ internal sealed class ScopedServiceAIFunction(
 {
     /// <summary>
     /// The scope hook this wrapper applies, exposed so tests can lock the production wiring
-    /// (every library tool from <c>BuildLibraryTools</c> must carry
-    /// <c>CodeReviewAgentExecutor.MarkCodeReviewExecutionScope</c>).
+    /// (every tool from <see cref="CodeReviewToolsetProvider.CreateTools"/> must carry
+    /// <see cref="CodeReviewToolsetProvider.MarkCodeReviewExecutionScope"/>).
     /// </summary>
     internal Action<IServiceProvider>? ScopeConfigurator => configureScope;
 
