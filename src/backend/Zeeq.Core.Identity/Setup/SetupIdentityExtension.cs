@@ -145,7 +145,7 @@ public static class SetupIdentityExtension
                 {
                     Resource = authSettings.ResourceTrimmed,
                     ResourceName = "Zeeq",
-                    AuthorizationServers = { authSettings.IssuerTrimmed },
+                    AuthorizationServers = { authSettings.IssuerNormalized },
                     BearerMethodsSupported = { "header" },
                     ScopesSupported = { "mcp:tools" },
                 };
