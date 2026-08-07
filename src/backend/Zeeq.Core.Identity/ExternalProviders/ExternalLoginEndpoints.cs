@@ -10,18 +10,22 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.IdentityModel.Validators;
 using OpenIddict.Abstractions;
 
 namespace Zeeq.Core.Identity;
 
 /// <summary>
-/// External IdP login endpoints for the local mock provider and Google.
+/// External IdP login endpoints for the local mock, Google, GitHub, and Microsoft providers.
 /// </summary>
 /// <remarks>
 /// External providers authenticate humans; this application converts the verified
 /// provider identity into local cookie claims and later OpenIddict artifacts.
 /// Browser-origin logins may require a one-time handoff so the session cookie is
 /// issued on the same origin the web app will use for <c>/me</c> and auth routes.
+/// Microsoft is the notable provider-specific deviation: Zeeq uses its tenant-independent
+/// <c>common</c> authority, but Microsoft issues each token from the user's concrete tenant
+/// and scopes directory object IDs to that tenant.
 /// </remarks>
 public static class ExternalLoginEndpoints
 {
@@ -469,9 +473,7 @@ public static class ExternalLoginEndpoints
                 )
                 : null;
 
-            var providerSubject =
-                principal.FindFirstValue(OpenIddictConstants.Claims.Subject)
-                ?? throw new InvalidOperationException("Provider id_token has no sub claim.");
+            var providerSubject = GetProviderSubject(provider, principal);
             var name = principal.FindFirstValue(OpenIddictConstants.Claims.Name) ?? userInfo?.Name;
             var email =
                 principal.FindFirstValue(OpenIddictConstants.Claims.Email) ?? userInfo?.Email;
@@ -776,19 +778,77 @@ public static class ExternalLoginEndpoints
 
         return handler.ValidateToken(
             idToken,
-            new TokenValidationParameters
-            {
-                ValidateIssuer = true,
-                ValidIssuer = configuration.Issuer,
-                ValidateAudience = true,
-                ValidAudience = provider.ClientId,
-                ValidateLifetime = true,
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKeys = configuration.SigningKeys,
-                NameClaimType = OpenIddictConstants.Claims.Name,
-            },
+            CreateIdTokenValidationParameters(provider, configuration),
             out _
         );
+    }
+
+    internal static TokenValidationParameters CreateIdTokenValidationParameters(
+        ProviderAuthSettings provider,
+        OpenIdConnectConfiguration configuration
+    )
+    {
+        var validationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = configuration.Issuer,
+            ValidateAudience = true,
+            ValidAudience = provider.ClientId,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKeys = configuration.SigningKeys,
+            NameClaimType = OpenIddictConstants.Claims.Name,
+        };
+
+        if (string.Equals(provider.Name, "microsoft", StringComparison.OrdinalIgnoreCase))
+        {
+            // Microsoft's common discovery document advertises an issuer template
+            // containing {tenantid}, while the ID token's iss claim contains the concrete
+            // tenant. The default validator compares those values literally. Microsoft's
+            // validator binds the template, tid claim, and concrete issuer without weakening
+            // the signature, audience, lifetime, or signing-key checks configured above.
+            validationParameters.IssuerValidator = AadIssuerValidator
+                .GetAadIssuerValidator(provider.IssuerUriTrimmed)
+                .Validate;
+        }
+
+        return validationParameters;
+    }
+
+    internal static string GetProviderSubject(
+        ProviderAuthSettings provider,
+        ClaimsPrincipal principal
+    )
+    {
+        if (!string.Equals(provider.Name, "microsoft", StringComparison.OrdinalIgnoreCase))
+        {
+            return principal.FindFirstValue(OpenIddictConstants.Claims.Subject)
+                ?? throw new SecurityTokenValidationException(
+                    "Provider id_token has no sub claim."
+                );
+        }
+
+        // Unlike Google and GitHub identifiers, a Microsoft directory object's oid is scoped
+        // to its tenant. Zeeq's identity key has only (provider, providerSubject), so fold the
+        // validated tenant into the subject to preserve the actual (tenant, object) identity.
+        // This also makes configured admin keys read naturally as microsoft:<tid>:<oid>.
+        var tenantId = ParseMicrosoftIdentityClaim(principal, "tid");
+        var objectId = ParseMicrosoftIdentityClaim(principal, "oid");
+
+        return $"{tenantId:D}:{objectId:D}";
+    }
+
+    private static Guid ParseMicrosoftIdentityClaim(ClaimsPrincipal principal, string claimType)
+    {
+        var value = principal.FindFirstValue(claimType);
+        if (!Guid.TryParse(value, out var claimId))
+        {
+            throw new SecurityTokenValidationException(
+                $"Microsoft id_token has no valid {claimType} claim."
+            );
+        }
+
+        return claimId;
     }
 
     private static async Task<OpenIdConnectConfiguration> ReadProviderConfigurationAsync(

@@ -44,6 +44,7 @@ ZEEQ_RUNTIME_ENV_SECRETS=(
   "AppSettings__Llm__Embeddings__ApiKey=AppSettings__Llm__Embeddings__ApiKey:latest"
   "AppSettings__Auth__Providers__0__ClientSecret=AppSettings__Auth__Providers__0__ClientSecret:latest"
   "AppSettings__Auth__Providers__1__ClientSecret=AppSettings__Auth__Providers__1__ClientSecret:latest"
+  "AppSettings__Auth__Providers__2__ClientSecret=AppSettings__Auth__Providers__2__ClientSecret:latest"
   "AppSettings__Database__ConnectionString=AppSettings__Database__ConnectionString:latest"
   "OTEL_EXPORTER_OTLP_HEADERS=zeeq-otel-api-key-header:latest"
 )

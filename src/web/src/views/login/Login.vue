@@ -208,6 +208,7 @@ interface ProviderSummary {
 const providerIcons: Record<string, string> = {
   github: "i-hugeicons-github",
   google: "i-hugeicons-google",
+  microsoft: "i-hugeicons-microsoft",
   mock: "i-hugeicons-shield-02",
 };
 
