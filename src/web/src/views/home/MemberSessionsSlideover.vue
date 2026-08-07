@@ -74,8 +74,8 @@
               class="flex w-full min-w-0 items-start justify-between gap-3 text-left"
             >
               <div class="min-w-0 flex-1">
-                <p class="truncate font-semibold text-highlighted">
-                  {{ item.promptText }}
+                <p class="truncate font-mono tabular-nums text-highlighted">
+                  {{ item.tokenCountLabel }}
                 </p>
                 <p class="mt-1 truncate text-xs text-dimmed">
                   {{ item.startedAtLabel }}
@@ -110,12 +110,14 @@ import type { ListboxItem } from "@nuxt/ui";
 import type { AgentConversationListItemDto } from "@/api/generated";
 import {
   formatFullDateTime,
+  formatTokenCount,
   formatUsd,
+  toApiNumber,
 } from "@/views/sessions/session-display";
 
 type MemberSessionListItem = ListboxItem & {
   value: string;
-  promptText: string;
+  tokenCountLabel: string;
   startedAtLabel: string;
   harness: string;
   costLabel: string;
@@ -154,15 +156,22 @@ const emptyDescription = computed(() =>
 
 /** Projects API records into the complete display shape consumed by the item slot. */
 const rows = computed<MemberSessionListItem[]>(() =>
-  props.conversations.map((conversation) => ({
-    value: conversation.id,
-    label: conversation.title?.trim() || "Prompt unavailable",
-    promptText: conversation.title?.trim() || "Prompt unavailable",
-    startedAtLabel: formatFullDateTime(conversation.startedAtUtc),
-    harness: conversation.harness,
-    costLabel: formatUsd(conversation.totalCostUsd),
-    disabled: true,
-  })),
+  props.conversations.map((conversation) => {
+    const tokenCountLabel = `${formatTokenCount(
+      toApiNumber(conversation.totalInputTokens) +
+        toApiNumber(conversation.totalOutputTokens),
+    )} tokens`;
+
+    return {
+      value: conversation.id,
+      label: tokenCountLabel,
+      tokenCountLabel,
+      startedAtLabel: formatFullDateTime(conversation.startedAtUtc),
+      harness: conversation.harness,
+      costLabel: formatUsd(conversation.totalCostUsd),
+      disabled: true,
+    };
+  }),
 );
 
 /** Debounces pointer and keyboard changes so dragging cannot flood the list endpoint. */
