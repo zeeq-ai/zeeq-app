@@ -45,6 +45,20 @@
           />
         </template>
 
+        <template v-if="isNotionSource" #notion-webhook>
+          <LibraryNotionWebhookTab
+            :state="notionWebhookState"
+            :source="props.library?.source ?? null"
+            :loading="loadingNotionWebhookState"
+            :resetting="resettingNotionWebhookState"
+            :full-resyncing="fullResyncing"
+            @refresh="emits('load-notion-webhook-state')"
+            @reset="emits('reset-notion-webhook-state')"
+            @full-resync="emits('full-resync')"
+            @copy="emits('copy-notion-webhook-value', $event)"
+          />
+        </template>
+
         <template #import-export>
           <LibraryImportExportTab
             :library-name="props.library!.name"
@@ -99,6 +113,7 @@
 <script setup lang="ts">
 import type { LibraryResponse } from "@/api/generated/types/LibraryResponse";
 import type { IngestRunPageResponse } from "@/api/generated/types/IngestRunPageResponse";
+import type { NotionWebhookStateResponse } from "@/api/generated/types/NotionWebhookStateResponse";
 import type {
   GitHubConfiguredRepository,
   GitHubRepositoryMappingRow,
@@ -109,6 +124,7 @@ import LibraryFormFields, {
 import LibrarySyncStatusTab from "./LibrarySyncStatusTab.vue";
 import LibraryDeleteTab from "./LibraryDeleteTab.vue";
 import LibraryImportExportTab from "./LibraryImportExportTab.vue";
+import LibraryNotionWebhookTab from "./LibraryNotionWebhookTab.vue";
 
 /** Payload emitted on submit — union of the create and edit shapes. */
 export type LibraryFormSubmitPayload = {
@@ -117,16 +133,18 @@ export type LibraryFormSubmitPayload = {
   repositoryIds: string[];
   /** Create mode only. Absent means a plain local library. */
   source?: {
-    kind: "Public" | "Private";
+    kind: "Public" | "Private" | "Notion";
     repoUrl?: string;
     repositoryId?: string;
     ownerQualifiedName?: string;
+    accessToken?: string;
     includeFilters: string[];
     excludeFilters: string[];
   };
   /** Edit mode only, for an already-source-backed library. */
   includeFilters?: string[];
   excludeFilters?: string[];
+  runFullResync?: boolean;
 };
 
 const props = defineProps<{
@@ -138,6 +156,10 @@ const props = defineProps<{
   loadingIngestRuns: boolean;
   syncing: boolean;
   resetting: boolean;
+  fullResyncing: boolean;
+  notionWebhookState: NotionWebhookStateResponse | null;
+  loadingNotionWebhookState: boolean;
+  resettingNotionWebhookState: boolean;
   deleting: boolean;
   submitHandler: (data: LibraryFormSubmitPayload) => Promise<void>;
 }>();
@@ -145,7 +167,11 @@ const props = defineProps<{
 const emits = defineEmits<{
   "sync-now": [];
   "reset-run-state": [];
+  "full-resync": [];
   "load-more-runs": [];
+  "load-notion-webhook-state": [];
+  "reset-notion-webhook-state": [];
+  "copy-notion-webhook-value": [value: string];
   imported: [];
   delete: [name: string];
 }>();
@@ -158,29 +184,43 @@ const NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 const GITHUB_URL_PATTERN = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/?$/;
 
 const submitting = ref(false);
-const activeTab = ref<"library" | "status" | "import-export" | "delete">(
-  "library",
-);
+const activeTab = ref<
+  "library" | "status" | "notion-webhook" | "import-export" | "delete"
+>("library");
 
 const form = reactive<LibraryFormState>({
   name: "",
   description: "",
   selectedRepositoryIds: [],
-  importFromGitHub: false,
+  sourceKind: "local",
   sourceTab: "public",
   publicRepoUrl: "",
   privateRepositoryOwnerQualifiedName: undefined,
+  notionAccessToken: "",
   includeFiltersText: "",
   excludeFiltersText: "",
+  originalIncludeFiltersText: "",
+  originalExcludeFiltersText: "",
+  runFullResync: false,
 });
 
 const isEdit = computed(() => !!props.library);
 const isSourceBacked = computed(() => isEdit.value && !!props.library?.source);
+const isNotionSource = computed(() => props.library?.source?.kind === "Notion");
 
 const tabItems = computed(() => [
   { label: "Library", value: "library", slot: "library" as const },
   ...(isSourceBacked.value
     ? [{ label: "Sync status", value: "status", slot: "status" as const }]
+    : []),
+  ...(isNotionSource.value
+    ? [
+        {
+          label: "Notion webhook",
+          value: "notion-webhook",
+          slot: "notion-webhook" as const,
+        },
+      ]
     : []),
   {
     label: "Import / Export",
@@ -201,7 +241,13 @@ const nameError = computed(() => {
 });
 
 const sourceError = computed(() => {
-  if (isEdit.value || !form.importFromGitHub) return null;
+  if (isEdit.value || form.sourceKind === "local") return null;
+
+  if (form.sourceKind === "notion") {
+    return form.notionAccessToken.trim()
+      ? null
+      : "A Notion access token is required.";
+  }
 
   if (form.sourceTab === "public") {
     if (!form.publicRepoUrl.trim()) return "A repository URL is required.";
@@ -241,13 +287,22 @@ watch(
     form.name = lib?.name ?? "";
     form.description = lib?.description ?? "";
     form.selectedRepositoryIds = [...mapped];
-    form.importFromGitHub = !!lib?.source;
+    form.sourceKind =
+      lib?.source?.kind === "Notion"
+        ? "notion"
+        : lib?.source
+          ? "github"
+          : "local";
     form.sourceTab = lib?.source?.kind === "Private" ? "private" : "public";
     form.publicRepoUrl =
-      lib?.source?.kind === "Public" ? lib.source.repoUrl : "";
+      lib?.source?.kind === "Public" ? (lib.source.repoUrl ?? "") : "";
     form.privateRepositoryOwnerQualifiedName = undefined;
+    form.notionAccessToken = "";
     form.includeFiltersText = (lib?.source?.includeFilters ?? []).join("\n");
     form.excludeFiltersText = (lib?.source?.excludeFilters ?? []).join("\n");
+    form.originalIncludeFiltersText = form.includeFiltersText;
+    form.originalExcludeFiltersText = form.excludeFiltersText;
+    form.runFullResync = false;
   },
   { immediate: true },
 );
@@ -265,6 +320,18 @@ watch(open, (isOpen) => {
   }
 });
 
+watch(
+  () => [form.includeFiltersText, form.excludeFiltersText] as const,
+  ([include, exclude]) => {
+    const filtersDirty =
+      include !== form.originalIncludeFiltersText ||
+      exclude !== form.originalExcludeFiltersText;
+    if (!filtersDirty) {
+      form.runFullResync = false;
+    }
+  },
+);
+
 function closeSlideover() {
   open.value = false;
 }
@@ -281,24 +348,32 @@ async function onSubmit() {
       repositoryIds: form.selectedRepositoryIds,
     };
 
-    if (!isEdit.value && form.importFromGitHub) {
+    if (!isEdit.value && form.sourceKind !== "local") {
       payload.source =
-        form.sourceTab === "public"
+        form.sourceKind === "notion"
           ? {
-              kind: "Public",
-              repoUrl: form.publicRepoUrl.trim(),
+              kind: "Notion",
+              accessToken: form.notionAccessToken.trim(),
               includeFilters: parseFilterLines(form.includeFiltersText),
               excludeFilters: parseFilterLines(form.excludeFiltersText),
             }
-          : {
-              kind: "Private",
-              ownerQualifiedName: form.privateRepositoryOwnerQualifiedName,
-              includeFilters: parseFilterLines(form.includeFiltersText),
-              excludeFilters: parseFilterLines(form.excludeFiltersText),
-            };
+          : form.sourceTab === "public"
+            ? {
+                kind: "Public",
+                repoUrl: form.publicRepoUrl.trim(),
+                includeFilters: parseFilterLines(form.includeFiltersText),
+                excludeFilters: parseFilterLines(form.excludeFiltersText),
+              }
+            : {
+                kind: "Private",
+                ownerQualifiedName: form.privateRepositoryOwnerQualifiedName,
+                includeFilters: parseFilterLines(form.includeFiltersText),
+                excludeFilters: parseFilterLines(form.excludeFiltersText),
+              };
     } else if (isEdit.value && isSourceBacked.value) {
       payload.includeFilters = parseFilterLines(form.includeFiltersText);
       payload.excludeFilters = parseFilterLines(form.excludeFiltersText);
+      payload.runFullResync = form.runFullResync;
     }
 
     await props.submitHandler(payload);

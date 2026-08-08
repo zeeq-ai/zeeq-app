@@ -53,8 +53,11 @@ public sealed partial class NotionIngestDispatcher(
 
         try
         {
-            var run = await runner.RunAsync(job, client, cancellationToken);
-            return new NotionDispatchOutcome(run.Status, run.FailureMessage);
+            using (client)
+            {
+                var run = await runner.RunAsync(job, client, cancellationToken);
+                return new NotionDispatchOutcome(run.Status, run.FailureMessage);
+            }
         }
         catch (OperationCanceledException)
         {

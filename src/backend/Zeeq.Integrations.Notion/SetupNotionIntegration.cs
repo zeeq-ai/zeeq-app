@@ -27,6 +27,7 @@ public static class SetupNotionIntegration
         {
             Log.Here().Information("⚙️  Adding Notion integration");
 
+            services.AddFluentlyHttpClient();
             services.AddNotionResilience();
             services.AddSingleton<IZeeqNotionClientFactory, ZeeqNotionClientFactory>();
             services.AddSingleton<NotionCallbackTokenProtector>();

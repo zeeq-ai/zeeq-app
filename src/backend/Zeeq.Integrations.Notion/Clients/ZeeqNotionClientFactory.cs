@@ -1,3 +1,5 @@
+using FluentlyHttpClient;
+using Microsoft.Extensions.Http;
 using Notion.Client;
 
 namespace Zeeq.Integrations.Notion;
@@ -6,8 +8,11 @@ namespace Zeeq.Integrations.Notion;
 /// Default <see cref="IZeeqNotionClientFactory"/> — constructs the SDK's <see cref="NotionClient"/>
 /// per credential over the shared, resilience-wrapped <see cref="System.Net.Http.HttpClient"/>.
 /// </summary>
-internal sealed class ZeeqNotionClientFactory(IHttpClientFactory httpClientFactory)
-    : IZeeqNotionClientFactory
+internal sealed class ZeeqNotionClientFactory(
+    IHttpClientFactory httpClientFactory,
+    IHttpMessageHandlerFactory messageHandlers,
+    IFluentHttpClientFactory fluentClients
+) : IZeeqNotionClientFactory
 {
     /// <summary>
     /// The Notion API version this project has been built and tested against — captured in
@@ -36,6 +41,43 @@ internal sealed class ZeeqNotionClientFactory(IHttpClientFactory httpClientFacto
             }
         );
 
-        return new ZeeqNotionClient(client);
+        var fluentClient = fluentClients
+            .CreateBuilder($"notion-api-{Guid.NewGuid():N}")
+            .WithBaseUrl("https://api.notion.com/v1/")
+            .WithHeader("Authorization", $"Bearer {accessToken}")
+            .WithHeader("Notion-Version", ApiVersion)
+            .WithMessageHandler(
+                new PooledHttpMessageHandlerLease(
+                    messageHandlers.CreateHandler(NotionResilience.Name)
+                )
+            )
+            .Build(skipAutoRegister: true);
+
+        return new ZeeqNotionClient(client, fluentClient);
+    }
+
+    /// <summary>
+    /// Lets FluentlyHttpClient use the <see cref="IHttpMessageHandlerFactory"/>-managed handler
+    /// chain without disposing that pooled handler when the per-token fluent client is disposed.
+    /// </summary>
+    private sealed class PooledHttpMessageHandlerLease(HttpMessageHandler inner)
+        : HttpMessageHandler
+    {
+        private readonly HttpMessageInvoker _invoker = new(inner, disposeHandler: false);
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        ) => _invoker.SendAsync(request, cancellationToken);
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _invoker.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }

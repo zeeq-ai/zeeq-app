@@ -193,7 +193,83 @@ public sealed class NotionIngestRunnerTests
         await Assert.That(run.Status).IsEqualTo(IngestRunStatus.Succeeded);
         await Assert
             .That(_libraries.Documents.Select(row => row.Path))
-            .IsEquivalentTo(["/roadmap", "/roadmap--bbbbbbbb"]);
+            .IsEquivalentTo(["/roadmap.md", "/roadmap--bbbbbbbb.md"]);
+    }
+
+    [Test]
+    public async Task FullScope_NotionBlockMarkdown_InsertsMarkdownBlockSpacing()
+    {
+        _client.SearchResults.Add(Summary("page-1", "Q3"));
+        _client.Markdown["page-1"] = new NotionPageMarkdown(
+            """
+            Here are the key initiatives
+            ## First Heading with a Code Snippet
+            The following is a code snippet
+            ```c#
+            public async Task DoSomethingAsync() 
+            {
+              // This is the body...
+            }
+            ```
+            Why is this page not found?
+            <empty-block/>
+            """,
+            false,
+            0
+        );
+
+        var run = await Runner().RunAsync(Job(ExternalSyncScope.Full), _client, default);
+
+        await Assert.That(run.Status).IsEqualTo(IngestRunStatus.Succeeded);
+        await Assert
+            .That(_libraries.Documents.Single().Content)
+            .IsEqualTo(
+                """
+                # Q3
+
+                Here are the key initiatives
+
+                ## First Heading with a Code Snippet
+
+                The following is a code snippet
+
+                ```c#
+                public async Task DoSomethingAsync() 
+                {
+                  // This is the body...
+                }
+                ```
+
+                Why is this page not found?
+                """
+            );
+    }
+
+    [Test]
+    public async Task FullScope_NotionMarkdownWithH1_DoesNotDuplicateTitle()
+    {
+        _client.SearchResults.Add(Summary("page-1", "Q3"));
+        _client.Markdown["page-1"] = new NotionPageMarkdown(
+            """
+            # Q3
+            Existing title body.
+            """,
+            false,
+            0
+        );
+
+        var run = await Runner().RunAsync(Job(ExternalSyncScope.Full), _client, default);
+
+        await Assert.That(run.Status).IsEqualTo(IngestRunStatus.Succeeded);
+        await Assert
+            .That(_libraries.Documents.Single().Content)
+            .IsEqualTo(
+                """
+                # Q3
+
+                Existing title body.
+                """
+            );
     }
 
     private NotionIngestRunner Runner() =>

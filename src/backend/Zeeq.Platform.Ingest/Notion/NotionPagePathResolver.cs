@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using Zeeq.Core.Common;
 using Zeeq.Integrations.Notion;
 
@@ -87,13 +88,13 @@ internal sealed class NotionPagePathResolver(IZeeqNotionClient client)
                 }
 
                 leafTitle ??= page.Title;
-                segments.Add(SanitizeSegment(page.Title));
+                segments.Add(SlugSegment(page.Title));
                 currentPageId = page.Parent.ParentPageId;
                 depth++;
             }
 
             segments.Reverse();
-            var path = ("/" + string.Join('/', segments)).ToLowerInvariant();
+            var path = BuildMarkdownPath(segments);
             if (path.Length > MaxPathLength)
             {
                 throw new InvalidOperationException(
@@ -111,10 +112,47 @@ internal sealed class NotionPagePathResolver(IZeeqNotionClient client)
         }
     }
 
-    private static string SanitizeSegment(string title)
+    private static string BuildMarkdownPath(IReadOnlyList<string> segments)
     {
-        var sanitized = title.Trim().Replace('/', '-').Replace('\\', '-');
-        return string.IsNullOrWhiteSpace(sanitized) ? "Untitled" : sanitized;
+        if (segments.Count == 0)
+        {
+            return "/untitled.md";
+        }
+
+        var fileName = $"{segments[^1]}.md";
+
+        return segments.Count == 1
+            ? $"/{fileName}"
+            : $"/{string.Join('/', segments.Take(segments.Count - 1))}/{fileName}";
+    }
+
+    private static string SlugSegment(string title)
+    {
+        var slug = new StringBuilder();
+        var previousWasSeparator = false;
+
+        foreach (var character in title.Trim())
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                slug.Append(char.ToLowerInvariant(character));
+                previousWasSeparator = false;
+                continue;
+            }
+
+            if (!previousWasSeparator && slug.Length > 0)
+            {
+                slug.Append('-');
+                previousWasSeparator = true;
+            }
+        }
+
+        if (slug.Length > 0 && slug[^1] == '-')
+        {
+            slug.Length--;
+        }
+
+        return slug.Length == 0 ? "untitled" : slug.ToString();
     }
 }
 

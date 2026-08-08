@@ -33,6 +33,7 @@
         :loading="loadingDocuments"
         :has-library="!!activeLibraryName"
         :active-path="selectedFolderPath ?? loadedDocument?.path ?? null"
+        :active-is-folder="!!selectedFolderPath"
         :allow-remote-review-exclusion="
           activeLibraryAllowsRemoteDocumentOverrides
         "
@@ -304,11 +305,19 @@
       :loading-ingest-runs="loadingIngestRuns"
       :syncing="syncingLibrary"
       :resetting="resettingLibrarySync"
+      :full-resyncing="fullResyncingLibrary"
+      :notion-webhook-state="notionWebhookState"
+      :loading-notion-webhook-state="loadingNotionWebhookState"
+      :resetting-notion-webhook-state="resettingNotionWebhookState"
       :deleting="deletingLibrary"
       :submit-handler="onSubmitLibrary"
       @sync-now="onSyncNow"
       @reset-run-state="onResetRunState"
+      @full-resync="onFullResync"
       @load-more-runs="onLoadMoreRuns"
+      @load-notion-webhook-state="onLoadNotionWebhookState"
+      @reset-notion-webhook-state="onResetNotionWebhookState"
+      @copy-notion-webhook-value="onCopyNotionWebhookValue"
       @imported="onLibraryImportComplete"
       @delete="onDeleteLibrary"
     />
@@ -381,17 +390,20 @@
 
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
-import { useIntervalFn, useStorage } from "@vueuse/core";
+import { useClipboard, useIntervalFn, useStorage } from "@vueuse/core";
 import { useLibraryStore } from "@/stores/library-store";
 import { useLibraryMetricsStore } from "@/stores/library-metrics-store";
 import { useGitHubSettingsStore } from "@/stores/github-settings-store";
 import type { MetricWindowToken } from "@/stores/metrics-store";
 import type { LibraryResponse } from "@/api/generated/types/LibraryResponse";
 import type { IngestRunPageResponse } from "@/api/generated/types/IngestRunPageResponse";
+import type { NotionWebhookStateResponse } from "@/api/generated/types/NotionWebhookStateResponse";
 import { libraryDocumentScopedSkillEnum } from "@/api/generated/types/LibraryDocumentScopedSkill";
 import type { LibraryDocumentScopedSkill } from "@/api/generated/types/LibraryDocumentScopedSkill";
 import LibrarySelector from "./LibrarySelector.vue";
-import LibraryFormSlideover from "./LibraryFormSlideover.vue";
+import LibraryFormSlideover, {
+  type LibraryFormSubmitPayload,
+} from "./LibraryFormSlideover.vue";
 import DocumentTree from "./DocumentTree.vue";
 import DocumentEditorPanel from "./DocumentEditorPanel.vue";
 import ReviewDiffDrawer from "@/components/ReviewDiffDrawer.vue";
@@ -406,6 +418,7 @@ type DocumentEditorPanelInstance = InstanceType<typeof DocumentEditorPanel>;
 type ReviewDiffDrawerInstance = InstanceType<typeof ReviewDiffDrawer>;
 
 const toast = useToast();
+const { copy } = useClipboard({ legacy: true });
 const store = useLibraryStore();
 const libraryMetricsStore = useLibraryMetricsStore();
 const githubStore = useGitHubSettingsStore();
@@ -716,30 +729,20 @@ const activeDocumentRepoFileUrl = computed(() => {
 function openLibraryForm(library: LibraryResponse | null) {
   libraryFormTarget.value = library;
   ingestRunsPage.value = null;
+  notionWebhookState.value = null;
   libraryJustCreated.value = false;
   libraryFormOpen.value = true;
 
   if (library?.source) {
     void loadIngestRunsFirstPage(library.name);
   }
+  if (library?.source?.kind === "Notion") {
+    void loadNotionWebhookState(library.name);
+  }
 }
 
 /** Handles submit from the library form (create or update). */
-async function onSubmitLibrary(data: {
-  name: string;
-  description?: string;
-  repositoryIds: string[];
-  source?: {
-    kind: "Public" | "Private";
-    repoUrl?: string;
-    repositoryId?: string;
-    ownerQualifiedName?: string;
-    includeFilters: string[];
-    excludeFilters: string[];
-  };
-  includeFilters?: string[];
-  excludeFilters?: string[];
-}) {
+async function onSubmitLibrary(data: LibraryFormSubmitPayload) {
   try {
     if (libraryFormTarget.value) {
       const updated = await store.updateLibrary(libraryFormTarget.value.name, {
@@ -747,6 +750,7 @@ async function onSubmitLibrary(data: {
         description: data.description,
         includeFilters: data.includeFilters,
         excludeFilters: data.excludeFilters,
+        runFullResync: data.runFullResync,
       });
       await store.updateLibraryRepositories(updated.name, data.repositoryIds);
       libraryFormTarget.value = updated;
@@ -766,18 +770,18 @@ async function onSubmitLibrary(data: {
       toast.add({ title: "Library created", color: "success" });
 
       if (created.source) {
-        // "Queue immediately" per spec — a follow-up call to the same
-        // trigger endpoint the "Sync now" button uses. A 409/429 here
-        // doesn't fail the creation; it just means the initial sync will
-        // run on the next scheduled cycle instead.
+        // Queue immediately after create. Notion needs a full resync for
+        // initial import because there are no pending webhook rows yet;
+        // GitHub-backed libraries use the generic incremental trigger.
         //
-        // NOTE: this trigger call carries no filter data of its own — the
-        // form's include/exclude filters were already persisted onto the
-        // Library row by createLibrary's POST, and the async sync handler
-        // re-reads library.IncludeFilters/ExcludeFilters fresh from Postgres
-        // when it processes the queued message (PrivateRepositorySyncRequestedHandler
-        // / PublicRepositorySyncRequestedHandler), not from this client call.
-        await onSyncNow({ silentOnRateLimit: true });
+        // NOTE: these trigger calls carry no filter data of their own — the
+        // form filters were already persisted onto the Library row by create.
+        if (created.source.kind === "Notion") {
+          await onFullResync({ silentOnRateLimit: true });
+          await loadNotionWebhookState(created.name);
+        } else {
+          await onSyncNow({ silentOnRateLimit: true });
+        }
       }
     }
   } catch (err: any) {
@@ -790,10 +794,11 @@ async function onSubmitLibrary(data: {
 }
 
 type CreateLibrarySourceInput = {
-  kind: "Public" | "Private";
+  kind: "Public" | "Private" | "Notion";
   repoUrl?: string;
   repositoryId?: string;
   ownerQualifiedName?: string;
+  accessToken?: string;
   includeFilters: string[];
   excludeFilters: string[];
 };
@@ -824,9 +829,13 @@ async function resolveCreateSource(
 // ── Sync status tab: trigger + run history + polling ────────────────────
 
 const ingestRunsPage = ref<IngestRunPageResponse | null>(null);
+const notionWebhookState = ref<NotionWebhookStateResponse | null>(null);
 const loadingIngestRuns = ref(false);
 const syncingLibrary = ref(false);
+const fullResyncingLibrary = ref(false);
 const resettingLibrarySync = ref(false);
+const loadingNotionWebhookState = ref(false);
+const resettingNotionWebhookState = ref(false);
 const deletingLibrary = ref(false);
 
 /**
@@ -931,6 +940,42 @@ async function onSyncNow(options?: { silentOnRateLimit?: boolean }) {
   }
 }
 
+/** Triggers an immediate Notion full resync; use for initial import and explicit backstop. */
+async function onFullResync(options?: { silentOnRateLimit?: boolean }) {
+  const name = libraryFormTarget.value?.name;
+  if (!name) return;
+
+  fullResyncingLibrary.value = true;
+  try {
+    await store.triggerNotionFullResync(name);
+    libraryFormTarget.value = await store.refreshLibrary(name);
+    await loadIngestRunsFirstPage(name);
+    resumePolling();
+    if (!options?.silentOnRateLimit) {
+      toast.add({ title: "Full resync queued", color: "success" });
+    }
+  } catch (err: any) {
+    const status = err?.status;
+    if (options?.silentOnRateLimit && (status === 409 || status === 429)) {
+      toast.add({
+        title: "Library created",
+        description:
+          "The initial Notion full resync is rate-limited and will run on the next scheduled cycle.",
+        color: "warning",
+      });
+      return;
+    }
+
+    toast.add({
+      title: "Full resync error",
+      description: err?.message ?? "Failed to queue full resync",
+      color: "error",
+    });
+  } finally {
+    fullResyncingLibrary.value = false;
+  }
+}
+
 /** Clears a stuck private-library sync state and refreshes the status panel. */
 async function onResetRunState() {
   const name = libraryFormTarget.value?.name;
@@ -951,6 +996,57 @@ async function onResetRunState() {
     });
   } finally {
     resettingLibrarySync.value = false;
+  }
+}
+
+async function loadNotionWebhookState(name: string) {
+  loadingNotionWebhookState.value = true;
+  try {
+    notionWebhookState.value = await store.getNotionWebhookState(name);
+  } catch (err: any) {
+    toast.add({
+      title: "Webhook setup error",
+      description: err?.message ?? "Failed to load Notion webhook setup",
+      color: "error",
+    });
+  } finally {
+    loadingNotionWebhookState.value = false;
+  }
+}
+
+async function onLoadNotionWebhookState() {
+  const name = libraryFormTarget.value?.name;
+  if (!name) return;
+
+  await loadNotionWebhookState(name);
+}
+
+async function onResetNotionWebhookState() {
+  const name = libraryFormTarget.value?.name;
+  if (!name) return;
+
+  resettingNotionWebhookState.value = true;
+  try {
+    notionWebhookState.value = await store.resetNotionWebhookState(name);
+    libraryFormTarget.value = await store.refreshLibrary(name);
+    toast.add({ title: "Notion webhook reset", color: "success" });
+  } catch (err: any) {
+    toast.add({
+      title: "Webhook reset error",
+      description: err?.message ?? "Failed to reset Notion webhook setup",
+      color: "error",
+    });
+  } finally {
+    resettingNotionWebhookState.value = false;
+  }
+}
+
+async function onCopyNotionWebhookValue(value: string) {
+  try {
+    await copy(value);
+    toast.add({ title: "Copied", color: "success" });
+  } catch {
+    toast.add({ title: "Could not copy", color: "error" });
   }
 }
 
@@ -978,6 +1074,7 @@ async function onDeleteLibrary(name: string) {
 watch(libraryFormOpen, (isOpen) => {
   if (!isOpen) {
     pausePolling();
+    notionWebhookState.value = null;
 
     if (libraryJustCreated.value) {
       libraryJustCreated.value = false;

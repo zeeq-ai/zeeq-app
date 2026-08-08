@@ -9,7 +9,7 @@ namespace Zeeq.Integrations.Notion;
 /// <c>Zeeq.Integrations.GitHub</c> uses to keep Octokit types out of platform projects. Callers
 /// in <c>Zeeq.Platform.Ingest</c> depend on this and the DTOs below, not on <c>Notion.Client</c>.
 /// </remarks>
-public interface IZeeqNotionClient
+public interface IZeeqNotionClient : IDisposable
 {
     /// <summary>
     /// Enumerates every page the connection can see (bootstrap / full resync), paginating
@@ -39,6 +39,8 @@ public interface IZeeqNotionClient
     /// </remarks>
     /// <returns><c>null</c> if the token is invalid or unauthorized.</returns>
     Task<NotionConnectionIdentity?> GetConnectionIdentityAsync(CancellationToken ct);
+
+    void IDisposable.Dispose() { }
 }
 
 /// <summary>One page as returned by <c>POST /v1/search</c>.</summary>

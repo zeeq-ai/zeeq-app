@@ -1,4 +1,6 @@
 using System.Net;
+using FluentlyHttpClient;
+using Microsoft.Extensions.DependencyInjection;
 using Notion.Client;
 
 namespace Zeeq.Integrations.Notion.Tests;
@@ -16,14 +18,7 @@ public sealed class ZeeqNotionClientTests
         // First page of results reports has_more/next_cursor; the client must issue a
         // second request carrying that cursor and keep yielding until has_more is false.
         var stub = new TwoPageSearchHandler();
-        using var httpClient = new HttpClient(stub)
-        {
-            BaseAddress = new Uri("https://api.notion.com/"),
-        };
-        var notionClient = NotionClientFactory.Create(
-            new ClientOptions { AuthToken = "test-token", HttpClient = httpClient }
-        );
-        var client = new ZeeqNotionClient(notionClient);
+        using var client = CreateClient(stub);
 
         var pages = new List<NotionPageSummary>();
         await foreach (var page in client.SearchPagesAsync(CancellationToken.None))
@@ -35,6 +30,7 @@ public sealed class ZeeqNotionClientTests
         await Assert.That(pages[0].PageId).IsEqualTo("page-1");
         await Assert.That(pages[1].PageId).IsEqualTo("page-2");
         await Assert.That(stub.RequestCount).IsEqualTo(2);
+        await Assert.That(stub.FirstRequestSentNullCursor).IsFalse();
         await Assert.That(stub.SecondRequestCursor).IsEqualTo("cursor-abc");
     }
 
@@ -42,14 +38,7 @@ public sealed class ZeeqNotionClientTests
     public async Task NotionClient_SearchPages_ExcludesTrashedPages()
     {
         var stub = new SinglePageWithTrashHandler();
-        using var httpClient = new HttpClient(stub)
-        {
-            BaseAddress = new Uri("https://api.notion.com/"),
-        };
-        var notionClient = NotionClientFactory.Create(
-            new ClientOptions { AuthToken = "test-token", HttpClient = httpClient }
-        );
-        var client = new ZeeqNotionClient(notionClient);
+        using var client = CreateClient(stub);
 
         var pages = new List<NotionPageSummary>();
         await foreach (var page in client.SearchPagesAsync(CancellationToken.None))
@@ -69,14 +58,7 @@ public sealed class ZeeqNotionClientTests
         // A Notion title can be split across multiple rich-text fragments (e.g. mixed
         // formatting within one title). All fragments must be preserved, not just the first.
         var stub = new MultiFragmentTitleHandler();
-        using var httpClient = new HttpClient(stub)
-        {
-            BaseAddress = new Uri("https://api.notion.com/"),
-        };
-        var notionClient = NotionClientFactory.Create(
-            new ClientOptions { AuthToken = "test-token", HttpClient = httpClient }
-        );
-        var client = new ZeeqNotionClient(notionClient);
+        using var client = CreateClient(stub);
 
         var pages = new List<NotionPageSummary>();
         await foreach (var page in client.SearchPagesAsync(CancellationToken.None))
@@ -94,14 +76,7 @@ public sealed class ZeeqNotionClientTests
         // a true workspace root — the two must stay distinguishable per NotionPageParent's
         // documented contract.
         var stub = new DatabaseParentHandler();
-        using var httpClient = new HttpClient(stub)
-        {
-            BaseAddress = new Uri("https://api.notion.com/"),
-        };
-        var notionClient = NotionClientFactory.Create(
-            new ClientOptions { AuthToken = "test-token", HttpClient = httpClient }
-        );
-        var client = new ZeeqNotionClient(notionClient);
+        using var client = CreateClient(stub);
 
         var pages = new List<NotionPageSummary>();
         await foreach (var page in client.SearchPagesAsync(CancellationToken.None))
@@ -112,6 +87,58 @@ public sealed class ZeeqNotionClientTests
         var parent = pages.Single().Parent;
         await Assert.That(parent.IsWorkspaceRoot).IsFalse();
         await Assert.That(parent.ParentPageId).IsNull();
+    }
+
+    [Test]
+    public async Task NotionClient_SearchPages_IgnoresPageIconShape()
+    {
+        // Notion.Net 5.0.0 has duplicate JsonSubTypes mappings for IPageIcon's "icon"
+        // discriminator. Zeeq only needs title/parent/last-edited for search, so the raw REST
+        // parser must tolerate icon metadata that would otherwise break SDK page deserialization.
+        var stub = new IconPageHandler();
+        using var client = CreateClient(stub);
+
+        var pages = new List<NotionPageSummary>();
+        await foreach (var page in client.SearchPagesAsync(CancellationToken.None))
+        {
+            pages.Add(page);
+        }
+
+        await Assert.That(pages.Single().PageId).IsEqualTo("page-with-icon");
+    }
+
+    [Test]
+    public async Task NotionClient_GetPage_NotFound_ReturnsNull()
+    {
+        var stub = new NotFoundHandler();
+        using var client = CreateClient(stub);
+
+        var page = await client.GetPageAsync("missing-page", CancellationToken.None);
+
+        await Assert.That(page).IsNull();
+    }
+
+    private static ZeeqNotionClient CreateClient(HttpMessageHandler handler)
+    {
+        var services = new ServiceCollection().AddFluentlyHttpClient().BuildServiceProvider();
+        var fluentClient = services
+            .GetRequiredService<IFluentHttpClientFactory>()
+            .CreateBuilder($"notion-test-{Guid.NewGuid():N}")
+            .WithBaseUrl("https://api.notion.com/v1/")
+            .WithMessageHandler(handler)
+            .Build(skipAutoRegister: true);
+        var notionClient = NotionClientFactory.Create(
+            new ClientOptions
+            {
+                AuthToken = "test-token",
+                HttpClient = new HttpClient(new UnusedHandler())
+                {
+                    BaseAddress = new Uri("https://api.notion.com/"),
+                },
+            }
+        );
+
+        return new ZeeqNotionClient(notionClient, fluentClient);
     }
 
     private sealed class MultiFragmentTitleHandler : DelegatingHandler
@@ -184,9 +211,41 @@ public sealed class ZeeqNotionClientTests
         }
     }
 
+    private sealed class IconPageHandler : DelegatingHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            const string json = """
+                {
+                  "object": "list",
+                  "results": [
+                    {
+                      "object": "page",
+                      "id": "page-with-icon",
+                      "created_time": "2026-08-08T15:52:00.000Z",
+                      "last_edited_time": "2026-08-08T15:52:00.000Z",
+                      "parent": { "type": "workspace", "workspace": true },
+                      "icon": { "type": "icon", "icon": { "type": "native", "native": "home" } },
+                      "in_trash": false,
+                      "properties": { "title": { "id": "title", "type": "title", "title": [] } }
+                    }
+                  ],
+                  "next_cursor": null,
+                  "has_more": false
+                }
+                """;
+
+            return Task.FromResult(JsonResponse(json));
+        }
+    }
+
     private sealed class TwoPageSearchHandler : DelegatingHandler
     {
         public int RequestCount { get; private set; }
+        public bool FirstRequestSentNullCursor { get; private set; }
         public string? SecondRequestCursor { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(
@@ -198,6 +257,9 @@ public sealed class ZeeqNotionClientTests
 
             if (RequestCount == 1)
             {
+                var firstBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+                FirstRequestSentNullCursor = firstBody.Contains("start_cursor");
+
                 return JsonResponse(
                     SearchResponseJson(pageId: "page-1", hasMore: true, nextCursor: "cursor-abc")
                 );
@@ -276,6 +338,22 @@ public sealed class ZeeqNotionClientTests
 
             return Task.FromResult(JsonResponse(json));
         }
+    }
+
+    private sealed class NotFoundHandler : DelegatingHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        ) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+    }
+
+    private sealed class UnusedHandler : DelegatingHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        ) => throw new InvalidOperationException("The SDK client should not be used by this test.");
     }
 
     private static HttpResponseMessage JsonResponse(string json) =>
