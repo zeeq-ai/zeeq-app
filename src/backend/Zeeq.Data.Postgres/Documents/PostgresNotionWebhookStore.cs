@@ -124,6 +124,61 @@ internal sealed class PostgresNotionWebhookStore(PostgresDbContext db) : INotion
         return NotionWebhookEventObservationResult.Activated;
     }
 
+    public async Task<NotionWebhookResetResult> ResetAsync(
+        string organizationId,
+        string libraryId,
+        DateTimeOffset resetAtUtc,
+        CancellationToken cancellationToken
+    )
+    {
+        var (transaction, ownsTransaction) = await BeginTransactionIfNeededAsync(cancellationToken);
+        await using var transactionScope = ownsTransaction ? transaction : null;
+
+        var library = await LockNotionLibraryAsync(organizationId, libraryId, cancellationToken);
+        var notion = library?.ExternalSource?.Notion;
+
+        if (notion is null)
+        {
+            return NotionWebhookResetResult.NotFound;
+        }
+
+        if (notion.VerificationTokenValueId is { } verificationTokenValueId)
+        {
+            var verificationToken = await db
+                .EncryptedValues.TagWithOperationCallSite("notion_webhook.reset_token")
+                .SingleOrDefaultAsync(
+                    value =>
+                        value.OrganizationId == organizationId
+                        && value.Id == verificationTokenValueId
+                        && value.DisabledAtUtc == null,
+                    cancellationToken
+                );
+
+            if (verificationToken is not null)
+            {
+                verificationToken.DisabledAtUtc = resetAtUtc;
+                verificationToken.UpdatedAtUtc = resetAtUtc;
+            }
+        }
+
+        library!.ExternalSource = library.ExternalSource! with
+        {
+            Notion = notion with
+            {
+                VerificationTokenValueId = null,
+                WebhookSubscriptionId = null,
+                WebhookActivatedAtUtc = null,
+                CallbackTokenSerial = notion.CallbackTokenSerial + 1,
+            },
+        };
+        library.UpdatedAt = resetAtUtc;
+
+        await db.SaveChangesAsync(cancellationToken);
+        await CommitIfOwnedAsync(transaction, ownsTransaction, cancellationToken);
+
+        return NotionWebhookResetResult.Reset;
+    }
+
     private Task<Library?> LockNotionLibraryAsync(
         string organizationId,
         string libraryId,

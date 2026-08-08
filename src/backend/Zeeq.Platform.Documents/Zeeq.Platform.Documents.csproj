@@ -25,5 +25,9 @@
     <ProjectReference Include="..\Zeeq.Core.Identity\Zeeq.Core.Identity.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Llm\Zeeq.Core.Llm.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Models\Zeeq.Core.Models.csproj" />
+    <!-- NOTE: Phase 6 intentionally validates pasted Notion tokens in the API handler via the
+         existing integration client factory. Moving this provider port out of
+         Integrations.Notion belongs in a dedicated application-boundary refactor. -->
+    <ProjectReference Include="..\Zeeq.Integrations.Notion\Zeeq.Integrations.Notion.csproj" />
   </ItemGroup>
 </Project>

@@ -200,6 +200,70 @@ public sealed class PostgresNotionWebhookStoreTests : PgTransactionalTestBase
             .IsEqualTo(activatedAt.TruncateToPostgresPrecision());
     }
 
+    [Test]
+    public async Task ResetAsync_ClearsWebhookStateAdvancesSerialAndDisablesVerificationToken()
+    {
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        var verificationToken = NewEncryptedToken(seed.Organization.Id);
+        _context.EncryptedValues.Add(verificationToken);
+        var now = DateTimeOffset.UtcNow;
+        var library = new Library
+        {
+            Id = SeedContext.NewId("library"),
+            OrganizationId = seed.Organization.Id,
+            Name = SeedContext.NewId("notion-library"),
+            SourceKind = RepositorySourceKind.Notion.ToString(),
+            SyncStatus = "idle",
+            ExternalSource = new LibraryExternalSource
+            {
+                Notion = new NotionSourceConfiguration
+                {
+                    ConnectionName = "Engineering Docs",
+                    WorkspaceId = "workspace-1",
+                    AccessTokenValueId = "enc_access",
+                    VerificationTokenValueId = verificationToken.Id,
+                    WebhookSubscriptionId = "subscription-1",
+                    WebhookActivatedAtUtc = now.AddMinutes(-5),
+                    CallbackTokenSerial = 3,
+                },
+            },
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        _context.Libraries.Add(library);
+        await _context.SaveChangesAsync();
+        var resetAt = now.AddMinutes(1);
+
+        var result = await new PostgresNotionWebhookStore(_context).ResetAsync(
+            seed.Organization.Id,
+            library.Id,
+            resetAt,
+            CancellationToken.None
+        );
+
+        _context.ChangeTracker.Clear();
+        var reloadedLibrary = await _context.Libraries.SingleAsync(row =>
+            row.OrganizationId == seed.Organization.Id && row.Id == library.Id
+        );
+        var reloadedToken = await _context.EncryptedValues.SingleAsync(row =>
+            row.OrganizationId == seed.Organization.Id && row.Id == verificationToken.Id
+        );
+
+        await Assert.That(result).IsEqualTo(NotionWebhookResetResult.Reset);
+        await Assert
+            .That(reloadedLibrary.ExternalSource!.Notion!.VerificationTokenValueId)
+            .IsNull();
+        await Assert.That(reloadedLibrary.ExternalSource.Notion.WebhookSubscriptionId).IsNull();
+        await Assert.That(reloadedLibrary.ExternalSource.Notion.WebhookActivatedAtUtc).IsNull();
+        await Assert.That(reloadedLibrary.ExternalSource.Notion.CallbackTokenSerial).IsEqualTo(4);
+        await Assert
+            .That(reloadedToken.DisabledAtUtc)
+            .IsEqualTo(resetAt.TruncateToPostgresPrecision());
+        await Assert
+            .That(reloadedToken.UpdatedAtUtc)
+            .IsEqualTo(resetAt.TruncateToPostgresPrecision());
+    }
+
     private static async Task<(
         PostgresNotionWebhookStore Store,
         string OrganizationId,

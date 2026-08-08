@@ -32,6 +32,18 @@ public interface INotionWebhookStore
         DateTimeOffset observedAtUtc,
         CancellationToken cancellationToken
     );
+
+    /// <summary>
+    /// Clears the captured verification and activation state for an authenticated reset, disables
+    /// the old verification-token value when present, and increments the callback serial so old
+    /// callback URLs can no longer pass the ingress serial check.
+    /// </summary>
+    Task<NotionWebhookResetResult> ResetAsync(
+        string organizationId,
+        string libraryId,
+        DateTimeOffset resetAtUtc,
+        CancellationToken cancellationToken
+    );
 }
 
 /// <summary>Outcome of attempting to persist Notion's one-time verification token.</summary>
@@ -73,4 +85,14 @@ public enum NotionWebhookEventObservationResult
 
     /// <summary>The library has not captured a verification token yet.</summary>
     VerificationIncomplete = 6,
+}
+
+/// <summary>Outcome of resetting authenticated Notion webhook state.</summary>
+public enum NotionWebhookResetResult
+{
+    /// <summary>The Notion webhook state was cleared and callback serial advanced.</summary>
+    Reset = 0,
+
+    /// <summary>No Notion-backed library matched the organization and library ids.</summary>
+    NotFound = 1,
 }

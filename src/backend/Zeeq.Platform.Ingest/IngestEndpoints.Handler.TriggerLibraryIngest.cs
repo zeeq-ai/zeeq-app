@@ -86,6 +86,18 @@ public sealed class TriggerLibraryIngestHandler(
                 ct
             );
         }
+        else if (library.SourceKind == RepositorySourceKind.Notion.ToString())
+        {
+            result = await IngestTriggerCoordinator.TryQueueNotionSyncAsync(
+                libraries,
+                publisher,
+                ingestSettings,
+                library,
+                ExternalSyncScope.Incremental,
+                IngestTriggerReason.Manual,
+                ct
+            );
+        }
         else
         {
             result = await IngestTriggerCoordinator.TryQueuePrivateSyncAsync(

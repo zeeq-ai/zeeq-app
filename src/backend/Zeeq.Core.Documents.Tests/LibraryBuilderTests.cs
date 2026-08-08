@@ -208,6 +208,102 @@ public sealed class LibraryBuilderTests
         await Assert.That(updated.SyncStatus).IsEqualTo("idle");
     }
 
+    // ─── ForNotionSource variant ──────────────────────────────────────
+
+    [Test]
+    public async Task ForNotionSource_Build_ProducesNotionColumns()
+    {
+        var now = new DateTimeOffset(2026, 8, 8, 12, 0, 0, TimeSpan.Zero);
+        var externalSource = new LibraryExternalSource
+        {
+            Notion = new NotionSourceConfiguration
+            {
+                AccessTokenValueId = "enc_notion_token",
+                CallbackTokenSerial = 1,
+                ConnectionName = "Engineering Wiki",
+            },
+        };
+
+        var library = LibraryBuilder
+            .ForNotionSource(
+                externalSource,
+                includeFilters: ["engineering/**"],
+                excludeFilters: ["archive/**"]
+            )
+            .Build(NewId(), "org_a", "notion-docs", now: now);
+
+        await Assert.That(library.PublicSourceId).IsNull();
+        await Assert.That(library.SourceKind).IsEqualTo(RepositorySourceKind.Notion.ToString());
+        await Assert.That(library.SourceRepoUrl).IsNull();
+        await Assert.That(library.ExternalSource).IsEqualTo(externalSource);
+        await Assert.That(library.SyncStatus).IsEqualTo("idle");
+        await Assert.That(library.NextSyncAt).IsEqualTo(now);
+        await Assert.That(library.NextFullResyncAt).IsEqualTo(now);
+        await Assert.That(library.IncludeFilters).IsEquivalentTo(["engineering/**"]);
+        await Assert.That(library.ExcludeFilters).IsEquivalentTo(["archive/**"]);
+    }
+
+    [Test]
+    public async Task ForNotionSource_BuildFrom_PreservesProviderAndLifecycle()
+    {
+        var nextFullResyncAt = DateTimeOffset.UtcNow.AddDays(1);
+        var externalSource = new LibraryExternalSource
+        {
+            Notion = new NotionSourceConfiguration
+            {
+                AccessTokenValueId = "enc_notion_token",
+                CallbackTokenSerial = 1,
+            },
+        };
+        var existing = new Library
+        {
+            Id = NewId(),
+            OrganizationId = "org_a",
+            Name = "old-name",
+            SourceKind = RepositorySourceKind.Notion.ToString(),
+            ExternalSource = externalSource,
+            IncludeFilters = ["engineering/**"],
+            SourceSyncedAt = DateTimeOffset.UtcNow.AddDays(-1),
+            SyncStatus = "idle",
+            NextSyncAt = DateTimeOffset.UtcNow.AddHours(1),
+            NextFullResyncAt = DateTimeOffset.UtcNow.AddHours(2),
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+
+        var updated = LibraryBuilder
+            .ForNotionSource(externalSource)
+            .BuildFrom(existing, name: "new-name", nextFullResyncAt: nextFullResyncAt);
+
+        await Assert.That(updated.Name).IsEqualTo("new-name");
+        await Assert.That(updated.SourceKind).IsEqualTo(RepositorySourceKind.Notion.ToString());
+        await Assert.That(updated.ExternalSource).IsEqualTo(externalSource);
+        await Assert.That(updated.IncludeFilters).IsEquivalentTo(["engineering/**"]);
+        await Assert.That(updated.SourceSyncedAt).IsEqualTo(existing.SourceSyncedAt);
+        await Assert.That(updated.NextSyncAt).IsEqualTo(existing.NextSyncAt);
+        await Assert.That(updated.NextFullResyncAt).IsEqualTo(nextFullResyncAt);
+    }
+
+    [Test]
+    public async Task ForNotionSource_BuildFrom_RejectsExistingLibraryWithoutNotionConfiguration()
+    {
+        var externalSource = new LibraryExternalSource
+        {
+            Notion = new NotionSourceConfiguration
+            {
+                AccessTokenValueId = "enc_notion_token",
+                CallbackTokenSerial = 1,
+            },
+        };
+        var existing = LibraryBuilder
+            .ForPrivateSource("GitHub", "https://github.com/zeeq-ai/zeeq.git")
+            .Build(NewId(), "org_a", "repo-docs");
+
+        void Act() => LibraryBuilder.ForNotionSource(externalSource).BuildFrom(existing);
+
+        await Assert.That(Act).Throws<ArgumentException>();
+    }
+
     // ─── Effective filter resolution ───────────────────────────────────
 
     [Test]

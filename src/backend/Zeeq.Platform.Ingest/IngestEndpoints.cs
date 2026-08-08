@@ -65,6 +65,34 @@ public sealed class IngestEndpoints : IEndpoint
             )
             .RequireActiveOrganization();
 
+        // POST /api/v1/orgs/{orgId}/libraries/{name}/notion/full-resync
+        group
+            .MapPost(
+                "/{name}/notion/full-resync",
+                static (
+                    [MaxLength(36)] string orgId,
+                    [MaxLength(200)] string name,
+                    ClaimsPrincipal user,
+                    [FromServices] TriggerNotionFullResyncHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, name, user, ct)
+            )
+            .WithName("TriggerNotionFullResync")
+            .Produces<TriggerIngestRunResponse>()
+            .Produces<IngestError>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces<IngestError>(StatusCodes.Status409Conflict)
+            .Produces<IngestError>(StatusCodes.Status429TooManyRequests)
+            .WithSummary("Manually trigger a Notion library full resync.")
+            .WithDescription(
+                """
+                Queues an immediate full resync for a Notion-backed library. Full resyncs can
+                remove documents that no longer match the library filters, so they are exposed as
+                a separate endpoint from the generic incremental `ingest-run` trigger.
+                """
+            )
+            .RequireActiveOrganization();
+
         // POST /api/v1/orgs/{orgId}/libraries/{name}/ingest-run/reset
         group
             .MapPost(

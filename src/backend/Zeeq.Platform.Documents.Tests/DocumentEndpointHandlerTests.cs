@@ -1,11 +1,15 @@
 using System.Security.Claims;
+using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
+using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
+using Zeeq.Integrations.Notion;
 using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Platform.Documents.Tests;
@@ -18,7 +22,7 @@ public sealed class DocumentEndpointHandlerTests
     [Test]
     public async Task CreateLibrary_WithUnsafeName_ReturnsBadRequest()
     {
-        var handler = new CreateLibraryHandler(
+        var handler = CreateCreateLibraryHandler(
             new TestLibraryDocumentStore(),
             new NotSupportedPublicSourceStore(),
             new NotSupportedCodeRepositoryStore()
@@ -42,7 +46,7 @@ public sealed class DocumentEndpointHandlerTests
     {
         var libraries = new TestLibraryDocumentStore();
         var publicSources = new TestPublicSourceStore();
-        var handler = new CreateLibraryHandler(
+        var handler = CreateCreateLibraryHandler(
             libraries,
             publicSources,
             new NotSupportedCodeRepositoryStore()
@@ -98,7 +102,7 @@ public sealed class DocumentEndpointHandlerTests
                 UpdatedAt = DateTimeOffset.UtcNow,
             }
         );
-        var handler = new CreateLibraryHandler(
+        var handler = CreateCreateLibraryHandler(
             libraries,
             publicSources,
             new NotSupportedCodeRepositoryStore()
@@ -129,7 +133,7 @@ public sealed class DocumentEndpointHandlerTests
     [Test]
     public async Task CreateLibrary_PublicSource_ImplausibleUrl_ReturnsBadRequest()
     {
-        var handler = new CreateLibraryHandler(
+        var handler = CreateCreateLibraryHandler(
             new TestLibraryDocumentStore(),
             new TestPublicSourceStore(),
             new NotSupportedCodeRepositoryStore()
@@ -169,7 +173,7 @@ public sealed class DocumentEndpointHandlerTests
                 Enabled = true,
             }
         );
-        var handler = new CreateLibraryHandler(
+        var handler = CreateCreateLibraryHandler(
             libraries,
             new NotSupportedPublicSourceStore(),
             repositories
@@ -219,7 +223,7 @@ public sealed class DocumentEndpointHandlerTests
                 Enabled = false,
             }
         );
-        var handler = new CreateLibraryHandler(
+        var handler = CreateCreateLibraryHandler(
             libraries,
             new NotSupportedPublicSourceStore(),
             repositories
@@ -263,7 +267,7 @@ public sealed class DocumentEndpointHandlerTests
                 DisabledAtUtc = DateTimeOffset.UtcNow,
             }
         );
-        var handler = new CreateLibraryHandler(
+        var handler = CreateCreateLibraryHandler(
             new TestLibraryDocumentStore(),
             new NotSupportedPublicSourceStore(),
             repositories
@@ -290,7 +294,7 @@ public sealed class DocumentEndpointHandlerTests
     [Test]
     public async Task CreateLibrary_PrivateSource_UnknownRepositoryId_ReturnsBadRequest()
     {
-        var handler = new CreateLibraryHandler(
+        var handler = CreateCreateLibraryHandler(
             new TestLibraryDocumentStore(),
             new NotSupportedPublicSourceStore(),
             new TestCodeRepositoryStore()
@@ -312,6 +316,221 @@ public sealed class DocumentEndpointHandlerTests
         );
 
         await Assert.That(result.Result).IsTypeOf<BadRequest<LibraryError>>();
+    }
+
+    [Test]
+    public async Task CreateLibrary_NotionSource_ValidatesTokenStoresSecretAndCreatesLibrary()
+    {
+        var libraries = new TestLibraryDocumentStore();
+        var encryptedValues = new TestEncryptedValueStore();
+        var notionClients = new TestNotionClientFactory(
+            new NotionConnectionIdentity("bot_123", "Engineering Wiki")
+        );
+        var handler = CreateCreateLibraryHandler(
+            libraries,
+            encryptedValues: encryptedValues,
+            notionClients: notionClients
+        );
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            new CreateLibraryRequest
+            {
+                Name = "notion-docs",
+                Source = new CreateLibrarySourceRequest
+                {
+                    Kind = LibrarySourceKindRequest.Notion,
+                    AccessToken = "  secret_notion_token  ",
+                    IncludeFilters = ["engineering/**"],
+                    ExcludeFilters = ["archive/**"],
+                },
+            },
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var created = result.Result as Created<LibraryResponse>;
+        var library = libraries.Libraries.Single();
+        var token = encryptedValues.Values.Single();
+        var source = created?.Value?.Source;
+
+        await Assert.That(created).IsNotNull();
+        await Assert.That(source).IsNotNull();
+        await Assert.That(source!.Kind).IsEqualTo("Notion");
+        await Assert.That(source.RepoUrl).IsNull();
+        await Assert.That(source.DisplayName).IsEqualTo("Engineering Wiki");
+        await Assert.That(source.NextSyncAt).IsNotNull();
+        await Assert.That(source.NextFullResyncAt).IsNotNull();
+        await Assert.That(source.WebhookActivated).IsFalse();
+        await Assert.That(source.WebhookActivatedAtUtc).IsNull();
+        await Assert.That(source.IncludeFilters).IsEquivalentTo(["engineering/**"]);
+        await Assert.That(source.ExcludeFilters).IsEquivalentTo(["archive/**"]);
+        await Assert
+            .That(System.Text.Json.JsonSerializer.Serialize(source))
+            .DoesNotContain(token.Id);
+        await Assert.That(notionClients.CreatedWithAccessToken).IsEqualTo("secret_notion_token");
+        await Assert.That(token.OrganizationId).IsEqualTo("org_123");
+        await Assert.That(token.Kind).IsEqualTo(EncryptedValueKind.SecretString);
+        await Assert.That(token.Name).IsEqualTo("Notion access token");
+        await Assert
+            .That(Encoding.UTF8.GetString(token.Ciphertext))
+            .DoesNotContain("secret_notion_token");
+        await Assert.That(library.SourceKind).IsEqualTo(RepositorySourceKind.Notion.ToString());
+        await Assert.That(library.SourceRepoUrl).IsNull();
+        await Assert.That(library.ExternalSource?.Notion?.AccessTokenValueId).IsEqualTo(token.Id);
+        await Assert
+            .That(library.ExternalSource?.Notion?.ConnectionName)
+            .IsEqualTo("Engineering Wiki");
+        await Assert.That(library.ExternalSource?.Notion?.CallbackTokenSerial).IsEqualTo(1);
+        await Assert.That(library.IncludeFilters).IsEquivalentTo(["engineering/**"]);
+        await Assert.That(library.ExcludeFilters).IsEquivalentTo(["archive/**"]);
+        await Assert.That(library.NextSyncAt).IsNotNull();
+        await Assert.That(library.NextFullResyncAt).IsNotNull();
+    }
+
+    [Test]
+    public async Task CreateLibrary_NotionSource_MissingAccessToken_ReturnsBadRequest()
+    {
+        var libraries = new TestLibraryDocumentStore();
+        var encryptedValues = new TestEncryptedValueStore();
+        var notionClients = new TestNotionClientFactory(
+            new NotionConnectionIdentity("bot_123", "Engineering Wiki")
+        );
+        var handler = CreateCreateLibraryHandler(
+            libraries,
+            encryptedValues: encryptedValues,
+            notionClients: notionClients
+        );
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            new CreateLibraryRequest
+            {
+                Name = "notion-docs",
+                Source = new CreateLibrarySourceRequest
+                {
+                    Kind = LibrarySourceKindRequest.Notion,
+                    AccessToken = " ",
+                },
+            },
+            TestUser(),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result).IsTypeOf<BadRequest<LibraryError>>();
+        await Assert.That(libraries.Libraries).IsEmpty();
+        await Assert.That(encryptedValues.Values).IsEmpty();
+        await Assert.That(notionClients.CreatedWithAccessToken).IsNull();
+    }
+
+    [Test]
+    public async Task CreateLibrary_NotionSource_InvalidAccessToken_ReturnsBadRequest()
+    {
+        var libraries = new TestLibraryDocumentStore();
+        var encryptedValues = new TestEncryptedValueStore();
+        var notionClients = new TestNotionClientFactory(identity: null);
+        var handler = CreateCreateLibraryHandler(
+            libraries,
+            encryptedValues: encryptedValues,
+            notionClients: notionClients
+        );
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            new CreateLibraryRequest
+            {
+                Name = "notion-docs",
+                Source = new CreateLibrarySourceRequest
+                {
+                    Kind = LibrarySourceKindRequest.Notion,
+                    AccessToken = "secret_notion_token",
+                },
+            },
+            TestUser(),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result).IsTypeOf<BadRequest<LibraryError>>();
+        await Assert.That(libraries.Libraries).IsEmpty();
+        await Assert.That(encryptedValues.Values).IsEmpty();
+        await Assert.That(notionClients.CreatedWithAccessToken).IsEqualTo("secret_notion_token");
+    }
+
+    [Test]
+    public async Task CreateLibrary_NotionSource_WhenLibraryCreateFails_DisablesStoredToken()
+    {
+        var libraries = new TestLibraryDocumentStore
+        {
+            CreateLibraryException = new InvalidOperationException("duplicate library"),
+        };
+        var encryptedValues = new TestEncryptedValueStore();
+        var notionClients = new TestNotionClientFactory(
+            new NotionConnectionIdentity("bot_123", "Engineering Wiki")
+        );
+        var handler = CreateCreateLibraryHandler(
+            libraries,
+            encryptedValues: encryptedValues,
+            notionClients: notionClients
+        );
+
+        async Task Act() =>
+            await handler.HandleAsync(
+                "org_123",
+                new CreateLibraryRequest
+                {
+                    Name = "notion-docs",
+                    Source = new CreateLibrarySourceRequest
+                    {
+                        Kind = LibrarySourceKindRequest.Notion,
+                        AccessToken = "secret_notion_token",
+                    },
+                },
+                TestUser(),
+                CancellationToken.None
+            );
+
+        await Assert.That(Act).Throws<InvalidOperationException>();
+        var token = encryptedValues.Values.Single();
+        await Assert.That(encryptedValues.DisabledValueId).IsEqualTo(token.Id);
+        await Assert.That(token.DisabledAtUtc).IsNotNull();
+        await Assert.That(token.UpdatedAtUtc).IsEqualTo(token.DisabledAtUtc);
+    }
+
+    [Test]
+    public async Task CreateLibrary_PublicSource_WithNotionAccessToken_ReturnsBadRequest()
+    {
+        var libraries = new TestLibraryDocumentStore();
+        var encryptedValues = new TestEncryptedValueStore();
+        var notionClients = new TestNotionClientFactory(
+            new NotionConnectionIdentity("bot_123", "Engineering Wiki")
+        );
+        var handler = CreateCreateLibraryHandler(
+            libraries,
+            new TestPublicSourceStore(),
+            encryptedValues: encryptedValues,
+            notionClients: notionClients
+        );
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            new CreateLibraryRequest
+            {
+                Name = "docs",
+                Source = new CreateLibrarySourceRequest
+                {
+                    Kind = LibrarySourceKindRequest.Public,
+                    RepoUrl = "https://github.com/zeeq-ai/zeeq",
+                    AccessToken = "secret_notion_token",
+                },
+            },
+            TestUser(),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result).IsTypeOf<BadRequest<LibraryError>>();
+        await Assert.That(libraries.Libraries).IsEmpty();
+        await Assert.That(encryptedValues.Values).IsEmpty();
+        await Assert.That(notionClients.CreatedWithAccessToken).IsNull();
     }
 
     [Test]
@@ -366,6 +585,189 @@ public sealed class DocumentEndpointHandlerTests
         await Assert.That(source.ExcludeFilters).Contains("docs/archive/**");
         await Assert.That(store.UpdatedLibrary!.IncludeFilters).Contains("docs/**/*.md");
         await Assert.That(store.UpdatedLibrary.ExcludeFilters).Contains("docs/archive/**");
+    }
+
+    [Test]
+    public async Task UpdateLibrary_NotionWithoutFullResync_PreservesFullResyncBackstop()
+    {
+        var existingNextFullResyncAt = new DateTimeOffset(2026, 8, 9, 12, 0, 0, TimeSpan.Zero);
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestNotionSourceLibrary(nextFullResyncAt: existingNextFullResyncAt));
+        var handler = new UpdateLibraryHandler(store, new NotSupportedPublicSourceStore());
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            new UpdateLibraryRequest
+            {
+                Name = "kb",
+                IncludeFilters = ["engineering/**"],
+                RunFullResync = false,
+            },
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<LibraryResponse>;
+
+        await Assert.That(ok).IsNotNull();
+        await Assert
+            .That(store.UpdatedLibrary!.NextFullResyncAt)
+            .IsEqualTo(existingNextFullResyncAt);
+        await Assert.That(store.UpdatedLibrary.ExternalSource?.Notion).IsNotNull();
+    }
+
+    [Test]
+    public async Task UpdateLibrary_NotionRunFullResync_StampsFullResyncDue()
+    {
+        var existingNextFullResyncAt = DateTimeOffset.UtcNow.AddDays(1);
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestNotionSourceLibrary(nextFullResyncAt: existingNextFullResyncAt));
+        var handler = new UpdateLibraryHandler(store, new NotSupportedPublicSourceStore());
+        var before = DateTimeOffset.UtcNow;
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            new UpdateLibraryRequest { Name = "kb", RunFullResync = true },
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<LibraryResponse>;
+
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(store.UpdatedLibrary!.NextFullResyncAt).IsNotNull();
+        await Assert
+            .That(store.UpdatedLibrary.NextFullResyncAt!.Value)
+            .IsGreaterThanOrEqualTo(before);
+        await Assert
+            .That(store.UpdatedLibrary.NextFullResyncAt)
+            .IsNotEqualTo(existingNextFullResyncAt);
+    }
+
+    [Test]
+    public async Task GetNotionWebhookState_NotionLibrary_ReturnsCallbackAndVerificationToken()
+    {
+        var protector = new NotionCallbackTokenProtector(new EphemeralDataProtectionProvider());
+        var encryptedValues = new TestEncryptedValueStore();
+        var verificationToken = await TestEncryption()
+            .EncryptAsync(
+                "org_123",
+                EncryptedValueKind.SecretString,
+                "Notion webhook verification token",
+                "verify-me",
+                DateTimeOffset.UtcNow,
+                CancellationToken.None
+            );
+        encryptedValues.Values.Add(verificationToken);
+        var activatedAt = new DateTimeOffset(2026, 8, 8, 12, 0, 0, TimeSpan.Zero);
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(
+            TestNotionSourceLibrary(
+                verificationTokenValueId: verificationToken.Id,
+                webhookSubscriptionId: "subscription-1",
+                webhookActivatedAtUtc: activatedAt,
+                callbackTokenSerial: 5
+            )
+        );
+        var handler = new GetNotionWebhookStateHandler(
+            store,
+            encryptedValues,
+            TestEncryption(),
+            protector
+        );
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            TestHttpRequest(),
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<NotionWebhookStateResponse>;
+        var response = ok?.Value;
+        var callbackToken = response?.CallbackUrl.Split('/').Last();
+
+        await Assert.That(ok).IsNotNull();
+        await Assert
+            .That(response!.CallbackUrl)
+            .StartsWith("https://api.test/api/v1/integrations/notion/webhook/");
+        await Assert.That(response.CallbackTokenSerial).IsEqualTo(5);
+        await Assert.That(response.VerificationToken).IsEqualTo("verify-me");
+        await Assert.That(response.VerificationTokenAvailable).IsTrue();
+        await Assert.That(response.WebhookActivated).IsTrue();
+        await Assert.That(response.WebhookActivatedAtUtc).IsEqualTo(activatedAt);
+        await Assert.That(response.WebhookSubscriptionId).IsEqualTo("subscription-1");
+        await Assert.That(protector.TryUnprotect(callbackToken, out var payload)).IsTrue();
+        await Assert.That(payload!.OrganizationId).IsEqualTo("org_123");
+        await Assert.That(payload.LibraryId).IsEqualTo("lib_123");
+        await Assert.That(payload.CallbackTokenSerial).IsEqualTo(5);
+    }
+
+    [Test]
+    public async Task GetNotionWebhookState_LocalLibrary_ReturnsBadRequest()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        var handler = new GetNotionWebhookStateHandler(
+            store,
+            new TestEncryptedValueStore(),
+            TestEncryption(),
+            new NotionCallbackTokenProtector(new EphemeralDataProtectionProvider())
+        );
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            TestHttpRequest(),
+            TestUser(),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result).IsTypeOf<BadRequest<LibraryError>>();
+    }
+
+    [Test]
+    public async Task ResetNotionWebhookState_NotionLibrary_ClearsStateAndAdvancesCallbackSerial()
+    {
+        var protector = new NotionCallbackTokenProtector(new EphemeralDataProtectionProvider());
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(
+            TestNotionSourceLibrary(
+                verificationTokenValueId: "enc_verification",
+                webhookSubscriptionId: "subscription-1",
+                webhookActivatedAtUtc: DateTimeOffset.UtcNow,
+                callbackTokenSerial: 5
+            )
+        );
+        var webhookState = new TestNotionWebhookStore();
+        var handler = new ResetNotionWebhookStateHandler(store, webhookState, protector);
+
+        var result = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            TestHttpRequest(),
+            TestUser(),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<NotionWebhookStateResponse>;
+        var response = ok?.Value;
+        var callbackToken = response?.CallbackUrl.Split('/').Last();
+
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(webhookState.ResetOrganizationId).IsEqualTo("org_123");
+        await Assert.That(webhookState.ResetLibraryId).IsEqualTo("lib_123");
+        await Assert.That(response!.CallbackTokenSerial).IsEqualTo(6);
+        await Assert.That(response.VerificationToken).IsNull();
+        await Assert.That(response.VerificationTokenAvailable).IsFalse();
+        await Assert.That(response.WebhookActivated).IsFalse();
+        await Assert.That(response.WebhookActivatedAtUtc).IsNull();
+        await Assert.That(response.WebhookSubscriptionId).IsNull();
+        await Assert.That(protector.TryUnprotect(callbackToken, out var payload)).IsTrue();
+        await Assert.That(payload!.CallbackTokenSerial).IsEqualTo(6);
     }
 
     [Test]
@@ -1286,6 +1688,34 @@ public sealed class DocumentEndpointHandlerTests
         return new(new ClaimsIdentity(claims, authenticationType: "test"));
     }
 
+    private static CreateLibraryHandler CreateCreateLibraryHandler(
+        TestLibraryDocumentStore? libraries = null,
+        IDocsPublicSourceStore? publicSources = null,
+        ICodeRepositoryStore? repositories = null,
+        TestEncryptedValueStore? encryptedValues = null,
+        TestNotionClientFactory? notionClients = null
+    ) =>
+        new(
+            libraries ?? new TestLibraryDocumentStore(),
+            publicSources ?? new NotSupportedPublicSourceStore(),
+            repositories ?? new NotSupportedCodeRepositoryStore(),
+            encryptedValues ?? new TestEncryptedValueStore(),
+            TestEncryption(),
+            notionClients ?? new TestNotionClientFactory(identity: null)
+        );
+
+    private static EncryptedValueEncryptionService TestEncryption() =>
+        new(new LlmSettings { EncryptionProvider = "test" }, [new TestDataEncryptionProvider()]);
+
+    private static HttpRequest TestHttpRequest()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Scheme = "https";
+        context.Request.Host = new HostString("api.test");
+
+        return context.Request;
+    }
+
     private static Library TestLibrary(string description = "Knowledge base", string name = "kb") =>
         new()
         {
@@ -1311,6 +1741,42 @@ public sealed class DocumentEndpointHandlerTests
             Description = description,
             SourceKind = "GitHub",
             SourceRepoUrl = "https://github.com/zeeq-ai/zeeq",
+            CreatedAt = DateTimeOffset.UnixEpoch,
+            UpdatedAt = DateTimeOffset.UnixEpoch,
+        };
+
+    private static Library TestNotionSourceLibrary(
+        string description = "Knowledge base",
+        string name = "kb",
+        DateTimeOffset? nextFullResyncAt = null,
+        string? verificationTokenValueId = null,
+        string? webhookSubscriptionId = null,
+        DateTimeOffset? webhookActivatedAtUtc = null,
+        int callbackTokenSerial = 1
+    ) =>
+        new()
+        {
+            Id = "lib_123",
+            OrganizationId = "org_123",
+            TeamId = "team_123",
+            Name = name,
+            Description = description,
+            SourceKind = RepositorySourceKind.Notion.ToString(),
+            ExternalSource = new LibraryExternalSource
+            {
+                Notion = new NotionSourceConfiguration
+                {
+                    AccessTokenValueId = "enc_notion_token",
+                    VerificationTokenValueId = verificationTokenValueId,
+                    WebhookSubscriptionId = webhookSubscriptionId,
+                    WebhookActivatedAtUtc = webhookActivatedAtUtc,
+                    CallbackTokenSerial = callbackTokenSerial,
+                    ConnectionName = "Engineering Wiki",
+                },
+            },
+            SyncStatus = "idle",
+            NextSyncAt = DateTimeOffset.UnixEpoch,
+            NextFullResyncAt = nextFullResyncAt,
             CreatedAt = DateTimeOffset.UnixEpoch,
             UpdatedAt = DateTimeOffset.UnixEpoch,
         };
@@ -1392,6 +1858,8 @@ public sealed class DocumentEndpointHandlerTests
 
         public LibraryDocument? MovedDocument { get; private set; }
 
+        public Exception? CreateLibraryException { get; init; }
+
         public Task<Library?> GetLibraryAsync(
             string organizationId,
             string name,
@@ -1421,6 +1889,11 @@ public sealed class DocumentEndpointHandlerTests
 
         public Task<Library> CreateLibraryAsync(Library library, CancellationToken ct)
         {
+            if (CreateLibraryException is not null)
+            {
+                throw CreateLibraryException;
+            }
+
             Libraries.Add(library);
 
             return Task.FromResult(library);
@@ -1807,6 +2280,176 @@ public sealed class DocumentEndpointHandlerTests
             int limit,
             CancellationToken ct
         ) => throw new NotSupportedException();
+    }
+
+    private sealed class TestEncryptedValueStore : IEncryptedValueStore
+    {
+        public List<EncryptedValue> Values { get; } = [];
+
+        public string? DisabledValueId { get; private set; }
+
+        public Task<IReadOnlyList<EncryptedValue>> ListActiveAsync(
+            string organizationId,
+            EncryptedValueKind kind,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult<IReadOnlyList<EncryptedValue>>(
+                Values
+                    .Where(value => value.OrganizationId == organizationId && value.Kind == kind)
+                    .Where(value => value.DisabledAtUtc is null)
+                    .ToArray()
+            );
+
+        public Task<EncryptedValue?> FindActiveAsync(
+            string organizationId,
+            string id,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                Values.SingleOrDefault(value =>
+                    value.OrganizationId == organizationId
+                    && value.Id == id
+                    && value.DisabledAtUtc is null
+                )
+            );
+
+        public Task<EncryptedValue> AddAsync(
+            EncryptedValue value,
+            CancellationToken cancellationToken
+        )
+        {
+            Values.Add(value);
+            return Task.FromResult(value);
+        }
+
+        public Task<bool> UpdateAsync(EncryptedValue value, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<bool> DisableAsync(
+            string organizationId,
+            string id,
+            DateTimeOffset disabledAtUtc,
+            CancellationToken cancellationToken
+        )
+        {
+            DisabledValueId = id;
+
+            var existing = Values.SingleOrDefault(value =>
+                value.OrganizationId == organizationId && value.Id == id
+            );
+            if (existing is null)
+            {
+                return Task.FromResult(false);
+            }
+
+            existing.DisabledAtUtc = disabledAtUtc;
+            existing.UpdatedAtUtc = disabledAtUtc;
+
+            return Task.FromResult(true);
+        }
+    }
+
+    private sealed class TestDataEncryptionProvider : IDataEncryptionProvider
+    {
+        public string ProviderName => "test";
+
+        public Task<byte[]> EncryptAsync(
+            string organizationId,
+            ReadOnlyMemory<byte> plaintext,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                Encoding.UTF8.GetBytes($"encrypted:{Convert.ToBase64String(plaintext.ToArray())}")
+            );
+
+        public Task<byte[]> DecryptAsync(
+            string organizationId,
+            ReadOnlyMemory<byte> ciphertext,
+            CancellationToken cancellationToken
+        )
+        {
+            var encoded = Encoding.UTF8.GetString(ciphertext.Span);
+            return Task.FromResult(Convert.FromBase64String(encoded["encrypted:".Length..]));
+        }
+    }
+
+    private sealed class TestNotionClientFactory(NotionConnectionIdentity? identity)
+        : IZeeqNotionClientFactory
+    {
+        public string? CreatedWithAccessToken { get; private set; }
+
+        public IZeeqNotionClient Create(string accessToken)
+        {
+            CreatedWithAccessToken = accessToken;
+            return new TestNotionClient(identity);
+        }
+    }
+
+    private sealed class TestNotionClient(NotionConnectionIdentity? identity) : IZeeqNotionClient
+    {
+        public IAsyncEnumerable<NotionPageSummary> SearchPagesAsync(CancellationToken ct) =>
+            EmptyPages();
+
+        public Task<NotionPage?> GetPageAsync(string pageId, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<NotionPageMarkdown?> GetPageMarkdownAsync(
+            string pageId,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task<NotionConnectionIdentity?> GetConnectionIdentityAsync(CancellationToken ct) =>
+            Task.FromResult(identity);
+
+        private static async IAsyncEnumerable<NotionPageSummary> EmptyPages()
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class TestNotionWebhookStore : INotionWebhookStore
+    {
+        public NotionWebhookResetResult ResetResult { get; init; } = NotionWebhookResetResult.Reset;
+
+        public string? ResetOrganizationId { get; private set; }
+
+        public string? ResetLibraryId { get; private set; }
+
+        public DateTimeOffset? ResetAtUtc { get; private set; }
+
+        public Task<NotionWebhookVerificationCaptureResult> TryCaptureVerificationTokenAsync(
+            string organizationId,
+            string libraryId,
+            int callbackTokenSerial,
+            EncryptedValue verificationToken,
+            DateTimeOffset nowUtc,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<NotionWebhookEventObservationResult> ObserveSignedEventAsync(
+            string organizationId,
+            string libraryId,
+            int callbackTokenSerial,
+            string workspaceId,
+            string subscriptionId,
+            DateTimeOffset observedAtUtc,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<NotionWebhookResetResult> ResetAsync(
+            string organizationId,
+            string libraryId,
+            DateTimeOffset resetAtUtc,
+            CancellationToken cancellationToken
+        )
+        {
+            ResetOrganizationId = organizationId;
+            ResetLibraryId = libraryId;
+            ResetAtUtc = resetAtUtc;
+
+            return Task.FromResult(ResetResult);
+        }
     }
 
     private sealed class TestCodeRepositoryStore : ICodeRepositoryStore

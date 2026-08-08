@@ -50,6 +50,13 @@ public sealed record CreateLibrarySourceRequest
     [MaxLength(128)]
     public string? RepositoryId { get; init; }
 
+    /// <summary>
+    /// Pasted Notion integration access token. Required and only used when
+    /// <see cref="Kind"/> is <see cref="LibrarySourceKindRequest.Notion"/>.
+    /// </summary>
+    [MaxLength(4096)]
+    public string? AccessToken { get; init; }
+
     /// <summary>Org-level include path globs. Empty means include everything.</summary>
     public string[] IncludeFilters { get; init; } = [];
 
@@ -65,6 +72,9 @@ public enum LibrarySourceKindRequest
 
     /// <summary>A private, organization-owned repository ingested only for this library.</summary>
     Private,
+
+    /// <summary>A Notion workspace connection ingested page by page for this library.</summary>
+    Notion,
 }
 
 /// <summary>
@@ -95,6 +105,12 @@ public sealed record UpdateLibraryRequest
 
     /// <summary>Org-level exclude path globs. Same null-vs-empty semantics as <see cref="IncludeFilters"/>.</summary>
     public string[]? ExcludeFilters { get; init; }
+
+    /// <summary>
+    /// When true for a Notion-sourced library, schedules a full resync to apply filter changes
+    /// to already-ingested pages. Filter edits alone never imply this destructive backstop.
+    /// </summary>
+    public bool RunFullResync { get; init; }
 }
 
 /// <summary>
@@ -152,13 +168,13 @@ public sealed record LibraryResponse(
 );
 
 /// <summary>
-/// Repository-source metadata and sync status for a repository-backed library.
+/// External-source metadata and sync status for a source-backed library.
 /// </summary>
-/// <param name="Kind">"Public" or "Private".</param>
+/// <param name="Kind">"Public", "Private", or "Notion".</param>
 /// <param name="RepoUrl">
 /// The resolved clone URL either way — from the joined <c>DocsPublicSource</c>
 /// for a public-source library, or the library's own <c>SourceRepoUrl</c> for
-/// a private-source library. Never editable after creation.
+/// a private-source library. <see langword="null"/> for Notion.
 /// </param>
 /// <param name="SyncStatus">idle | queued | running | paused.</param>
 /// <param name="NextSyncAt">Next scheduled sync time, if any.</param>
@@ -170,15 +186,44 @@ public sealed record LibraryResponse(
 /// </param>
 /// <param name="IncludeFilters">Org-level include path globs.</param>
 /// <param name="ExcludeFilters">Org-level exclude path globs.</param>
+/// <param name="NextFullResyncAt">Next scheduled full source resync time, currently used by Notion.</param>
+/// <param name="DisplayName">Human-readable source display name, currently the Notion connection name.</param>
+/// <param name="WebhookActivated">Whether the Notion webhook has completed verification.</param>
+/// <param name="WebhookActivatedAtUtc">When Notion webhook verification completed, if activated.</param>
 public sealed record LibrarySourceResponse(
     string Kind,
-    string RepoUrl,
+    string? RepoUrl,
     string? SyncStatus,
     DateTimeOffset? NextSyncAt,
     DateTimeOffset? LastSyncedAt,
     bool Quarantined,
     string[] IncludeFilters,
-    string[] ExcludeFilters
+    string[] ExcludeFilters,
+    DateTimeOffset? NextFullResyncAt = null,
+    string? DisplayName = null,
+    bool WebhookActivated = false,
+    DateTimeOffset? WebhookActivatedAtUtc = null
+);
+
+/// <summary>Authenticated Notion webhook setup state for one Notion-backed library.</summary>
+/// <param name="CallbackUrl">Long-lived callback URL to paste into Notion.</param>
+/// <param name="CallbackTokenSerial">Current callback revocation generation.</param>
+/// <param name="VerificationToken">
+/// Plain Notion verification token to paste back into Notion once the challenge is captured.
+/// <see langword="null"/> until Notion has called the callback URL, or after reset.
+/// </param>
+/// <param name="VerificationTokenAvailable">Whether a decryptable verification token is currently available.</param>
+/// <param name="WebhookActivated">Whether a signed Notion event has activated this webhook.</param>
+/// <param name="WebhookActivatedAtUtc">When the webhook was activated, if known.</param>
+/// <param name="WebhookSubscriptionId">Notion subscription id observed on activation, if known.</param>
+public sealed record NotionWebhookStateResponse(
+    string CallbackUrl,
+    int CallbackTokenSerial,
+    string? VerificationToken,
+    bool VerificationTokenAvailable,
+    bool WebhookActivated,
+    DateTimeOffset? WebhookActivatedAtUtc,
+    string? WebhookSubscriptionId
 );
 
 /// <summary>

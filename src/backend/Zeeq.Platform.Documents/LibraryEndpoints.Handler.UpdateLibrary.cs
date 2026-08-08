@@ -48,6 +48,10 @@ public sealed class UpdateLibraryHandler(
             return TypedResults.NotFound();
         }
 
+        var nextFullResyncAt =
+            request.RunFullResync && existing.SourceKind == RepositorySourceKind.Notion.ToString()
+                ? DateTimeOffset.UtcNow
+                : existing.NextFullResyncAt;
         var updated = await store.UpdateLibraryAsync(
             new Library
             {
@@ -66,6 +70,12 @@ public sealed class UpdateLibraryHandler(
                 SourceDefaultExcludeFilters = existing.SourceDefaultExcludeFilters,
                 SyncStatus = existing.SyncStatus,
                 NextSyncAt = existing.NextSyncAt,
+                NextFullResyncAt = nextFullResyncAt,
+                ExternalSource = existing.ExternalSource,
+                ActiveSyncRunId = existing.ActiveSyncRunId,
+                ActiveSyncRunCreatedAtUtc = existing.ActiveSyncRunCreatedAtUtc,
+                SyncQueuedAtUtc = existing.SyncQueuedAtUtc,
+                SyncStartedAtUtc = existing.SyncStartedAtUtc,
                 ManualTriggerHistory = existing.ManualTriggerHistory,
                 CreatedAt = existing.CreatedAt,
                 UpdatedAt = DateTimeOffset.UtcNow,

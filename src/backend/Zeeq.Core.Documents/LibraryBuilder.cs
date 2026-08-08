@@ -60,6 +60,16 @@ public static class LibraryBuilder
             ExcludeFilters: excludeFilters
         );
 
+    /// <summary>Ingests Notion pages from an organization-owned workspace connection.</summary>
+    /// <param name="externalSource">Provider-specific Notion source configuration.</param>
+    /// <param name="includeFilters">Org-level include globs, set directly (see <see cref="ForPublicSource"/>).</param>
+    /// <param name="excludeFilters">Org-level exclude globs, set directly.</param>
+    public static NotionSourceVariant ForNotionSource(
+        LibraryExternalSource externalSource,
+        string[]? includeFilters = null,
+        string[]? excludeFilters = null
+    ) => new(externalSource, includeFilters, excludeFilters);
+
     // ── Variant carriers ───────────────────────────────────────────────
 
     /// <summary>No external source — hand-authored documents only.</summary>
@@ -303,5 +313,107 @@ public static class LibraryBuilder
                 CreatedAt = existing.CreatedAt,
                 UpdatedAt = DateTimeOffset.UtcNow,
             };
+    }
+
+    /// <summary>Ingests pages from a Notion workspace connection.</summary>
+    /// <param name="ExternalSource">Notion provider configuration. Must contain <see cref="LibraryExternalSource.Notion"/>.</param>
+    /// <param name="IncludeFilters">Org-level include globs.</param>
+    /// <param name="ExcludeFilters">Org-level exclude globs.</param>
+    public sealed record NotionSourceVariant(
+        LibraryExternalSource ExternalSource,
+        string[]? IncludeFilters = null,
+        string[]? ExcludeFilters = null
+    )
+    {
+        /// <inheritdoc cref="PublicSourceVariant.Build" />
+        public Library Build(
+            string? id = null,
+            string? organizationId = null,
+            string? name = null,
+            string? teamId = null,
+            string? description = null,
+            DateTimeOffset? now = null
+        )
+        {
+            if (ExternalSource.Notion is null)
+            {
+                throw new ArgumentException(
+                    "Notion source configuration is required.",
+                    nameof(ExternalSource)
+                );
+            }
+
+            var timestamp = now ?? DateTimeOffset.UtcNow;
+            return new()
+            {
+                Id = id ?? throw new ArgumentNullException(nameof(id)),
+                OrganizationId =
+                    organizationId ?? throw new ArgumentNullException(nameof(organizationId)),
+                TeamId = teamId,
+                Name = name ?? throw new ArgumentNullException(nameof(name)),
+                Description = description,
+                SourceKind = RepositorySourceKind.Notion.ToString(),
+                ExternalSource = ExternalSource,
+                IncludeFilters = IncludeFilters ?? [],
+                ExcludeFilters = ExcludeFilters ?? [],
+                SyncStatus = "idle",
+                NextSyncAt = timestamp,
+                NextFullResyncAt = timestamp,
+                CreatedAt = timestamp,
+                UpdatedAt = timestamp,
+            };
+        }
+
+        /// <summary>
+        /// Builds from an existing Notion library row, carrying forward provider configuration
+        /// and sync lifecycle fields unless the caller explicitly overrides the full-resync due
+        /// timestamp.
+        /// </summary>
+        public Library BuildFrom(
+            Library existing,
+            string? name = null,
+            string? description = null,
+            DateTimeOffset? nextFullResyncAt = null
+        )
+        {
+            if (
+                existing.SourceKind != RepositorySourceKind.Notion.ToString()
+                || existing.ExternalSource?.Notion is null
+            )
+            {
+                throw new ArgumentException(
+                    "An existing Notion source configuration is required.",
+                    nameof(existing)
+                );
+            }
+
+            return new()
+            {
+                Id = existing.Id,
+                OrganizationId = existing.OrganizationId,
+                TeamId = existing.TeamId,
+                Name = name ?? existing.Name,
+                Description = description ?? existing.Description,
+                SourceKind = RepositorySourceKind.Notion.ToString(),
+                // NOTE: BuildFrom intentionally preserves the existing Notion provider state
+                // instead of applying this variant's creation-time ExternalSource. That keeps
+                // access-token, callback serial, verification token, and activation state stable
+                // across metadata/filter updates.
+                ExternalSource = existing.ExternalSource,
+                IncludeFilters = existing.IncludeFilters,
+                ExcludeFilters = existing.ExcludeFilters,
+                SourceSyncedAt = existing.SourceSyncedAt,
+                SyncStatus = existing.SyncStatus,
+                NextSyncAt = existing.NextSyncAt,
+                NextFullResyncAt = nextFullResyncAt ?? existing.NextFullResyncAt,
+                ActiveSyncRunId = existing.ActiveSyncRunId,
+                ActiveSyncRunCreatedAtUtc = existing.ActiveSyncRunCreatedAtUtc,
+                SyncQueuedAtUtc = existing.SyncQueuedAtUtc,
+                SyncStartedAtUtc = existing.SyncStartedAtUtc,
+                ManualTriggerHistory = existing.ManualTriggerHistory,
+                CreatedAt = existing.CreatedAt,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+        }
     }
 }
