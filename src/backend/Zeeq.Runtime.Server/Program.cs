@@ -5,6 +5,7 @@ using Zeeq.Core.Common.AspNetCore;
 using Zeeq.Core.Common.AspNetCore.Endpoints;
 using Zeeq.Core.Llm;
 using Zeeq.Integrations.GitHub;
+using Zeeq.Integrations.Notion;
 using Zeeq.Platform.CodeReviews;
 using Zeeq.Platform.Dispatch.Process;
 using Zeeq.Platform.Documents;
@@ -66,6 +67,7 @@ builder
     .AddZeeqCache(appSettings)
     .AddZeeqMessaging(appSettings, builder.Configuration, ZeeqRuntimeMode.MessagingRole)
     .AddZeeqGitHubIntegration(appSettings)
+    .AddZeeqNotionIntegration()
     .AddZeeqLlm(appSettings.Llm, builder.Environment)
     .AddZeeqLlmPlatform()
     .AddGoogleKmsDataEncryption(appSettings.Llm)

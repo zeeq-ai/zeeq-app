@@ -18,6 +18,7 @@
   </Folder>
   <Folder Name="/integrations/">
     <Project Path="src/backend/Zeeq.Integrations.GitHub/Zeeq.Integrations.GitHub.csproj" />
+    <Project Path="src/backend/Zeeq.Integrations.Notion/Zeeq.Integrations.Notion.csproj" />
   </Folder>
   <Folder Name="/mcp/">
     <Project Path="src/backend/Zeeq.Mcp/Zeeq.Mcp.csproj" />
@@ -55,6 +56,7 @@
     <Project Path="src/backend/Zeeq.Core.Llm.Tests/Zeeq.Core.Llm.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Data.Postgres.Tests/Zeeq.Data.Postgres.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Integrations.GitHub.Tests/Zeeq.Integrations.GitHub.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Integrations.Notion.Tests/Zeeq.Integrations.Notion.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Mcp.Tests/Zeeq.Mcp.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Carts.Tests/Zeeq.Platform.Carts.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Documents.Tests/Zeeq.Platform.Documents.Tests.csproj" />

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using Zeeq.Core.Llm;
 using Zeeq.Integrations.GitHub;
+using Zeeq.Integrations.Notion;
 using Zeeq.Platform.CodeReviews;
 using Zeeq.Platform.Dispatch.Process;
 using Zeeq.Platform.Documents;
@@ -75,6 +76,7 @@ internal static class ZeeqWorkerHost
                     ZeeqRuntimeMode.MessagingRole
                 )
                 .AddZeeqGitHubIntegration(workerAppSettings)
+                .AddZeeqNotionIntegration()
                 .AddZeeqLlm(workerAppSettings.Llm, builder.Environment)
                 .AddZeeqLlmPlatform()
                 .AddGoogleKmsDataEncryption(workerAppSettings.Llm)
