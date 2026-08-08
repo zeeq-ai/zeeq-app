@@ -100,7 +100,7 @@ internal sealed class PostgresLibraryDocumentStore(
                 $"""
                 SELECT * FROM zeeq.docs_libraries
                 WHERE sync_status = 'idle'
-                  AND source_kind IS NOT NULL
+                  AND source_kind = 'GitHub'
                   AND next_sync_at IS NOT NULL
                   AND next_sync_at <= {now}
                 ORDER BY next_sync_at ASC
@@ -126,6 +126,60 @@ internal sealed class PostgresLibraryDocumentStore(
         {
             await transaction.CommitAsync(ct);
         }
+        return claimed;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<Library>> ClaimDueNotionSyncAsync(
+        int limit,
+        DateTimeOffset now,
+        CancellationToken ct
+    )
+    {
+        now = PostgresTimestampPrecision.TruncateToMicroseconds(now);
+        var notionKind = RepositorySourceKind.Notion.ToString();
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        await using var transaction = ownsTransaction
+            ? await db.Database.BeginTransactionAsync(ct)
+            : null;
+        var claimed = await db
+            .Libraries.FromSql(
+                $"""
+                SELECT * FROM zeeq.docs_libraries
+                WHERE sync_status = 'idle'
+                  AND source_kind = {notionKind}
+                  AND (
+                    (next_sync_at IS NOT NULL AND next_sync_at <= {now})
+                    OR
+                    (next_full_resync_at IS NOT NULL AND next_full_resync_at <= {now})
+                  )
+                ORDER BY LEAST(
+                    COALESCE(next_sync_at, 'infinity'::timestamptz),
+                    COALESCE(next_full_resync_at, 'infinity'::timestamptz)
+                ) ASC
+                LIMIT {limit}
+                FOR UPDATE SKIP LOCKED
+                """
+            )
+            .TagWithOperationCallSite("documents.library.claim_due_notion_sync")
+            .ToArrayAsync(ct);
+
+        foreach (var library in claimed)
+        {
+            library.SyncStatus = "queued";
+            library.ActiveSyncRunId = $"run_{Guid.CreateVersion7():N}";
+            library.ActiveSyncRunCreatedAtUtc = now;
+            library.SyncQueuedAtUtc = now;
+            library.SyncStartedAtUtc = null;
+            library.UpdatedAt = now;
+        }
+
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(ct);
+        }
+
         return claimed;
     }
 
@@ -354,6 +408,7 @@ internal sealed class PostgresLibraryDocumentStore(
         string libraryId,
         string expectedRunId,
         DateTimeOffset expectedRunCreatedAtUtc,
+        string? expectedSyncStatus,
         string? syncStatus,
         DateTimeOffset? nextSyncAt,
         DateTimeOffset[] manualTriggerHistory,
@@ -362,6 +417,7 @@ internal sealed class PostgresLibraryDocumentStore(
         DateTimeOffset? activeSyncRunCreatedAtUtc,
         DateTimeOffset? syncQueuedAtUtc,
         DateTimeOffset? syncStartedAtUtc,
+        DateTimeOffset? nextFullResyncAt,
         CancellationToken ct
     )
     {
@@ -373,6 +429,7 @@ internal sealed class PostgresLibraryDocumentStore(
                 && row.Id == libraryId
                 && row.ActiveSyncRunId == expectedRunId
                 && row.ActiveSyncRunCreatedAtUtc == expectedRunCreatedAtUtc
+                && (expectedSyncStatus == null || row.SyncStatus == expectedSyncStatus)
             )
             .ExecuteUpdateAsync(
                 setters =>
@@ -388,6 +445,7 @@ internal sealed class PostgresLibraryDocumentStore(
                         )
                         .SetProperty(row => row.SyncQueuedAtUtc, syncQueuedAtUtc)
                         .SetProperty(row => row.SyncStartedAtUtc, syncStartedAtUtc)
+                        .SetProperty(row => row.NextFullResyncAt, nextFullResyncAt)
                         .SetProperty(row => row.UpdatedAt, now),
                 ct
             );
@@ -504,7 +562,7 @@ internal sealed class PostgresLibraryDocumentStore(
             var marked = await MarkRunStalledAsync(
                 reset,
                 now,
-                "Repository sync was reset after exceeding the stalled sync timeout.",
+                "Content sync was reset after exceeding the stalled sync timeout.",
                 ct
             );
             if (!marked)
@@ -530,7 +588,9 @@ internal sealed class PostgresLibraryDocumentStore(
 
     private static StalledSyncReset ToStalledSyncReset(Library library) =>
         new(
-            RepositorySourceKind.Private,
+            library.SourceKind == RepositorySourceKind.Notion.ToString()
+                ? RepositorySourceKind.Notion
+                : RepositorySourceKind.Private,
             library.Id,
             library.OrganizationId,
             library.Id,

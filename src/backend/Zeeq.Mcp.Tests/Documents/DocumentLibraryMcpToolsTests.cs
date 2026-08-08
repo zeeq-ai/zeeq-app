@@ -397,6 +397,12 @@ public sealed class DocumentLibraryMcpToolsTests
         public Task<IReadOnlyList<Library>> ClaimDueForSyncAsync(int limit, CancellationToken ct) =>
             throw new NotSupportedException();
 
+        public Task<IReadOnlyList<Library>> ClaimDueNotionSyncAsync(
+            int limit,
+            DateTimeOffset now,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
         public Task<IReadOnlyList<LibraryDocument>> ClaimPendingIndexingAsync(
             int limit,
             TimeSpan staleAfter,

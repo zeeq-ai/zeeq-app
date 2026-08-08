@@ -55,8 +55,11 @@ internal sealed class FakeLibraryDocumentStore(IReadOnlyList<LibraryDocument> do
         return Task.CompletedTask;
     }
 
-    public Task<Library?> GetLibraryAsync(string organizationId, string name, CancellationToken ct) =>
-        throw new NotSupportedException();
+    public Task<Library?> GetLibraryAsync(
+        string organizationId,
+        string name,
+        CancellationToken ct
+    ) => throw new NotSupportedException();
 
     public Task<Library?> GetLibraryByIdAsync(
         string organizationId,
@@ -77,6 +80,12 @@ internal sealed class FakeLibraryDocumentStore(IReadOnlyList<LibraryDocument> do
     public Task<IReadOnlyList<Library>> ClaimDueForSyncAsync(int limit, CancellationToken ct) =>
         throw new NotSupportedException();
 
+    public Task<IReadOnlyList<Library>> ClaimDueNotionSyncAsync(
+        int limit,
+        DateTimeOffset now,
+        CancellationToken ct
+    ) => throw new NotSupportedException();
+
     public Task<Library> CreateLibraryAsync(Library library, CancellationToken ct) =>
         throw new NotSupportedException();
 
@@ -96,8 +105,10 @@ internal sealed class FakeLibraryDocumentStore(IReadOnlyList<LibraryDocument> do
         CancellationToken ct
     ) => throw new NotSupportedException();
 
-    public Task<LibraryDocument> UpsertDocumentAsync(LibraryDocument document, CancellationToken ct) =>
-        throw new NotSupportedException();
+    public Task<LibraryDocument> UpsertDocumentAsync(
+        LibraryDocument document,
+        CancellationToken ct
+    ) => throw new NotSupportedException();
 
     public Task<LibraryDocumentUpsertResult> UpsertSyncedDocumentAsync(
         LibraryDocument document,
@@ -379,8 +390,10 @@ internal sealed class NoOpPublicSnippetStore : ISnippetStore<DocsPublicDocument>
         CancellationToken ct
     ) => Task.CompletedTask;
 
-    public Task ReleaseEmbeddingClaimsAsync(IReadOnlyList<string> snippetIds, CancellationToken ct) =>
-        Task.CompletedTask;
+    public Task ReleaseEmbeddingClaimsAsync(
+        IReadOnlyList<string> snippetIds,
+        CancellationToken ct
+    ) => Task.CompletedTask;
 
     public Task<IReadOnlyList<SnippetSearchRow>> SearchAsync(
         SnippetSearchQuery query,

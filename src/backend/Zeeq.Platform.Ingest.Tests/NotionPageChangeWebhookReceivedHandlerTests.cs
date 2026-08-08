@@ -63,6 +63,9 @@ public sealed class NotionPageChangeWebhookReceivedHandlerTests
 
         if (expectedDelete)
         {
+            await _pending
+                .Received(1)
+                .RemoveAsync("org-1", "library-1", "page-1", Arg.Any<CancellationToken>());
             await _libraries
                 .Received(1)
                 .DeleteDocumentByExternalIdAsync(
@@ -74,6 +77,14 @@ public sealed class NotionPageChangeWebhookReceivedHandlerTests
         }
         else
         {
+            await _pending
+                .DidNotReceive()
+                .RemoveAsync(
+                    Arg.Any<string>(),
+                    Arg.Any<string>(),
+                    Arg.Any<string>(),
+                    Arg.Any<CancellationToken>()
+                );
             await _libraries
                 .DidNotReceive()
                 .DeleteDocumentByExternalIdAsync(

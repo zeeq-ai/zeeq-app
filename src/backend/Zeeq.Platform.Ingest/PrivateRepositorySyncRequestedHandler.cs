@@ -164,6 +164,7 @@ public sealed class PrivateRepositorySyncRequestedHandler(
             library.Id,
             message.RunId,
             message.RunCreatedAtUtc,
+            expectedSyncStatus: null,
             syncStatus,
             library.NextSyncAt,
             library.ManualTriggerHistory,
@@ -172,6 +173,7 @@ public sealed class PrivateRepositorySyncRequestedHandler(
             message.RunCreatedAtUtc,
             library.SyncQueuedAtUtc,
             startedAtUtc,
+            library.NextFullResyncAt,
             ct
         );
         if (!updated)
@@ -200,6 +202,7 @@ public sealed class PrivateRepositorySyncRequestedHandler(
                 library.Id,
                 message.RunId,
                 message.RunCreatedAtUtc,
+                expectedSyncStatus: null,
                 "idle",
                 nextSyncAt,
                 library.ManualTriggerHistory,
@@ -208,6 +211,7 @@ public sealed class PrivateRepositorySyncRequestedHandler(
                 activeSyncRunCreatedAtUtc: null,
                 syncQueuedAtUtc: null,
                 syncStartedAtUtc: null,
+                nextFullResyncAt: library.NextFullResyncAt,
                 ct: ct
             );
             if (!updated)

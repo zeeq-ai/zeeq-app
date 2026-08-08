@@ -1,7 +1,7 @@
-using Zeeq.Core.Common;
-using Zeeq.Core.Documents;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Zeeq.Core.Common;
+using Zeeq.Core.Documents;
 
 namespace Zeeq.Platform.Ingest.Tests;
 
@@ -55,6 +55,33 @@ public sealed class IngestSchedulerHostedServiceTests
         };
     }
 
+    private static Library NotionLibrary(
+        string id,
+        DateTimeOffset? nextFullResyncAt = null,
+        string organizationId = "org_1"
+    )
+    {
+        var runCreatedAtUtc = DateTimeOffset.UtcNow;
+        return new()
+        {
+            Id = id,
+            OrganizationId = organizationId,
+            Name = id,
+            SourceKind = RepositorySourceKind.Notion.ToString(),
+            ExternalSource = new LibraryExternalSource
+            {
+                Notion = new NotionSourceConfiguration { AccessTokenValueId = "secret_1" },
+            },
+            SyncStatus = "queued",
+            NextFullResyncAt = nextFullResyncAt,
+            ActiveSyncRunId = $"run_{id}",
+            ActiveSyncRunCreatedAtUtc = runCreatedAtUtc,
+            SyncQueuedAtUtc = runCreatedAtUtc,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+    }
+
     private static (
         IngestSchedulerHostedService Service,
         ClaimStubDocsPublicSourceStore Sources,
@@ -63,11 +90,15 @@ public sealed class IngestSchedulerHostedServiceTests
     ) Build(
         IReadOnlyList<DocsPublicSource>? dueSources = null,
         IReadOnlyList<Library>? dueLibraries = null,
+        IReadOnlyList<Library>? dueNotionLibraries = null,
         IngestSettings? settings = null
     )
     {
         var sources = new ClaimStubDocsPublicSourceStore(dueSources ?? []);
-        var libraries = new ClaimStubLibraryDocumentStore(dueLibraries ?? []);
+        var libraries = new ClaimStubLibraryDocumentStore(
+            dueLibraries ?? [],
+            dueNotionLibraries ?? []
+        );
         var publisher = new TestMessagePublisher();
 
         var services = new ServiceCollection();
@@ -136,7 +167,9 @@ public sealed class IngestSchedulerHostedServiceTests
     [Test]
     public async Task TickAsync_PassesConfiguredBatchSizeToPublicClaim()
     {
-        var (service, sources, _, _) = Build(settings: new IngestSettings { SchedulerBatchSize = 7 });
+        var (service, sources, _, _) = Build(
+            settings: new IngestSettings { SchedulerBatchSize = 7 }
+        );
 
         await service.TickAsync(CancellationToken.None);
 
@@ -154,9 +187,7 @@ public sealed class IngestSchedulerHostedServiceTests
 
         var published = publisher.Published.OfType<PrivateRepositorySyncRequested>().ToList();
         await Assert.That(published.Count).IsEqualTo(2);
-        await Assert
-            .That(published.Select(m => m.LibraryId))
-            .IsEquivalentTo(["lib_1", "lib_2"]);
+        await Assert.That(published.Select(m => m.LibraryId)).IsEquivalentTo(["lib_1", "lib_2"]);
         await Assert
             .That(published.Select(m => m.OrganizationId))
             .IsEquivalentTo(["org_1", "org_1"]);
@@ -204,8 +235,52 @@ public sealed class IngestSchedulerHostedServiceTests
 
         await service.TickAsync(CancellationToken.None);
 
-        await Assert.That(publisher.Published.OfType<PublicRepositorySyncRequested>().Count()).IsEqualTo(1);
-        await Assert.That(publisher.Published.OfType<PrivateRepositorySyncRequested>().Count()).IsEqualTo(1);
+        await Assert
+            .That(publisher.Published.OfType<PublicRepositorySyncRequested>().Count())
+            .IsEqualTo(1);
+        await Assert
+            .That(publisher.Published.OfType<PrivateRepositorySyncRequested>().Count())
+            .IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task TickAsync_NotionLibrariesDue_PublishesIncrementalAndFullScopes()
+    {
+        var fullDue = NotionLibrary("notion_full", DateTimeOffset.UtcNow.AddMinutes(-1));
+        var incrementalDue = NotionLibrary("notion_incremental");
+        var (service, _, libraries, publisher) = Build(
+            dueNotionLibraries: [fullDue, incrementalDue]
+        );
+
+        await service.TickAsync(CancellationToken.None);
+
+        var published = publisher.Published.OfType<NotionSyncRequested>().ToList();
+        await Assert.That(published.Count).IsEqualTo(2);
+        await Assert
+            .That(published.Single(message => message.LibraryId == "notion_full").Scope)
+            .IsEqualTo(ExternalSyncScope.Full);
+        await Assert
+            .That(published.Single(message => message.LibraryId == "notion_incremental").Scope)
+            .IsEqualTo(ExternalSyncScope.Incremental);
+        await Assert
+            .That(published.Select(message => message.Trigger))
+            .IsEquivalentTo([IngestTriggerReason.Scheduled, IngestTriggerReason.Scheduled]);
+        await Assert.That(libraries.LastNotionClaimNow).IsNotNull();
+    }
+
+    [Test]
+    public async Task TickAsync_NotionClaim_UsesOwnBatchLimitAndDoesNotPublishRepositoryMessage()
+    {
+        var (service, _, libraries, publisher) = Build(
+            dueNotionLibraries: [NotionLibrary("notion_1")],
+            settings: new IngestSettings { SchedulerBatchSize = 7 }
+        );
+
+        await service.TickAsync(CancellationToken.None);
+
+        await Assert.That(libraries.LastNotionClaimLimit).IsEqualTo(7);
+        await Assert.That(publisher.Published.OfType<NotionSyncRequested>().Count()).IsEqualTo(1);
+        await Assert.That(publisher.Published.OfType<PrivateRepositorySyncRequested>()).IsEmpty();
     }
 
     /// <summary>
@@ -250,15 +325,30 @@ public sealed class IngestSchedulerHostedServiceTests
     /// claim call the scheduler makes, recording the limit it was called
     /// with.
     /// </summary>
-    private sealed class ClaimStubLibraryDocumentStore(IReadOnlyList<Library> dueLibraries)
-        : ILibraryDocumentStore
+    private sealed class ClaimStubLibraryDocumentStore(
+        IReadOnlyList<Library> dueLibraries,
+        IReadOnlyList<Library> dueNotionLibraries
+    ) : ILibraryDocumentStore
     {
         public int? LastClaimLimit { get; private set; }
+        public int? LastNotionClaimLimit { get; private set; }
+        public DateTimeOffset? LastNotionClaimNow { get; private set; }
 
         public Task<IReadOnlyList<Library>> ClaimDueForSyncAsync(int limit, CancellationToken ct)
         {
             LastClaimLimit = limit;
             return Task.FromResult(dueLibraries);
+        }
+
+        public Task<IReadOnlyList<Library>> ClaimDueNotionSyncAsync(
+            int limit,
+            DateTimeOffset now,
+            CancellationToken ct
+        )
+        {
+            LastNotionClaimLimit = limit;
+            LastNotionClaimNow = now;
+            return Task.FromResult(dueNotionLibraries);
         }
 
         public Task<IReadOnlyList<LibraryDocument>> ClaimPendingIndexingAsync(

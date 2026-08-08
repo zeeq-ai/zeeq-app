@@ -71,6 +71,12 @@ public sealed partial class NotionPageChangeWebhookReceivedHandler(
         var action = GetPageEventAction(message.EventType);
         if (action is NotionPageEventAction.Delete)
         {
+            await pendingContent.RemoveAsync(
+                message.OrganizationId,
+                message.LibraryId,
+                message.EntityId,
+                cancellationToken
+            );
             await libraries.DeleteDocumentByExternalIdAsync(
                 message.OrganizationId,
                 message.LibraryId,

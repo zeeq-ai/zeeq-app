@@ -1,10 +1,10 @@
-using Zeeq.Core.Common;
-using Zeeq.Core.Documents.Snippets;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pgvector;
+using Zeeq.Core.Common;
+using Zeeq.Core.Documents.Snippets;
 
 namespace Zeeq.Core.Documents.Tests;
 
@@ -304,6 +304,12 @@ public sealed class SnippetSearchServiceTests
 
         public Task<IReadOnlyList<Library>> ClaimDueForSyncAsync(int limit, CancellationToken ct) =>
             throw new NotSupportedException();
+
+        public Task<IReadOnlyList<Library>> ClaimDueNotionSyncAsync(
+            int limit,
+            DateTimeOffset now,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
 
         public Task<IReadOnlyList<LibraryDocument>> ClaimPendingIndexingAsync(
             int limit,

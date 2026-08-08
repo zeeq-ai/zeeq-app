@@ -191,6 +191,12 @@ internal sealed partial class DryRunLibraryDocumentStore : ILibraryDocumentStore
     public Task<IReadOnlyList<Library>> ClaimDueForSyncAsync(int limit, CancellationToken ct) =>
         throw new NotSupportedException("Dry-run store: not used by RepositoryIngestRunner.");
 
+    public Task<IReadOnlyList<Library>> ClaimDueNotionSyncAsync(
+        int limit,
+        DateTimeOffset now,
+        CancellationToken ct
+    ) => throw new NotSupportedException();
+
     public Task<IReadOnlyList<LibraryDocument>> ClaimPendingIndexingAsync(
         int limit,
         TimeSpan staleAfter,

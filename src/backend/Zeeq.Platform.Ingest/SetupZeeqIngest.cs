@@ -43,6 +43,8 @@ public static class SetupZeeqIngest
             services.AddSingleton(appSettings.Ingest);
             services.AddScoped<IIngestGitHubTokenProvider, IngestGitHubTokenProvider>();
             services.AddScoped<RepositoryIngestRunner>();
+            services.AddScoped<NotionIngestRunner>();
+            services.AddScoped<INotionIngestDispatcher, NotionIngestDispatcher>();
 
             return services;
         }
