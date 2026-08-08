@@ -80,7 +80,8 @@ internal sealed class ZeeqNotionClient(INotionClient client) : IZeeqNotionClient
             var page = await client.Pages.RetrieveAsync(pageId, ct);
             return new NotionPage(page.Id, ExtractTitle(page), ToPageParent(page.Parent));
         }
-        catch (NotionApiException ex) when (ex.NotionAPIErrorCode == NotionAPIErrorCode.ObjectNotFound)
+        catch (NotionApiException ex)
+            when (ex.NotionAPIErrorCode == NotionAPIErrorCode.ObjectNotFound)
         {
             return null;
         }
@@ -107,7 +108,8 @@ internal sealed class ZeeqNotionClient(INotionClient client) : IZeeqNotionClient
                 response.UnknownBlockIds?.Count() ?? 0
             );
         }
-        catch (NotionApiException ex) when (ex.NotionAPIErrorCode == NotionAPIErrorCode.ObjectNotFound)
+        catch (NotionApiException ex)
+            when (ex.NotionAPIErrorCode == NotionAPIErrorCode.ObjectNotFound)
         {
             return null;
         }
@@ -159,9 +161,7 @@ internal sealed class ZeeqNotionClient(INotionClient client) : IZeeqNotionClient
 
         // Notion title properties are rich-text collections; a title can be split across
         // multiple fragments (e.g. mixed formatting), so every fragment must be concatenated.
-        var title = string.Concat(
-            titleProperty?.Title.Select(static text => text.PlainText) ?? []
-        );
+        var title = string.Concat(titleProperty?.Title.Select(static text => text.PlainText) ?? []);
 
         return string.IsNullOrEmpty(title) ? "Untitled" : title;
     }

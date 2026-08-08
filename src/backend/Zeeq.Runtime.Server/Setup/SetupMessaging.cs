@@ -1,4 +1,5 @@
 using System.Reflection;
+using Zeeq.Integrations.Notion;
 using Zeeq.Platform.CodeReviews;
 using Zeeq.Platform.Ingest;
 using Zeeq.Platform.Membership;
@@ -276,6 +277,7 @@ internal static class MessagingExtensions
             typeof(SetupCodeReviews).Assembly,
             typeof(SetupMcpExtensions).Assembly,
             typeof(SetupZeeqIngest).Assembly,
+            typeof(SetupNotionIntegration).Assembly,
             typeof(Zeeq.Platform.Metrics.SetupZeeqMetrics).Assembly,
         ];
 }

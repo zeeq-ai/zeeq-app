@@ -154,6 +154,7 @@ public static class PostgresSetupExtension
             services.AddScoped<IDocsPublicSourceStore, PostgresDocsPublicSourceStore>();
             services.AddScoped<IDocsPublicDocumentStore, PostgresDocsPublicDocumentStore>();
             services.AddScoped<IDocsIngestRunStore, PostgresDocsIngestRunStore>();
+            services.AddScoped<INotionWebhookStore, PostgresNotionWebhookStore>();
             services.AddScoped<
                 IExternalPendingContentSyncStore,
                 PostgresExternalPendingContentSyncStore

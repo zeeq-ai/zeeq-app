@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
-using Zeeq.Core.Identity;
 using Microsoft.AspNetCore.Authorization;
+using Zeeq.Core.Identity;
 
 namespace Zeeq.Platform.Ingest;
 

@@ -1,8 +1,8 @@
-using Zeeq.Core.Common;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Zeeq.Core.Common;
 
 namespace Zeeq.Core.Llm;
 
@@ -24,6 +24,7 @@ public static class SetupLlm
             services.AddMemoryCache();
             services.AddScoped<ILlmClientFactory, LlmClientFactory>();
             services.AddScoped<ILlmProviderAccessTester, LlmProviderAccessTester>();
+            services.AddScoped<EncryptedValueEncryptionService>();
             services.AddScoped<KeyEncryptionService>();
             services.AddSingleton(new LlmProviderAccessTestOptions());
             services.AddScoped<DefaultLlmChatClients>(serviceProvider => new DefaultLlmChatClients(
@@ -107,7 +108,8 @@ public static class SetupLlm
         if (
             settings.Embeddings.Enabled
             && !environment.IsDevelopment()
-            && DescribeEmbeddingConfiguration(settings) != LlmEmbeddingConfigurationStatus.Configured
+            && DescribeEmbeddingConfiguration(settings)
+                != LlmEmbeddingConfigurationStatus.Configured
         )
         {
             // Covers both an empty key and a key that still holds its appsettings.json
@@ -208,7 +210,9 @@ public static class SetupLlm
     /// <see cref="LlmEmbeddingConfigurationStatus.Configured"/>) and the startup log call site
     /// read from, so the two can never disagree about what counts as "configured."
     /// </remarks>
-    public static LlmEmbeddingConfigurationStatus DescribeEmbeddingConfiguration(LlmSettings settings)
+    public static LlmEmbeddingConfigurationStatus DescribeEmbeddingConfiguration(
+        LlmSettings settings
+    )
     {
         if (!settings.Embeddings.Enabled)
         {

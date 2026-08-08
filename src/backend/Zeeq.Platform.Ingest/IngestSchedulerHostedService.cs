@@ -1,10 +1,10 @@
 using System.Diagnostics;
-using Zeeq.Core.Common;
-using Zeeq.Core.Documents;
-using Zeeq.Platform.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Zeeq.Core.Common;
+using Zeeq.Core.Documents;
+using Zeeq.Platform.Messaging;
 
 namespace Zeeq.Platform.Ingest;
 

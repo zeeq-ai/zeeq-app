@@ -120,7 +120,10 @@ internal static class NotionResilience
     private static ValueTask<bool> ShouldRetry(RetryPredicateArguments<HttpResponseMessage> args)
     {
         var retryable =
-            args.Outcome.Exception is HttpRequestException or TimeoutRejectedException or RateLimiterRejectedException
+            args.Outcome.Exception
+                is HttpRequestException
+                    or TimeoutRejectedException
+                    or RateLimiterRejectedException
             || (args.Outcome.Result is { } response && IsRetryableResponse(response));
 
         return new ValueTask<bool>(retryable);

@@ -1,12 +1,12 @@
 using System.Text;
-using Zeeq.Core.Common;
-using Zeeq.Core.Llm;
-using Zeeq.Core.Models;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Zeeq.Core.Common;
+using Zeeq.Core.Llm;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews.Tests;
 
@@ -222,13 +222,16 @@ public sealed class CodeReviewLlmTierResolverTests
 
         public Fixture()
         {
-            _keyEncryption = new(
+            var encryption = new EncryptedValueEncryptionService(
                 LlmSettings with
                 {
                     EncryptionProvider = _encryptionProvider.ProviderName,
                 },
+                [_encryptionProvider]
+            );
+            _keyEncryption = new(
+                encryption,
                 _encryptedValues,
-                [_encryptionProvider],
                 new MemoryCache(new MemoryCacheOptions())
             );
 
