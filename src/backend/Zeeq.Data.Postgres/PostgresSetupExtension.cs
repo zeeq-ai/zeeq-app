@@ -155,6 +155,10 @@ public static class PostgresSetupExtension
             services.AddScoped<IDocsPublicDocumentStore, PostgresDocsPublicDocumentStore>();
             services.AddScoped<IDocsIngestRunStore, PostgresDocsIngestRunStore>();
             services.AddScoped<
+                IExternalPendingContentSyncStore,
+                PostgresExternalPendingContentSyncStore
+            >();
+            services.AddScoped<
                 ISnippetStore<LibraryDocument>,
                 PostgresLibraryDocumentSnippetStore
             >();

@@ -135,6 +135,33 @@ public class Library
     /// </summary>
     public DateTimeOffset[] ManualTriggerHistory { get; set; } = [];
 
+    // ─── External source linkage (non-GitHub providers) ───
+
+    /// <summary>
+    /// Provider-specific source configuration for non-repository origins.
+    /// </summary>
+    /// <remarks>
+    /// Stored as a single <c>jsonb</c> column via <c>OwnsOne(...).ToJson("external_source")</c>,
+    /// following the <see cref="LibraryDocument.SourceOrigin"/> precedent. Shaped as a
+    /// "one of" (nullable per-provider members) rather than a polymorphic type so EF's
+    /// JSON-mapped owned entities need no inheritance support. <see cref="SourceKind"/> remains
+    /// the discriminator. Secrets are referenced by <c>EncryptedValue</c> id, never inlined.
+    /// </remarks>
+    public LibraryExternalSource? ExternalSource { get; set; }
+
+    /// <summary>
+    /// Next time this library is due a <b>full</b> resync, as opposed to the incremental
+    /// (dirty-page) sync governed by <see cref="NextSyncAt"/>.
+    /// </summary>
+    /// <remarks>
+    /// This is a REAL column, deliberately NOT part of <see cref="ExternalSource"/>'s jsonb.
+    /// The scheduler filters on exactly this column (<c>WHERE next_full_resync_at &lt;= now</c>),
+    /// so it must be a first-class indexed column rather than living inside the jsonb blob.
+    /// Bounds the ancestor-rename path staleness window for Notion-sourced libraries; unused
+    /// for other source kinds.
+    /// </remarks>
+    public DateTimeOffset? NextFullResyncAt { get; set; }
+
     /// <summary>
     /// Timestamp when the library was created.
     /// </summary>

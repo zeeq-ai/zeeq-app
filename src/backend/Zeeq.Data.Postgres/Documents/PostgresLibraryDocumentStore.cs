@@ -628,6 +628,15 @@ internal sealed class PostgresLibraryDocumentStore(
         CancellationToken ct
     )
     {
+        // External sources (Notion) are identified by a stable id, not path — those pages are
+        // renamed/reparented without their id changing, so resolving by path here would create
+        // a duplicate row on every rename (spec §3.10). Skip the path/content-hash move-detection
+        // branches entirely for these documents; the caller already knows the identity.
+        if (document.SourceExternalId is not null)
+        {
+            return await UpsertSyncedExternalDocumentAsync(document, ct);
+        }
+
         var byPath = await db
             .LibraryDocuments.TagWithOperationCallSite(
                 "documents.library_document.upsert_synced_find_by_path"
@@ -701,6 +710,79 @@ internal sealed class PostgresLibraryDocumentStore(
         return new(document, DocumentUpsertKind.Added);
     }
 
+    private async Task<LibraryDocumentUpsertResult> UpsertSyncedExternalDocumentAsync(
+        LibraryDocument document,
+        CancellationToken ct
+    )
+    {
+        var existing = await db
+            .LibraryDocuments.TagWithOperationCallSite(
+                "documents.library_document.upsert_synced_find_by_external_id"
+            )
+            .SingleOrDefaultAsync(
+                row =>
+                    row.OrganizationId == document.OrganizationId
+                    && row.LibraryId == document.LibraryId
+                    && row.SourceExternalId == document.SourceExternalId,
+                ct
+            );
+
+        if (existing is null)
+        {
+            db.LibraryDocuments.Add(document);
+            await db.SaveChangesAsync(ct);
+            return new(document, DocumentUpsertKind.Added);
+        }
+
+        var moved = existing.Path != document.Path;
+        if (moved)
+        {
+            existing.RenameTo(document.Path);
+        }
+
+        if (existing.ContentHash == document.ContentHash && !moved)
+        {
+            // Content and path unchanged — re-stamp only.
+            existing.SyncRunId = document.SyncRunId;
+            await db.SaveChangesAsync(ct);
+            return new(existing, DocumentUpsertKind.Unchanged);
+        }
+
+        existing.Content = document.Content;
+        existing.ContentHash = document.ContentHash;
+        existing.Title = document.Title;
+        existing.TitleNormalized = document.TitleNormalized;
+        existing.ParsedSkillName = document.ParsedSkillName;
+        existing.ParsedSkillDescription = document.ParsedSkillDescription;
+        existing.Keywords = document.Keywords;
+        existing.Headings = document.Headings;
+        existing.TokenCount = document.TokenCount;
+        existing.ProcessingStatus = document.ProcessingStatus;
+        existing.SyncRunId = document.SyncRunId;
+        existing.UpdatedAt = document.UpdatedAt;
+        await db.SaveChangesAsync(ct);
+        return new(existing, moved ? DocumentUpsertKind.Moved : DocumentUpsertKind.Updated);
+    }
+
+    /// <inheritdoc />
+    public Task<LibraryDocument?> GetByExternalIdAsync(
+        string organizationId,
+        string libraryId,
+        string sourceExternalId,
+        CancellationToken ct
+    ) =>
+        db
+            .LibraryDocuments.TagWithOperationCallSite(
+                "documents.library_document.get_by_external_id"
+            )
+            .SingleOrDefaultAsync(
+                row =>
+                    row.OrganizationId == organizationId
+                    && row.LibraryId == libraryId
+                    && row.SourceExternalId == sourceExternalId,
+                ct
+            );
+
     /// <inheritdoc />
     public async Task<int> DeleteUnstampedAsync(
         string organizationId,
@@ -735,6 +817,35 @@ internal sealed class PostgresLibraryDocumentStore(
                     row.OrganizationId == organizationId
                     && row.LibraryId == libraryId
                     && row.Path == normalizedPath,
+                ct
+            );
+
+        if (document is null)
+        {
+            return;
+        }
+
+        db.LibraryDocuments.Remove(document);
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task DeleteDocumentByExternalIdAsync(
+        string organizationId,
+        string libraryId,
+        string sourceExternalId,
+        CancellationToken ct
+    )
+    {
+        var document = await db
+            .LibraryDocuments.TagWithOperationCallSite(
+                "documents.library_document.delete_by_external_id_find"
+            )
+            .SingleOrDefaultAsync(
+                row =>
+                    row.OrganizationId == organizationId
+                    && row.LibraryId == libraryId
+                    && row.SourceExternalId == sourceExternalId,
                 ct
             );
 
@@ -1250,7 +1361,12 @@ internal sealed class PostgresLibraryDocumentStore(
         db
             .LibraryDocuments.AsNoTracking()
             .TagWithOperationCallSite("documents.library_document.get_by_exact_path")
-            .SingleOrDefaultAsync(
+            // FirstOrDefault, not SingleOrDefault: path is only a unique identity for
+            // hand-authored/repository documents (enforced by the partial unique index that
+            // excludes rows with a SourceExternalId). External-source (Notion) documents can
+            // legitimately share a resolved breadcrumb path, so a SingleOrDefaultAsync here
+            // would throw on that collision instead of returning a reasonable match.
+            .FirstOrDefaultAsync(
                 document =>
                     document.OrganizationId == organizationId
                     && document.LibraryId == libraryId

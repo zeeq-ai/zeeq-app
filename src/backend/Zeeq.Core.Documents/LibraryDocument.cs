@@ -132,6 +132,18 @@ public class LibraryDocument
     public LibraryDocumentSourceOrigin? SourceOrigin { get; init; }
 
     /// <summary>
+    /// Stable identifier for this document in its external source (e.g. a Notion page UUID).
+    /// </summary>
+    /// <remarks>
+    /// Required because Notion pages are renamed and reparented without their id changing,
+    /// so the path-keyed upsert used by the repository path would create a duplicate row on
+    /// every Notion-side rename. Null for hand-authored and repository-sourced documents.
+    /// Indexed as (organization_id, library_id, source_external_id) — organization_id leads,
+    /// per the distribution-key convention.
+    /// </remarks>
+    public string? SourceExternalId { get; set; }
+
+    /// <summary>
     /// UUIDv7 stamp of the ingest run that last touched this document. Used by the
     /// deletion sweep: after a clean pass, documents whose <c>sync_run_id</c> does not
     /// match the current run are deleted (they are absent upstream). Null for

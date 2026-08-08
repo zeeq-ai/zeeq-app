@@ -54,20 +54,22 @@ public static class IngestFileFilter
     /// </summary>
     /// <param name="relativePath">Forward- or backslash-separated path relative to the repository root.</param>
     /// <param name="filter">The effective include/exclude globs for this run.</param>
-    public static bool IsIncluded(string relativePath, EffectiveFilter filter)
-    {
-        if (
-            !MarkdownExtensions.Contains(
-                Path.GetExtension(relativePath),
-                StringComparer.OrdinalIgnoreCase
-            )
-        )
-        {
-            return false;
-        }
+    public static bool IsIncluded(string relativePath, EffectiveFilter filter) =>
+        MarkdownExtensions.Contains(
+            Path.GetExtension(relativePath),
+            StringComparer.OrdinalIgnoreCase
+        ) && MatchesGlobs(relativePath, filter);
 
+    /// <summary>
+    /// Returns whether a path matches the effective include/exclude globs, with no extension
+    /// gate. Shared by the repository path (via <see cref="IsIncluded"/>, which layers the
+    /// Markdown-extension check on top) and the Notion path, whose resolved breadcrumb paths
+    /// (e.g. <c>engineering/2026-q4/initiatives</c>) have no file extension to gate on.
+    /// </summary>
+    public static bool MatchesGlobs(string path, EffectiveFilter filter)
+    {
         var matcher = MatcherCache.GetValue(filter, BuildMatcher);
-        var normalized = Normalize(relativePath);
+        var normalized = Normalize(path);
 
         return matcher.Match(normalized).HasMatches;
     }

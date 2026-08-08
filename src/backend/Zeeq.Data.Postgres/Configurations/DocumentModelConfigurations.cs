@@ -38,11 +38,25 @@ internal sealed class LibraryConfiguration : IEntityTypeConfiguration<Library>
         entity.Property(library => library.CreatedAt).IsRequired();
         entity.Property(library => library.UpdatedAt).IsRequired();
 
+        // External source config (Notion, and future providers) — see LibraryExternalSource.
+        // Nothing filters/sorts on these fields; every access is by the already-indexed
+        // library id, so the blob rides along at zero extra query cost.
+        entity.OwnsOne(
+            library => library.ExternalSource,
+            externalSource =>
+            {
+                externalSource.ToJson("external_source");
+                externalSource.OwnsOne(source => source.Notion);
+            }
+        );
+
         entity.HasIndex(library => new { library.OrganizationId, library.Name }).IsUnique();
         entity.HasIndex(library => new { library.OrganizationId, library.TeamId });
 
         // Fast path for the scheduler's atomic claim query.
         entity.HasIndex(library => new { library.SyncStatus, library.NextSyncAt });
+        // Backstop for the Notion full-resync scheduler pass.
+        entity.HasIndex(library => new { library.SyncStatus, library.NextFullResyncAt });
         // Fast path for stalled sync cleanup.
         // NOTE: Unlike request-path library indexes, this worker sweep is intentionally global
         // and has no organization_id predicate; leading with SyncStatus matches the recovery
@@ -136,6 +150,7 @@ internal sealed class LibraryDocumentConfiguration : IEntityTypeConfiguration<Li
         entity.Property(document => document.TokenCount).IsRequired();
         entity.Property(document => document.ContentHash).HasMaxLength(64);
         entity.Property(document => document.SyncRunId).HasMaxLength(128);
+        entity.Property(document => document.SourceExternalId).HasMaxLength(128);
 
         // Review-exclusion flag: NOT NULL DEFAULT FALSE so existing rows stay visible to code
         // reviews after the migration; no index — the filter always composes with the
@@ -172,6 +187,13 @@ internal sealed class LibraryDocumentConfiguration : IEntityTypeConfiguration<Li
             }
         );
 
+        // Filtered to source_external_id IS NULL: for hand-authored and repository-sourced
+        // documents, path IS identity, so uniqueness must hold there. External-source documents
+        // (Notion) are identified by SourceExternalId instead (see the index below) — their path
+        // is a dynamically-resolved breadcrumb (spec §3.8/§3.10), not a guaranteed-unique key, so
+        // enforcing this constraint on them would let an unrelated path collision (two Notion
+        // pages that happen to resolve to the same breadcrumb) fail an otherwise-valid sync with
+        // a raw unique-constraint violation instead of the intended per-page upsert semantics.
         entity
             .HasIndex(document => new
             {
@@ -180,7 +202,22 @@ internal sealed class LibraryDocumentConfiguration : IEntityTypeConfiguration<Li
                 document.Path,
             })
             .IsUnique()
+            .HasFilter("source_external_id IS NULL")
             .HasDatabaseName("ix_docs_library_documents_path");
+
+        // Resolves a Notion (or future external-source) page by its stable id — required
+        // because those sources rename/reparent pages without changing their id, so the
+        // path-keyed unique index above cannot be used for their upsert identity.
+        entity
+            .HasIndex(document => new
+            {
+                document.OrganizationId,
+                document.LibraryId,
+                document.SourceExternalId,
+            })
+            .IsUnique()
+            .HasFilter("source_external_id IS NOT NULL")
+            .HasDatabaseName("ix_docs_library_documents_source_external_id");
 
         // Index for the deletion sweep: efficiently find documents not stamped by
         // the current run within a given library.
@@ -388,10 +425,12 @@ internal sealed class DocsIngestRunConfiguration : IEntityTypeConfiguration<Docs
         entity.Property(run => run.LibraryId).HasMaxLength(128);
         entity.Property(run => run.Trigger).IsRequired().HasMaxLength(16).HasConversion<string>();
         entity.Property(run => run.Status).IsRequired().HasMaxLength(32).HasConversion<string>();
+        entity.Property(run => run.SyncScope).HasMaxLength(16).HasConversion<string>();
         entity.Property(run => run.RootTraceId).HasMaxLength(64);
         entity.Property(run => run.FailureMessage).HasMaxLength(4096);
         entity.Property(run => run.CreatedAtUtc).IsRequired();
         entity.Property(run => run.UpdatedAtUtc).IsRequired();
+
 
         // Find runs for a given public source, ordered by recency.
         entity.HasIndex(run => new { run.PublicSourceId, run.CreatedAtUtc });
@@ -602,5 +641,47 @@ internal sealed class PublicDocumentSnippetConfiguration
             .WithMany()
             .HasForeignKey(snippet => snippet.DocumentId)
             .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+/// <summary>
+/// EF mapping for the external-content dirty set (Notion today; SharePoint/OneDrive later).
+/// </summary>
+/// <remarks>
+/// Unlogged: entirely disposable, re-derivable state (a lost row just means the next full
+/// resync — or the next edit to that item — re-derives it). No FK to <c>docs_libraries</c>:
+/// like the GitHub webhook delivery-claim table, this is disposable operational state, not
+/// a durable relationship the database needs to protect referential integrity for.
+/// </remarks>
+internal sealed class ExternalPendingContentSyncRowConfiguration
+    : IEntityTypeConfiguration<ExternalPendingContentSyncRow>
+{
+    public void Configure(EntityTypeBuilder<ExternalPendingContentSyncRow> entity)
+    {
+        entity.ToTable("docs_external_pending_content_syncs");
+        entity.IsUnlogged();
+        entity.HasKey(row => new
+        {
+            row.OrganizationId,
+            row.LibraryId,
+            row.ExternalContentId,
+        });
+
+        entity.Property(row => row.OrganizationId).HasMaxLength(128);
+        entity.Property(row => row.LibraryId).HasMaxLength(128);
+        entity.Property(row => row.ExternalContentId).HasMaxLength(128);
+        entity.Property(row => row.EventType).IsRequired().HasMaxLength(64);
+        entity.Property(row => row.MarkedDirtyAtUtc).IsRequired();
+        entity.Property(row => row.ClaimedByRunId).HasMaxLength(128);
+
+        // Claim query: "unclaimed rows for this library" — organization_id leads per convention.
+        entity
+            .HasIndex(row => new
+            {
+                row.OrganizationId,
+                row.LibraryId,
+                row.ClaimedByRunId,
+            })
+            .HasDatabaseName("ix_docs_external_pending_content_syncs_claim");
     }
 }
