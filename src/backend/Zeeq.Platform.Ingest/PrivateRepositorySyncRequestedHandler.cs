@@ -1,10 +1,10 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Dispatch;
 using Zeeq.Core.Models;
 using Zeeq.Platform.Messaging;
-using Microsoft.Extensions.Logging;
 
 namespace Zeeq.Platform.Ingest;
 

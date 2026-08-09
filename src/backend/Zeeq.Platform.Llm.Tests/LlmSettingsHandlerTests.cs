@@ -351,9 +351,11 @@ public sealed class LlmSettingsHandlerTests
                 Settings = settings,
                 EncryptedValues = encryptedValues,
                 KeyEncryption = new KeyEncryptionService(
-                    appSettings,
+                    new EncryptedValueEncryptionService(
+                        appSettings,
+                        [new FakeDataEncryptionProvider()]
+                    ),
                     encryptedValues,
-                    [new FakeDataEncryptionProvider()],
                     new MemoryCache(new MemoryCacheOptions())
                 ),
                 ProviderTester = new FakeLlmProviderAccessTester(),

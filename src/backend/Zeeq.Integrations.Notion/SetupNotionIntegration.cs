@@ -29,6 +29,8 @@ public static class SetupNotionIntegration
 
             services.AddNotionResilience();
             services.AddSingleton<IZeeqNotionClientFactory, ZeeqNotionClientFactory>();
+            services.AddSingleton<NotionCallbackTokenProtector>();
+            services.AddSingleton<NotionWebhookSignatureVerifier>();
 
             return services;
         }

@@ -222,9 +222,8 @@ public sealed class KeyEncryptionServiceTests
     public async Task KeyEncryptionService_WithMissingProvider_ThrowsConfigurationError()
     {
         var service = new KeyEncryptionService(
-            Settings("missing-provider"),
+            new EncryptedValueEncryptionService(Settings("missing-provider"), [_primaryProvider]),
             _store,
-            [_primaryProvider],
             _cache
         );
 
@@ -239,11 +238,18 @@ public sealed class KeyEncryptionServiceTests
                 )
             )
             .Throws<InvalidOperationException>()
-            .WithMessage("No LLM data encryption provider is registered for 'missing-provider'.");
+            .WithMessage("No data encryption provider is registered for 'missing-provider'.");
     }
 
     private KeyEncryptionService CreateService(string encryptionProvider) =>
-        new(Settings(encryptionProvider), _store, [_primaryProvider, _secondaryProvider], _cache);
+        new(
+            new EncryptedValueEncryptionService(
+                Settings(encryptionProvider),
+                [_primaryProvider, _secondaryProvider]
+            ),
+            _store,
+            _cache
+        );
 
     private static LlmSettings Settings(string encryptionProvider) =>
         new()

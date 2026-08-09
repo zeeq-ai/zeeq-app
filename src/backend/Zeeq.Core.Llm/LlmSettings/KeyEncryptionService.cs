@@ -1,7 +1,5 @@
-using System.Text;
-using Zeeq.Core.Common;
-using Zeeq.Core.Models;
 using Microsoft.Extensions.Caching.Memory;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Core.Llm;
 
@@ -15,15 +13,12 @@ namespace Zeeq.Core.Llm;
 /// from one encryption adapter to another.
 /// </remarks>
 public sealed class KeyEncryptionService(
-    LlmSettings settings,
+    EncryptedValueEncryptionService encryption,
     IEncryptedValueStore encryptedValues,
-    IEnumerable<IDataEncryptionProvider> providers,
     IMemoryCache memoryCache
 )
 {
     private static readonly TimeSpan PlaintextCacheTtl = TimeSpan.FromMinutes(30);
-    private readonly IReadOnlyDictionary<string, IDataEncryptionProvider> _providers =
-        providers.ToDictionary(provider => provider.ProviderName, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Encrypts a plaintext LLM API key and stores only ciphertext.
@@ -36,24 +31,14 @@ public sealed class KeyEncryptionService(
         CancellationToken cancellationToken
     )
     {
-        var provider = GetProvider(settings.EncryptionProvider);
-        var ciphertext = await EncryptAsync(
-            provider,
+        var value = await encryption.EncryptAsync(
             organizationId,
+            EncryptedValueKind.LlmApiKey,
+            name,
             plaintextApiKey,
+            nowUtc,
             cancellationToken
         );
-        var value = new EncryptedValue
-        {
-            Id = $"enc_{Guid.CreateVersion7():N}",
-            OrganizationId = organizationId,
-            Kind = EncryptedValueKind.LlmApiKey,
-            EncryptionProvider = provider.ProviderName,
-            Name = string.IsNullOrWhiteSpace(name) ? null : name.Trim(),
-            Ciphertext = ciphertext,
-            CreatedAtUtc = nowUtc,
-            UpdatedAtUtc = nowUtc,
-        };
 
         return await encryptedValues.AddAsync(value, cancellationToken);
     }
@@ -80,17 +65,18 @@ public sealed class KeyEncryptionService(
             return false;
         }
 
-        var provider = GetProvider(settings.EncryptionProvider);
-        var ciphertext = await EncryptAsync(
-            provider,
-            organizationId,
-            plaintextApiKey,
-            cancellationToken
-        );
-
-        existing.EncryptionProvider = provider.ProviderName;
-        existing.Ciphertext = ciphertext;
-        existing.UpdatedAtUtc = nowUtc;
+        if (
+            !await encryption.ReencryptAsync(
+                existing,
+                EncryptedValueKind.LlmApiKey,
+                plaintextApiKey,
+                nowUtc,
+                cancellationToken
+            )
+        )
+        {
+            return false;
+        }
 
         return await encryptedValues.UpdateAsync(existing, cancellationToken);
     }
@@ -121,44 +107,18 @@ public sealed class KeyEncryptionService(
             return cachedPlaintext;
         }
 
-        var provider = GetProvider(value.EncryptionProvider);
-        var plaintextBytes = await provider.DecryptAsync(
-            organizationId,
-            value.Ciphertext,
+        var plaintext = await encryption.DecryptAsync(
+            value,
+            EncryptedValueKind.LlmApiKey,
             cancellationToken
         );
-        var plaintext = Encoding.UTF8.GetString(plaintextBytes);
+        if (plaintext is null)
+        {
+            return null;
+        }
 
         memoryCache.Set(cacheKey, plaintext, PlaintextCacheTtl);
         return plaintext;
-    }
-
-    private static async Task<byte[]> EncryptAsync(
-        IDataEncryptionProvider provider,
-        string organizationId,
-        string plaintextApiKey,
-        CancellationToken cancellationToken
-    )
-    {
-        if (string.IsNullOrWhiteSpace(plaintextApiKey))
-        {
-            throw new ArgumentException("Plaintext API key is required.", nameof(plaintextApiKey));
-        }
-
-        var plaintextBytes = Encoding.UTF8.GetBytes(plaintextApiKey);
-        return await provider.EncryptAsync(organizationId, plaintextBytes, cancellationToken);
-    }
-
-    private IDataEncryptionProvider GetProvider(string providerName)
-    {
-        if (_providers.TryGetValue(providerName, out var provider))
-        {
-            return provider;
-        }
-
-        throw new InvalidOperationException(
-            $"No LLM data encryption provider is registered for '{providerName}'."
-        );
     }
 
     private static string BuildCacheKey(EncryptedValue value) =>

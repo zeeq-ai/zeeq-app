@@ -1,10 +1,10 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Dispatch;
 using Zeeq.Integrations.GitHub;
 using Zeeq.Platform.Messaging;
-using Microsoft.Extensions.Logging;
 
 namespace Zeeq.Platform.Ingest;
 
@@ -259,7 +259,10 @@ public sealed class PublicRepositorySyncRequestedHandler(
         }
     }
 
-    private static bool IsCurrentSync(DocsPublicSource source, PublicRepositorySyncRequested message) =>
+    private static bool IsCurrentSync(
+        DocsPublicSource source,
+        PublicRepositorySyncRequested message
+    ) =>
         source.ActiveSyncRunId == message.RunId
         && source.ActiveSyncRunCreatedAtUtc == message.RunCreatedAtUtc;
 

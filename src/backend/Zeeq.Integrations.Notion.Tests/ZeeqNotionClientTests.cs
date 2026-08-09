@@ -16,7 +16,10 @@ public sealed class ZeeqNotionClientTests
         // First page of results reports has_more/next_cursor; the client must issue a
         // second request carrying that cursor and keep yielding until has_more is false.
         var stub = new TwoPageSearchHandler();
-        using var httpClient = new HttpClient(stub) { BaseAddress = new Uri("https://api.notion.com/") };
+        using var httpClient = new HttpClient(stub)
+        {
+            BaseAddress = new Uri("https://api.notion.com/"),
+        };
         var notionClient = NotionClientFactory.Create(
             new ClientOptions { AuthToken = "test-token", HttpClient = httpClient }
         );
@@ -39,7 +42,10 @@ public sealed class ZeeqNotionClientTests
     public async Task NotionClient_SearchPages_ExcludesTrashedPages()
     {
         var stub = new SinglePageWithTrashHandler();
-        using var httpClient = new HttpClient(stub) { BaseAddress = new Uri("https://api.notion.com/") };
+        using var httpClient = new HttpClient(stub)
+        {
+            BaseAddress = new Uri("https://api.notion.com/"),
+        };
         var notionClient = NotionClientFactory.Create(
             new ClientOptions { AuthToken = "test-token", HttpClient = httpClient }
         );
@@ -63,7 +69,10 @@ public sealed class ZeeqNotionClientTests
         // A Notion title can be split across multiple rich-text fragments (e.g. mixed
         // formatting within one title). All fragments must be preserved, not just the first.
         var stub = new MultiFragmentTitleHandler();
-        using var httpClient = new HttpClient(stub) { BaseAddress = new Uri("https://api.notion.com/") };
+        using var httpClient = new HttpClient(stub)
+        {
+            BaseAddress = new Uri("https://api.notion.com/"),
+        };
         var notionClient = NotionClientFactory.Create(
             new ClientOptions { AuthToken = "test-token", HttpClient = httpClient }
         );
@@ -85,7 +94,10 @@ public sealed class ZeeqNotionClientTests
         // a true workspace root — the two must stay distinguishable per NotionPageParent's
         // documented contract.
         var stub = new DatabaseParentHandler();
-        using var httpClient = new HttpClient(stub) { BaseAddress = new Uri("https://api.notion.com/") };
+        using var httpClient = new HttpClient(stub)
+        {
+            BaseAddress = new Uri("https://api.notion.com/"),
+        };
         var notionClient = NotionClientFactory.Create(
             new ClientOptions { AuthToken = "test-token", HttpClient = httpClient }
         );
@@ -110,33 +122,33 @@ public sealed class ZeeqNotionClientTests
         )
         {
             const string json = """
-            {
-              "object": "list",
-              "results": [
                 {
-                  "object": "page",
-                  "id": "page-multi-title",
-                  "created_time": "2026-08-08T15:52:00.000Z",
-                  "last_edited_time": "2026-08-08T15:52:00.000Z",
-                  "parent": { "type": "workspace", "workspace": true },
-                  "in_trash": false,
-                  "properties": {
-                    "title": {
-                      "id": "title",
-                      "type": "title",
-                      "title": [
-                        { "type": "text", "plain_text": "2026 Q4 ", "text": { "content": "2026 Q4 " } },
-                        { "type": "text", "plain_text": "Engineering ", "text": { "content": "Engineering " } },
-                        { "type": "text", "plain_text": "Initiatives", "text": { "content": "Initiatives" } }
-                      ]
+                  "object": "list",
+                  "results": [
+                    {
+                      "object": "page",
+                      "id": "page-multi-title",
+                      "created_time": "2026-08-08T15:52:00.000Z",
+                      "last_edited_time": "2026-08-08T15:52:00.000Z",
+                      "parent": { "type": "workspace", "workspace": true },
+                      "in_trash": false,
+                      "properties": {
+                        "title": {
+                          "id": "title",
+                          "type": "title",
+                          "title": [
+                            { "type": "text", "plain_text": "2026 Q4 ", "text": { "content": "2026 Q4 " } },
+                            { "type": "text", "plain_text": "Engineering ", "text": { "content": "Engineering " } },
+                            { "type": "text", "plain_text": "Initiatives", "text": { "content": "Initiatives" } }
+                          ]
+                        }
+                      }
                     }
-                  }
+                  ],
+                  "next_cursor": null,
+                  "has_more": false
                 }
-              ],
-              "next_cursor": null,
-              "has_more": false
-            }
-            """;
+                """;
 
             return Task.FromResult(JsonResponse(json));
         }
@@ -150,23 +162,23 @@ public sealed class ZeeqNotionClientTests
         )
         {
             const string json = """
-            {
-              "object": "list",
-              "results": [
                 {
-                  "object": "page",
-                  "id": "page-in-database",
-                  "created_time": "2026-08-08T15:52:00.000Z",
-                  "last_edited_time": "2026-08-08T15:52:00.000Z",
-                  "parent": { "type": "data_source_id", "data_source_id": "some-data-source-id" },
-                  "in_trash": false,
-                  "properties": { "title": { "id": "title", "type": "title", "title": [] } }
+                  "object": "list",
+                  "results": [
+                    {
+                      "object": "page",
+                      "id": "page-in-database",
+                      "created_time": "2026-08-08T15:52:00.000Z",
+                      "last_edited_time": "2026-08-08T15:52:00.000Z",
+                      "parent": { "type": "data_source_id", "data_source_id": "some-data-source-id" },
+                      "in_trash": false,
+                      "properties": { "title": { "id": "title", "type": "title", "title": [] } }
+                    }
+                  ],
+                  "next_cursor": null,
+                  "has_more": false
                 }
-              ],
-              "next_cursor": null,
-              "has_more": false
-            }
-            """;
+                """;
 
             return Task.FromResult(JsonResponse(json));
         }
@@ -186,41 +198,45 @@ public sealed class ZeeqNotionClientTests
 
             if (RequestCount == 1)
             {
-                return JsonResponse(SearchResponseJson(pageId: "page-1", hasMore: true, nextCursor: "cursor-abc"));
+                return JsonResponse(
+                    SearchResponseJson(pageId: "page-1", hasMore: true, nextCursor: "cursor-abc")
+                );
             }
 
             var body = await request.Content!.ReadAsStringAsync(cancellationToken);
             SecondRequestCursor = body.Contains("cursor-abc") ? "cursor-abc" : null;
 
-            return JsonResponse(SearchResponseJson(pageId: "page-2", hasMore: false, nextCursor: null));
+            return JsonResponse(
+                SearchResponseJson(pageId: "page-2", hasMore: false, nextCursor: null)
+            );
         }
 
         private static string SearchResponseJson(string pageId, bool hasMore, string? nextCursor) =>
             $$"""
-            {
-              "object": "list",
-              "results": [
                 {
-                  "object": "page",
-                  "id": "{{pageId}}",
-                  "created_time": "2026-08-08T15:52:00.000Z",
-                  "last_edited_time": "2026-08-08T15:52:00.000Z",
-                  "parent": { "type": "workspace", "workspace": true },
-                  "in_trash": false,
-                  "is_archived": false,
-                  "properties": {
-                    "title": {
-                      "id": "title",
-                      "type": "title",
-                      "title": [ { "type": "text", "plain_text": "Test Page", "text": { "content": "Test Page" } } ]
+                  "object": "list",
+                  "results": [
+                    {
+                      "object": "page",
+                      "id": "{{pageId}}",
+                      "created_time": "2026-08-08T15:52:00.000Z",
+                      "last_edited_time": "2026-08-08T15:52:00.000Z",
+                      "parent": { "type": "workspace", "workspace": true },
+                      "in_trash": false,
+                      "is_archived": false,
+                      "properties": {
+                        "title": {
+                          "id": "title",
+                          "type": "title",
+                          "title": [ { "type": "text", "plain_text": "Test Page", "text": { "content": "Test Page" } } ]
+                        }
+                      }
                     }
-                  }
+                  ],
+                  "next_cursor": {{(nextCursor is null ? "null" : $"\"{nextCursor}\"")}},
+                  "has_more": {{(hasMore ? "true" : "false")}}
                 }
-              ],
-              "next_cursor": {{(nextCursor is null ? "null" : $"\"{nextCursor}\"")}},
-              "has_more": {{(hasMore ? "true" : "false")}}
-            }
-            """;
+                """;
     }
 
     private sealed class SinglePageWithTrashHandler : DelegatingHandler
@@ -231,32 +247,32 @@ public sealed class ZeeqNotionClientTests
         )
         {
             const string json = """
-            {
-              "object": "list",
-              "results": [
                 {
-                  "object": "page",
-                  "id": "page-live",
-                  "created_time": "2026-08-08T15:52:00.000Z",
-                  "last_edited_time": "2026-08-08T15:52:00.000Z",
-                  "parent": { "type": "workspace", "workspace": true },
-                  "in_trash": false,
-                  "properties": { "title": { "id": "title", "type": "title", "title": [] } }
-                },
-                {
-                  "object": "page",
-                  "id": "page-trashed",
-                  "created_time": "2026-08-08T15:52:00.000Z",
-                  "last_edited_time": "2026-08-08T15:52:00.000Z",
-                  "parent": { "type": "workspace", "workspace": true },
-                  "in_trash": true,
-                  "properties": { "title": { "id": "title", "type": "title", "title": [] } }
+                  "object": "list",
+                  "results": [
+                    {
+                      "object": "page",
+                      "id": "page-live",
+                      "created_time": "2026-08-08T15:52:00.000Z",
+                      "last_edited_time": "2026-08-08T15:52:00.000Z",
+                      "parent": { "type": "workspace", "workspace": true },
+                      "in_trash": false,
+                      "properties": { "title": { "id": "title", "type": "title", "title": [] } }
+                    },
+                    {
+                      "object": "page",
+                      "id": "page-trashed",
+                      "created_time": "2026-08-08T15:52:00.000Z",
+                      "last_edited_time": "2026-08-08T15:52:00.000Z",
+                      "parent": { "type": "workspace", "workspace": true },
+                      "in_trash": true,
+                      "properties": { "title": { "id": "title", "type": "title", "title": [] } }
+                    }
+                  ],
+                  "next_cursor": null,
+                  "has_more": false
                 }
-              ],
-              "next_cursor": null,
-              "has_more": false
-            }
-            """;
+                """;
 
             return Task.FromResult(JsonResponse(json));
         }

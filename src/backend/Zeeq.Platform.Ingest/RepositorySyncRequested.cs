@@ -1,7 +1,7 @@
+using Paramore.Brighter;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Platform.Messaging;
-using Paramore.Brighter;
 
 namespace Zeeq.Platform.Ingest;
 

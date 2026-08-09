@@ -1,5 +1,5 @@
-using Zeeq.Core.Documents;
 using Microsoft.Extensions.Logging;
+using Zeeq.Core.Documents;
 
 namespace Zeeq.Platform.Ingest.Diagnostics;
 
@@ -65,7 +65,10 @@ internal sealed partial class DryRunDocsPublicDocumentStore : IDocsPublicDocumen
             return new(byPath, kind);
         }
 
-        var hashMatches = existing.Where(row => row.ContentHash == document.ContentHash).Take(2).ToList();
+        var hashMatches = existing
+            .Where(row => row.ContentHash == document.ContentHash)
+            .Take(2)
+            .ToList();
         if (hashMatches.Count == 1)
         {
             var byHash = hashMatches[0];
@@ -146,9 +149,7 @@ internal sealed partial class DryRunDocsPublicDocumentStore : IDocsPublicDocumen
         // Postgres's real store always returns fresh AsNoTracking() instances
         // per call anyway, but this must not depend on that being true of
         // every possible inner store.
-        var loaded = (await _inner.ListBySourceAsync(publicSourceId, ct))
-            .Select(Clone)
-            .ToList();
+        var loaded = (await _inner.ListBySourceAsync(publicSourceId, ct)).Select(Clone).ToList();
         _snapshotBySource[publicSourceId] = loaded;
         return loaded;
     }
@@ -177,7 +178,11 @@ internal sealed partial class DryRunDocsPublicDocumentStore : IDocsPublicDocumen
         Level = LogLevel.Information,
         Message = "[DRY RUN] Would {Kind} public document. PublicSourceId={PublicSourceId}, Path={Path}"
     )]
-    private partial void LogWouldUpsert(string publicSourceId, string path, DocumentUpsertKind kind);
+    private partial void LogWouldUpsert(
+        string publicSourceId,
+        string path,
+        DocumentUpsertKind kind
+    );
 
     [LoggerMessage(
         Level = LogLevel.Information,

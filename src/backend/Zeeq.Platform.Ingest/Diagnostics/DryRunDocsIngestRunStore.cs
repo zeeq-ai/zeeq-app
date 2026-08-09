@@ -1,5 +1,5 @@
-using Zeeq.Core.Documents;
 using Microsoft.Extensions.Logging;
+using Zeeq.Core.Documents;
 
 namespace Zeeq.Platform.Ingest.Diagnostics;
 

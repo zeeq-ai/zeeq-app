@@ -16,6 +16,7 @@
     <ProjectReference Include="..\Zeeq.Core.Documents\Zeeq.Core.Documents.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Identity\Zeeq.Core.Identity.csproj" />
     <ProjectReference Include="..\Zeeq.Integrations.GitHub\Zeeq.Integrations.GitHub.csproj" />
+    <ProjectReference Include="..\Zeeq.Integrations.Notion\Zeeq.Integrations.Notion.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Messaging\Zeeq.Platform.Messaging.csproj" />
   </ItemGroup>
 </Project>

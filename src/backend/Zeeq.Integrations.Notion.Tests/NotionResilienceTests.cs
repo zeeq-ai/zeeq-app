@@ -72,11 +72,17 @@ public sealed class NotionResilienceTests
         // 429 with a short Retry-After should be retried and eventually succeed, rather
         // than surfacing the 429 to the caller.
         var pipeline = ResolvePipeline();
-        var stub = new CountingStubHandler(failFirstAttempts: 1, retryAfter: TimeSpan.FromMilliseconds(50));
+        var stub = new CountingStubHandler(
+            failFirstAttempts: 1,
+            retryAfter: TimeSpan.FromMilliseconds(50)
+        );
         var resilienceHandler = new NotionResilienceHandler(pipeline) { InnerHandler = stub };
         using var invoker = new HttpMessageInvoker(resilienceHandler);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.notion.com/v1/search")
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "https://api.notion.com/v1/search"
+        )
         {
             Content = new StringContent("""{"query":""}"""),
         };

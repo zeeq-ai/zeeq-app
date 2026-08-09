@@ -1,8 +1,8 @@
+using Microsoft.Extensions.Logging;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Dispatch;
 using Zeeq.Integrations.GitHub;
-using Microsoft.Extensions.Logging;
 
 namespace Zeeq.Platform.Ingest;
 

@@ -1,6 +1,6 @@
+using Microsoft.Extensions.DependencyInjection;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents.Dispatch;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Zeeq.Platform.Ingest;
 
