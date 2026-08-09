@@ -289,6 +289,26 @@ internal sealed class CachedLibraryDocumentStore(ILibraryDocumentStore inner, Hy
     ) => inner.GetByIdAsync(organizationId, libraryId, documentId, ct);
 
     /// <inheritdoc />
+    public Task<LibraryDocument?> GetByExternalIdAsync(
+        string organizationId,
+        string libraryId,
+        string sourceExternalId,
+        CancellationToken ct
+    ) => inner.GetByExternalIdAsync(organizationId, libraryId, sourceExternalId, ct);
+
+    /// <inheritdoc />
+    public async Task DeleteDocumentByExternalIdAsync(
+        string organizationId,
+        string libraryId,
+        string sourceExternalId,
+        CancellationToken ct
+    )
+    {
+        await inner.DeleteDocumentByExternalIdAsync(organizationId, libraryId, sourceExternalId, ct);
+        await cache.RemoveByTagAsync(LibraryPathCacheTag(organizationId, libraryId), ct);
+    }
+
+    /// <inheritdoc />
     public Task<IReadOnlyList<LibraryDocumentMatch>> SearchAsync(
         string organizationId,
         string libraryId,

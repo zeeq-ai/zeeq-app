@@ -219,6 +219,12 @@ public class PostgresDbContext(DbContextOptions<PostgresDbContext> options)
     public DbSet<DocsIngestRun> DocsIngestRuns => Set<DocsIngestRun>();
 
     /// <summary>
+    /// Dirty-content set backing incremental externally-sourced ingest runs.
+    /// </summary>
+    public DbSet<ExternalPendingContentSyncRow> ExternalPendingContentSyncs =>
+        Set<ExternalPendingContentSyncRow>();
+
+    /// <summary>
     /// Local Postgres-backed object storage rows.
     /// </summary>
     internal DbSet<PostgresStorageObject> StorageObjects => Set<PostgresStorageObject>();

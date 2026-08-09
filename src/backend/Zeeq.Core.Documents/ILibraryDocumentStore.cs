@@ -240,6 +240,19 @@ public interface ILibraryDocumentStore : IIndexableDocumentStore<LibraryDocument
     );
 
     /// <summary>
+    /// Deletes a document by its external source identifier. No-ops (does not throw) when no
+    /// matching document exists — mirrors <see cref="DeleteDocumentAsync"/>'s idempotent shape,
+    /// which the Notion webhook consumer relies on for <c>page.deleted</c> events that may be
+    /// redelivered.
+    /// </summary>
+    Task DeleteDocumentByExternalIdAsync(
+        string organizationId,
+        string libraryId,
+        string sourceExternalId,
+        CancellationToken ct
+    ) => throw new NotSupportedException();
+
+    /// <summary>
     /// Gets the first matching document by exact path, suffix path, or file name.
     /// </summary>
     Task<LibraryDocument?> GetByPathAsync(
@@ -248,6 +261,20 @@ public interface ILibraryDocumentStore : IIndexableDocumentStore<LibraryDocument
         string input,
         CancellationToken ct
     );
+
+    /// <summary>
+    /// Gets a document by its external source identifier (e.g. a Notion page id) within one library.
+    /// </summary>
+    /// <remarks>
+    /// Default-throwing, matching the convention used by <see cref="GetByIdAsync"/>: only stores
+    /// backing an external, id-stable source need implement this.
+    /// </remarks>
+    Task<LibraryDocument?> GetByExternalIdAsync(
+        string organizationId,
+        string libraryId,
+        string sourceExternalId,
+        CancellationToken ct
+    ) => throw new NotSupportedException();
 
     /// <summary>
     /// Gets a document by stable id within one library.

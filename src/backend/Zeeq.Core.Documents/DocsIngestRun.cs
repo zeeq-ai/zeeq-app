@@ -54,6 +54,11 @@ public class DocsIngestRun
     public IngestTriggerReason Trigger { get; init; }
 
     /// <summary>
+    /// Which content set an externally-sourced run processed. Null for repository (git-based) runs.
+    /// </summary>
+    public ExternalSyncScope? SyncScope { get; init; }
+
+    /// <summary>
     /// Current run status: Running, Succeeded, Partial, or Failed.
     /// </summary>
     public IngestRunStatus Status { get; set; }
