@@ -253,7 +253,8 @@ public sealed partial class NotionIngestRunner(
             return PageOutcome.Skipped;
         }
 
-        var parsed = MarkdownParser.Parse(markdown.Markdown, resolved.Title);
+        var normalizedMarkdown = NormalizeNotionMarkdown(markdown.Markdown, resolved.Title);
+        var parsed = MarkdownParser.Parse(normalizedMarkdown, resolved.Title);
         var now = DateTimeOffset.UtcNow;
         var result = await libraries.UpsertSyncedDocumentAsync(
             new LibraryDocument
@@ -273,8 +274,8 @@ public sealed partial class NotionIngestRunner(
                 ),
                 Keywords = DocumentNormalizer.NormalizeKeywords(parsed.Keywords),
                 Headings = [.. parsed.Headings],
-                Content = markdown.Markdown,
-                ContentHash = ComputeSha256Hex(markdown.Markdown),
+                Content = normalizedMarkdown,
+                ContentHash = ComputeSha256Hex(normalizedMarkdown),
                 TokenCount = TiktokenCounter.CountTokens(parsed.Content),
                 SyncRunId = job.RunId,
                 SourceExternalId = pageId,
@@ -411,7 +412,7 @@ public sealed partial class NotionIngestRunner(
         foreach (var suffixLength in new[] { 8, 12, compactId.Length }.Distinct())
         {
             var suffix = compactId[..Math.Min(suffixLength, compactId.Length)];
-            var candidate = $"{page.Path}--{suffix}";
+            var candidate = AddDisambiguationSuffix(page.Path, suffix);
             if (candidate.Length > NotionPagePathResolver.MaxPathLength)
             {
                 throw new InvalidOperationException(
@@ -467,7 +468,194 @@ public sealed partial class NotionIngestRunner(
     private static string ComputeSha256Hex(string content) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant();
 
+    private static string AddDisambiguationSuffix(string path, string suffix)
+    {
+        const string markdownExtension = ".md";
+
+        return path.EndsWith(markdownExtension, StringComparison.OrdinalIgnoreCase)
+            ? $"{path[..^markdownExtension.Length]}--{suffix}{markdownExtension}"
+            : $"{path}--{suffix}";
+    }
+
+    private static string NormalizeNotionMarkdown(string markdown, string title)
+    {
+        var lines = markdown.ReplaceLineEndings("\n").Split('\n');
+        var output = new List<string>(lines.Length * 2);
+        var inFence = false;
+        var previousKind = NotionMarkdownLineKind.Blank;
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            var isFence = IsFenceLine(trimmed);
+
+            if (inFence)
+            {
+                output.Add(line);
+                if (isFence)
+                {
+                    inFence = false;
+                    previousKind = NotionMarkdownLineKind.Fence;
+                }
+
+                continue;
+            }
+
+            if (trimmed == "<empty-block/>")
+            {
+                AddBlankLine(output);
+                previousKind = NotionMarkdownLineKind.Blank;
+                continue;
+            }
+
+            var currentKind = ClassifyNotionMarkdownLine(trimmed, isFence);
+            if (currentKind is NotionMarkdownLineKind.Blank)
+            {
+                AddBlankLine(output);
+                previousKind = NotionMarkdownLineKind.Blank;
+                continue;
+            }
+
+            if (ShouldInsertBlockBreak(previousKind, currentKind, output))
+            {
+                output.Add("");
+            }
+
+            output.Add(line);
+            previousKind = currentKind;
+            inFence = isFence;
+        }
+
+        while (output.Count > 0 && output[^1].Length == 0)
+        {
+            output.RemoveAt(output.Count - 1);
+        }
+
+        var normalized = string.Join('\n', output);
+
+        return StartsWithH1(normalized) ? normalized : $"# {title}\n\n{normalized}";
+    }
+
+    private static bool ShouldInsertBlockBreak(
+        NotionMarkdownLineKind previousKind,
+        NotionMarkdownLineKind currentKind,
+        List<string> output
+    )
+    {
+        if (output.Count == 0 || output[^1].Length == 0)
+        {
+            return false;
+        }
+
+        return (previousKind, currentKind)
+            is not
+                (NotionMarkdownLineKind.ListItem, NotionMarkdownLineKind.ListItem)
+                and not
+                (NotionMarkdownLineKind.TableRow, NotionMarkdownLineKind.TableRow)
+                and not
+                (NotionMarkdownLineKind.BlockQuote, NotionMarkdownLineKind.BlockQuote);
+    }
+
+    private static void AddBlankLine(List<string> output)
+    {
+        if (output.Count > 0 && output[^1].Length != 0)
+        {
+            output.Add("");
+        }
+    }
+
+    private static NotionMarkdownLineKind ClassifyNotionMarkdownLine(string trimmed, bool isFence)
+    {
+        if (trimmed.Length == 0)
+        {
+            return NotionMarkdownLineKind.Blank;
+        }
+
+        if (isFence)
+        {
+            return NotionMarkdownLineKind.Fence;
+        }
+
+        if (IsHeadingLine(trimmed))
+        {
+            return NotionMarkdownLineKind.Heading;
+        }
+
+        if (IsListItemLine(trimmed))
+        {
+            return NotionMarkdownLineKind.ListItem;
+        }
+
+        if (trimmed.StartsWith('|'))
+        {
+            return NotionMarkdownLineKind.TableRow;
+        }
+
+        if (trimmed.StartsWith('>'))
+        {
+            return NotionMarkdownLineKind.BlockQuote;
+        }
+
+        return NotionMarkdownLineKind.Paragraph;
+    }
+
+    private static bool IsFenceLine(string trimmed) =>
+        trimmed.StartsWith("```", StringComparison.Ordinal)
+        || trimmed.StartsWith("~~~", StringComparison.Ordinal);
+
+    private static bool IsHeadingLine(string trimmed)
+    {
+        var markerCount = trimmed.TakeWhile(character => character == '#').Count();
+
+        return markerCount is > 0 and <= 6
+            && trimmed.Length > markerCount
+            && char.IsWhiteSpace(trimmed[markerCount]);
+    }
+
+    private static bool StartsWithH1(string markdown)
+    {
+        var firstLine = markdown
+            .ReplaceLineEndings("\n")
+            .Split('\n')
+            .FirstOrDefault(line => !string.IsNullOrWhiteSpace(line))
+            ?.Trim();
+
+        return firstLine is not null
+            && firstLine.StartsWith("# ", StringComparison.Ordinal)
+            && !firstLine.StartsWith("## ", StringComparison.Ordinal);
+    }
+
+    private static bool IsListItemLine(string trimmed)
+    {
+        if (trimmed.Length >= 2 && "-*+".Contains(trimmed[0]) && char.IsWhiteSpace(trimmed[1]))
+        {
+            return true;
+        }
+
+        var index = 0;
+        while (index < trimmed.Length && char.IsDigit(trimmed[index]))
+        {
+            index++;
+        }
+
+        return index > 0
+            && index + 1 < trimmed.Length
+            && (trimmed[index] == '.' || trimmed[index] == ')')
+            && char.IsWhiteSpace(trimmed[index + 1]);
+    }
+
     private sealed record DiscoveredNotionPage(string PageId);
+
+    private enum NotionMarkdownLineKind
+    {
+        Blank = 0,
+        Paragraph = 1,
+        Heading = 2,
+        Fence = 3,
+        ListItem = 4,
+        TableRow = 5,
+        BlockQuote = 6,
+    }
 
     private enum PageOutcome
     {

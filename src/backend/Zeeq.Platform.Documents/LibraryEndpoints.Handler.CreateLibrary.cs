@@ -168,9 +168,8 @@ public sealed class CreateLibraryHandler(
                 }
 
                 var accessToken = request.Source.AccessToken!.Trim();
-                var identity = await notionClients
-                    .Create(accessToken)
-                    .GetConnectionIdentityAsync(ct);
+                using var notionClient = notionClients.Create(accessToken);
+                var identity = await notionClient.GetConnectionIdentityAsync(ct);
                 if (identity is null)
                 {
                     return TypedResults.BadRequest(

@@ -30,69 +30,103 @@
       />
     </UFormField>
 
-    <!-- Source: create-only toggle, or a read-only summary once source-backed -->
+    <!-- Source: create-only chooser, or a read-only summary once source-backed -->
     <template v-if="!isEdit">
       <UFormField
-        label="Import from GitHub"
-        description="Ingest a repository's Markdown files into this library instead of authoring documents by hand."
+        label="Source"
+        description="Choose whether this library is hand-authored, backed by GitHub, or backed by a Notion integration."
       >
-        <USwitch v-model="form.importFromGitHub" :disabled="submitting" />
+        <UTabs
+          v-model="form.sourceKind"
+          :items="sourceKindItems"
+          color="neutral"
+          variant="pill"
+          size="sm"
+        >
+          <template #local>
+            <UAlert
+              color="neutral"
+              variant="subtle"
+              title="Local library"
+              description="Create an empty library and author documents directly in Zeeq."
+              class="mt-2"
+            />
+          </template>
+
+          <template #github>
+            <UFormField label="GitHub source" class="pt-2">
+              <UTabs
+                v-model="form.sourceTab"
+                :items="sourceTabItems"
+                color="neutral"
+                variant="pill"
+                size="sm"
+              >
+                <template #public>
+                  <UFormField
+                    description="Raw GitHub clone URL, e.g. https://github.com/owner/repo. Visibility (public/private) is verified automatically before each sync."
+                    class="pt-2"
+                  >
+                    <UInput
+                      v-model="form.publicRepoUrl"
+                      placeholder="https://github.com/owner/repo"
+                      :disabled="submitting"
+                      class="w-full"
+                    />
+                  </UFormField>
+                </template>
+
+                <template #private>
+                  <UFormField
+                    description="Only repositories your organization's GitHub App is installed on can be imported."
+                    class="pt-2"
+                  >
+                    <USelectMenu
+                      v-model="privateRepositoryOwnerQualifiedName"
+                      :items="privateRepositoryItems"
+                      value-key="value"
+                      placeholder="Select a repository..."
+                      :disabled="submitting"
+                      class="w-full"
+                    />
+                    <p
+                      v-if="sourceRepositories.length === 0"
+                      class="mt-1 text-xs opacity-75"
+                    >
+                      No repositories are visible as library sources. Change
+                      repository visibility under GitHub settings.
+                    </p>
+                  </UFormField>
+                </template>
+              </UTabs>
+            </UFormField>
+          </template>
+
+          <template #notion>
+            <UFormField
+              label="Notion access token"
+              description="Paste an internal Notion integration token. Zeeq validates it once, stores it encrypted, and never shows it again."
+              required
+              class="pt-2"
+            >
+              <UInput
+                v-model="form.notionAccessToken"
+                type="password"
+                placeholder="secret_..."
+                :disabled="submitting"
+                :maxlength="4096"
+                class="w-full font-mono text-xs"
+              />
+            </UFormField>
+          </template>
+        </UTabs>
       </UFormField>
-
-      <template v-if="form.importFromGitHub">
-        <UFormField label="Source">
-          <UTabs
-            v-model="form.sourceTab"
-            :items="sourceTabItems"
-            color="neutral"
-            variant="pill"
-            size="sm"
-          >
-            <template #public>
-              <UFormField
-                description="Raw GitHub clone URL, e.g. https://github.com/owner/repo. Visibility (public/private) is verified automatically before each sync."
-                class="pt-2"
-              >
-                <UInput
-                  v-model="form.publicRepoUrl"
-                  placeholder="https://github.com/owner/repo"
-                  :disabled="submitting"
-                  class="w-full"
-                />
-              </UFormField>
-            </template>
-
-            <template #private>
-              <UFormField
-                description="Only repositories your organization's GitHub App is installed on can be imported."
-                class="pt-2"
-              >
-                <USelectMenu
-                  v-model="privateRepositoryOwnerQualifiedName"
-                  :items="privateRepositoryItems"
-                  value-key="value"
-                  placeholder="Select a repository..."
-                  :disabled="submitting"
-                  class="w-full"
-                />
-                <p
-                  v-if="sourceRepositories.length === 0"
-                  class="mt-1 text-xs opacity-75"
-                >
-                  No repositories are visible as library sources. Change
-                  repository visibility under GitHub settings.
-                </p>
-              </UFormField>
-            </template>
-          </UTabs>
-        </UFormField>
-      </template>
     </template>
 
     <UFormField
       v-else-if="source"
       label="Source"
-      description="The repository URL cannot be changed. Delete and re-create this library to import a different repository."
+      :description="sourceSummaryDescription"
     >
       <div
         class="flex items-center gap-2 rounded-md border border-default p-2 text-sm"
@@ -100,40 +134,48 @@
         <UBadge
           :label="source.kind"
           size="sm"
-          :color="source.kind === 'Public' ? 'info' : 'neutral'"
+          :color="sourceBadgeColor"
           variant="subtle"
         />
-        <span class="truncate opacity-75">{{ source.repoUrl }}</span>
+        <span class="truncate opacity-75">{{ sourceSummaryLabel }}</span>
       </div>
     </UFormField>
 
     <!-- Filters: shown when importing (create) or already source-backed (edit) -->
-    <template v-if="(!isEdit && form.importFromGitHub) || (isEdit && source)">
-      <UFormField
-        label="Include paths"
-        description="Glob patterns for files to ingest (e.g. docs/**/*.md), one per line. Leave empty to include everything under *.md/*.mdc/*.mdx."
-      >
+    <template v-if="showFilters">
+      <UFormField label="Include paths" :description="includeFilterDescription">
         <UTextarea
           v-model="form.includeFiltersText"
-          placeholder="docs/**/*.md"
+          :placeholder="includeFilterPlaceholder"
           :disabled="submitting"
           :rows="3"
           class="w-full font-mono text-xs"
         />
       </UFormField>
 
-      <UFormField
-        label="Exclude paths"
-        description="Glob patterns to skip, checked after include, one per line. Leave empty to exclude nothing."
-      >
+      <UFormField label="Exclude paths" :description="excludeFilterDescription">
         <UTextarea
           v-model="form.excludeFiltersText"
-          placeholder="**/node_modules/**"
+          :placeholder="excludeFilterPlaceholder"
           :disabled="submitting"
           :rows="3"
           class="w-full font-mono text-xs"
         />
       </UFormField>
+
+      <UAlert
+        v-if="showNotionFilterResyncOption"
+        color="warning"
+        variant="subtle"
+        title="Apply filter changes to existing Notion documents"
+        description="Narrowing filters can remove documents that no longer match. Without a full resync, filter changes only affect future page updates."
+      />
+      <UCheckbox
+        v-if="showNotionFilterResyncOption"
+        v-model="form.runFullResync"
+        label="Run a full resync to apply these filters to existing documents"
+        :disabled="submitting"
+      />
     </template>
 
     <UFormField
@@ -181,12 +223,16 @@ export type LibraryFormState = {
   name: string;
   description: string;
   selectedRepositoryIds: string[];
-  importFromGitHub: boolean;
+  sourceKind: "local" | "github" | "notion";
   sourceTab: "public" | "private";
   publicRepoUrl: string;
   privateRepositoryOwnerQualifiedName: string | undefined;
+  notionAccessToken: string;
   includeFiltersText: string;
   excludeFiltersText: string;
+  originalIncludeFiltersText: string;
+  originalExcludeFiltersText: string;
+  runFullResync: boolean;
 };
 
 const props = defineProps<{
@@ -206,6 +252,12 @@ const router = useRouter();
 /** Sentinel value routing to the GitHub settings page instead of selecting a repository. */
 const MANAGE_REPOSITORIES_VALUE = "__manage-repositories__";
 
+const sourceKindItems = [
+  { label: "Local", value: "local", slot: "local" as const },
+  { label: "GitHub", value: "github", slot: "github" as const },
+  { label: "Notion", value: "notion", slot: "notion" as const },
+];
+
 const sourceTabItems = [
   { label: "Public repository", value: "public", slot: "public" as const },
   {
@@ -214,6 +266,78 @@ const sourceTabItems = [
     slot: "private" as const,
   },
 ];
+
+const isNotionSource = computed(
+  () =>
+    (!props.isEdit && props.form.sourceKind === "notion") ||
+    props.source?.kind === "Notion",
+);
+
+const showFilters = computed(
+  () =>
+    (!props.isEdit && props.form.sourceKind !== "local") ||
+    (props.isEdit && !!props.source),
+);
+
+const notionFiltersDirty = computed(
+  () =>
+    props.form.includeFiltersText !== props.form.originalIncludeFiltersText ||
+    props.form.excludeFiltersText !== props.form.originalExcludeFiltersText,
+);
+
+const showNotionFilterResyncOption = computed(
+  () =>
+    props.isEdit && props.source?.kind === "Notion" && notionFiltersDirty.value,
+);
+
+const sourceSummaryLabel = computed(() => {
+  if (!props.source) {
+    return "";
+  }
+
+  if (props.source.kind === "Notion") {
+    return props.source.displayName?.trim() || "Notion";
+  }
+
+  return props.source.repoUrl ?? "";
+});
+
+const sourceSummaryDescription = computed(() =>
+  props.source?.kind === "Notion"
+    ? "The Notion connection cannot be changed. Delete and re-create this library to use a different integration token."
+    : "The repository URL cannot be changed. Delete and re-create this library to import a different repository.",
+);
+
+const sourceBadgeColor = computed(() => {
+  switch (props.source?.kind) {
+    case "Public":
+      return "info" as const;
+    case "Notion":
+      return "primary" as const;
+    default:
+      return "neutral" as const;
+  }
+});
+
+const includeFilterDescription = computed(() =>
+  isNotionSource.value
+    ? "Glob patterns for resolved Notion page paths (e.g. engineering/**), one per line. Leave empty to include every visible page."
+    : "Glob patterns for files to ingest (e.g. docs/**/*.md), one per line. Leave empty to include everything under *.md/*.mdc/*.mdx.",
+);
+
+const excludeFilterDescription = computed(() =>
+  isNotionSource.value
+    ? "Glob patterns for Notion page paths to skip, checked after include, one per line. Leave empty to exclude nothing."
+    : "Glob patterns to skip, checked after include, one per line. Leave empty to exclude nothing.",
+);
+
+const includeFilterPlaceholder = computed(() =>
+  isNotionSource.value ? "engineering/**" : "docs/**/*.md",
+);
+
+const excludeFilterPlaceholder = computed(() =>
+  isNotionSource.value ? "archive/**" : "**/node_modules/**",
+);
 
 /** Checkbox items for the code-review repository picker. */
 const repositoryItems = computed(() =>

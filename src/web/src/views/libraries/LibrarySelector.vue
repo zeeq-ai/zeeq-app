@@ -13,7 +13,7 @@
           v-if="activeLibrary.source"
           :label="activeLibrary.source.kind"
           size="sm"
-          :color="activeLibrary.source.kind === 'Public' ? 'info' : 'neutral'"
+          :color="sourceBadgeColor"
           variant="subtle"
         />
         <UBadge
@@ -31,7 +31,7 @@
 
     <UFieldGroup>
       <UTooltip
-        v-if="activeLibrary?.source"
+        v-if="activeLibrary?.source?.repoUrl"
         text="View origin repository"
         :content="{ side: 'bottom' }"
         :delay-duration="0"
@@ -124,6 +124,17 @@ const activeLibrary = computed(
       (library) => library.name === props.activeLibraryName,
     ) ?? null,
 );
+
+const sourceBadgeColor = computed(() => {
+  switch (activeLibrary.value?.source?.kind) {
+    case "Public":
+      return "info" as const;
+    case "Notion":
+      return "primary" as const;
+    default:
+      return "neutral" as const;
+  }
+});
 
 /** USelect items: library names + the add-new sentinel. */
 const selectItems = computed(() => {

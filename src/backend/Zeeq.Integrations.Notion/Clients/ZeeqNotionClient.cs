@@ -1,9 +1,12 @@
+using System.Net;
+using System.Text.Json;
+using FluentlyHttpClient;
 using Notion.Client;
 
 namespace Zeeq.Integrations.Notion;
 
 /// <summary>
-/// Default <see cref="IZeeqNotionClient"/> — wraps the Notion SDK's <see cref="INotionClient"/>.
+/// Default <see cref="IZeeqNotionClient"/> — wraps Notion HTTP calls behind Zeeq DTOs.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -25,14 +28,28 @@ namespace Zeeq.Integrations.Notion;
 /// <see cref="PageMarkdownResponse"/> natively models <c>truncated</c>/<c>unknown_block_ids</c> —
 /// no manual JSON parsing was needed for those fields.
 /// </para>
+/// <para>
+/// NOTE: page metadata intentionally uses raw REST through <c>FluentlyHttpClient</c> instead of
+/// the SDK's <c>SearchClient.SearchAsync</c>/<c>PagesClient.RetrieveAsync</c>. The installed
+/// <c>Notion.Net</c> 5.0.0 package has duplicate <c>IPageIcon</c> subtype mappings for the
+/// <c>icon</c> discriminator, so otherwise-valid page responses can fail before Zeeq sees the
+/// fields it actually needs. Keep this focused parser until the SDK page-object deserializer is
+/// fixed upstream; the SDK is still used for markdown rendering and token identity, where its
+/// response models do not hit that broken page-icon converter.
+/// </para>
 /// </remarks>
-internal sealed class ZeeqNotionClient(INotionClient client) : IZeeqNotionClient
+internal sealed class ZeeqNotionClient(
+    INotionClient client,
+    HttpClient sdkHttpClient,
+    IFluentHttpClient pagesClient
+) : IZeeqNotionClient
 {
     /// <inheritdoc/>
     /// <remarks>
-    /// Pages the SDK's <c>POST /v1/search</c> via <c>StartCursor</c>/<c>HasMore</c> until
+    /// Pages Notion's <c>POST /v1/search</c> via <c>start_cursor</c>/<c>has_more</c> until
     /// exhausted, 100 results per page. Trashed pages are filtered out client-side — the SDK's
-    /// <see cref="SearchFilter"/> has no <c>in_trash</c> parameter, unlike the raw REST body.
+    /// <see cref="SearchFilter"/> has no <c>in_trash</c> parameter and the raw response parser
+    /// keeps this code insulated from SDK page-icon deserialization bugs.
     /// </remarks>
     public async IAsyncEnumerable<NotionPageSummary> SearchPagesAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct
@@ -42,49 +59,55 @@ internal sealed class ZeeqNotionClient(INotionClient client) : IZeeqNotionClient
 
         do
         {
-            var response = await client.Search.SearchAsync(
-                new SearchRequest
-                {
-                    Filter = new SearchFilter { Value = SearchObjectType.Page },
-                    StartCursor = cursor,
-                    PageSize = 100,
-                },
-                ct
-            );
+            var json = await pagesClient
+                .CreateRequest("search")
+                .AsPost()
+                .WithBody(SearchRequestBody(cursor))
+                .WithCancellationToken(ct)
+                .WithSuccessStatus()
+                .ReturnAsString();
 
-            foreach (var result in response.Results)
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+
+            foreach (var page in root.GetProperty("results").EnumerateArray())
             {
-                // The SDK's SearchFilter has no server-side `in_trash` parameter (unlike the
-                // raw REST body captured in notion.http, which does), so trashed pages are
-                // filtered out client-side instead.
-                if (result is Page { InTrash: false } page)
+                if (IsVisiblePage(page))
                 {
                     yield return ToPageSummary(page);
                 }
             }
 
-            cursor = response.HasMore ? response.NextCursor : null;
+            cursor = root.GetProperty("has_more").GetBoolean()
+                ? root.GetProperty("next_cursor").GetString()
+                : null;
         } while (cursor is not null);
     }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Wraps <c>GET /v1/pages/{id}</c>. A <see cref="NotionAPIErrorCode.ObjectNotFound"/> (404) —
-    /// covering both a deleted page and one the connection lost access to — is treated as "no
-    /// data," not an error; any other SDK exception propagates.
+    /// Wraps <c>GET /v1/pages/{id}</c>. A 404 — covering both a deleted page and one the
+    /// connection lost access to — is treated as "no data," not an error; any other response
+    /// propagates via <see cref="HttpResponseMessage.EnsureSuccessStatusCode"/>.
     /// </remarks>
     public async Task<NotionPage?> GetPageAsync(string pageId, CancellationToken ct)
     {
-        try
-        {
-            var page = await client.Pages.RetrieveAsync(pageId, ct);
-            return new NotionPage(page.Id, ExtractTitle(page), ToPageParent(page.Parent));
-        }
-        catch (NotionApiException ex)
-            when (ex.NotionAPIErrorCode == NotionAPIErrorCode.ObjectNotFound)
+        var response = await pagesClient
+            .CreateRequest($"pages/{Uri.EscapeDataString(pageId)}")
+            .WithCancellationToken(ct)
+            .ReturnAsResponse();
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
         {
             return null;
         }
+
+        response.EnsureSuccessStatusCode();
+
+        var json = await response.Content.ReadAsStringAsync(ct);
+        using var document = JsonDocument.Parse(json);
+
+        return ToPage(document.RootElement);
     }
 
     /// <inheritdoc/>
@@ -138,31 +161,89 @@ internal sealed class ZeeqNotionClient(INotionClient client) : IZeeqNotionClient
         }
     }
 
-    private static NotionPageSummary ToPageSummary(Page page) =>
-        new(page.Id, ExtractTitle(page), ToPageParent(page.Parent), page.LastEditedTime);
+    public void Dispose()
+    {
+        pagesClient.Dispose();
+        sdkHttpClient.Dispose();
+    }
 
-    private static NotionPageParent ToPageParent(IParentOfPage parent) =>
-        parent switch
+    private static object SearchRequestBody(string? cursor) =>
+        cursor is null
+            ? new { filter = new { property = "object", value = "page" }, page_size = 100 }
+            : new
+            {
+                filter = new { property = "object", value = "page" },
+                start_cursor = cursor,
+                page_size = 100,
+            };
+
+    private static bool IsVisiblePage(JsonElement page) =>
+        page.TryGetProperty("object", out var objectProperty)
+        && objectProperty.GetString() == "page"
+        && (!page.TryGetProperty("in_trash", out var inTrash) || !inTrash.GetBoolean());
+
+    private static NotionPageSummary ToPageSummary(JsonElement page) =>
+        new(
+            page.GetProperty("id").GetString() ?? string.Empty,
+            ExtractTitle(page),
+            ToPageParent(page.GetProperty("parent")),
+            page.GetProperty("last_edited_time").GetDateTimeOffset()
+        );
+
+    private static NotionPage ToPage(JsonElement page) =>
+        new(
+            page.GetProperty("id").GetString() ?? string.Empty,
+            ExtractTitle(page),
+            ToPageParent(page.GetProperty("parent"))
+        );
+
+    private static NotionPageParent ToPageParent(JsonElement parent)
+    {
+        var parentType = parent.GetProperty("type").GetString();
+
+        return parentType switch
         {
-            WorkspaceParent => new NotionPageParent(IsWorkspaceRoot: true, ParentPageId: null),
-            PageParent pageParent => new NotionPageParent(
+            "workspace" => new NotionPageParent(IsWorkspaceRoot: true, ParentPageId: null),
+            "page_id" => new NotionPageParent(
                 IsWorkspaceRoot: false,
-                ParentPageId: pageParent.PageId
+                ParentPageId: parent.GetProperty("page_id").GetString()
             ),
             // Database/data-source-parented pages have no page ancestor to walk to. Per
             // NotionPageParent's documented contract, this is a walk-termination point, distinct
             // from a true workspace root: IsWorkspaceRoot stays false with no ParentPageId.
             _ => new NotionPageParent(IsWorkspaceRoot: false, ParentPageId: null),
         };
+    }
 
-    private static string ExtractTitle(Page page)
+    private static string ExtractTitle(JsonElement page)
     {
-        var titleProperty = page.Properties.Values.OfType<TitlePropertyValue>().FirstOrDefault();
+        if (!page.TryGetProperty("properties", out var properties))
+        {
+            return "Untitled";
+        }
 
-        // Notion title properties are rich-text collections; a title can be split across
-        // multiple fragments (e.g. mixed formatting), so every fragment must be concatenated.
-        var title = string.Concat(titleProperty?.Title.Select(static text => text.PlainText) ?? []);
+        foreach (var property in properties.EnumerateObject())
+        {
+            if (
+                property.Value.TryGetProperty("type", out var type)
+                && type.GetString() == "title"
+                && property.Value.TryGetProperty("title", out var titleFragments)
+            )
+            {
+                var title = string.Concat(
+                    titleFragments
+                        .EnumerateArray()
+                        .Select(static text =>
+                            text.TryGetProperty("plain_text", out var plainText)
+                                ? plainText.GetString()
+                                : null
+                        )
+                );
 
-        return string.IsNullOrEmpty(title) ? "Untitled" : title;
+                return string.IsNullOrEmpty(title) ? "Untitled" : title;
+            }
+        }
+
+        return "Untitled";
     }
 }

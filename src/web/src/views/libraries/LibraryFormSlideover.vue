@@ -5,62 +5,75 @@
   - Edit (library prop set): seeded form, updates on submit.
   Name charset: ^[A-Za-z0-9_-]+$ validated client-side.
 
-  Tabbed once a library exists (edit mode): "Library" (name/description/
-  source/filters), "Sync status" (run history + sync-now, only when
-  repository-sourced), "Delete" (switch-gated, name-confirmed deletion).
-  Create mode stays a plain non-tabbed form — there's nothing to sync or
-  delete yet.
+  Once a library exists (edit mode), a compact section picker switches between
+  "Library" (name/description/source/filters), "Sync status" (run history +
+  sync-now, only when source-backed), Notion webhook setup, import/export, and
+  delete. Create mode stays a plain non-sectioned form — there's nothing to sync
+  or delete yet.
   -->
   <USlideover v-model:open="open" side="right" title="Library">
     <template #body>
-      <UTabs
-        v-if="isEdit"
-        v-model="activeTab"
-        :items="tabItems"
-        color="neutral"
-        variant="link"
-      >
-        <template #library>
-          <LibraryFormFields
-            :form="form"
-            :submitting="submitting"
-            :is-edit="isEdit"
-            :repositories="repositories"
-            :source-repositories="sourceRepositories"
-            :name-error="nameError"
-            :source="props.library?.source ?? null"
+      <div v-if="isEdit" class="space-y-5">
+        <UFormField label="Manage..." name="library-section">
+          <USelect
+            v-model="activeTab"
+            :items="sectionItems"
+            color="neutral"
+            class="w-full"
+            variant="soft"
           />
-        </template>
+        </UFormField>
 
-        <template v-if="isSourceBacked" #status>
-          <LibrarySyncStatusTab
-            :source="props.library?.source ?? null"
-            :runs="ingestRuns"
-            :loading-runs="loadingIngestRuns"
-            :syncing="syncing"
-            :resetting="resetting"
-            @sync-now="emits('sync-now')"
-            @reset-run-state="emits('reset-run-state')"
-            @load-more="emits('load-more-runs')"
-          />
-        </template>
+        <LibraryFormFields
+          v-if="activeTab === 'library'"
+          :form="form"
+          :submitting="submitting"
+          :is-edit="isEdit"
+          :repositories="repositories"
+          :source-repositories="sourceRepositories"
+          :name-error="nameError"
+          :source="props.library?.source ?? null"
+        />
 
-        <template #import-export>
-          <LibraryImportExportTab
-            :library-name="props.library!.name"
-            @imported="emits('imported')"
-          />
-        </template>
+        <LibrarySyncStatusTab
+          v-else-if="activeTab === 'status' && isSourceBacked"
+          :source="props.library?.source ?? null"
+          :runs="ingestRuns"
+          :loading-runs="loadingIngestRuns"
+          :syncing="syncing"
+          :resetting="resetting"
+          @sync-now="emits('sync-now')"
+          @reset-run-state="emits('reset-run-state')"
+          @load-more="emits('load-more-runs')"
+        />
 
-        <template #delete>
-          <LibraryDeleteTab
-            :library-name="props.library!.name"
-            :is-public-source="props.library?.source?.kind === 'Public'"
-            :deleting="deleting"
-            @confirm-delete="onConfirmDelete"
-          />
-        </template>
-      </UTabs>
+        <LibraryNotionWebhookTab
+          v-else-if="activeTab === 'notion-webhook' && isNotionSource"
+          :state="notionWebhookState"
+          :source="props.library?.source ?? null"
+          :loading="loadingNotionWebhookState"
+          :resetting="resettingNotionWebhookState"
+          :full-resyncing="fullResyncing"
+          @refresh="emits('load-notion-webhook-state')"
+          @reset="emits('reset-notion-webhook-state')"
+          @full-resync="emits('full-resync')"
+          @copy="emits('copy-notion-webhook-value', $event)"
+        />
+
+        <LibraryImportExportTab
+          v-else-if="activeTab === 'import-export'"
+          :library-name="props.library!.name"
+          @imported="emits('imported')"
+        />
+
+        <LibraryDeleteTab
+          v-else-if="activeTab === 'delete'"
+          :library-name="props.library!.name"
+          :is-public-source="props.library?.source?.kind === 'Public'"
+          :deleting="deleting"
+          @confirm-delete="onConfirmDelete"
+        />
+      </div>
 
       <LibraryFormFields
         v-else
@@ -99,6 +112,7 @@
 <script setup lang="ts">
 import type { LibraryResponse } from "@/api/generated/types/LibraryResponse";
 import type { IngestRunPageResponse } from "@/api/generated/types/IngestRunPageResponse";
+import type { NotionWebhookStateResponse } from "@/api/generated/types/NotionWebhookStateResponse";
 import type {
   GitHubConfiguredRepository,
   GitHubRepositoryMappingRow,
@@ -109,6 +123,7 @@ import LibraryFormFields, {
 import LibrarySyncStatusTab from "./LibrarySyncStatusTab.vue";
 import LibraryDeleteTab from "./LibraryDeleteTab.vue";
 import LibraryImportExportTab from "./LibraryImportExportTab.vue";
+import LibraryNotionWebhookTab from "./LibraryNotionWebhookTab.vue";
 
 /** Payload emitted on submit — union of the create and edit shapes. */
 export type LibraryFormSubmitPayload = {
@@ -117,16 +132,18 @@ export type LibraryFormSubmitPayload = {
   repositoryIds: string[];
   /** Create mode only. Absent means a plain local library. */
   source?: {
-    kind: "Public" | "Private";
+    kind: "Public" | "Private" | "Notion";
     repoUrl?: string;
     repositoryId?: string;
     ownerQualifiedName?: string;
+    accessToken?: string;
     includeFilters: string[];
     excludeFilters: string[];
   };
   /** Edit mode only, for an already-source-backed library. */
   includeFilters?: string[];
   excludeFilters?: string[];
+  runFullResync?: boolean;
 };
 
 const props = defineProps<{
@@ -138,6 +155,10 @@ const props = defineProps<{
   loadingIngestRuns: boolean;
   syncing: boolean;
   resetting: boolean;
+  fullResyncing: boolean;
+  notionWebhookState: NotionWebhookStateResponse | null;
+  loadingNotionWebhookState: boolean;
+  resettingNotionWebhookState: boolean;
   deleting: boolean;
   submitHandler: (data: LibraryFormSubmitPayload) => Promise<void>;
 }>();
@@ -145,7 +166,11 @@ const props = defineProps<{
 const emits = defineEmits<{
   "sync-now": [];
   "reset-run-state": [];
+  "full-resync": [];
   "load-more-runs": [];
+  "load-notion-webhook-state": [];
+  "reset-notion-webhook-state": [];
+  "copy-notion-webhook-value": [value: string];
   imported: [];
   delete: [name: string];
 }>();
@@ -158,36 +183,50 @@ const NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 const GITHUB_URL_PATTERN = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/?$/;
 
 const submitting = ref(false);
-const activeTab = ref<"library" | "status" | "import-export" | "delete">(
-  "library",
-);
+type LibrarySection =
+  "library" | "status" | "notion-webhook" | "import-export" | "delete";
+const activeTab = ref<LibrarySection>("library");
 
 const form = reactive<LibraryFormState>({
   name: "",
   description: "",
   selectedRepositoryIds: [],
-  importFromGitHub: false,
+  sourceKind: "local",
   sourceTab: "public",
   publicRepoUrl: "",
   privateRepositoryOwnerQualifiedName: undefined,
+  notionAccessToken: "",
   includeFiltersText: "",
   excludeFiltersText: "",
+  originalIncludeFiltersText: "",
+  originalExcludeFiltersText: "",
+  runFullResync: false,
 });
 
 const isEdit = computed(() => !!props.library);
 const isSourceBacked = computed(() => isEdit.value && !!props.library?.source);
+const isNotionSource = computed(() => props.library?.source?.kind === "Notion");
 
-const tabItems = computed(() => [
-  { label: "Library", value: "library", slot: "library" as const },
+const sectionItems = computed(() => [
+  { label: "Library", value: "library", icon: "i-lucide-book-open" },
   ...(isSourceBacked.value
-    ? [{ label: "Sync status", value: "status", slot: "status" as const }]
+    ? [{ label: "Sync status", value: "status", icon: "i-lucide-refresh-cw" }]
+    : []),
+  ...(isNotionSource.value
+    ? [
+        {
+          label: "Notion webhook",
+          value: "notion-webhook",
+          icon: "i-lucide-webhook",
+        },
+      ]
     : []),
   {
     label: "Import / Export",
     value: "import-export",
-    slot: "import-export" as const,
+    icon: "i-lucide-arrow-left-right",
   },
-  { label: "Delete", value: "delete", slot: "delete" as const },
+  { label: "Delete", value: "delete", icon: "i-lucide-trash-2" },
 ]);
 
 /** Client-side name validation error, if any. */
@@ -201,7 +240,13 @@ const nameError = computed(() => {
 });
 
 const sourceError = computed(() => {
-  if (isEdit.value || !form.importFromGitHub) return null;
+  if (isEdit.value || form.sourceKind === "local") return null;
+
+  if (form.sourceKind === "notion") {
+    return form.notionAccessToken.trim()
+      ? null
+      : "A Notion access token is required.";
+  }
 
   if (form.sourceTab === "public") {
     if (!form.publicRepoUrl.trim()) return "A repository URL is required.";
@@ -241,13 +286,22 @@ watch(
     form.name = lib?.name ?? "";
     form.description = lib?.description ?? "";
     form.selectedRepositoryIds = [...mapped];
-    form.importFromGitHub = !!lib?.source;
+    form.sourceKind =
+      lib?.source?.kind === "Notion"
+        ? "notion"
+        : lib?.source
+          ? "github"
+          : "local";
     form.sourceTab = lib?.source?.kind === "Private" ? "private" : "public";
     form.publicRepoUrl =
-      lib?.source?.kind === "Public" ? lib.source.repoUrl : "";
+      lib?.source?.kind === "Public" ? (lib.source.repoUrl ?? "") : "";
     form.privateRepositoryOwnerQualifiedName = undefined;
+    form.notionAccessToken = "";
     form.includeFiltersText = (lib?.source?.includeFilters ?? []).join("\n");
     form.excludeFiltersText = (lib?.source?.excludeFilters ?? []).join("\n");
+    form.originalIncludeFiltersText = form.includeFiltersText;
+    form.originalExcludeFiltersText = form.excludeFiltersText;
+    form.runFullResync = false;
   },
   { immediate: true },
 );
@@ -259,11 +313,30 @@ watch(isSourceBacked, (backed) => {
   }
 });
 
+/** Keep the selected section valid when switching between source-backed library types. */
+watch(sectionItems, (items) => {
+  if (!items.some((item) => item.value === activeTab.value)) {
+    activeTab.value = "library";
+  }
+});
+
 watch(open, (isOpen) => {
   if (isOpen) {
     activeTab.value = "library";
   }
 });
+
+watch(
+  () => [form.includeFiltersText, form.excludeFiltersText] as const,
+  ([include, exclude]) => {
+    const filtersDirty =
+      include !== form.originalIncludeFiltersText ||
+      exclude !== form.originalExcludeFiltersText;
+    if (!filtersDirty) {
+      form.runFullResync = false;
+    }
+  },
+);
 
 function closeSlideover() {
   open.value = false;
@@ -281,24 +354,32 @@ async function onSubmit() {
       repositoryIds: form.selectedRepositoryIds,
     };
 
-    if (!isEdit.value && form.importFromGitHub) {
+    if (!isEdit.value && form.sourceKind !== "local") {
       payload.source =
-        form.sourceTab === "public"
+        form.sourceKind === "notion"
           ? {
-              kind: "Public",
-              repoUrl: form.publicRepoUrl.trim(),
+              kind: "Notion",
+              accessToken: form.notionAccessToken.trim(),
               includeFilters: parseFilterLines(form.includeFiltersText),
               excludeFilters: parseFilterLines(form.excludeFiltersText),
             }
-          : {
-              kind: "Private",
-              ownerQualifiedName: form.privateRepositoryOwnerQualifiedName,
-              includeFilters: parseFilterLines(form.includeFiltersText),
-              excludeFilters: parseFilterLines(form.excludeFiltersText),
-            };
+          : form.sourceTab === "public"
+            ? {
+                kind: "Public",
+                repoUrl: form.publicRepoUrl.trim(),
+                includeFilters: parseFilterLines(form.includeFiltersText),
+                excludeFilters: parseFilterLines(form.excludeFiltersText),
+              }
+            : {
+                kind: "Private",
+                ownerQualifiedName: form.privateRepositoryOwnerQualifiedName,
+                includeFilters: parseFilterLines(form.includeFiltersText),
+                excludeFilters: parseFilterLines(form.excludeFiltersText),
+              };
     } else if (isEdit.value && isSourceBacked.value) {
       payload.includeFilters = parseFilterLines(form.includeFiltersText);
       payload.excludeFilters = parseFilterLines(form.excludeFiltersText);
+      payload.runFullResync = form.runFullResync;
     }
 
     await props.submitHandler(payload);

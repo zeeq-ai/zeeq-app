@@ -8,8 +8,10 @@ namespace Zeeq.Integrations.Notion;
 /// SDK types (<c>Notion.Client.*</c>) never leak past this interface — the same discipline
 /// <c>Zeeq.Integrations.GitHub</c> uses to keep Octokit types out of platform projects. Callers
 /// in <c>Zeeq.Platform.Ingest</c> depend on this and the DTOs below, not on <c>Notion.Client</c>.
+/// Implementers must dispose any per-client HTTP wrappers they own; the production client uses
+/// pooled handlers, so disposing the client releases wrappers without tearing down shared sockets.
 /// </remarks>
-public interface IZeeqNotionClient
+public interface IZeeqNotionClient : IDisposable
 {
     /// <summary>
     /// Enumerates every page the connection can see (bootstrap / full resync), paginating

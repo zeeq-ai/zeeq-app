@@ -28,6 +28,7 @@ import type { LibraryDocumentScopedSkill } from "@/api/generated/types/LibraryDo
 import type { TriggerIngestRunResponse } from "@/api/generated/types/TriggerIngestRunResponse";
 import type { IngestRunPageResponse } from "@/api/generated/types/IngestRunPageResponse";
 import type { ResetLibraryIngestRunStateResponse } from "@/api/generated/types/ResetLibraryIngestRunStateResponse";
+import type { NotionWebhookStateResponse } from "@/api/generated/types/NotionWebhookStateResponse";
 import { useGitHubSettingsStore } from "@/stores/github-settings-store";
 
 /**
@@ -202,6 +203,7 @@ export const useLibraryStore = defineStore("library", () => {
       description?: string;
       includeFilters?: string[];
       excludeFilters?: string[];
+      runFullResync?: boolean;
     },
   ): Promise<LibraryResponse> {
     const request: UpdateLibraryRequest = {
@@ -209,6 +211,7 @@ export const useLibraryStore = defineStore("library", () => {
       description: next.description,
       includeFilters: next.includeFilters,
       excludeFilters: next.excludeFilters,
+      runFullResync: next.runFullResync,
     };
 
     const updated = await Libraries.updateLibrary(
@@ -250,6 +253,20 @@ export const useLibraryStore = defineStore("library", () => {
   }
 
   /**
+   * Queues an immediate full resync for a Notion-backed library. Unlike
+   * `triggerIngest`, this walks every visible Notion page and can remove
+   * documents that no longer match filters.
+   */
+  async function triggerNotionFullResync(
+    libraryName: string,
+  ): Promise<TriggerIngestRunResponse> {
+    return (await Ingest.triggerNotionFullResync(
+      orgId.value,
+      libraryName,
+    )) as TriggerIngestRunResponse;
+  }
+
+  /**
    * Lists one page of ingest run history for a repository-sourced library,
    * newest first. Pass the previous page's `nextCursor` to fetch the next
    * page.
@@ -275,6 +292,26 @@ export const useLibraryStore = defineStore("library", () => {
       orgId.value,
       libraryName,
     )) as ResetLibraryIngestRunStateResponse;
+  }
+
+  /** Returns callback/verification state for a Notion-backed library. */
+  async function getNotionWebhookState(
+    libraryName: string,
+  ): Promise<NotionWebhookStateResponse> {
+    return (await Libraries.getNotionWebhookState(
+      orgId.value,
+      libraryName,
+    )) as NotionWebhookStateResponse;
+  }
+
+  /** Resets callback generation and captured verification state for Notion setup. */
+  async function resetNotionWebhookState(
+    libraryName: string,
+  ): Promise<NotionWebhookStateResponse> {
+    return (await Libraries.resetNotionWebhookState(
+      orgId.value,
+      libraryName,
+    )) as NotionWebhookStateResponse;
   }
 
   /**
@@ -645,7 +682,10 @@ export const useLibraryStore = defineStore("library", () => {
     updateLibrary,
     deleteLibrary,
     triggerIngest,
+    triggerNotionFullResync,
     resetIngestRunState,
+    getNotionWebhookState,
+    resetNotionWebhookState,
     listIngestRuns,
     updateLibraryRepositories,
     exportLibrary,

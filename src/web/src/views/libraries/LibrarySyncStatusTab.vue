@@ -18,6 +18,13 @@
         <div v-if="source?.nextSyncAt">
           Next scheduled sync: {{ formatDate(source.nextSyncAt) }}
         </div>
+        <div v-if="source?.kind === 'Notion' && source?.nextFullResyncAt">
+          Next full resync: {{ formatDate(source.nextFullResyncAt) }}
+        </div>
+        <div v-if="source?.kind === 'Notion'">
+          Webhook:
+          {{ source.webhookActivated ? "activated" : "not activated" }}
+        </div>
         <div v-if="source?.quarantined" class="text-warning">
           Quarantined — the upstream repository is no longer public. Documents
           are frozen, not deleted.

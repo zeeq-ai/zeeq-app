@@ -137,6 +137,7 @@ const props = defineProps<{
   loading: boolean;
   hasLibrary: boolean;
   activePath: string | null;
+  activeIsFolder: boolean;
   /** True when remote document summaries are private-source LibraryDocument rows. */
   allowRemoteReviewExclusion: boolean;
 }>();
@@ -200,6 +201,8 @@ type DocNode = {
   path: string;
   /** Virtual top-level node. */
   isRoot?: boolean;
+  /** Synthetic leaf that opens the page represented by its virtual parent folder. */
+  isVirtualPage?: boolean;
   /** Nuxt UI Tree initial expansion hint for folder nodes. */
   defaultExpanded?: boolean;
   /** Leaf only. */
@@ -213,6 +216,10 @@ type DocNode = {
   children?: DocNode[];
   /** Pre-computed context-menu actions for this node. */
   actions: NodeAction[];
+};
+
+type DraftDocNode = Omit<DocNode, "children"> & {
+  children?: Record<string, DraftDocNode>;
 };
 
 /**
@@ -247,7 +254,7 @@ watch(
 );
 
 function buildTreeItems(documents: DocumentResponse[]) {
-  const root: Record<string, DocNode> = {};
+  const root: Record<string, DraftDocNode> = {};
 
   for (const doc of documents) {
     const parts = doc.path.split("/").filter(Boolean);
@@ -266,13 +273,12 @@ function buildTreeItems(documents: DocumentResponse[]) {
           : makeFolderNode(fullPath, parentPath);
 
         if (!isLeaf) {
-          current = current[part].children! as unknown as Record<
-            string,
-            DocNode
-          >;
+          current = ensureFolderChildren(current[part]);
         }
       } else if (!isLeaf) {
-        current = current[part].children! as unknown as Record<string, DocNode>;
+        current = ensureFolderChildren(current[part]);
+      } else if (current[part].isFolder) {
+        addVirtualPageNode(current[part], doc);
       }
     }
   }
@@ -284,7 +290,11 @@ function buildTreeItems(documents: DocumentResponse[]) {
 
 const activeTreeNode = computed(() => {
   if (!props.activePath) return null;
-  return findNodeByPath(treeItems.value, props.activePath);
+  return findNodeByPath(
+    treeItems.value,
+    props.activePath,
+    props.activeIsFolder ? "folder" : "document",
+  );
 });
 
 const selectedFolderPath = computed(() => {
@@ -343,7 +353,7 @@ function makeRootNode(children: DocNode[]): DocNode {
 }
 
 /** Creates a leaf node with pre-computed document-only context actions. */
-function makeLeafNode(path: string, doc: DocumentResponse): DocNode {
+function makeLeafNode(path: string, doc: DocumentResponse): DraftDocNode {
   const parentPath = path.substring(0, path.lastIndexOf("/")) || "/";
   const isOrganizationSkill =
     doc.asScopedSkill === libraryDocumentScopedSkillEnum.Organization;
@@ -419,8 +429,62 @@ function makeLeafNode(path: string, doc: DocumentResponse): DocNode {
   };
 }
 
+/**
+ * Converts a document leaf into a virtual folder when the same Notion page also
+ * has child pages. The original document remains selectable as a synthetic
+ * "(Page)" child with the real document path.
+ */
+function ensureFolderChildren(
+  node: DraftDocNode,
+): Record<string, DraftDocNode> {
+  if (node.children) {
+    return node.children;
+  }
+
+  const selfNode = {
+    ...node,
+    id: `${node.path}::__page`,
+    label: "(Page)",
+    isVirtualPage: true,
+    children: undefined,
+  };
+
+  node.isFolder = true;
+  node.icon = "i-hugeicons-folder-01";
+  node.defaultExpanded = true;
+  node.origin = undefined;
+  node.excludedFromCodeReviews = undefined;
+  node.reviewExcludedFromCodeReviews = undefined;
+  node.asScopedSkill = undefined;
+  node.children = { [selfNode.id]: selfNode };
+  node.actions = [
+    {
+      label: "Add document",
+      icon: "i-hugeicons-plus-sign",
+      onSelect: () => emits("add", node.path),
+    },
+  ];
+
+  return node.children;
+}
+
+/** Adds the document represented by an existing virtual folder as a "(Page)" child. */
+function addVirtualPageNode(folder: DraftDocNode, doc: DocumentResponse) {
+  const children = ensureFolderChildren(folder);
+  const id = `${folder.path}::__page`;
+  children[id] = {
+    ...makeLeafNode(folder.path, doc),
+    id,
+    label: "(Page)",
+    isVirtualPage: true,
+  };
+}
+
 /** Creates a folder node with pre-computed actions (add-child only; D-2). */
-function makeFolderNode(folderPath: string, _parentPath: string): DocNode {
+function makeFolderNode(
+  folderPath: string,
+  _parentPath: string,
+): DraftDocNode {
   return {
     id: folderPath,
     label: folderPath.split("/").pop()!,
@@ -428,7 +492,7 @@ function makeFolderNode(folderPath: string, _parentPath: string): DocNode {
     isFolder: true,
     defaultExpanded: true,
     path: folderPath,
-    children: {} as unknown as DocNode[],
+    children: {},
     // D-2: folder delete hidden — only add-child.
     actions: [
       {
@@ -441,18 +505,15 @@ function makeFolderNode(folderPath: string, _parentPath: string): DocNode {
 }
 
 /** Converts Record<string, DocNode> tree to sorted DocNode[]. */
-function flattenRecordTree(obj: Record<string, DocNode>): DocNode[] {
+function flattenRecordTree(obj: Record<string, DraftDocNode>): DocNode[] {
   return Object.values(obj)
-    .map((n) => {
-      if (n.children) {
-        return {
-          ...n,
-          children: flattenRecordTree(
-            n.children as unknown as Record<string, DocNode>,
-          ),
-        };
-      }
-      return n;
+    .map((n): DocNode => {
+      const { children, ...node } = n;
+
+      return {
+        ...node,
+        children: children ? flattenRecordTree(children) : undefined,
+      };
     })
     .sort((a, b) => {
       // Folders before leaves, then alphabetical.
@@ -465,14 +526,22 @@ function getNodeKey(node: DocNode) {
   return node.id;
 }
 
-function findNodeByPath(nodes: DocNode[], path: string): DocNode | null {
+function findNodeByPath(
+  nodes: DocNode[],
+  path: string,
+  kind: "folder" | "document",
+): DocNode | null {
   for (const node of nodes) {
-    if (node.path === path) {
+    if (
+      node.path === path &&
+      ((kind === "folder" && node.isFolder) ||
+        (kind === "document" && !node.isFolder))
+    ) {
       return node;
     }
 
     if (node.children) {
-      const found = findNodeByPath(node.children, path);
+      const found = findNodeByPath(node.children, path, kind);
       if (found) return found;
     }
   }

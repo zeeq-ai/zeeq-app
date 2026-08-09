@@ -8,6 +8,7 @@
     <PackageVersion Include="Danom" Version="2.1.0" />
     <PackageVersion Include="DistributedLock.Postgres" Version="1.3.1" />
     <PackageVersion Include="EFCore.NamingConventions" Version="10.0.1" />
+    <PackageVersion Include="FluentlyHttpClient" Version="5.0.0" />
     <PackageVersion Include="Google.Protobuf" Version="3.35.1" />
     <PackageVersion Include="Grpc.Tools" Version="2.82.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

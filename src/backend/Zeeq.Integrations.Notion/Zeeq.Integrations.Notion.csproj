@@ -8,6 +8,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="FluentlyHttpClient" />
     <PackageReference Include="Notion.Net" />
     <PackageReference Include="Polly" />
     <PackageReference Include="Polly.Extensions" />

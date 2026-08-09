@@ -113,9 +113,10 @@ internal static class NotionResilience
     /// Determines whether a failed attempt should be retried.
     /// </summary>
     /// <remarks>
-    /// Unlike GitHub, every Notion call this project makes is a GET (search, retrieve page,
-    /// retrieve page as markdown, retrieve token identity) — there is no POST/PATCH mutation
-    /// path yet, so there is no idempotency classification to thread through the pipeline.
+    /// Unlike GitHub, every Notion call this project makes is a read-only API call (search,
+    /// retrieve page, retrieve page as markdown, retrieve token identity) — there is no
+    /// POST/PATCH mutation path yet, so there is no idempotency classification to thread through
+    /// the pipeline.
     /// </remarks>
     private static ValueTask<bool> ShouldRetry(RetryPredicateArguments<HttpResponseMessage> args)
     {

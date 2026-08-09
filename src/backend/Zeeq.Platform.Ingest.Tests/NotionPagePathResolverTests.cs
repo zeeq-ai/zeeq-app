@@ -23,8 +23,8 @@ public sealed class NotionPagePathResolverTests
         var first = await resolver.ResolveAsync("child-1", CancellationToken.None);
         var second = await resolver.ResolveAsync("child-2", CancellationToken.None);
 
-        await Assert.That(first!.Path).IsEqualTo("/team/first");
-        await Assert.That(second!.Path).IsEqualTo("/team/second");
+        await Assert.That(first!.Path).IsEqualTo("/team/first.md");
+        await Assert.That(second!.Path).IsEqualTo("/team/second.md");
         await _client.Received(1).GetPageAsync("parent", Arg.Any<CancellationToken>());
     }
 
@@ -44,7 +44,7 @@ public sealed class NotionPagePathResolverTests
 
         var resolved = await resolver.ResolveAsync("child", CancellationToken.None);
 
-        await Assert.That(resolved!.Path).IsEqualTo("/root/guide");
+        await Assert.That(resolved!.Path).IsEqualTo("/root/guide.md");
         await _client.DidNotReceive().GetPageAsync("child", Arg.Any<CancellationToken>());
     }
 
@@ -58,7 +58,7 @@ public sealed class NotionPagePathResolverTests
 
         var resolved = await resolver.ResolveAsync("page", CancellationToken.None);
 
-        await Assert.That(resolved!.Path).IsEqualTo("/product - api-guide");
+        await Assert.That(resolved!.Path).IsEqualTo("/product-api-guide.md");
     }
 
     [Test]
