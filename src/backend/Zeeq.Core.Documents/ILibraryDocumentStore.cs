@@ -59,11 +59,21 @@ public interface ILibraryDocumentStore : IIndexableDocumentStore<LibraryDocument
     /// sources.
     /// </summary>
     /// <remarks>
-    /// Scoped to libraries with a non-null <c>SourceKind</c> — local
-    /// (hand-authored) and public-source libraries have no sync lifecycle of
-    /// their own and are never claimed here.
+    /// Scoped to repository-backed libraries. Notion libraries use
+    /// <see cref="ClaimDueNotionSyncAsync"/> because their incremental and full cadences are
+    /// selected independently.
     /// </remarks>
     Task<IReadOnlyList<Library>> ClaimDueForSyncAsync(int limit, CancellationToken ct);
+
+    /// <summary>
+    /// Atomically claims due Notion libraries across every organization and marks them queued.
+    /// A library is due when either its incremental or full-resync timestamp is due.
+    /// </summary>
+    Task<IReadOnlyList<Library>> ClaimDueNotionSyncAsync(
+        int limit,
+        DateTimeOffset now,
+        CancellationToken ct
+    );
 
     /// <summary>
     /// Creates a library.
@@ -144,6 +154,7 @@ public interface ILibraryDocumentStore : IIndexableDocumentStore<LibraryDocument
         string libraryId,
         string expectedRunId,
         DateTimeOffset expectedRunCreatedAtUtc,
+        string? expectedSyncStatus,
         string? syncStatus,
         DateTimeOffset? nextSyncAt,
         DateTimeOffset[] manualTriggerHistory,
@@ -152,6 +163,7 @@ public interface ILibraryDocumentStore : IIndexableDocumentStore<LibraryDocument
         DateTimeOffset? activeSyncRunCreatedAtUtc,
         DateTimeOffset? syncQueuedAtUtc,
         DateTimeOffset? syncStartedAtUtc,
+        DateTimeOffset? nextFullResyncAt,
         CancellationToken ct
     )
     {

@@ -55,6 +55,11 @@ public sealed record IngestSettings
     public int SyncIntervalSeconds { get; init; } = 3600;
 
     /// <summary>
+    /// Backstop interval between successful full Notion resyncs, in seconds, before jitter.
+    /// </summary>
+    public int NotionFullResyncIntervalSeconds { get; init; } = 86400;
+
+    /// <summary>
     /// Jitter applied to the next sync time, as a fraction of the sync interval (e.g. 0.2 = ±20%).
     /// </summary>
     public double SyncJitterFraction { get; init; } = 0.2;

@@ -63,17 +63,17 @@ public sealed class PostgresLibraryNotionExtensionsTests : PgTransactionalTestBa
         await Assert.That(reloaded).IsNotNull();
         await Assert.That(reloaded!.ExternalSource).IsNotNull();
         await Assert.That(reloaded.ExternalSource!.Notion).IsNotNull();
-        await Assert.That(reloaded.ExternalSource.Notion!.ConnectionName).IsEqualTo(
-            "Engineering Docs"
-        );
-        await Assert.That(reloaded.ExternalSource.Notion.AccessTokenValueId).IsEqualTo(
-            "encrypted-value-1"
-        );
+        await Assert
+            .That(reloaded.ExternalSource.Notion!.ConnectionName)
+            .IsEqualTo("Engineering Docs");
+        await Assert
+            .That(reloaded.ExternalSource.Notion.AccessTokenValueId)
+            .IsEqualTo("encrypted-value-1");
         await Assert.That(reloaded.ExternalSource.Notion.VerificationTokenValueId).IsNull();
     }
 
     [Test]
-    public async Task Library_ClaimDueForSync_IncludesNotionSourcedLibraries()
+    public async Task Library_RepositoryClaim_ExcludesNotionSourcedLibraries()
     {
         var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
         var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
@@ -97,7 +97,49 @@ public sealed class PostgresLibraryNotionExtensionsTests : PgTransactionalTestBa
 
         var claimed = await store.ClaimDueForSyncAsync(10, CancellationToken.None);
 
-        await Assert.That(claimed.Any(row => row.Id == library.Id)).IsTrue();
+        await Assert.That(claimed.Any(row => row.Id == library.Id)).IsFalse();
+    }
+
+    [Test]
+    public async Task Library_NotionClaim_IncludesIncrementalOrFullDueLibraries()
+    {
+        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
+        var now = DateTimeOffset.UtcNow;
+
+        var incremental = await CreateNotionLibraryAsync(
+            store,
+            seed.Organization.Id,
+            "notion-incremental",
+            now.AddMinutes(-5),
+            now.AddHours(1),
+            now
+        );
+        var full = await CreateNotionLibraryAsync(
+            store,
+            seed.Organization.Id,
+            "notion-full",
+            now.AddHours(1),
+            now.AddMinutes(-5),
+            now
+        );
+        var future = await CreateNotionLibraryAsync(
+            store,
+            seed.Organization.Id,
+            "notion-future",
+            now.AddHours(1),
+            now.AddHours(1),
+            now
+        );
+        _context.ChangeTracker.Clear();
+
+        var claimed = await store.ClaimDueNotionSyncAsync(10, now, CancellationToken.None);
+
+        await Assert.That(claimed.Select(row => row.Id)).IsEquivalentTo([incremental.Id, full.Id]);
+        await Assert.That(claimed.Any(row => row.Id == future.Id)).IsFalse();
+        await Assert.That(claimed.All(row => row.SyncStatus == "queued")).IsTrue();
+        await Assert.That(claimed.All(row => row.ActiveSyncRunId is not null)).IsTrue();
+        await Assert.That(claimed.All(row => row.ActiveSyncRunCreatedAtUtc is not null)).IsTrue();
     }
 
     [Test]
@@ -174,4 +216,28 @@ public sealed class PostgresLibraryNotionExtensionsTests : PgTransactionalTestBa
         await Assert.That(resolved!.Id).IsEqualTo(documentId);
         await Assert.That(resolved.Content).IsEqualTo("Hello v2");
     }
+
+    private static Task<Library> CreateNotionLibraryAsync(
+        PostgresLibraryDocumentStore store,
+        string organizationId,
+        string name,
+        DateTimeOffset? nextSyncAt,
+        DateTimeOffset? nextFullResyncAt,
+        DateTimeOffset now
+    ) =>
+        store.CreateLibraryAsync(
+            new Library
+            {
+                Id = SeedContext.NewId("library"),
+                OrganizationId = organizationId,
+                Name = name,
+                SourceKind = RepositorySourceKind.Notion.ToString(),
+                SyncStatus = "idle",
+                NextSyncAt = nextSyncAt,
+                NextFullResyncAt = nextFullResyncAt,
+                CreatedAt = now,
+                UpdatedAt = now,
+            },
+            CancellationToken.None
+        );
 }

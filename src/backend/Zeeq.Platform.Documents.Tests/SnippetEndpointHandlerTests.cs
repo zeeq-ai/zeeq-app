@@ -1,11 +1,11 @@
-using Zeeq.Core.Common;
-using Zeeq.Core.Documents;
-using Zeeq.Core.Documents.Snippets;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Zeeq.Core.Common;
+using Zeeq.Core.Documents;
+using Zeeq.Core.Documents.Snippets;
 
 namespace Zeeq.Platform.Documents.Tests;
 
@@ -236,6 +236,12 @@ public sealed class SnippetEndpointHandlerTests
 
         public Task<IReadOnlyList<Library>> ClaimDueForSyncAsync(int limit, CancellationToken ct) =>
             throw new NotSupportedException();
+
+        public Task<IReadOnlyList<Library>> ClaimDueNotionSyncAsync(
+            int limit,
+            DateTimeOffset now,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
 
         public Task<IReadOnlyList<LibraryDocument>> ClaimPendingIndexingAsync(
             int limit,

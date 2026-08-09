@@ -65,6 +65,36 @@ public interface IExternalPendingContentSyncStore
         string runId,
         CancellationToken ct
     );
+
+    /// <summary>
+    /// Removes a pending row regardless of claim ownership after the upstream item is
+    /// authoritatively absent.
+    /// </summary>
+    Task RemoveAsync(
+        string organizationId,
+        string libraryId,
+        string externalContentId,
+        CancellationToken ct
+    );
+
+    /// <summary>
+    /// Reports whether <paramref name="runId"/> still owns an active claim on this row.
+    /// </summary>
+    /// <remarks>
+    /// The incremental runner calls this immediately before writing a fetched page, to catch a
+    /// concurrent <see cref="RemoveAsync"/> from a <c>page.deleted</c> webhook: that call deletes
+    /// the row outright, so a claim this run took earlier no longer exists and this returns
+    /// <see langword="false"/> — telling the runner to drop its in-flight write instead of
+    /// resurrecting a page Notion says was deleted. This narrows, but (being a separate read from
+    /// the eventual write) does not fully close, the race window.
+    /// </remarks>
+    Task<bool> IsClaimActiveAsync(
+        string organizationId,
+        string libraryId,
+        string externalContentId,
+        string runId,
+        CancellationToken ct
+    );
 }
 
 /// <summary>One claimed pending-content-sync row.</summary>

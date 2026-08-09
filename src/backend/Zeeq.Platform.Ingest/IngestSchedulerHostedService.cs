@@ -9,17 +9,18 @@ using Zeeq.Platform.Messaging;
 namespace Zeeq.Platform.Ingest;
 
 /// <summary>
-/// Periodically claims due public repository sources and publishes a sync
-/// request for each one.
+/// Periodically claims due public repositories, private repositories, and
+/// Notion libraries, then publishes a sync request for each one.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Both source kinds.</b> Public sources are claimed via
+/// <b>All source kinds.</b> Public sources are claimed via
 /// <see cref="IDocsPublicSourceStore.ClaimDueForSyncAsync"/> and publish
 /// <see cref="PublicRepositorySyncRequested"/>; private-source libraries via
 /// <see cref="ILibraryDocumentStore.ClaimDueForSyncAsync"/> and
-/// <see cref="PrivateRepositorySyncRequested"/> — same tick, two independent
-/// claim/publish passes.
+/// <see cref="PrivateRepositorySyncRequested"/>; and Notion libraries via
+/// <see cref="ILibraryDocumentStore.ClaimDueNotionSyncAsync"/> and
+/// <see cref="NotionSyncRequested"/>. Each pass has its own batch cap.
 /// </para>
 /// <para>
 /// <b>Claiming is already atomic.</b> Both claim methods use
@@ -88,6 +89,7 @@ public sealed class IngestSchedulerHostedService(
         var publisher = scope.ServiceProvider.GetRequiredService<IZeeqMessagePublisher>();
 
         var traceContext = ZeeqTelemetry.CaptureCurrentTraceContext();
+        var now = PostgresTimestampPrecision.TruncateToMicroseconds(DateTimeOffset.UtcNow);
 
         var claimedSources = await sources.ClaimDueForSyncAsync(
             ingestSettings.SchedulerBatchSize,
@@ -162,6 +164,53 @@ public sealed class IngestSchedulerHostedService(
 
             logger.LogInformation(
                 "Scheduled sync for library {LibraryId} in org {OrganizationId}, run {RunId}.",
+                library.Id,
+                library.OrganizationId,
+                library.ActiveSyncRunId
+            );
+        }
+
+        var claimedNotionLibraries = await libraries.ClaimDueNotionSyncAsync(
+            ingestSettings.SchedulerBatchSize,
+            now,
+            cancellationToken
+        );
+        activity?.SetTag("ingest.scheduler.claimed_notion_count", claimedNotionLibraries.Count);
+
+        foreach (var library in claimedNotionLibraries)
+        {
+            if (library.ActiveSyncRunId is null || library.ActiveSyncRunCreatedAtUtc is null)
+            {
+                logger.LogWarning(
+                    "Skipping scheduled Notion sync publish for library {LibraryId} in org {OrganizationId}: claim did not stamp an active run.",
+                    library.Id,
+                    library.OrganizationId
+                );
+                continue;
+            }
+
+            var syncScope =
+                library.NextFullResyncAt is { } nextFullResyncAt && nextFullResyncAt <= now
+                    ? ExternalSyncScope.Full
+                    : ExternalSyncScope.Incremental;
+            await publisher.PublishAsync(
+                new NotionSyncRequested
+                {
+                    RunId = library.ActiveSyncRunId,
+                    RunCreatedAtUtc = library.ActiveSyncRunCreatedAtUtc.Value,
+                    OrganizationId = library.OrganizationId,
+                    TeamId = library.TeamId,
+                    LibraryId = library.Id,
+                    Scope = syncScope,
+                    Trigger = IngestTriggerReason.Scheduled,
+                    TraceContext = traceContext,
+                },
+                cancellationToken
+            );
+
+            logger.LogInformation(
+                "Scheduled {SyncScope} Notion sync for library {LibraryId} in org {OrganizationId}, run {RunId}.",
+                syncScope,
                 library.Id,
                 library.OrganizationId,
                 library.ActiveSyncRunId

@@ -15,6 +15,9 @@
     <ProjectReference Include="..\Zeeq.Core.Common.AspNetCore\Zeeq.Core.Common.AspNetCore.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Documents\Zeeq.Core.Documents.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Identity\Zeeq.Core.Identity.csproj" />
+    <!-- NOTE: Provider-neutral encrypted-value operations still live in Core.Llm.
+         See zeeq-ai/zeeq-app#192 for the dedicated Core.Security boundary refactor. -->
+    <ProjectReference Include="..\Zeeq.Core.Llm\Zeeq.Core.Llm.csproj" />
     <ProjectReference Include="..\Zeeq.Integrations.GitHub\Zeeq.Integrations.GitHub.csproj" />
     <ProjectReference Include="..\Zeeq.Integrations.Notion\Zeeq.Integrations.Notion.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Messaging\Zeeq.Platform.Messaging.csproj" />

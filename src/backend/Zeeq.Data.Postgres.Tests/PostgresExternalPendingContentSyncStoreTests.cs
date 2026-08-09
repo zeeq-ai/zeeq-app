@@ -209,6 +209,43 @@ public sealed class PostgresExternalPendingContentSyncStoreTests : PgTransaction
     }
 
     [Test]
+    public async Task PendingPageSync_Remove_DeletesRegardlessOfClaimOwner()
+    {
+        var (store, organizationId, libraryId) = await CreateStoreAndLibraryAsync();
+        var now = DateTimeOffset.UtcNow;
+
+        await store.UpsertAsync(
+            organizationId,
+            libraryId,
+            "page-1",
+            "page.content_updated",
+            now,
+            CancellationToken.None
+        );
+        await store.ClaimAsync(
+            organizationId,
+            libraryId,
+            "run-1",
+            now,
+            DefaultStaleClaimAfter,
+            CancellationToken.None
+        );
+
+        await store.RemoveAsync(organizationId, libraryId, "page-1", CancellationToken.None);
+
+        var reclaimed = await store.ClaimAsync(
+            organizationId,
+            libraryId,
+            "run-2",
+            now + DefaultStaleClaimAfter + TimeSpan.FromSeconds(1),
+            DefaultStaleClaimAfter,
+            CancellationToken.None
+        );
+
+        await Assert.That(reclaimed).IsEmpty();
+    }
+
+    [Test]
     public async Task PendingPageSync_ClaimOlderThanStaleWindow_IsReclaimable()
     {
         var (store, organizationId, libraryId) = await CreateStoreAndLibraryAsync();
@@ -250,6 +287,111 @@ public sealed class PostgresExternalPendingContentSyncStoreTests : PgTransaction
         await Assert.That(reclaimed[0].EventType).IsEqualTo("page.content_updated");
     }
 
+    [Test]
+    public async Task PendingPageSync_IsClaimActive_TrueForOwningRunId()
+    {
+        var (store, organizationId, libraryId) = await CreateStoreAndLibraryAsync();
+        var now = DateTimeOffset.UtcNow;
+
+        await store.UpsertAsync(
+            organizationId,
+            libraryId,
+            "page-1",
+            "page.content_updated",
+            now,
+            CancellationToken.None
+        );
+        await store.ClaimAsync(
+            organizationId,
+            libraryId,
+            "run-1",
+            now,
+            DefaultStaleClaimAfter,
+            CancellationToken.None
+        );
+
+        var active = await store.IsClaimActiveAsync(
+            organizationId,
+            libraryId,
+            "page-1",
+            "run-1",
+            CancellationToken.None
+        );
+
+        await Assert.That(active).IsTrue();
+    }
+
+    [Test]
+    public async Task PendingPageSync_IsClaimActive_FalseAfterDeleteWebhookRemovesRow()
+    {
+        var (store, organizationId, libraryId) = await CreateStoreAndLibraryAsync();
+        var now = DateTimeOffset.UtcNow;
+
+        await store.UpsertAsync(
+            organizationId,
+            libraryId,
+            "page-1",
+            "page.content_updated",
+            now,
+            CancellationToken.None
+        );
+        await store.ClaimAsync(
+            organizationId,
+            libraryId,
+            "run-1",
+            now,
+            DefaultStaleClaimAfter,
+            CancellationToken.None
+        );
+
+        // Simulates a page.deleted webhook racing the claimed run: it removes the row outright.
+        await store.RemoveAsync(organizationId, libraryId, "page-1", CancellationToken.None);
+
+        var active = await store.IsClaimActiveAsync(
+            organizationId,
+            libraryId,
+            "page-1",
+            "run-1",
+            CancellationToken.None
+        );
+
+        await Assert.That(active).IsFalse();
+    }
+
+    [Test]
+    public async Task PendingPageSync_IsClaimActive_FalseForForeignRunId()
+    {
+        var (store, organizationId, libraryId) = await CreateStoreAndLibraryAsync();
+        var now = DateTimeOffset.UtcNow;
+
+        await store.UpsertAsync(
+            organizationId,
+            libraryId,
+            "page-1",
+            "page.content_updated",
+            now,
+            CancellationToken.None
+        );
+        await store.ClaimAsync(
+            organizationId,
+            libraryId,
+            "run-1",
+            now,
+            DefaultStaleClaimAfter,
+            CancellationToken.None
+        );
+
+        var active = await store.IsClaimActiveAsync(
+            organizationId,
+            libraryId,
+            "page-1",
+            "run-other",
+            CancellationToken.None
+        );
+
+        await Assert.That(active).IsFalse();
+    }
+
     private async Task<(
         PostgresExternalPendingContentSyncStore Store,
         string OrganizationId,
@@ -271,6 +413,10 @@ public sealed class PostgresExternalPendingContentSyncStoreTests : PgTransaction
             CancellationToken.None
         );
 
-        return (new PostgresExternalPendingContentSyncStore(_context), seed.Organization.Id, library.Id);
+        return (
+            new PostgresExternalPendingContentSyncStore(_context),
+            seed.Organization.Id,
+            library.Id
+        );
     }
 }

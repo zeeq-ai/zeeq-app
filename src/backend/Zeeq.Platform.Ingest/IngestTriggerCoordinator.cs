@@ -20,6 +20,78 @@ namespace Zeeq.Platform.Ingest;
 /// </remarks>
 public static class IngestTriggerCoordinator
 {
+    /// <summary>Attempts to queue a sync for a Notion-backed library.</summary>
+    public static async Task<IngestTriggerResult> TryQueueNotionSyncAsync(
+        ILibraryDocumentStore libraries,
+        IZeeqMessagePublisher publisher,
+        IngestSettings ingestSettings,
+        Library library,
+        ExternalSyncScope scope,
+        IngestTriggerReason trigger,
+        CancellationToken ct
+    )
+    {
+        if (
+            library.SourceKind != RepositorySourceKind.Notion.ToString()
+            || library.ExternalSource?.Notion is null
+        )
+        {
+            return new IngestTriggerResult.NotSourceBacked();
+        }
+
+        if (library.SyncStatus is "queued" or "running")
+        {
+            return new IngestTriggerResult.AlreadyInFlight();
+        }
+
+        var now = PostgresTimestampPrecision.TruncateToMicroseconds(DateTimeOffset.UtcNow);
+        var window = TimeSpan.FromSeconds(ingestSettings.ManualTriggerWindowSeconds);
+        var recentTriggers = library
+            .ManualTriggerHistory.Where(triggeredAt => now - triggeredAt <= window)
+            .ToArray();
+
+        if (recentTriggers.Length >= ingestSettings.ManualTriggerMaxInWindow)
+        {
+            return new IngestTriggerResult.RateLimited(recentTriggers.Min() + window);
+        }
+
+        var runId = $"run_{Guid.CreateVersion7():N}";
+        await libraries.UpdateSyncLeaseAsync(
+            library.OrganizationId,
+            library.Id,
+            syncStatus: "queued",
+            nextSyncAt: library.NextSyncAt,
+            manualTriggerHistory: [.. recentTriggers, now],
+            sourceSyncedAt: library.SourceSyncedAt,
+            activeSyncRunId: runId,
+            activeSyncRunCreatedAtUtc: now,
+            syncQueuedAtUtc: now,
+            syncStartedAtUtc: null,
+            ct
+        );
+
+        await publisher.PublishAsync(
+            new NotionSyncRequested
+            {
+                OrganizationId = library.OrganizationId,
+                TeamId = library.TeamId,
+                LibraryId = library.Id,
+                RunId = runId,
+                RunCreatedAtUtc = now,
+                Scope = scope,
+                Trigger = trigger,
+                TraceContext = ZeeqTelemetry.CaptureCurrentTraceContext(),
+            },
+            ct
+        );
+
+        return new IngestTriggerResult.Queued(
+            runId,
+            now,
+            IngestRunViewToken.Encode(now, RepositorySourceKind.Notion)
+        );
+    }
+
     /// <summary>Attempts to queue a sync for a private-source library.</summary>
     public static async Task<IngestTriggerResult> TryQueuePrivateSyncAsync(
         ILibraryDocumentStore libraries,

@@ -40,6 +40,12 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
     public Task<IReadOnlyList<Library>> ClaimDueForSyncAsync(int limit, CancellationToken ct) =>
         throw new NotSupportedException();
 
+    public Task<IReadOnlyList<Library>> ClaimDueNotionSyncAsync(
+        int limit,
+        DateTimeOffset now,
+        CancellationToken ct
+    ) => throw new NotSupportedException();
+
     public Task<LibrarySyncStateReset?> ResetLibrarySyncStateAsync(
         string organizationId,
         string libraryId,
@@ -61,7 +67,9 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
         }
 
         var cleared = new StalledSyncReset(
-            RepositorySourceKind.Private,
+            library.SourceKind == RepositorySourceKind.Notion.ToString()
+                ? RepositorySourceKind.Notion
+                : RepositorySourceKind.Private,
             library.Id,
             library.OrganizationId,
             library.Id,
@@ -75,9 +83,7 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
         library.SyncQueuedAtUtc = null;
         library.SyncStartedAtUtc = null;
 
-        return Task.FromResult<LibrarySyncStateReset?>(
-            new LibrarySyncStateReset(library, cleared)
-        );
+        return Task.FromResult<LibrarySyncStateReset?>(new LibrarySyncStateReset(library, cleared));
     }
 
     public Task<IReadOnlyList<LibraryDocument>> ClaimPendingIndexingAsync(
@@ -147,6 +153,7 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
         string libraryId,
         string expectedRunId,
         DateTimeOffset expectedRunCreatedAtUtc,
+        string? expectedSyncStatus,
         string? syncStatus,
         DateTimeOffset? nextSyncAt,
         DateTimeOffset[] manualTriggerHistory,
@@ -155,6 +162,7 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
         DateTimeOffset? activeSyncRunCreatedAtUtc,
         DateTimeOffset? syncQueuedAtUtc,
         DateTimeOffset? syncStartedAtUtc,
+        DateTimeOffset? nextFullResyncAt,
         CancellationToken ct
     )
     {
@@ -164,6 +172,7 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
         if (
             library.ActiveSyncRunId != expectedRunId
             || library.ActiveSyncRunCreatedAtUtc != expectedRunCreatedAtUtc
+            || (expectedSyncStatus is not null && library.SyncStatus != expectedSyncStatus)
         )
         {
             return Task.FromResult(false);
@@ -177,6 +186,7 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
         library.ActiveSyncRunCreatedAtUtc = activeSyncRunCreatedAtUtc;
         library.SyncQueuedAtUtc = syncQueuedAtUtc;
         library.SyncStartedAtUtc = syncStartedAtUtc;
+        library.NextFullResyncAt = nextFullResyncAt;
 
         return Task.FromResult(true);
     }
@@ -190,9 +200,9 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
         string publicSourceId,
         CancellationToken ct
     ) =>
-        Task.FromResult<IReadOnlyList<Library>>(
-            [.. Libraries.Where(l => l.PublicSourceId == publicSourceId)]
-        );
+        Task.FromResult<IReadOnlyList<Library>>([
+            .. Libraries.Where(l => l.PublicSourceId == publicSourceId),
+        ]);
 
     public Task<Library> CreateLibraryAsync(Library library, CancellationToken ct) =>
         throw new NotSupportedException();
@@ -214,6 +224,45 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
         CancellationToken ct
     )
     {
+        if (document.SourceExternalId is not null)
+        {
+            var byExternalId = Documents.SingleOrDefault(row =>
+                row.OrganizationId == document.OrganizationId
+                && row.LibraryId == document.LibraryId
+                && row.SourceExternalId == document.SourceExternalId
+            );
+            if (byExternalId is not null)
+            {
+                var moved = byExternalId.Path != document.Path;
+                var changed = byExternalId.ContentHash != document.ContentHash;
+                if (moved)
+                {
+                    byExternalId.PreviousPaths = byExternalId.PreviousPaths.Contains(
+                        byExternalId.Path
+                    )
+                        ? byExternalId.PreviousPaths
+                        : [.. byExternalId.PreviousPaths, byExternalId.Path];
+                    byExternalId.Path = document.Path;
+                }
+
+                if (changed)
+                {
+                    CopyDocumentFields(byExternalId, document);
+                }
+
+                byExternalId.SyncRunId = document.SyncRunId;
+                byExternalId.UpdatedAt = document.UpdatedAt;
+                return Task.FromResult(
+                    new LibraryDocumentUpsertResult(
+                        byExternalId,
+                        moved ? DocumentUpsertKind.Moved
+                            : changed ? DocumentUpsertKind.Updated
+                            : DocumentUpsertKind.Unchanged
+                    )
+                );
+            }
+        }
+
         var byPath = Documents.SingleOrDefault(row =>
             row.OrganizationId == document.OrganizationId
             && row.LibraryId == document.LibraryId
@@ -302,12 +351,48 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
         CancellationToken ct
     ) => throw new NotSupportedException();
 
+    public Task DeleteDocumentByExternalIdAsync(
+        string organizationId,
+        string libraryId,
+        string sourceExternalId,
+        CancellationToken ct
+    )
+    {
+        Documents.RemoveAll(row =>
+            row.OrganizationId == organizationId
+            && row.LibraryId == libraryId
+            && row.SourceExternalId == sourceExternalId
+        );
+        return Task.CompletedTask;
+    }
+
     public Task<LibraryDocument?> GetByPathAsync(
         string organizationId,
         string libraryId,
         string input,
         CancellationToken ct
-    ) => throw new NotSupportedException();
+    ) =>
+        Task.FromResult(
+            Documents.SingleOrDefault(row =>
+                row.OrganizationId == organizationId
+                && row.LibraryId == libraryId
+                && row.Path == input
+            )
+        );
+
+    public Task<LibraryDocument?> GetByExternalIdAsync(
+        string organizationId,
+        string libraryId,
+        string sourceExternalId,
+        CancellationToken ct
+    ) =>
+        Task.FromResult(
+            Documents.SingleOrDefault(row =>
+                row.OrganizationId == organizationId
+                && row.LibraryId == libraryId
+                && row.SourceExternalId == sourceExternalId
+            )
+        );
 
     public Task<IReadOnlyList<LibraryDocumentMatch>> SearchAsync(
         string organizationId,
@@ -338,4 +423,18 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
         bool excluded,
         CancellationToken ct
     ) => throw new NotSupportedException();
+
+    private static void CopyDocumentFields(LibraryDocument target, LibraryDocument source)
+    {
+        target.Content = source.Content;
+        target.ContentHash = source.ContentHash;
+        target.Title = source.Title;
+        target.TitleNormalized = source.TitleNormalized;
+        target.ParsedSkillName = source.ParsedSkillName;
+        target.ParsedSkillDescription = source.ParsedSkillDescription;
+        target.Keywords = source.Keywords;
+        target.Headings = source.Headings;
+        target.TokenCount = source.TokenCount;
+        target.ProcessingStatus = source.ProcessingStatus;
+    }
 }

@@ -55,6 +55,13 @@ internal sealed class CachedLibraryDocumentStore(ILibraryDocumentStore inner, Hy
         inner.ClaimDueForSyncAsync(limit, ct);
 
     /// <inheritdoc />
+    public Task<IReadOnlyList<Library>> ClaimDueNotionSyncAsync(
+        int limit,
+        DateTimeOffset now,
+        CancellationToken ct
+    ) => inner.ClaimDueNotionSyncAsync(limit, now, ct);
+
+    /// <inheritdoc />
     /// <remarks>
     /// Pass-through, no caching: claim results are transient work items, never read-after-write
     /// content, so the path-lookup cache does not apply. The claim itself is an atomic UPDATE that
@@ -143,6 +150,7 @@ internal sealed class CachedLibraryDocumentStore(ILibraryDocumentStore inner, Hy
         string libraryId,
         string expectedRunId,
         DateTimeOffset expectedRunCreatedAtUtc,
+        string? expectedSyncStatus,
         string? syncStatus,
         DateTimeOffset? nextSyncAt,
         DateTimeOffset[] manualTriggerHistory,
@@ -151,6 +159,7 @@ internal sealed class CachedLibraryDocumentStore(ILibraryDocumentStore inner, Hy
         DateTimeOffset? activeSyncRunCreatedAtUtc,
         DateTimeOffset? syncQueuedAtUtc,
         DateTimeOffset? syncStartedAtUtc,
+        DateTimeOffset? nextFullResyncAt,
         CancellationToken ct
     ) =>
         inner.TryUpdateCurrentSyncLeaseAsync(
@@ -158,6 +167,7 @@ internal sealed class CachedLibraryDocumentStore(ILibraryDocumentStore inner, Hy
             libraryId,
             expectedRunId,
             expectedRunCreatedAtUtc,
+            expectedSyncStatus,
             syncStatus,
             nextSyncAt,
             manualTriggerHistory,
@@ -166,6 +176,7 @@ internal sealed class CachedLibraryDocumentStore(ILibraryDocumentStore inner, Hy
             activeSyncRunCreatedAtUtc,
             syncQueuedAtUtc,
             syncStartedAtUtc,
+            nextFullResyncAt,
             ct
         );
 
@@ -304,7 +315,12 @@ internal sealed class CachedLibraryDocumentStore(ILibraryDocumentStore inner, Hy
         CancellationToken ct
     )
     {
-        await inner.DeleteDocumentByExternalIdAsync(organizationId, libraryId, sourceExternalId, ct);
+        await inner.DeleteDocumentByExternalIdAsync(
+            organizationId,
+            libraryId,
+            sourceExternalId,
+            ct
+        );
         await cache.RemoveByTagAsync(LibraryPathCacheTag(organizationId, libraryId), ct);
     }
 

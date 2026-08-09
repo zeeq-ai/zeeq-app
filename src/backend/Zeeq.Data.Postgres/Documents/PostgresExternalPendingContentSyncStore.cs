@@ -19,22 +19,21 @@ internal sealed class PostgresExternalPendingContentSyncStore(PostgresDbContext 
         DateTimeOffset markedDirtyAtUtc,
         CancellationToken ct
     ) =>
-        await db
-            .Database.ExecuteSqlInterpolatedAsync(
-                $"""
-                INSERT INTO zeeq.docs_external_pending_content_syncs
-                    (organization_id, library_id, external_content_id, event_type, marked_dirty_at_utc)
-                VALUES ({organizationId}, {libraryId}, {externalContentId}, {eventType}, {markedDirtyAtUtc})
-                ON CONFLICT (organization_id, library_id, external_content_id) DO UPDATE
-                SET event_type = EXCLUDED.event_type,
-                    marked_dirty_at_utc = EXCLUDED.marked_dirty_at_utc,
-                    -- Reset the claim so an item re-dirtied mid-run is NOT cleared by that
-                    -- run's compare-and-delete in ClearAsync; it survives for the next run.
-                    claimed_by_run_id = NULL,
-                    claimed_at_utc = NULL
-                """,
-                ct
-            );
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO zeeq.docs_external_pending_content_syncs
+                (organization_id, library_id, external_content_id, event_type, marked_dirty_at_utc)
+            VALUES ({organizationId}, {libraryId}, {externalContentId}, {eventType}, {markedDirtyAtUtc})
+            ON CONFLICT (organization_id, library_id, external_content_id) DO UPDATE
+            SET event_type = EXCLUDED.event_type,
+                marked_dirty_at_utc = EXCLUDED.marked_dirty_at_utc,
+                -- Reset the claim so an item re-dirtied mid-run is NOT cleared by that
+                -- run's compare-and-delete in ClearAsync; it survives for the next run.
+                claimed_by_run_id = NULL,
+                claimed_at_utc = NULL
+            """,
+            ct
+        );
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<ExternalPendingContentSync>> ClaimAsync(
@@ -78,7 +77,13 @@ internal sealed class PostgresExternalPendingContentSyncStore(PostgresDbContext 
             .TagWithOperationCallSite("documents.external_pending_content_sync.claim")
             .ToArrayAsync(ct);
 
-        return [.. claimed.Select(row => new ExternalPendingContentSync(row.ExternalContentId, row.EventType))];
+        return
+        [
+            .. claimed.Select(row => new ExternalPendingContentSync(
+                row.ExternalContentId,
+                row.EventType
+            )),
+        ];
     }
 
     /// <inheritdoc />
@@ -100,4 +105,42 @@ internal sealed class PostgresExternalPendingContentSyncStore(PostgresDbContext 
                 && row.ClaimedByRunId == runId
             )
             .ExecuteDeleteAsync(ct);
+
+    /// <inheritdoc />
+    public async Task RemoveAsync(
+        string organizationId,
+        string libraryId,
+        string externalContentId,
+        CancellationToken ct
+    ) =>
+        await db
+            .ExternalPendingContentSyncs.TagWithOperationCallSite(
+                "documents.external_pending_content_sync.remove"
+            )
+            .Where(row =>
+                row.OrganizationId == organizationId
+                && row.LibraryId == libraryId
+                && row.ExternalContentId == externalContentId
+            )
+            .ExecuteDeleteAsync(ct);
+
+    /// <inheritdoc />
+    public async Task<bool> IsClaimActiveAsync(
+        string organizationId,
+        string libraryId,
+        string externalContentId,
+        string runId,
+        CancellationToken ct
+    ) =>
+        await db
+            .ExternalPendingContentSyncs.AsNoTracking()
+            .TagWithOperationCallSite("documents.external_pending_content_sync.is_claim_active")
+            .AnyAsync(
+                row =>
+                    row.OrganizationId == organizationId
+                    && row.LibraryId == libraryId
+                    && row.ExternalContentId == externalContentId
+                    && row.ClaimedByRunId == runId,
+                ct
+            );
 }
