@@ -127,18 +127,15 @@ public sealed class ZeeqNotionClientTests
             .WithBaseUrl("https://api.notion.com/v1/")
             .WithMessageHandler(handler)
             .Build(skipAutoRegister: true);
+        var sdkHttpClient = new HttpClient(new UnusedHandler())
+        {
+            BaseAddress = new Uri("https://api.notion.com/"),
+        };
         var notionClient = NotionClientFactory.Create(
-            new ClientOptions
-            {
-                AuthToken = "test-token",
-                HttpClient = new HttpClient(new UnusedHandler())
-                {
-                    BaseAddress = new Uri("https://api.notion.com/"),
-                },
-            }
+            new ClientOptions { AuthToken = "test-token", HttpClient = sdkHttpClient }
         );
 
-        return new ZeeqNotionClient(notionClient, fluentClient);
+        return new ZeeqNotionClient(notionClient, sdkHttpClient, fluentClient);
     }
 
     private sealed class MultiFragmentTitleHandler : DelegatingHandler

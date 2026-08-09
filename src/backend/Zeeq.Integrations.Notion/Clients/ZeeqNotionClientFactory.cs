@@ -26,10 +26,10 @@ internal sealed class ZeeqNotionClientFactory(
 
     public IZeeqNotionClient Create(string accessToken)
     {
-        // IHttpClientFactory.CreateClient(name) is cheap and intended to be called per use —
-        // the underlying HttpMessageHandler (carrying NotionResilience's rate limiter + retry
-        // pipeline) is what's actually pooled and reused. This does NOT construct a new
-        // handler/socket per call.
+        // IHttpClientFactory.CreateClient(name) is cheap and intended to be called per use.
+        // The HttpClient is per Notion client and disposed with it; the expensive
+        // HttpMessageHandler chain carrying NotionResilience's rate limiter/retry pipeline is
+        // pooled by IHttpClientFactory, so disposal here does not tear down shared sockets.
         var httpClient = httpClientFactory.CreateClient(NotionResilience.Name);
 
         var client = NotionClientFactory.Create(
@@ -53,13 +53,18 @@ internal sealed class ZeeqNotionClientFactory(
             )
             .Build(skipAutoRegister: true);
 
-        return new ZeeqNotionClient(client, fluentClient);
+        return new ZeeqNotionClient(client, httpClient, fluentClient);
     }
 
     /// <summary>
     /// Lets FluentlyHttpClient use the <see cref="IHttpMessageHandlerFactory"/>-managed handler
     /// chain without disposing that pooled handler when the per-token fluent client is disposed.
     /// </summary>
+    /// <remarks>
+    /// This adapter exists because the raw REST path needs FluentlyHttpClient while the Notion SDK
+    /// path accepts a normal <see cref="HttpClient"/>. Both paths must share the same named
+    /// resilience pipeline without taking ownership of the pooled handler.
+    /// </remarks>
     private sealed class PooledHttpMessageHandlerLease(HttpMessageHandler inner)
         : HttpMessageHandler
     {

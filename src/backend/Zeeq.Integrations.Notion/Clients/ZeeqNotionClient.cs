@@ -38,8 +38,11 @@ namespace Zeeq.Integrations.Notion;
 /// response models do not hit that broken page-icon converter.
 /// </para>
 /// </remarks>
-internal sealed class ZeeqNotionClient(INotionClient client, IFluentHttpClient pagesClient)
-    : IZeeqNotionClient
+internal sealed class ZeeqNotionClient(
+    INotionClient client,
+    HttpClient sdkHttpClient,
+    IFluentHttpClient pagesClient
+) : IZeeqNotionClient
 {
     /// <inheritdoc/>
     /// <remarks>
@@ -158,7 +161,11 @@ internal sealed class ZeeqNotionClient(INotionClient client, IFluentHttpClient p
         }
     }
 
-    public void Dispose() => pagesClient.Dispose();
+    public void Dispose()
+    {
+        pagesClient.Dispose();
+        sdkHttpClient.Dispose();
+    }
 
     private static object SearchRequestBody(string? cursor) =>
         cursor is null

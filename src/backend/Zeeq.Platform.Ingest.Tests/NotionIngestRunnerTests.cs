@@ -374,5 +374,7 @@ public sealed class NotionIngestRunnerTests
 
         public Task<NotionConnectionIdentity?> GetConnectionIdentityAsync(CancellationToken ct) =>
             throw new NotSupportedException();
+
+        public void Dispose() { }
     }
 }

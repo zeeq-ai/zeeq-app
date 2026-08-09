@@ -2401,6 +2401,8 @@ public sealed class DocumentEndpointHandlerTests
         public Task<NotionConnectionIdentity?> GetConnectionIdentityAsync(CancellationToken ct) =>
             Task.FromResult(identity);
 
+        public void Dispose() { }
+
         private static async IAsyncEnumerable<NotionPageSummary> EmptyPages()
         {
             await Task.CompletedTask;

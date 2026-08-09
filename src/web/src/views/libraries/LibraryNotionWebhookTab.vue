@@ -72,6 +72,7 @@
       >
         <UInput
           :model-value="state.verificationToken ?? ''"
+          type="password"
           :placeholder="
             state.verificationTokenAvailable
               ? 'Token unavailable'
@@ -107,38 +108,41 @@
       description="Refresh the setup state. If this continues, the library may not be a Notion-backed library."
     />
 
-    <div class="flex flex-wrap justify-end gap-2">
-      <UButton
-        label="Refresh"
-        icon="i-hugeicons-refresh"
-        color="neutral"
-        variant="ghost"
-        :loading="loading"
-        @click="emits('refresh')"
-      />
-      <UButton
-        label="Run full resync"
-        icon="i-hugeicons-refresh"
-        color="neutral"
-        variant="subtle"
-        :loading="fullResyncing"
-        :disabled="fullResyncing || sourceInFlight"
-        @click="emits('full-resync')"
-      />
+    <div class="flex flex-wrap items-center justify-between gap-2">
       <ZeeqPopConfirm
         title="Reset Notion webhook"
         body="Resetting invalidates the current callback URL generation and clears captured verification state. You will need to re-run Notion webhook verification."
-        label="Reset webhook"
-        icon="i-hugeicons-clean"
+        label="Reset"
+        icon="i-hugeicons-delete-02"
         color="warning"
         variant="subtle"
         confirm-label="Reset"
         confirm-color="neutral"
-        confirm-icon="i-hugeicons-clean"
+        confirm-icon="i-hugeicons-delete-02"
         :loading="resetting"
         :disabled="resetting"
         @confirm="emits('reset')"
       />
+
+      <div class="ml-auto flex flex-wrap justify-end gap-2">
+        <UButton
+          label="Refresh"
+          icon="i-hugeicons-refresh"
+          color="neutral"
+          variant="ghost"
+          :loading="loading"
+          @click="emits('refresh')"
+        />
+        <UButton
+          label="Run full resync"
+          icon="i-hugeicons-play-square"
+          color="neutral"
+          variant="subtle"
+          :loading="fullResyncing"
+          :disabled="fullResyncing || sourceInFlight"
+          @click="emits('full-resync')"
+        />
+      </div>
     </div>
   </div>
 </template>
