@@ -1,5 +1,6 @@
 using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
+using Zeeq.Core.Security;
 
 namespace Zeeq.Platform.Llm;
 

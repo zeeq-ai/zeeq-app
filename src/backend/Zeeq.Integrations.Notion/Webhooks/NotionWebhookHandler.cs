@@ -4,8 +4,8 @@ using Microsoft.Extensions.Logging;
 using Zeeq.Core.Common;
 using Zeeq.Core.Common.AspNetCore.Contracts;
 using Zeeq.Core.Documents;
-using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
+using Zeeq.Core.Security;
 using Zeeq.Platform.Messaging;
 
 namespace Zeeq.Integrations.Notion;

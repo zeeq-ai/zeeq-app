@@ -1,8 +1,7 @@
 using System.Text;
-using Zeeq.Core.Common;
 using Zeeq.Core.Models;
 
-namespace Zeeq.Core.Llm;
+namespace Zeeq.Core.Security;
 
 /// <summary>
 /// Encrypts and decrypts organization-owned <see cref="EncryptedValue"/> payloads.
@@ -14,7 +13,7 @@ namespace Zeeq.Core.Llm;
 /// provider recorded on the row so existing values survive active-provider changes.
 /// </remarks>
 public sealed class EncryptedValueEncryptionService(
-    LlmSettings settings,
+    SecuritySettings settings,
     IEnumerable<IDataEncryptionProvider> providers
 )
 {

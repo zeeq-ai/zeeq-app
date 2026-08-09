@@ -1,9 +1,10 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
+using Zeeq.Core.Security;
 using Zeeq.Data.Postgres.LlmSettings;
 using Zeeq.Testing;
 using Zeeq.Testing.EntityGraphs;
-using Microsoft.EntityFrameworkCore;
 
 namespace Zeeq.Data.Postgres.Tests;
 

@@ -3,10 +3,9 @@ using System.Text;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
-using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
-using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
+using Zeeq.Core.Security;
 using Zeeq.Platform.Messaging;
 
 namespace Zeeq.Integrations.Notion.Tests;
@@ -28,7 +27,12 @@ public sealed class NotionWebhookHandlerTests
     public NotionWebhookHandlerTests()
     {
         _encryption = new EncryptedValueEncryptionService(
-            new LlmSettings { EncryptionProvider = "test" },
+            new SecuritySettings
+            {
+                EncryptionProvider = "test",
+                DataProtectionKeyRingPath = string.Empty,
+                GoogleKmsKeyName = string.Empty,
+            },
             [new PassthroughEncryptionProvider()]
         );
     }

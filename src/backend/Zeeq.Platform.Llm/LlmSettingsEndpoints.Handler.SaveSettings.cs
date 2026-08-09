@@ -1,4 +1,5 @@
 using Zeeq.Core.Llm;
+using Zeeq.Core.Security;
 
 namespace Zeeq.Platform.Llm;
 

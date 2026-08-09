@@ -16,6 +16,7 @@
     <ProjectReference Include="..\Zeeq.Core.Identity\Zeeq.Core.Identity.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Llm\Zeeq.Core.Llm.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Models\Zeeq.Core.Models.csproj" />
+    <ProjectReference Include="..\Zeeq.Core.Security\Zeeq.Core.Security.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.CodeReviews\Zeeq.Platform.CodeReviews.csproj" />
   </ItemGroup>
   <ItemGroup>

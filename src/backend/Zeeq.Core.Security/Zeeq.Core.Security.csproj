@@ -5,9 +5,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Google.Cloud.Kms.V1" />
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.Extensions" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Zeeq.Core.Security\Zeeq.Core.Security.csproj" />
+    <ProjectReference Include="..\Zeeq.Core.Models\Zeeq.Core.Models.csproj" />
   </ItemGroup>
 </Project>

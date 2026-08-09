@@ -8,7 +8,6 @@
     <PackageReference Include="Anthropic" />
     <PackageReference Include="Azure.AI.OpenAI" />
     <PackageReference Include="Microsoft.Agents.AI" />
-    <PackageReference Include="Microsoft.AspNetCore.DataProtection.Extensions" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
@@ -17,5 +16,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Zeeq.Core.Common\Zeeq.Core.Common.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Models\Zeeq.Core.Models.csproj" />
+    <ProjectReference Include="..\Zeeq.Core.Security\Zeeq.Core.Security.csproj" />
   </ItemGroup>
 </Project>

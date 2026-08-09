@@ -1,6 +1,6 @@
 using Zeeq.Core.Models;
 
-namespace Zeeq.Core.Llm;
+namespace Zeeq.Core.Security;
 
 /// <summary>
 /// Store for organization-owned encrypted secret values.

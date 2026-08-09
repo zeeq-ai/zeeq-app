@@ -4,6 +4,7 @@ using Zeeq.Core.Common;
 using Zeeq.Core.Common.AspNetCore;
 using Zeeq.Core.Common.AspNetCore.Endpoints;
 using Zeeq.Core.Llm;
+using Zeeq.Core.Security;
 using Zeeq.Integrations.GitHub;
 using Zeeq.Integrations.Notion;
 using Zeeq.Platform.CodeReviews;
@@ -42,6 +43,8 @@ var appSettings =
     builder.Configuration.GetSection(nameof(AppSettings)).Get<AppSettings>()
     ?? throw new InvalidOperationException("AppSettings configuration is required.");
 
+var securitySettings = appSettings.Llm.ToSecuritySettings();
+
 builder
     .Services.AddOptions<AppSettings>()
     .Bind(builder.Configuration.GetSection(nameof(AppSettings)))
@@ -68,9 +71,10 @@ builder
     .AddZeeqMessaging(appSettings, builder.Configuration, ZeeqRuntimeMode.MessagingRole)
     .AddZeeqGitHubIntegration(appSettings)
     .AddZeeqNotionIntegration()
+    .AddZeeqSecurity(securitySettings, builder.Environment)
     .AddZeeqLlm(appSettings.Llm, builder.Environment)
     .AddZeeqLlmPlatform()
-    .AddGoogleKmsDataEncryption(appSettings.Llm)
+    .AddGoogleKmsDataEncryption(securitySettings)
     .AddZeeqCodeReviews(appSettings.CodeReview)
     .AddZeeqIngest(appSettings)
     // Registered here too, not just in ZeeqWorkerHost: ZEEQ_MESSAGING_ROLE

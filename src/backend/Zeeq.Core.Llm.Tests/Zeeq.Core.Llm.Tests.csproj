@@ -12,5 +12,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Zeeq.Core.Llm\Zeeq.Core.Llm.csproj" />
+    <ProjectReference Include="..\Zeeq.Core.Security\Zeeq.Core.Security.csproj" />
   </ItemGroup>
 </Project>

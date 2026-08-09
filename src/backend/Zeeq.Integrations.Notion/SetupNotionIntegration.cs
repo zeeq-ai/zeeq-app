@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using Zeeq.Core.Common;
+using Zeeq.Core.Documents;
 
 namespace Zeeq.Integrations.Notion;
 
@@ -30,6 +31,7 @@ public static class SetupNotionIntegration
             services.AddFluentlyHttpClient();
             services.AddNotionResilience();
             services.AddSingleton<IZeeqNotionClientFactory, ZeeqNotionClientFactory>();
+            services.AddSingleton<INotionTokenValidator, NotionTokenValidator>();
             services.AddSingleton<NotionCallbackTokenProtector>();
             services.AddSingleton<NotionWebhookSignatureVerifier>();
 

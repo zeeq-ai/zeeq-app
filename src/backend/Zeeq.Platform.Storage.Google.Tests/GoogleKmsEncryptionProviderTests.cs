@@ -1,7 +1,6 @@
 using System.Text;
 using Google.Cloud.Kms.V1;
-using Zeeq.Core.Common;
-using Zeeq.Core.Llm;
+using Zeeq.Core.Security;
 using Zeeq.Platform.Storage.Google;
 
 namespace Zeeq.Platform.Storage.Google.Tests;
@@ -80,20 +79,12 @@ public sealed class GoogleKmsEncryptionProviderTests
         await Assert.That(Encoding.UTF8.GetString(decrypted)).IsEqualTo(plaintext);
     }
 
-    private static LlmSettings Settings(string keyName) =>
+    private static SecuritySettings Settings(string keyName) =>
         new()
         {
-            EncryptionProvider = LlmEncryptionProviders.CloudKms,
+            EncryptionProvider = DataEncryptionProviders.CloudKms,
+            DataProtectionKeyRingPath = string.Empty,
             GoogleKmsKeyName = keyName,
-            Models = new LlmModelDefaults
-            {
-                Fast = new LlmModelDefault
-                {
-                    ApiKey = "default-key",
-                    Model = "deepseek-v4-flash-0731",
-                    Endpoint = "https://api.deepseek.com",
-                },
-            },
         };
 
     private sealed class FakeGoogleKmsClient : IGoogleKmsClient

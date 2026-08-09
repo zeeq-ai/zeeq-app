@@ -1,4 +1,4 @@
-namespace Zeeq.Core.Llm;
+namespace Zeeq.Core.Security;
 
 /// <summary>
 /// Encrypts and decrypts secret material before it is persisted.

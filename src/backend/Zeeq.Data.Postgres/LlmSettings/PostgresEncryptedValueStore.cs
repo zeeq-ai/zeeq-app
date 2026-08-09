@@ -1,6 +1,6 @@
-using Zeeq.Core.Llm;
-using Zeeq.Core.Models;
 using Microsoft.EntityFrameworkCore;
+using Zeeq.Core.Models;
+using Zeeq.Core.Security;
 
 namespace Zeeq.Data.Postgres.LlmSettings;
 

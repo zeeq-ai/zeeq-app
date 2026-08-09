@@ -19,11 +19,8 @@
     <ProjectReference Include="..\Zeeq.Core.Common.AspNetCore\Zeeq.Core.Common.AspNetCore.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Common\Zeeq.Core.Common.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Documents\Zeeq.Core.Documents.csproj" />
-    <!-- NOTE: Generic encrypted-value contracts and orchestration currently live in Core.Llm.
-         Moving them requires a cross-cutting security-project boundary refactor; keep the
-         direct reference explicit until that dedicated architectural change is undertaken. -->
-    <ProjectReference Include="..\Zeeq.Core.Llm\Zeeq.Core.Llm.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Models\Zeeq.Core.Models.csproj" />
+    <ProjectReference Include="..\Zeeq.Core.Security\Zeeq.Core.Security.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Messaging\Zeeq.Platform.Messaging.csproj" />
   </ItemGroup>
 </Project>

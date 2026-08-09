@@ -1,8 +1,7 @@
-using Zeeq.Core.Common;
-using Zeeq.Core.Llm;
 using Google.Cloud.Kms.V1;
 using Google.Protobuf;
 using Microsoft.Extensions.DependencyInjection;
+using Zeeq.Core.Security;
 
 namespace Zeeq.Platform.Storage.Google;
 
@@ -28,7 +27,7 @@ namespace Zeeq.Platform.Storage.Google;
 /// Cost is intentionally bounded by the application design. KMS operations are
 /// charged by active key versions and key-use operations, so Zeeq calls KMS on
 /// key create/rotate and on cache misses during decrypt; decrypted plaintext is
-/// cached briefly inside <see cref="KeyEncryptionService" /> and is never stored,
+/// cached briefly inside <c>Zeeq.Core.Llm.KeyEncryptionService</c> and is never stored,
 /// logged, or used as a cache key.
 ///
 /// References:
@@ -43,11 +42,11 @@ public static class GoogleKmsDataEncryption
         /// <summary>
         /// Adds the Cloud KMS encryption provider when configured as the active data encryption provider.
         /// </summary>
-        public IServiceCollection AddGoogleKmsDataEncryption(LlmSettings settings)
+        public IServiceCollection AddGoogleKmsDataEncryption(SecuritySettings settings)
         {
             if (
                 !settings.EncryptionProvider.Equals(
-                    LlmEncryptionProviders.CloudKms,
+                    DataEncryptionProviders.CloudKms,
                     StringComparison.OrdinalIgnoreCase
                 )
             )
@@ -139,12 +138,12 @@ public sealed class GoogleCloudKmsClient(KeyManagementServiceClient client) : IG
 /// <remarks>
 /// The provider encrypts tenant-owned API key bytes before persistence and
 /// decrypts them only for the short-lived server-side call path. It records the
-/// stable provider name <see cref="LlmEncryptionProviders.CloudKms" /> on each
-/// encrypted row through <see cref="KeyEncryptionService" />, allowing old rows
+/// stable provider name <see cref="DataEncryptionProviders.CloudKms" /> on each
+/// encrypted row through <c>Zeeq.Core.Llm.KeyEncryptionService</c>, allowing old rows
 /// to keep decrypting with KMS even if the active provider setting changes for
 /// future writes.
 /// </remarks>
-public sealed class GoogleKmsEncryptionProvider(LlmSettings settings, IGoogleKmsClient client)
+public sealed class GoogleKmsEncryptionProvider(SecuritySettings settings, IGoogleKmsClient client)
     : IDataEncryptionProvider
 {
     private readonly string _keyName = string.IsNullOrWhiteSpace(settings.GoogleKmsKeyName)
@@ -154,7 +153,7 @@ public sealed class GoogleKmsEncryptionProvider(LlmSettings settings, IGoogleKms
         : settings.GoogleKmsKeyName.Trim();
 
     /// <inheritdoc />
-    public string ProviderName => LlmEncryptionProviders.CloudKms;
+    public string ProviderName => DataEncryptionProviders.CloudKms;
 
     /// <inheritdoc />
     public Task<byte[]> EncryptAsync(

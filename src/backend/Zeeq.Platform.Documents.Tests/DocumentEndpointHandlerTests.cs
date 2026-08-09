@@ -7,8 +7,8 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
-using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
+using Zeeq.Core.Security;
 using Zeeq.Integrations.Notion;
 using Zeeq.Platform.CodeReviews;
 
@@ -323,13 +323,13 @@ public sealed class DocumentEndpointHandlerTests
     {
         var libraries = new TestLibraryDocumentStore();
         var encryptedValues = new TestEncryptedValueStore();
-        var notionClients = new TestNotionClientFactory(
-            new NotionConnectionIdentity("bot_123", "Engineering Wiki")
+        var notionTokens = new TestNotionTokenValidator(
+            new NotionTokenIdentity("bot_123", "Engineering Wiki")
         );
         var handler = CreateCreateLibraryHandler(
             libraries,
             encryptedValues: encryptedValues,
-            notionClients: notionClients
+            notionTokens: notionTokens
         );
 
         var result = await handler.HandleAsync(
@@ -368,7 +368,7 @@ public sealed class DocumentEndpointHandlerTests
         await Assert
             .That(System.Text.Json.JsonSerializer.Serialize(source))
             .DoesNotContain(token.Id);
-        await Assert.That(notionClients.CreatedWithAccessToken).IsEqualTo("secret_notion_token");
+        await Assert.That(notionTokens.CreatedWithAccessToken).IsEqualTo("secret_notion_token");
         await Assert.That(token.OrganizationId).IsEqualTo("org_123");
         await Assert.That(token.Kind).IsEqualTo(EncryptedValueKind.SecretString);
         await Assert.That(token.Name).IsEqualTo("Notion access token");
@@ -393,13 +393,13 @@ public sealed class DocumentEndpointHandlerTests
     {
         var libraries = new TestLibraryDocumentStore();
         var encryptedValues = new TestEncryptedValueStore();
-        var notionClients = new TestNotionClientFactory(
-            new NotionConnectionIdentity("bot_123", "Engineering Wiki")
+        var notionTokens = new TestNotionTokenValidator(
+            new NotionTokenIdentity("bot_123", "Engineering Wiki")
         );
         var handler = CreateCreateLibraryHandler(
             libraries,
             encryptedValues: encryptedValues,
-            notionClients: notionClients
+            notionTokens: notionTokens
         );
 
         var result = await handler.HandleAsync(
@@ -420,7 +420,7 @@ public sealed class DocumentEndpointHandlerTests
         await Assert.That(result.Result).IsTypeOf<BadRequest<LibraryError>>();
         await Assert.That(libraries.Libraries).IsEmpty();
         await Assert.That(encryptedValues.Values).IsEmpty();
-        await Assert.That(notionClients.CreatedWithAccessToken).IsNull();
+        await Assert.That(notionTokens.CreatedWithAccessToken).IsNull();
     }
 
     [Test]
@@ -428,11 +428,11 @@ public sealed class DocumentEndpointHandlerTests
     {
         var libraries = new TestLibraryDocumentStore();
         var encryptedValues = new TestEncryptedValueStore();
-        var notionClients = new TestNotionClientFactory(identity: null);
+        var notionTokens = new TestNotionTokenValidator(identity: null);
         var handler = CreateCreateLibraryHandler(
             libraries,
             encryptedValues: encryptedValues,
-            notionClients: notionClients
+            notionTokens: notionTokens
         );
 
         var result = await handler.HandleAsync(
@@ -453,7 +453,7 @@ public sealed class DocumentEndpointHandlerTests
         await Assert.That(result.Result).IsTypeOf<BadRequest<LibraryError>>();
         await Assert.That(libraries.Libraries).IsEmpty();
         await Assert.That(encryptedValues.Values).IsEmpty();
-        await Assert.That(notionClients.CreatedWithAccessToken).IsEqualTo("secret_notion_token");
+        await Assert.That(notionTokens.CreatedWithAccessToken).IsEqualTo("secret_notion_token");
     }
 
     [Test]
@@ -464,13 +464,13 @@ public sealed class DocumentEndpointHandlerTests
             CreateLibraryException = new InvalidOperationException("duplicate library"),
         };
         var encryptedValues = new TestEncryptedValueStore();
-        var notionClients = new TestNotionClientFactory(
-            new NotionConnectionIdentity("bot_123", "Engineering Wiki")
+        var notionTokens = new TestNotionTokenValidator(
+            new NotionTokenIdentity("bot_123", "Engineering Wiki")
         );
         var handler = CreateCreateLibraryHandler(
             libraries,
             encryptedValues: encryptedValues,
-            notionClients: notionClients
+            notionTokens: notionTokens
         );
 
         async Task Act() =>
@@ -501,14 +501,14 @@ public sealed class DocumentEndpointHandlerTests
     {
         var libraries = new TestLibraryDocumentStore();
         var encryptedValues = new TestEncryptedValueStore();
-        var notionClients = new TestNotionClientFactory(
-            new NotionConnectionIdentity("bot_123", "Engineering Wiki")
+        var notionTokens = new TestNotionTokenValidator(
+            new NotionTokenIdentity("bot_123", "Engineering Wiki")
         );
         var handler = CreateCreateLibraryHandler(
             libraries,
             new TestPublicSourceStore(),
             encryptedValues: encryptedValues,
-            notionClients: notionClients
+            notionTokens: notionTokens
         );
 
         var result = await handler.HandleAsync(
@@ -530,7 +530,7 @@ public sealed class DocumentEndpointHandlerTests
         await Assert.That(result.Result).IsTypeOf<BadRequest<LibraryError>>();
         await Assert.That(libraries.Libraries).IsEmpty();
         await Assert.That(encryptedValues.Values).IsEmpty();
-        await Assert.That(notionClients.CreatedWithAccessToken).IsNull();
+        await Assert.That(notionTokens.CreatedWithAccessToken).IsNull();
     }
 
     [Test]
@@ -1693,7 +1693,7 @@ public sealed class DocumentEndpointHandlerTests
         IDocsPublicSourceStore? publicSources = null,
         ICodeRepositoryStore? repositories = null,
         TestEncryptedValueStore? encryptedValues = null,
-        TestNotionClientFactory? notionClients = null
+        TestNotionTokenValidator? notionTokens = null
     ) =>
         new(
             libraries ?? new TestLibraryDocumentStore(),
@@ -1701,11 +1701,19 @@ public sealed class DocumentEndpointHandlerTests
             repositories ?? new NotSupportedCodeRepositoryStore(),
             encryptedValues ?? new TestEncryptedValueStore(),
             TestEncryption(),
-            notionClients ?? new TestNotionClientFactory(identity: null)
+            notionTokens ?? new TestNotionTokenValidator(identity: null)
         );
 
     private static EncryptedValueEncryptionService TestEncryption() =>
-        new(new LlmSettings { EncryptionProvider = "test" }, [new TestDataEncryptionProvider()]);
+        new(
+            new SecuritySettings
+            {
+                EncryptionProvider = "test",
+                DataProtectionKeyRingPath = string.Empty,
+                GoogleKmsKeyName = string.Empty,
+            },
+            [new TestDataEncryptionProvider()]
+        );
 
     private static HttpRequest TestHttpRequest()
     {
@@ -2373,40 +2381,18 @@ public sealed class DocumentEndpointHandlerTests
         }
     }
 
-    private sealed class TestNotionClientFactory(NotionConnectionIdentity? identity)
-        : IZeeqNotionClientFactory
+    private sealed class TestNotionTokenValidator(NotionTokenIdentity? identity)
+        : INotionTokenValidator
     {
         public string? CreatedWithAccessToken { get; private set; }
 
-        public IZeeqNotionClient Create(string accessToken)
+        public Task<NotionTokenIdentity?> ValidateAsync(
+            string accessToken,
+            CancellationToken cancellationToken
+        )
         {
             CreatedWithAccessToken = accessToken;
-            return new TestNotionClient(identity);
-        }
-    }
-
-    private sealed class TestNotionClient(NotionConnectionIdentity? identity) : IZeeqNotionClient
-    {
-        public IAsyncEnumerable<NotionPageSummary> SearchPagesAsync(CancellationToken ct) =>
-            EmptyPages();
-
-        public Task<NotionPage?> GetPageAsync(string pageId, CancellationToken ct) =>
-            throw new NotSupportedException();
-
-        public Task<NotionPageMarkdown?> GetPageMarkdownAsync(
-            string pageId,
-            CancellationToken ct
-        ) => throw new NotSupportedException();
-
-        public Task<NotionConnectionIdentity?> GetConnectionIdentityAsync(CancellationToken ct) =>
-            Task.FromResult(identity);
-
-        public void Dispose() { }
-
-        private static async IAsyncEnumerable<NotionPageSummary> EmptyPages()
-        {
-            await Task.CompletedTask;
-            yield break;
+            return Task.FromResult(identity);
         }
     }
 

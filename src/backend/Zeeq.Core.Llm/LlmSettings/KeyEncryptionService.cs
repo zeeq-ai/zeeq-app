@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Caching.Memory;
 using Zeeq.Core.Models;
+using Zeeq.Core.Security;
 
 namespace Zeeq.Core.Llm;
 

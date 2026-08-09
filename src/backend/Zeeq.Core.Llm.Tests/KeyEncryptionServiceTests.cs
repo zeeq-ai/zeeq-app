@@ -1,7 +1,7 @@
 using System.Text;
 using Microsoft.Extensions.Caching.Memory;
-using Zeeq.Core.Common;
 using Zeeq.Core.Models;
+using Zeeq.Core.Security;
 
 namespace Zeeq.Core.Llm.Tests;
 
@@ -251,19 +251,12 @@ public sealed class KeyEncryptionServiceTests
             _cache
         );
 
-    private static LlmSettings Settings(string encryptionProvider) =>
+    private static SecuritySettings Settings(string encryptionProvider) =>
         new()
         {
             EncryptionProvider = encryptionProvider,
-            Models = new LlmModelDefaults
-            {
-                Fast = new LlmModelDefault
-                {
-                    ApiKey = "default-key",
-                    Model = "deepseek-v4-flash-0731",
-                    Endpoint = "https://api.deepseek.com",
-                },
-            },
+            DataProtectionKeyRingPath = string.Empty,
+            GoogleKmsKeyName = string.Empty,
         };
 
     private sealed class FakeEncryptedValueStore : IEncryptedValueStore

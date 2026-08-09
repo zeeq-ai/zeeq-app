@@ -1,8 +1,8 @@
-using Zeeq.Core.Common;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Zeeq.Core.Common;
 
 namespace Zeeq.Core.Llm.Tests;
 
@@ -29,7 +29,6 @@ public sealed class SetupLlmTests
         await Assert.That(clients.Fast).IsNotNull();
         await Assert.That(clients.High).IsNotNull();
         await Assert.That(clients.Max).IsNotNull();
-        await Assert.That(Directory.Exists(keyRingPath)).IsTrue();
     }
 
     [Test]
@@ -98,7 +97,9 @@ public sealed class SetupLlmTests
     }
 
     [Test]
-    [Arguments("dotnet user-secrets set --project src/backend/Zeeq.Runtime.Server AppSettings:Llm:Embeddings:ApiKey secret-value")]
+    [Arguments(
+        "dotnet user-secrets set --project src/backend/Zeeq.Runtime.Server AppSettings:Llm:Embeddings:ApiKey secret-value"
+    )]
     [Arguments("gcloud secrets create AppSettings__Llm__Embeddings__ApiKey")]
     [Arguments("DOTNET user-secrets set")]
     [Arguments("GCLOUD secrets create")]
@@ -219,49 +220,9 @@ public sealed class SetupLlmTests
             .WithMessage("AppSettings:Llm:Models:Fast:ApiKey is required.");
     }
 
-    [Test]
-    public async Task AddZeeqLlm_WithCloudKmsAndMissingGoogleKmsKeyName_ThrowsConfigurationError()
-    {
-        var settings = Settings(
-            Path.Combine(Path.GetTempPath(), $"zeeq-llm-{Guid.NewGuid():N}")
-        ) with
-        {
-            EncryptionProvider = LlmEncryptionProviders.CloudKms,
-            GoogleKmsKeyName = "",
-        };
-
-        await Assert
-            .That(() => new ServiceCollection().AddZeeqLlm(settings, DevelopmentEnvironment()))
-            .Throws<InvalidOperationException>()
-            .WithMessage("AppSettings:Llm:GoogleKmsKeyName is required for cloud-kms encryption.");
-    }
-
-    [Test]
-    public async Task AddZeeqLlm_WithDevelopmentCloudKms_RegistersDataProtectionForLegacyRows()
-    {
-        var keyRingPath = Path.Combine(Path.GetTempPath(), $"zeeq-llm-{Guid.NewGuid():N}");
-        var services = new ServiceCollection();
-
-        services.AddLogging();
-        services.AddZeeqLlm(
-            Settings(keyRingPath) with
-            {
-                EncryptionProvider = LlmEncryptionProviders.CloudKms,
-                GoogleKmsKeyName = "projects/test/locations/global/keyRings/test/cryptoKeys/key",
-            },
-            DevelopmentEnvironment()
-        );
-
-        await using var provider = services.BuildServiceProvider();
-        var encryptionProviders = provider.GetRequiredService<
-            IEnumerable<IDataEncryptionProvider>
-        >();
-
-        await Assert
-            .That(encryptionProviders.Select(encryptionProvider => encryptionProvider.ProviderName))
-            .Contains(LlmEncryptionProviders.DataProtection);
-        await Assert.That(Directory.Exists(keyRingPath)).IsTrue();
-    }
+    // NOTE: Encryption-provider registration/validation tests (cloud-kms, data-protection)
+    // moved to Zeeq.Core.Security.Tests/SetupSecurityTests.cs (zeeq-ai/zeeq-app#192) — that
+    // behavior now lives in Zeeq.Core.Security.SetupSecurity.AddZeeqSecurity, not AddZeeqLlm.
 
     private static LlmSettings Settings(string keyRingPath)
     {
