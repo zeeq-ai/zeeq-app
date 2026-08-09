@@ -1,5 +1,8 @@
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
+using Zeeq.Core.Llm;
+using Zeeq.Core.Models;
+using Zeeq.Integrations.Notion;
 using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Platform.Documents;
@@ -21,15 +24,16 @@ namespace Zeeq.Platform.Documents;
 public sealed class CreateLibraryHandler(
     ILibraryDocumentStore store,
     IDocsPublicSourceStore publicSources,
-    ICodeRepositoryStore repositories
+    ICodeRepositoryStore repositories,
+    IEncryptedValueStore encryptedValues,
+    EncryptedValueEncryptionService encryption,
+    IZeeqNotionClientFactory notionClients
 ) : IEndpointHandler
 {
     /// <summary>
     /// Handles the create library request.
     /// </summary>
-    public async Task<
-        Results<Created<LibraryResponse>, BadRequest<LibraryError>>
-    > HandleAsync(
+    public async Task<Results<Created<LibraryResponse>, BadRequest<LibraryError>>> HandleAsync(
         string orgId,
         CreateLibraryRequest request,
         ClaimsPrincipal user,
@@ -60,6 +64,7 @@ public sealed class CreateLibraryHandler(
         var libraryId = NewLibraryId();
         Library toCreate;
         DocsPublicSource? publicSource = null;
+        string? storedNotionAccessTokenId = null;
 
         switch (request.Source)
         {
@@ -154,11 +159,71 @@ public sealed class CreateLibraryHandler(
                 break;
             }
 
+            case { Kind: LibrarySourceKindRequest.Notion }:
+            {
+                var validation = ValidateNotionSource(request.Source);
+                if (validation is not null)
+                {
+                    return TypedResults.BadRequest(validation);
+                }
+
+                var accessToken = request.Source.AccessToken!.Trim();
+                var identity = await notionClients
+                    .Create(accessToken)
+                    .GetConnectionIdentityAsync(ct);
+                if (identity is null)
+                {
+                    return TypedResults.BadRequest(
+                        new LibraryError("Notion access token is invalid or unauthorized.")
+                    );
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                var encryptedToken = await encryption.EncryptAsync(
+                    orgId,
+                    EncryptedValueKind.SecretString,
+                    "Notion access token",
+                    accessToken,
+                    now,
+                    ct
+                );
+                var storedToken = await encryptedValues.AddAsync(encryptedToken, ct);
+                storedNotionAccessTokenId = storedToken.Id;
+
+                toCreate = LibraryBuilder
+                    .ForNotionSource(
+                        new LibraryExternalSource
+                        {
+                            Notion = new NotionSourceConfiguration
+                            {
+                                AccessTokenValueId = storedToken.Id,
+                                CallbackTokenSerial = 1,
+                                ConnectionName = string.IsNullOrWhiteSpace(identity.Name)
+                                    ? null
+                                    : identity.Name.Trim(),
+                            },
+                        },
+                        request.Source.IncludeFilters,
+                        request.Source.ExcludeFilters
+                    )
+                    .Build(libraryId, orgId, name, teamId, request.Description);
+                break;
+            }
+
             default:
                 return TypedResults.BadRequest(new LibraryError("Unknown library source kind."));
         }
 
-        var library = await store.CreateLibraryAsync(toCreate, ct);
+        Library library;
+        try
+        {
+            library = await store.CreateLibraryAsync(toCreate, ct);
+        }
+        catch when (storedNotionAccessTokenId is not null)
+        {
+            await TryDisableStoredNotionAccessTokenAsync(orgId, storedNotionAccessTokenId);
+            throw;
+        }
 
         var sourcesById = publicSource is null
             ? LibraryEndpointMapping.NoPublicSources
@@ -172,6 +237,11 @@ public sealed class CreateLibraryHandler(
 
     private static LibraryError? ValidatePublicSource(CreateLibrarySourceRequest source)
     {
+        if (!string.IsNullOrWhiteSpace(source.AccessToken))
+        {
+            return new LibraryError("Access token is only valid for a Notion source.");
+        }
+
         if (string.IsNullOrWhiteSpace(source.RepoUrl))
         {
             return new LibraryError("A repository URL is required for a public source.");
@@ -185,10 +255,35 @@ public sealed class CreateLibraryHandler(
         return null;
     }
 
-    private static LibraryError? ValidatePrivateSource(CreateLibrarySourceRequest source) =>
-        string.IsNullOrWhiteSpace(source.RepositoryId)
+    private static LibraryError? ValidatePrivateSource(CreateLibrarySourceRequest source)
+    {
+        if (!string.IsNullOrWhiteSpace(source.AccessToken))
+        {
+            return new LibraryError("Access token is only valid for a Notion source.");
+        }
+
+        return string.IsNullOrWhiteSpace(source.RepositoryId)
             ? new LibraryError("A repository selection is required for a private source.")
             : null;
+    }
+
+    private static LibraryError? ValidateNotionSource(CreateLibrarySourceRequest source)
+    {
+        if (string.IsNullOrWhiteSpace(source.AccessToken))
+        {
+            return new LibraryError("A Notion access token is required.");
+        }
+
+        if (
+            !string.IsNullOrWhiteSpace(source.RepoUrl)
+            || !string.IsNullOrWhiteSpace(source.RepositoryId)
+        )
+        {
+            return new LibraryError("Repository fields are not valid for a Notion source.");
+        }
+
+        return null;
+    }
 
     private static bool IsPlausibleGitHubUrl(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var parsed)
@@ -227,4 +322,25 @@ public sealed class CreateLibraryHandler(
     private static string NewLibraryId() => $"library_{Guid.CreateVersion7():N}";
 
     private static string NewPublicSourceId() => $"pubsrc_{Guid.CreateVersion7():N}";
+
+    private async Task TryDisableStoredNotionAccessTokenAsync(
+        string organizationId,
+        string encryptedValueId
+    )
+    {
+        try
+        {
+            await encryptedValues.DisableAsync(
+                organizationId,
+                encryptedValueId,
+                DateTimeOffset.UtcNow,
+                CancellationToken.None
+            );
+        }
+        catch
+        {
+            // NOTE: Best-effort credential cleanup must not mask the original library-create
+            // failure. Any still-active orphan can be disabled operationally by encrypted-value id.
+        }
+    }
 }

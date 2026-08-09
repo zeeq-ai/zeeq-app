@@ -4071,6 +4071,112 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/libraries/{name}/notion/webhook": {
+      "get": {
+        "tags": [
+          "Libraries"
+        ],
+        "summary": "Get a Notion library's webhook setup state.",
+        "description": "Returns the callback URL to paste into Notion, the captured verification token once\nNotion has called the callback, and the current webhook activation state. Only\nNotion-backed libraries support this endpoint.",
+        "operationId": "GetNotionWebhookState",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotionWebhookStateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/libraries/{name}/notion/webhook/reset": {
+      "post": {
+        "tags": [
+          "Libraries"
+        ],
+        "summary": "Reset a Notion library's webhook setup state.",
+        "description": "Clears the captured Notion verification token and activation state, disables the\nold stored verification token, and returns a fresh callback URL generation.\nUse this when re-running Notion webhook verification.",
+        "operationId": "ResetNotionWebhookState",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotionWebhookStateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/libraries/{name}/export": {
       "get": {
         "tags": [
@@ -4451,6 +4557,81 @@
         "summary": "Manually trigger a library's repository sync.",
         "description": "Queues an immediate sync of the private repository mapped to this library,\noutside its normal schedule. Requires the library to be configured with a\nprivate repository source (`sourceKind`/`sourceRepoUrl` set).\n\nReturns `404` when the library doesn't exist, `400` when the library has no\nlinked repository, `409` when a sync is already queued or running for this\nlibrary, and `429` when more than 5 manual triggers have been requested in\nthe last hour.",
         "operationId": "TriggerLibraryIngest",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TriggerIngestRunResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/libraries/{name}/notion/full-resync": {
+      "post": {
+        "tags": [
+          "Ingest"
+        ],
+        "summary": "Manually trigger a Notion library full resync.",
+        "description": "Queues an immediate full resync for a Notion-backed library. Full resyncs can\nremove documents that no longer match the library filters, so they are exposed as\na separate endpoint from the generic incremental `ingest-run` trigger.",
+        "operationId": "TriggerNotionFullResync",
         "parameters": [
           {
             "name": "orgId",
@@ -9783,6 +9964,14 @@
             ],
             "description": "Id of one of the organization's configured GitHub repositories\n(`ICodeRepositoryStore`). Required and only used when\nLibrarySourceKindRequest CreateLibrarySourceRequest.Kind is LibrarySourceKindRequest.Private."
           },
+          "accessToken": {
+            "maxLength": 4096,
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Pasted Notion integration access token. Required and only used when\nLibrarySourceKindRequest CreateLibrarySourceRequest.Kind is LibrarySourceKindRequest.Notion."
+          },
           "includeFilters": {
             "type": "array",
             "items": {
@@ -11228,7 +11417,8 @@
       "LibrarySourceKindRequest": {
         "enum": [
           "Public",
-          "Private"
+          "Private",
+          "Notion"
         ],
         "description": "Discriminates which kind of repository source a library create request configures."
       },
@@ -11247,11 +11437,14 @@
         "properties": {
           "kind": {
             "type": "string",
-            "description": "\"Public\" or \"Private\"."
+            "description": "\"Public\", \"Private\", or \"Notion\"."
           },
           "repoUrl": {
-            "type": "string",
-            "description": "The resolved clone URL either way — from the joined `DocsPublicSource`\nfor a public-source library, or the library's own `SourceRepoUrl` for\na private-source library. Never editable after creation."
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "The resolved clone URL either way — from the joined `DocsPublicSource`\nfor a public-source library, or the library's own `SourceRepoUrl` for\na private-source library. `null` for Notion."
           },
           "syncStatus": {
             "type": [
@@ -11293,9 +11486,37 @@
               "type": "string"
             },
             "description": "Org-level exclude path globs."
+          },
+          "nextFullResyncAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Next scheduled full source resync time, currently used by Notion.",
+            "format": "date-time"
+          },
+          "displayName": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Human-readable source display name, currently the Notion connection name."
+          },
+          "webhookActivated": {
+            "type": "boolean",
+            "description": "Whether the Notion webhook has completed verification.",
+            "default": false
+          },
+          "webhookActivatedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "When Notion webhook verification completed, if activated.",
+            "format": "date-time"
           }
         },
-        "description": "Repository-source metadata and sync status for a repository-backed library."
+        "description": "External-source metadata and sync status for a source-backed library."
       },
       "LlmApiKeyResponse": {
         "required": [
@@ -11973,6 +12194,64 @@
           }
         },
         "description": "One bucketed point in a metric time series grouped by two dimensions."
+      },
+      "NotionWebhookStateResponse": {
+        "required": [
+          "callbackUrl",
+          "callbackTokenSerial",
+          "verificationToken",
+          "verificationTokenAvailable",
+          "webhookActivated",
+          "webhookActivatedAtUtc",
+          "webhookSubscriptionId"
+        ],
+        "type": "object",
+        "properties": {
+          "callbackUrl": {
+            "type": "string",
+            "description": "Long-lived callback URL to paste into Notion."
+          },
+          "callbackTokenSerial": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Current callback revocation generation.",
+            "format": "int32"
+          },
+          "verificationToken": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Plain Notion verification token to paste back into Notion once the challenge is captured.\n`null` until Notion has called the callback URL, or after reset."
+          },
+          "verificationTokenAvailable": {
+            "type": "boolean",
+            "description": "Whether a decryptable verification token is currently available."
+          },
+          "webhookActivated": {
+            "type": "boolean",
+            "description": "Whether a signed Notion event has activated this webhook."
+          },
+          "webhookActivatedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "When the webhook was activated, if known.",
+            "format": "date-time"
+          },
+          "webhookSubscriptionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Notion subscription id observed on activation, if known."
+          }
+        },
+        "description": "Authenticated Notion webhook setup state for one Notion-backed library."
       },
       "OrganizationActivationExchangeRequest": {
         "required": [
@@ -13794,6 +14073,10 @@
               "type": "string"
             },
             "description": "Org-level exclude path globs. Same null-vs-empty semantics as string[]? UpdateLibraryRequest.IncludeFilters."
+          },
+          "runFullResync": {
+            "type": "boolean",
+            "description": "When true for a Notion-sourced library, schedules a full resync to apply filter changes\nto already-ingested pages. Filter edits alone never imply this destructive backstop."
           }
         },
         "description": "Request body for updating a document library."

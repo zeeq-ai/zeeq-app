@@ -36,6 +36,27 @@ public sealed class TriggerLibraryIngestHandlerTests
             UpdatedAt = DateTimeOffset.UtcNow,
         };
 
+    private static Library NotionLibrary(
+        string syncStatus = "idle",
+        DateTimeOffset[]? manualTriggerHistory = null
+    ) =>
+        new()
+        {
+            Id = "library_1",
+            OrganizationId = "org_1",
+            TeamId = "team_1",
+            Name = "docs",
+            SourceKind = RepositorySourceKind.Notion.ToString(),
+            ExternalSource = new LibraryExternalSource
+            {
+                Notion = new NotionSourceConfiguration { AccessTokenValueId = "enc_notion" },
+            },
+            SyncStatus = syncStatus,
+            ManualTriggerHistory = manualTriggerHistory ?? [],
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+
     [Test]
     public async Task HandleAsync_LibraryNotFound_ReturnsNotFound()
     {
@@ -293,6 +314,87 @@ public sealed class TriggerLibraryIngestHandlerTests
         await Assert.That(source.SyncStatus).IsEqualTo("queued");
         await AssertPostgresMicrosecondPrecisionAsync(source.ActiveSyncRunCreatedAtUtc!.Value);
         await AssertPostgresMicrosecondPrecisionAsync(source.SyncQueuedAtUtc!.Value);
+    }
+
+    [Test]
+    public async Task HandleAsync_NotionSource_TriggersIncrementalNotionSync()
+    {
+        var library = NotionLibrary();
+        var libraries = new FakeLibraryDocumentStore { Libraries = { library } };
+        var publicSources = new FakeDocsPublicSourceStore();
+        var publisher = new TestMessagePublisher();
+        var handler = new TriggerLibraryIngestHandler(
+            libraries,
+            publicSources,
+            publisher,
+            Settings
+        );
+
+        var result = await handler.HandleAsync(
+            "org_1",
+            "docs",
+            new ClaimsPrincipal(),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<TriggerIngestRunResponse>;
+        var published = publisher.Published.OfType<NotionSyncRequested>().Single();
+
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(published.OrganizationId).IsEqualTo("org_1");
+        await Assert.That(published.TeamId).IsEqualTo("team_1");
+        await Assert.That(published.LibraryId).IsEqualTo("library_1");
+        await Assert.That(published.Scope).IsEqualTo(ExternalSyncScope.Incremental);
+        await Assert.That(published.RunId).IsEqualTo(ok!.Value!.RunId);
+        await Assert.That(published.RunCreatedAtUtc).IsEqualTo(ok.Value.RunCreatedAtUtc);
+        await AssertPostgresMicrosecondPrecisionAsync(published.RunCreatedAtUtc);
+        await Assert.That(published.Trigger).IsEqualTo(IngestTriggerReason.Manual);
+        await Assert.That(library.SyncStatus).IsEqualTo("queued");
+        await Assert.That(library.ActiveSyncRunId).IsEqualTo(ok.Value.RunId);
+        await Assert.That(library.ActiveSyncRunCreatedAtUtc).IsEqualTo(ok.Value.RunCreatedAtUtc);
+    }
+
+    [Test]
+    public async Task TriggerNotionFullResyncHandler_NotionSource_TriggersFullNotionSync()
+    {
+        var library = NotionLibrary();
+        var libraries = new FakeLibraryDocumentStore { Libraries = { library } };
+        var publisher = new TestMessagePublisher();
+        var handler = new TriggerNotionFullResyncHandler(libraries, publisher, Settings);
+
+        var result = await handler.HandleAsync(
+            "org_1",
+            "docs",
+            new ClaimsPrincipal(),
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<TriggerIngestRunResponse>;
+        var published = publisher.Published.OfType<NotionSyncRequested>().Single();
+
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(published.Scope).IsEqualTo(ExternalSyncScope.Full);
+        await Assert.That(published.RunId).IsEqualTo(ok!.Value!.RunId);
+        await Assert.That(library.SyncStatus).IsEqualTo("queued");
+    }
+
+    [Test]
+    public async Task TriggerNotionFullResyncHandler_NonNotionSource_ReturnsBadRequest()
+    {
+        var library = PrivateLibrary();
+        var libraries = new FakeLibraryDocumentStore { Libraries = { library } };
+        var publisher = new TestMessagePublisher();
+        var handler = new TriggerNotionFullResyncHandler(libraries, publisher, Settings);
+
+        var result = await handler.HandleAsync(
+            "org_1",
+            "docs",
+            new ClaimsPrincipal(),
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Result).IsTypeOf<BadRequest<IngestError>>();
+        await Assert.That(publisher.Published).IsEmpty();
     }
 
     [Test]

@@ -107,6 +107,60 @@ public sealed class LibraryEndpoints : IEndpoint
             )
             .RequireActiveOrganization();
 
+        // GET /api/v1/orgs/{orgId}/libraries/{name}/notion/webhook
+        group
+            .MapGet(
+                "/{name}/notion/webhook",
+                static (
+                    string orgId,
+                    string name,
+                    HttpRequest request,
+                    ClaimsPrincipal user,
+                    [FromServices] GetNotionWebhookStateHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, name, request, user, ct)
+            )
+            .WithName("GetNotionWebhookState")
+            .Produces<NotionWebhookStateResponse>()
+            .Produces<LibraryError>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("Get a Notion library's webhook setup state.")
+            .WithDescription(
+                """
+                Returns the callback URL to paste into Notion, the captured verification token once
+                Notion has called the callback, and the current webhook activation state. Only
+                Notion-backed libraries support this endpoint.
+                """
+            )
+            .RequireActiveOrganization();
+
+        // POST /api/v1/orgs/{orgId}/libraries/{name}/notion/webhook/reset
+        group
+            .MapPost(
+                "/{name}/notion/webhook/reset",
+                static (
+                    string orgId,
+                    string name,
+                    HttpRequest request,
+                    ClaimsPrincipal user,
+                    [FromServices] ResetNotionWebhookStateHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, name, request, user, ct)
+            )
+            .WithName("ResetNotionWebhookState")
+            .Produces<NotionWebhookStateResponse>()
+            .Produces<LibraryError>(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("Reset a Notion library's webhook setup state.")
+            .WithDescription(
+                """
+                Clears the captured Notion verification token and activation state, disables the
+                old stored verification token, and returns a fresh callback URL generation.
+                Use this when re-running Notion webhook verification.
+                """
+            )
+            .RequireActiveOrganization();
+
         // GET /api/v1/orgs/{orgId}/libraries/{name}/export?format=zeeq|zip
         group
             .MapGet(

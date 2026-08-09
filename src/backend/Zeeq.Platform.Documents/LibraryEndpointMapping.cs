@@ -75,6 +75,25 @@ public static class LibraryEndpointMapping
             );
         }
 
+        if (library.SourceKind == RepositorySourceKind.Notion.ToString())
+        {
+            var notion = library.ExternalSource?.Notion;
+            return new LibrarySourceResponse(
+                Kind: "Notion",
+                RepoUrl: null,
+                SyncStatus: library.SyncStatus,
+                NextSyncAt: library.NextSyncAt,
+                LastSyncedAt: library.SourceSyncedAt,
+                Quarantined: false,
+                IncludeFilters: library.IncludeFilters,
+                ExcludeFilters: library.ExcludeFilters,
+                NextFullResyncAt: library.NextFullResyncAt,
+                DisplayName: notion?.ConnectionName,
+                WebhookActivated: notion?.WebhookActivatedAtUtc is not null,
+                WebhookActivatedAtUtc: notion?.WebhookActivatedAtUtc
+            );
+        }
+
         if (library.SourceKind is not null && library.SourceRepoUrl is not null)
         {
             return new LibrarySourceResponse(
