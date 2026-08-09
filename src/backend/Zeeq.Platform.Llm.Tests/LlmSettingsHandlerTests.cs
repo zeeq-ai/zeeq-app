@@ -6,6 +6,7 @@ using Zeeq.Core.Common;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
+using Zeeq.Core.Security;
 using Zeeq.Platform.Llm;
 
 namespace Zeeq.Platform.Llm.Tests;
@@ -343,6 +344,12 @@ public sealed class LlmSettingsHandlerTests
                 },
                 EncryptionProvider = "test-provider",
             };
+            var securitySettings = new SecuritySettings
+            {
+                EncryptionProvider = appSettings.EncryptionProvider,
+                DataProtectionKeyRingPath = string.Empty,
+                GoogleKmsKeyName = string.Empty,
+            };
 
             return new Fixture
             {
@@ -352,7 +359,7 @@ public sealed class LlmSettingsHandlerTests
                 EncryptedValues = encryptedValues,
                 KeyEncryption = new KeyEncryptionService(
                     new EncryptedValueEncryptionService(
-                        appSettings,
+                        securitySettings,
                         [new FakeDataEncryptionProvider()]
                     ),
                     encryptedValues,

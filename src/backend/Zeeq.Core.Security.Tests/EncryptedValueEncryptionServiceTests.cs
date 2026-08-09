@@ -1,14 +1,13 @@
 using System.Text;
-using Zeeq.Core.Common;
 using Zeeq.Core.Models;
 
-namespace Zeeq.Core.Llm.Tests;
+namespace Zeeq.Core.Security.Tests;
 
 /// <summary>
 /// Tests provider-neutral encrypted-value creation and decryption.
 ///
 /// Run:
-/// dotnet run --project src/backend/Zeeq.Core.Llm.Tests --output detailed --disable-logo --treenode-filter "/*/*/EncryptedValueEncryptionServiceTests/*"
+/// dotnet run --project src/backend/Zeeq.Core.Security.Tests --output detailed --disable-logo --treenode-filter "/*/*/EncryptedValueEncryptionServiceTests/*"
 /// </summary>
 public sealed class EncryptedValueEncryptionServiceTests
 {
@@ -127,7 +126,7 @@ public sealed class EncryptedValueEncryptionServiceTests
         );
         var originalCiphertext = value.Ciphertext.ToArray();
         var failingService = new EncryptedValueEncryptionService(
-            new LlmSettings { EncryptionProvider = "failing" },
+            TestSecuritySettings("failing"),
             [_primary, new FailingDataEncryptionProvider()]
         );
 
@@ -147,7 +146,15 @@ public sealed class EncryptedValueEncryptionServiceTests
     }
 
     private EncryptedValueEncryptionService CreateService(string activeProvider) =>
-        new(new LlmSettings { EncryptionProvider = activeProvider }, [_primary, _secondary]);
+        new(TestSecuritySettings(activeProvider), [_primary, _secondary]);
+
+    private static SecuritySettings TestSecuritySettings(string activeProvider) =>
+        new()
+        {
+            EncryptionProvider = activeProvider,
+            DataProtectionKeyRingPath = string.Empty,
+            GoogleKmsKeyName = string.Empty,
+        };
 
     private sealed class FakeDataEncryptionProvider(string providerName) : IDataEncryptionProvider
     {

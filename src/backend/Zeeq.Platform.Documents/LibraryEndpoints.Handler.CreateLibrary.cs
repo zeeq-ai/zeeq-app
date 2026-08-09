@@ -1,8 +1,7 @@
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
-using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
-using Zeeq.Integrations.Notion;
+using Zeeq.Core.Security;
 using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Platform.Documents;
@@ -27,7 +26,7 @@ public sealed class CreateLibraryHandler(
     ICodeRepositoryStore repositories,
     IEncryptedValueStore encryptedValues,
     EncryptedValueEncryptionService encryption,
-    IZeeqNotionClientFactory notionClients
+    INotionTokenValidator notionTokens
 ) : IEndpointHandler
 {
     /// <summary>
@@ -168,8 +167,7 @@ public sealed class CreateLibraryHandler(
                 }
 
                 var accessToken = request.Source.AccessToken!.Trim();
-                using var notionClient = notionClients.Create(accessToken);
-                var identity = await notionClient.GetConnectionIdentityAsync(ct);
+                var identity = await notionTokens.ValidateAsync(accessToken, ct);
                 if (identity is null)
                 {
                     return TypedResults.BadRequest(

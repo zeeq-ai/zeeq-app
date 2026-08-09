@@ -3,7 +3,7 @@ using NSubstitute;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Dispatch;
-using Zeeq.Core.Llm;
+using Zeeq.Core.Security;
 using Zeeq.Integrations.Notion;
 
 namespace Zeeq.Platform.Ingest.Tests;
@@ -46,7 +46,15 @@ public sealed class NotionIngestDispatcherTests
         var dispatcher = new NotionIngestDispatcher(
             libraries,
             encryptedValues,
-            new EncryptedValueEncryptionService(new LlmSettings(), []),
+            new EncryptedValueEncryptionService(
+                new SecuritySettings
+                {
+                    EncryptionProvider = string.Empty,
+                    DataProtectionKeyRingPath = string.Empty,
+                    GoogleKmsKeyName = string.Empty,
+                },
+                []
+            ),
             Substitute.For<IZeeqNotionClientFactory>(),
             runner,
             runs,

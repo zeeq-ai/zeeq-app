@@ -10,6 +10,7 @@
     <Project Path="src/backend/Zeeq.Core.Identity/Zeeq.Core.Identity.csproj" />
     <Project Path="src/backend/Zeeq.Core.Llm/Zeeq.Core.Llm.csproj" />
     <Project Path="src/backend/Zeeq.Core.Models/Zeeq.Core.Models.csproj" />
+    <Project Path="src/backend/Zeeq.Core.Security/Zeeq.Core.Security.csproj" />
   </Folder>
   <Folder Name="/data/">
     <Project Path="src/backend/Zeeq.Data.Postgres.Migrations/Zeeq.Data.Postgres.Migrations.csproj" />
@@ -54,6 +55,7 @@
     <Project Path="src/backend/Zeeq.Core.Documents.Tests/Zeeq.Core.Documents.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Core.Identity.Tests/Zeeq.Core.Identity.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Core.Llm.Tests/Zeeq.Core.Llm.Tests.csproj" />
+    <Project Path="src/backend/Zeeq.Core.Security.Tests/Zeeq.Core.Security.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Data.Postgres.Tests/Zeeq.Data.Postgres.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Integrations.GitHub.Tests/Zeeq.Integrations.GitHub.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Integrations.Notion.Tests/Zeeq.Integrations.Notion.Tests.csproj" />

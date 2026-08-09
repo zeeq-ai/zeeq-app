@@ -1,6 +1,7 @@
 using Zeeq.Core.Common;
 using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
+using Zeeq.Core.Security;
 
 namespace Zeeq.Platform.Llm;
 
@@ -70,10 +71,7 @@ internal static class LlmSettingsHandlerSupport
                 return false;
             }
 
-            if (
-                IsAzureOpenAiProvider(tier.Provider)
-                && string.IsNullOrWhiteSpace(tier.Endpoint)
-            )
+            if (IsAzureOpenAiProvider(tier.Provider) && string.IsNullOrWhiteSpace(tier.Endpoint))
             {
                 error = $"{tierName} requires an endpoint URL for Azure OpenAI.";
                 return false;

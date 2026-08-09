@@ -1,7 +1,7 @@
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
-using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
+using Zeeq.Core.Security;
 using Zeeq.Integrations.Notion;
 
 namespace Zeeq.Platform.Documents;

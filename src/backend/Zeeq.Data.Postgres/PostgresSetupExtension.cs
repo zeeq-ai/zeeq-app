@@ -11,6 +11,7 @@ using Zeeq.Core.Documents.Snippets;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
+using Zeeq.Core.Security;
 using Zeeq.Data.Postgres.Carts;
 using Zeeq.Data.Postgres.CodeReviews;
 using Zeeq.Data.Postgres.Documents;

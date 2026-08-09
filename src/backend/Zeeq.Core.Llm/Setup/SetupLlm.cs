@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -7,8 +6,13 @@ using Zeeq.Core.Common;
 namespace Zeeq.Core.Llm;
 
 /// <summary>
-/// Registers shared LLM settings, default clients, and local encryption services.
+/// Registers shared LLM settings and default clients.
 /// </summary>
+/// <remarks>
+/// Callers must register <c>Zeeq.Core.Security.SetupSecurity.AddZeeqSecurity</c> before this —
+/// <see cref="KeyEncryptionService"/> depends on <c>EncryptedValueEncryptionService</c>, which that
+/// call registers (zeeq-ai/zeeq-app#192 moved provider-neutral encryption out of this project).
+/// </remarks>
 public static class SetupLlm
 {
     extension(IServiceCollection services)
@@ -24,7 +28,6 @@ public static class SetupLlm
             services.AddMemoryCache();
             services.AddScoped<ILlmClientFactory, LlmClientFactory>();
             services.AddScoped<ILlmProviderAccessTester, LlmProviderAccessTester>();
-            services.AddScoped<EncryptedValueEncryptionService>();
             services.AddScoped<KeyEncryptionService>();
             services.AddSingleton(new LlmProviderAccessTestOptions());
             services.AddScoped<DefaultLlmChatClients>(serviceProvider => new DefaultLlmChatClients(
@@ -49,17 +52,6 @@ public static class SetupLlm
                 settings.Embeddings,
                 EmbeddingClientProfile.Query
             );
-
-            if (ShouldRegisterDataProtectionProvider(settings, environment))
-            {
-                Directory.CreateDirectory(settings.DataProtectionKeyRingPath);
-
-                services
-                    .AddDataProtection()
-                    .PersistKeysToFileSystem(new DirectoryInfo(settings.DataProtectionKeyRingPath));
-
-                services.AddSingleton<IDataEncryptionProvider, DataProtectionEncryptionProvider>();
-            }
 
             return services;
         }
@@ -125,76 +117,10 @@ public static class SetupLlm
             );
         }
 
-        if (
-            settings.EncryptionProvider.Equals(
-                LlmEncryptionProviders.DataProtection,
-                StringComparison.OrdinalIgnoreCase
-            )
-        )
-        {
-            if (!environment.IsDevelopment())
-            {
-                throw new InvalidOperationException(
-                    "The data-protection LLM encryption provider is only allowed in Development."
-                );
-            }
-
-            if (string.IsNullOrWhiteSpace(settings.DataProtectionKeyRingPath))
-            {
-                throw new InvalidOperationException(
-                    "AppSettings:Llm:DataProtectionKeyRingPath is required for data-protection encryption."
-                );
-            }
-
-            return;
-        }
-
-        if (
-            settings.EncryptionProvider.Equals(
-                LlmEncryptionProviders.CloudKms,
-                StringComparison.OrdinalIgnoreCase
-            )
-        )
-        {
-            if (string.IsNullOrWhiteSpace(settings.GoogleKmsKeyName))
-            {
-                throw new InvalidOperationException(
-                    "AppSettings:Llm:GoogleKmsKeyName is required for cloud-kms encryption."
-                );
-            }
-
-            return;
-        }
-
-        throw new InvalidOperationException(
-            $"Unsupported LLM encryption provider '{settings.EncryptionProvider}'."
-        );
-    }
-
-    private static bool ShouldRegisterDataProtectionProvider(
-        LlmSettings settings,
-        IHostEnvironment environment
-    )
-    {
-        if (string.IsNullOrWhiteSpace(settings.DataProtectionKeyRingPath))
-        {
-            return false;
-        }
-
-        // NOTE: Production intentionally cannot use the data-protection provider; Validate rejects that
-        // configuration before services are built. Development still registers it when a key-ring path
-        // exists and cloud-kms is active so rows encrypted locally before switching can decrypt.
-        return settings.EncryptionProvider.Equals(
-                LlmEncryptionProviders.DataProtection,
-                StringComparison.OrdinalIgnoreCase
-            )
-            || (
-                environment.IsDevelopment()
-                && settings.EncryptionProvider.Equals(
-                    LlmEncryptionProviders.CloudKms,
-                    StringComparison.OrdinalIgnoreCase
-                )
-            );
+        // NOTE: Encryption-provider validation (data-protection/cloud-kms, key-ring path,
+        // GoogleKmsKeyName) moved to Zeeq.Core.Security.SetupSecurity.Validate
+        // (zeeq-ai/zeeq-app#192) — the runtime host calls AddZeeqSecurity separately, so it is no
+        // longer this project's concern even though the values still bind from AppSettings:Llm:*.
     }
 
     /// <summary>

@@ -7,6 +7,7 @@ using NSubstitute;
 using Zeeq.Core.Common;
 using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
+using Zeeq.Core.Security;
 
 namespace Zeeq.Platform.CodeReviews.Tests;
 
@@ -223,9 +224,11 @@ public sealed class CodeReviewLlmTierResolverTests
         public Fixture()
         {
             var encryption = new EncryptedValueEncryptionService(
-                LlmSettings with
+                new SecuritySettings
                 {
                     EncryptionProvider = _encryptionProvider.ProviderName,
+                    DataProtectionKeyRingPath = string.Empty,
+                    GoogleKmsKeyName = string.Empty,
                 },
                 [_encryptionProvider]
             );

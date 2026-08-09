@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using Zeeq.Core.Llm;
+using Zeeq.Core.Security;
 using Zeeq.Integrations.GitHub;
 using Zeeq.Integrations.Notion;
 using Zeeq.Platform.CodeReviews;
@@ -54,6 +55,8 @@ internal static class ZeeqWorkerHost
                 },
             };
 
+            var securitySettings = workerAppSettings.Llm.ToSecuritySettings();
+
             // Worker mode replaces the settings exposed by DI with the effective
             // worker settings so services reading AppSettings/IOptions<AppSettings>
             // see the same connection string used by data, cache, and messaging.
@@ -77,9 +80,10 @@ internal static class ZeeqWorkerHost
                 )
                 .AddZeeqGitHubIntegration(workerAppSettings)
                 .AddZeeqNotionIntegration()
+                .AddZeeqSecurity(securitySettings, builder.Environment)
                 .AddZeeqLlm(workerAppSettings.Llm, builder.Environment)
                 .AddZeeqLlmPlatform()
-                .AddGoogleKmsDataEncryption(workerAppSettings.Llm)
+                .AddGoogleKmsDataEncryption(securitySettings)
                 .AddZeeqCodeReviews(workerAppSettings.CodeReview)
                 .AddZeeqCodeReviewToolset()
                 .AddZeeqIngest(workerAppSettings)

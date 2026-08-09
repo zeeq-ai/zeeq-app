@@ -18,6 +18,7 @@
     <ProjectReference Include="..\Zeeq.Data.Postgres\Zeeq.Data.Postgres.csproj" />
     <ProjectReference Include="..\Zeeq.Testing\Zeeq.Testing.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Llm\Zeeq.Core.Llm.csproj" />
+    <ProjectReference Include="..\Zeeq.Core.Security\Zeeq.Core.Security.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.CodeReviews\Zeeq.Platform.CodeReviews.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Telemetry\Zeeq.Platform.Telemetry.csproj" />
   </ItemGroup>
