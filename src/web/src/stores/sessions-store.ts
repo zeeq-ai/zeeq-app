@@ -42,6 +42,13 @@ export const useSessionsStore = defineStore("sessions-store", () => {
 
   let memberConversationsRequestId = 0;
 
+  // "Me" tab's always-visible recent-sessions preview. Deliberately separate from
+  // memberConversations (which is owned by the cost-filtered MemberSessionsSlideover) so the
+  // slideover's minimum-cost slider never clobbers this unfiltered preview list.
+  const mySessions = ref<AgentConversationListItemDto[]>([]);
+  const loadingMySessions = ref(false);
+  const mySessionsError = ref<string | null>(null);
+
   /** Loads the first inbox page for the active organization. */
   async function loadInbox() {
     await loadConversations({ reset: true });
@@ -133,6 +140,45 @@ export const useSessionsStore = defineStore("sessions-store", () => {
     }
   }
 
+  /**
+   * Loads the signed-in user's most recent conversations for the "Me" tab preview (no cost
+   * filter — "most recent", not "most expensive"). Skips the request when the identity has no
+   * userId on record, leaving the panel empty rather than sending a request with an empty
+   * subjectUserId (which the API would not scope to anyone in particular).
+   */
+  async function loadMySessions(limit = 25) {
+    const userId = appStore.user?.userId;
+    if (!userId) {
+      mySessions.value = [];
+      return;
+    }
+
+    const orgId = requireOrganizationId();
+    loadingMySessions.value = true;
+    mySessionsError.value = null;
+
+    try {
+      // minimumCostUsd must be passed explicitly: omitting it entirely means "inbox
+      // behavior" (no cost floor at all, per the endpoint's own doc comment), while an
+      // explicit 0 applies the intended $0.10 known-cost default -- the same default
+      // loadMemberConversations already applies via its `minimumCostUsd = 0` parameter.
+      const response = await Sessions.listAgentConversations(orgId, {
+        pageSize: limit,
+        subjectUserId: userId,
+        minimumCostUsd: 0,
+      });
+      mySessions.value = response.items;
+    } catch (err: unknown) {
+      mySessionsError.value = errorMessage(
+        err,
+        "Could not load recent sessions.",
+      );
+      throw err;
+    } finally {
+      loadingMySessions.value = false;
+    }
+  }
+
   /** Clears dashboard-only conversation state and invalidates any request in flight. */
   function clearMemberConversations() {
     memberConversationsRequestId += 1;
@@ -202,9 +248,13 @@ export const useSessionsStore = defineStore("sessions-store", () => {
     memberConversationsSubjectUserId,
     loadingMemberConversations,
     memberConversationsError,
+    mySessions,
+    loadingMySessions,
+    mySessionsError,
     loadInbox,
     loadNextPage,
     loadMemberConversations,
+    loadMySessions,
     selectConversation,
     loadConversationById,
     clearSelection,

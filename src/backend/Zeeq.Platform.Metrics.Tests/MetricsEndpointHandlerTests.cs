@@ -333,6 +333,55 @@ public sealed class MetricsEndpointHandlerTests
     }
 
     [Test]
+    public async Task GetMetricLeaderboard_UsersFilter_ForwardsToStore()
+    {
+        var store = new FakeMetricsQueryStore
+        {
+            Leaderboard = [new("/backend/shared.md", "backend", 3)],
+        };
+        var handler = new GetMetricLeaderboardHandler(store, new MetricsTestHybridCache());
+
+        var result = await handler.HandleAsync(
+            "org_a",
+            "1h",
+            "backend",
+            10,
+            ["alice@example.com"],
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<MetricLeaderboardItem[]>;
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(ok!.Value!.Length).IsEqualTo(1);
+        await Assert.That(store.LeaderboardUsers).IsEquivalentTo(["alice@example.com"]);
+    }
+
+    [Test]
+    public async Task GetMetricSectionLeaderboard_UsersFilter_ForwardsToStore()
+    {
+        var store = new FakeMetricsQueryStore
+        {
+            SectionLeaderboard = [new("Intro", "backend", 2)],
+        };
+        var handler = new GetMetricSectionLeaderboardHandler(store, new MetricsTestHybridCache());
+
+        var result = await handler.HandleAsync(
+            "org_a",
+            "1h",
+            "section",
+            "backend",
+            10,
+            ["alice@example.com"],
+            CancellationToken.None
+        );
+
+        var ok = result.Result as Ok<MetricLeaderboardItem[]>;
+        await Assert.That(ok).IsNotNull();
+        await Assert.That(ok!.Value!.Length).IsEqualTo(1);
+        await Assert.That(store.SectionLeaderboardUsers).IsEquivalentTo(["alice@example.com"]);
+    }
+
+    [Test]
     public async Task GetPromptLeaderboard_InvalidWindow_Returns400()
     {
         var handler = new GetPromptLeaderboardHandler(
@@ -404,11 +453,15 @@ public sealed class MetricsEndpointHandlerTests
         public MetricSeriesPoint[] Series { get; init; } = [];
         public MetricTwoDimensionalSeriesPoint[] TwoDimensionalSeries { get; init; } = [];
         public MetricLeaderboardItem[] PromptLeaderboard { get; init; } = [];
+        public MetricLeaderboardItem[] Leaderboard { get; init; } = [];
+        public MetricLeaderboardItem[] SectionLeaderboard { get; init; } = [];
         public MetricsOverview Overview { get; init; } = new(0, 0, 0, 0, 0, 0);
         public List<string> SeriesOrganizations { get; } = [];
         public List<string> TwoDimensionalSeriesOrganizations { get; } = [];
         public List<string> PromptLeaderboardOrganizations { get; } = [];
         public string[]? PromptLeaderboardUsers { get; private set; }
+        public string[]? LeaderboardUsers { get; private set; }
+        public string[]? SectionLeaderboardUsers { get; private set; }
 
         public Task<IReadOnlyList<MetricSeriesPoint>> GetSeriesAsync(
             string organizationId,
@@ -464,8 +517,13 @@ public sealed class MetricsEndpointHandlerTests
             MetricWindow window,
             string? library,
             int top,
-            CancellationToken cancellationToken
-        ) => Task.FromResult<IReadOnlyList<MetricLeaderboardItem>>([]);
+            CancellationToken cancellationToken,
+            string[]? users = null
+        )
+        {
+            LeaderboardUsers = users;
+            return Task.FromResult<IReadOnlyList<MetricLeaderboardItem>>(Leaderboard);
+        }
 
         public Task<IReadOnlyList<MetricLeaderboardItem>> GetSectionLeaderboardAsync(
             string organizationId,
@@ -473,8 +531,13 @@ public sealed class MetricsEndpointHandlerTests
             MetricWindow window,
             string? library,
             int top,
-            CancellationToken cancellationToken
-        ) => Task.FromResult<IReadOnlyList<MetricLeaderboardItem>>([]);
+            CancellationToken cancellationToken,
+            string[]? users = null
+        )
+        {
+            SectionLeaderboardUsers = users;
+            return Task.FromResult<IReadOnlyList<MetricLeaderboardItem>>(SectionLeaderboard);
+        }
 
         public Task<IReadOnlyList<MetricLeaderboardItem>> GetPromptLeaderboardAsync(
             string organizationId,

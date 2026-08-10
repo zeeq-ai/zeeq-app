@@ -78,6 +78,38 @@
             />
           </template>
 
+          <template #me>
+            <MeTab
+              :my-document-leaderboard="myLeaderboard"
+              :my-section-leaderboard="mySectionLeaderboard"
+              :my-snippet-leaderboard="mySnippetLeaderboard"
+              :loading-my-document-leaderboard="loading['myLeaderboard'] ?? false"
+              :loading-my-section-leaderboard="
+                loading['mySectionLeaderboard'] ?? false
+              "
+              :loading-my-snippet-leaderboard="
+                loading['mySnippetLeaderboard'] ?? false
+              "
+              :my-agent-token-by-model-series="myAgentTokenByModelSeries"
+              :loading-my-agent-token-by-model-series="
+                loading['myAgentTokenByModelSeries'] ?? false
+              "
+              :my-tool-call-by-tool-series="myToolCallByToolSeries"
+              :loading-my-tool-call-by-tool-series="
+                loading['myToolCallByToolSeries'] ?? false
+              "
+              :my-sessions="mySessions"
+              :loading-my-sessions="loadingMySessions"
+              :my-sessions-error="mySessionsError"
+              :my-display-name="myDisplayName"
+              :member-conversations="memberConversations"
+              :loading-member-conversations="loadingMemberConversations"
+              :member-conversations-error="memberConversationsError"
+              :window="window"
+              @load-member-drilldown="onLoadMyMemberDrilldown"
+            />
+          </template>
+
           <template #reviews>
             <CodeReviewsTab
               :review-findings-by-repo="reviewFindingsByRepo"
@@ -201,11 +233,13 @@ import {
   useMetricsStore,
   type MetricWindowToken,
 } from "@/stores/metrics-store";
+import { useAppStore } from "@/stores/app-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
 import { useSessionsStore } from "@/stores/sessions-store";
 import MetricsWindowSelect from "./MetricsWindowSelect.vue";
 import OverviewTab from "./OverviewTab.vue";
+import MeTab from "./MeTab.vue";
 import CodeReviewsTab from "./CodeReviewsTab.vue";
 import KnowledgeBaseTab from "./KnowledgeBaseTab.vue";
 import PromptMetricsTab from "./PromptMetricsTab.vue";
@@ -219,6 +253,7 @@ import { repositoryLabel } from "./repository-labels";
 
 // Root view is the only store consumer; children receive data as props.
 const toast = useToast();
+const appStore = useAppStore();
 const metricsStore = useMetricsStore();
 const {
   window,
@@ -247,6 +282,11 @@ const {
   agentCostUsdSeries,
   percentilesByMetric,
   scatterByMetric,
+  myLeaderboard,
+  mySectionLeaderboard,
+  mySnippetLeaderboard,
+  myAgentTokenByModelSeries,
+  myToolCallByToolSeries,
   loading,
   error,
   filterOrigin,
@@ -279,7 +319,15 @@ const {
   memberConversations,
   loadingMemberConversations,
   memberConversationsError,
+  mySessions,
+  loadingMySessions,
+  mySessionsError,
 } = storeToRefs(sessionsStore);
+
+/** Display name for the "Me" tab's drill-down slideover title. */
+const myDisplayName = computed(
+  () => appStore.user?.name ?? appStore.user?.email ?? null,
+);
 const libraryItems = computed(() => [
   { label: "All libraries", value: allFilterValue },
   ...libraries.value.map((library) => ({
@@ -341,6 +389,12 @@ const tabItems = [
     icon: "i-hugeicons-dashboard-square-01",
     slot: "overview",
     value: "overview",
+  },
+  {
+    label: "Me",
+    icon: "i-hugeicons-ai-user",
+    slot: "me",
+    value: "me",
   },
   {
     label: "Code Reviews",
@@ -449,6 +503,14 @@ async function loadActiveTab() {
         metricsStore.loadToolCallByToolSeries(),
       ]);
       break;
+    case "me":
+      await Promise.all([
+        metricsStore.loadMyKnowledgeLeaderboards(),
+        metricsStore.loadMyAgentTokenByModelSeries(),
+        metricsStore.loadMyToolCallByToolSeries(),
+        sessionsStore.loadMySessions(),
+      ]);
+      break;
     case "reviews":
       await Promise.all([
         metricsStore.loadReviewFindings(),
@@ -547,6 +609,26 @@ function onPromptUsersChange(value: string[]) {
 function onPromptLibraryChange(value: string) {
   promptLibrary.value = value === allFilterValue ? null : value;
   void refreshNow().catch(() => {});
+}
+
+/** Loads the "Me" tab's drill-down slideover, always scoped to the signed-in user. */
+function onLoadMyMemberDrilldown(minimumCostUsd: number) {
+  const userId = appStore.user?.userId;
+  if (!userId) {
+    return;
+  }
+
+  void sessionsStore.loadMemberConversations(userId, minimumCostUsd).catch(
+    (err: unknown) => {
+      toast.add({
+        title: "Could not load recent sessions",
+        description:
+          err instanceof Error ? err.message : "Sessions request failed.",
+        icon: "i-hugeicons-alert-02",
+        color: "error",
+      });
+    },
+  );
 }
 
 /** Loads the dashboard session drill-down without touching the Sessions inbox slice. */

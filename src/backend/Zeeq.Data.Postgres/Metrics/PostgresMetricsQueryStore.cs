@@ -39,6 +39,78 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         "COALESCE(alias_user.email, metric.user_email, user_email_alias.user_id)";
     private const string NormalizedMetricUserEmailSql = "lower(btrim(metric.user_email))";
 
+    /// <summary>
+    /// Reverse-resolves a set of canonical user filter keys (the values <see cref="GetFilterOptionsAsync" />
+    /// hands back to the dashboard — an alias-resolved email, or a bare telemetry email when no alias
+    /// applies) into the set of normalized <c>metric.user_email</c> values that would resolve to one of
+    /// those canonical keys.
+    /// </summary>
+    /// <remarks>
+    /// This exists so the big partitioned <c>zeeq_metric_events</c> table can be filtered directly on
+    /// <c>lower(btrim(user_email))</c> — a predicate over its own columns only — instead of on
+    /// <see cref="ResolvedMetricUserKeySql" />, which requires completing the alias LEFT JOIN for every
+    /// row before the filter can be evaluated. The lookup runs only against <c>core_user_aliases</c> /
+    /// <c>core_users</c> (small, non-partitioned, indexed by organization), never against the metric
+    /// table itself, so its cost is independent of window size or metric volume.
+    /// <para/>
+    /// Two cases, unioned:
+    /// <list type="bullet">
+    /// <item>A canonical key names a real user's email: every one of that user's active email aliases is
+    /// a raw value that resolves to this key (mirrors the <c>alias_user.email</c> branch of the
+    /// COALESCE).</item>
+    /// <item>A canonical key has no active alias pointing at it: the key itself, normalized, is the raw
+    /// value that resolves to it (mirrors the <c>metric.user_email</c> fallback branch). A key that DOES
+    /// have an alias pointing elsewhere (e.g. a caller passing a pre-alias raw email instead of the
+    /// canonical one) is deliberately excluded here — that raw value's resolved identity is the alias
+    /// owner's email, not itself, exactly matching today's join-based filter behavior.</item>
+    /// </list>
+    /// The caller must keep gating on the ORIGINAL (pre-resolution) filter array's cardinality — an
+    /// empty result here means "these keys matched nobody," which must filter out every row, not fall
+    /// back to unfiltered. Only an empty ORIGINAL input means "no filter requested."
+    /// </remarks>
+    private async Task<string[]> ResolveNormalizedUserFilterKeysAsync(
+        string organizationId,
+        string[] canonicalKeys,
+        CancellationToken cancellationToken
+    )
+    {
+        if (canonicalKeys.Length == 0)
+        {
+            return [];
+        }
+
+        FormattableString sql = $"""
+            SELECT DISTINCT normalized_email
+            FROM (
+                SELECT alias.normalized_value AS normalized_email
+                FROM zeeq.core_user_aliases alias
+                JOIN zeeq.core_users owner_user ON owner_user.id = alias.user_id
+                WHERE alias.organization_id = {organizationId}
+                  AND alias.kind = 'Email'
+                  AND alias.disabled_at_utc IS NULL
+                  AND owner_user.email = ANY({canonicalKeys})
+                UNION
+                SELECT lower(btrim(candidate_key)) AS normalized_email
+                FROM unnest({canonicalKeys}) AS candidate_key
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM zeeq.core_user_aliases alias2
+                    WHERE alias2.organization_id = {organizationId}
+                      AND alias2.kind = 'Email'
+                      AND alias2.disabled_at_utc IS NULL
+                      AND alias2.normalized_value = lower(btrim(candidate_key))
+                )
+            ) resolved
+            """;
+
+        var rows = await db
+            .Database.SqlQuery<string>(sql)
+            .TagWithOperationCallSite("metrics.user_filter.resolve")
+            .ToListAsync(cancellationToken);
+
+        return [.. rows];
+    }
+
     /// <inheritdoc />
     public async Task<IReadOnlyList<MetricSeriesPoint>> GetSeriesAsync(
         string organizationId,
@@ -54,13 +126,23 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         var users = filters.Users ?? [];
         var tools = filters.Tools ?? [];
         var libraries = filters.Libraries ?? [];
+        var resolvedUserKeys = await ResolveNormalizedUserFilterKeysAsync(
+            organizationId,
+            users,
+            cancellationToken
+        );
 
         var seriesKey = MetricSeriesKeyExpression(groupBy, "metric");
-        var userFilterKey = MetricSeriesKeyExpression(MetricSeriesGroup.User, "metric");
 
         // GROUP BY 1, 2 groups by (bucket, series_key). For the ungrouped case series_key is a
         // constant NULL::text on every row, so grouping collapses to one row per bucket (SeriesKey
         // null) — the intended single-aggregate-series shape. Verified by the None-group test.
+        //
+        // The user filter gates on `users` (the ORIGINAL caller-supplied array), not on
+        // `resolvedUserKeys` — an empty original array means "no filter requested" (skip the
+        // predicate entirely), while a non-empty original array that resolves to zero raw emails
+        // means "these users matched nobody" and must filter out every row, which `= ANY('{}')`
+        // does naturally. See ResolveNormalizedUserFilterKeysAsync remarks.
         var format = $$"""
             SELECT date_bin({0}, metric.created_at_utc, {1}) AS bucket,
                    {{seriesKey}} AS series_key,
@@ -76,7 +158,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             WHERE metric.organization_id = {2}
               AND metric.metric_type = {3}
               AND metric.created_at_utc >= {1}
-              AND (cardinality({4}) = 0 OR {{userFilterKey}} = ANY({4}))
+              AND (cardinality({4}) = 0 OR {{NormalizedMetricUserEmailSql}} = ANY({7}))
               AND (cardinality({5}) = 0 OR metric.tool_name = ANY({5}))
               AND (cardinality({6}) = 0 OR metric.library = ANY({6}))
             GROUP BY 1, 2
@@ -91,7 +173,8 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             metricType,
             users,
             tools,
-            libraries
+            libraries,
+            resolvedUserKeys
         );
 
         return await db
@@ -116,10 +199,16 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         var users = filters.Users ?? [];
         var tools = filters.Tools ?? [];
         var libraries = filters.Libraries ?? [];
+        var resolvedUserKeys = await ResolveNormalizedUserFilterKeysAsync(
+            organizationId,
+            users,
+            cancellationToken
+        );
         var primarySeriesKey = MetricSeriesKeyExpression(primaryGroupBy, "metric");
         var secondarySeriesKey = MetricSeriesKeyExpression(secondaryGroupBy, "metric");
-        var userFilterKey = MetricSeriesKeyExpression(MetricSeriesGroup.User, "metric");
 
+        // See the user-filter note in GetSeriesAsync: gate on `users` (original input), filter on
+        // `resolvedUserKeys` (the reverse-resolved raw emails).
         var format = $$"""
             SELECT date_bin({0}, metric.created_at_utc, {1}) AS bucket,
                    {{primarySeriesKey}} AS primary_series_key,
@@ -136,7 +225,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             WHERE metric.organization_id = {2}
               AND metric.metric_type = {3}
               AND metric.created_at_utc >= {1}
-              AND (cardinality({4}) = 0 OR {{userFilterKey}} = ANY({4}))
+              AND (cardinality({4}) = 0 OR {{NormalizedMetricUserEmailSql}} = ANY({7}))
               AND (cardinality({5}) = 0 OR metric.tool_name = ANY({5}))
               AND (cardinality({6}) = 0 OR metric.library = ANY({6}))
             GROUP BY 1, 2, 3
@@ -151,7 +240,8 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             metricType,
             users,
             tools,
-            libraries
+            libraries,
+            resolvedUserKeys
         );
 
         return await db
@@ -235,12 +325,23 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         MetricWindow window,
         string? library,
         int top,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        string[]? users = null
     )
     {
         var range = window.ToRange();
         var windowStart = DateTimeOffset.UtcNow - range.Span;
+        var userFilter = users ?? [];
+        var resolvedUserKeys = await ResolveNormalizedUserFilterKeysAsync(
+            organizationId,
+            userFilter,
+            cancellationToken
+        );
 
+        // No SELECT/GROUP BY on the user dimension here, so — like GetPromptLeaderboardAsync — the
+        // user filter needs no alias JOIN at all: it's a plain predicate over the base table's own
+        // normalized user_email column, gated on the ORIGINAL `users` array (see the user-filter
+        // note on GetSeriesAsync for the gate-on-original/filter-on-resolved rule).
         FormattableString sql = $"""
             SELECT tags->>'path' AS item, library, SUM(metric_value) AS value
             FROM zeeq.zeeq_metric_events
@@ -249,6 +350,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
               AND created_at_utc >= {windowStart}
               AND tags->>'path' IS NOT NULL
               AND ({library}::text IS NULL OR library = {library}::text)
+              AND (cardinality({userFilter}) = 0 OR lower(btrim(user_email)) = ANY({resolvedUserKeys}))
             GROUP BY 1, 2
             ORDER BY 3 DESC
             LIMIT {top}
@@ -267,11 +369,18 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         MetricWindow window,
         string? library,
         int top,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        string[]? users = null
     )
     {
         var range = window.ToRange();
         var windowStart = DateTimeOffset.UtcNow - range.Span;
+        var userFilter = users ?? [];
+        var resolvedUserKeys = await ResolveNormalizedUserFilterKeysAsync(
+            organizationId,
+            userFilter,
+            cancellationToken
+        );
 
         // Same shape as GetLeaderboardAsync, one level finer: aggregated by (path, heading) instead
         // of path alone, so two sections in the same document count as distinct items. `heading` is
@@ -279,6 +388,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         // displayed `item` is heading-only (the path is redundant once the panel is already scoped
         // to one kind) — grouping still includes path so two different documents that happen to
         // share heading text don't have their counts merged, only their display label collides.
+        // See GetLeaderboardAsync for why the user filter needs no JOIN.
         FormattableString sql = $"""
             SELECT tags->>'heading' AS item, library, SUM(metric_value) AS value
             FROM zeeq.zeeq_metric_events
@@ -288,6 +398,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
               AND tags->>'path' IS NOT NULL
               AND tags->>'heading' IS NOT NULL
               AND ({library}::text IS NULL OR library = {library}::text)
+              AND (cardinality({userFilter}) = 0 OR lower(btrim(user_email)) = ANY({resolvedUserKeys}))
             GROUP BY tags->>'path', tags->>'heading', library
             ORDER BY 3 DESC
             LIMIT {top}
@@ -312,28 +423,31 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         var range = window.ToRange();
         var windowStart = DateTimeOffset.UtcNow - range.Span;
         var userFilter = users ?? [];
-        var userFilterKey = MetricSeriesKeyExpression(MetricSeriesGroup.User, "metric");
+        var resolvedUserKeys = await ResolveNormalizedUserFilterKeysAsync(
+            organizationId,
+            userFilter,
+            cancellationToken
+        );
 
         // Prompt names are user-facing aliases, not stable document identity. Rank by the actual
         // document path scoped with its library so same-named prompts from different files do not
         // collapse into one leaderboard row. Item intentionally displays as `library:/path.md`.
+        //
+        // Unlike GetSeriesAsync/GetTwoDimensionalSeriesAsync, nothing here SELECTs or GROUPs BY the
+        // user dimension — the alias LEFT JOINs existed only to support the filter predicate, so
+        // resolving the filter up front lets this query drop them entirely rather than just
+        // relocating the predicate. See the user-filter note on GetSeriesAsync for the
+        // gate-on-original/filter-on-resolved rule.
         var format = $$"""
             SELECT concat(coalesce(metric.library, 'unknown-library'), ':', metric.tags->>'document_path') AS item,
                    metric.library AS library,
                    SUM(metric.metric_value) AS value
             FROM zeeq.zeeq_metric_events metric
-            LEFT JOIN zeeq.core_user_aliases user_email_alias
-             ON user_email_alias.organization_id = metric.organization_id
-             AND user_email_alias.kind = 'Email'
-             AND user_email_alias.normalized_value = {{NormalizedMetricUserEmailSql}}
-             AND user_email_alias.disabled_at_utc IS NULL
-            LEFT JOIN zeeq.core_users alias_user
-              ON alias_user.id = user_email_alias.user_id
             WHERE metric.organization_id = {0}
               AND metric.metric_type = 'zeeq_prompt_get_counter'
               AND metric.created_at_utc >= {1}
               AND metric.tags->>'document_path' IS NOT NULL
-              AND (cardinality({2}) = 0 OR {{userFilterKey}} = ANY({2}))
+              AND (cardinality({2}) = 0 OR {{NormalizedMetricUserEmailSql}} = ANY({5}))
               AND ({3}::text IS NULL OR metric.library = {3}::text)
             GROUP BY metric.library, metric.tags->>'document_path'
             ORDER BY 3 DESC
@@ -346,7 +460,8 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             windowStart,
             userFilter,
             library,
-            top
+            top,
+            resolvedUserKeys
         );
 
         return await db
