@@ -18,6 +18,7 @@ public sealed class GetMetricLeaderboardHandler(IMetricsQueryStore store, Hybrid
         string? window,
         string? library,
         int? top,
+        string[]? users,
         CancellationToken cancellationToken
     )
     {
@@ -34,7 +35,8 @@ public sealed class GetMetricLeaderboardHandler(IMetricsQueryStore store, Hybrid
             "leaderboard",
             parsedWindow.ToString(),
             library,
-            boundedTop.ToString()
+            boundedTop.ToString(),
+            MetricsEndpointCache.Join(users)
         );
 
         var result = await cache.GetOrCreateAsync(
@@ -47,7 +49,8 @@ public sealed class GetMetricLeaderboardHandler(IMetricsQueryStore store, Hybrid
                         parsedWindow,
                         library,
                         boundedTop,
-                        token
+                        token,
+                        users
                     )
                 ).ToArray(),
             MetricsEndpointCache.Options,

@@ -182,6 +182,14 @@ export const useMetricsStore = defineStore("metrics-store", () => {
   const percentilesByMetric = ref<Record<string, MetricPercentilePoint[]>>({});
   const scatterByMetric = ref<Record<string, MetricScatterPoint[]>>({});
 
+  // "Me" tab panel data — always scoped to the signed-in user, independent of the
+  // Overview tab's shared user/tool filters.
+  const myLeaderboard = ref<MetricLeaderboardItem[]>([]);
+  const mySectionLeaderboard = ref<MetricLeaderboardItem[]>([]);
+  const mySnippetLeaderboard = ref<MetricLeaderboardItem[]>([]);
+  const myAgentTokenByModelSeries = ref<MetricSeriesPoint[]>([]);
+  const myToolCallByToolSeries = ref<MetricSeriesPoint[]>([]);
+
   // Findings drill-down list (Critical/Major stat-card slideover), keyed by severity so both
   // severities can hold independent pages/cursors without one clearing the other.
   const findingReviewItems = ref<
@@ -334,6 +342,82 @@ export const useMetricsStore = defineStore("metrics-store", () => {
         );
       }),
     ]);
+  }
+
+  /**
+   * Loads the "Me" tab's document/section/snippet leaderboards, each scoped to the signed-in
+   * user via the `users` filter (no library filter — org-wide, matching the tab's scope). Skips
+   * the requests entirely when the current identity has no email on record (e.g. an IdP login
+   * that never surfaced an email claim), leaving the panels empty rather than sending an
+   * unfiltered `users: []` request that would return everyone's data.
+   */
+  async function loadMyKnowledgeLeaderboards() {
+    const orgId = requireOrganizationId();
+    const email = currentUserEmail();
+    if (!email) {
+      myLeaderboard.value = [];
+      mySectionLeaderboard.value = [];
+      mySnippetLeaderboard.value = [];
+      return;
+    }
+
+    await Promise.all([
+      run("myLeaderboard", async () => {
+        myLeaderboard.value = await Metrics.getMetricLeaderboard(orgId, {
+          window: window.value,
+          users: [email],
+        });
+      }),
+      run("mySectionLeaderboard", async () => {
+        mySectionLeaderboard.value = await Metrics.getMetricSectionLeaderboard(
+          orgId,
+          { window: window.value, kind: "section", users: [email] },
+        );
+      }),
+      run("mySnippetLeaderboard", async () => {
+        mySnippetLeaderboard.value = await Metrics.getMetricSectionLeaderboard(
+          orgId,
+          { window: window.value, kind: "code", users: [email] },
+        );
+      }),
+    ]);
+  }
+
+  /** Loads the "Me" tab's token-usage-by-model series, scoped to the signed-in user. */
+  async function loadMyAgentTokenByModelSeries() {
+    const email = currentUserEmail();
+    if (!email) {
+      myAgentTokenByModelSeries.value = [];
+      return;
+    }
+
+    myAgentTokenByModelSeries.value = await loadSeries(
+      "myAgentTokenByModelSeries",
+      histogramMetricType.agentTokenUsage,
+      metricSeriesGroupEnum.Model,
+      { users: [email] },
+    );
+  }
+
+  /** Loads the "Me" tab's tool-usage-by-tool-name series, scoped to the signed-in user. */
+  async function loadMyToolCallByToolSeries() {
+    const email = currentUserEmail();
+    if (!email) {
+      myToolCallByToolSeries.value = [];
+      return;
+    }
+
+    myToolCallByToolSeries.value = await loadSeries(
+      "myToolCallByToolSeries",
+      counterMetricType.toolCall,
+      metricSeriesGroupEnum.Tool,
+      { users: [email] },
+    );
+  }
+
+  /** The signed-in user's email, used to scope every "Me" tab query; null if unavailable. */
+  function currentUserEmail(): string | null {
+    return appStore.user?.email ?? null;
   }
 
   /** Loads successful dynamic prompt gets by user, library, and client/agent. */
@@ -677,6 +761,11 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     agentCostUsdSeries,
     percentilesByMetric,
     scatterByMetric,
+    myLeaderboard,
+    mySectionLeaderboard,
+    mySnippetLeaderboard,
+    myAgentTokenByModelSeries,
+    myToolCallByToolSeries,
     filterOptionUsers,
     filterOptionTools,
     filterOptionRepositories,
@@ -703,6 +792,9 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     loadAgentUsageSeries,
     loadPercentiles,
     loadScatter,
+    loadMyKnowledgeLeaderboards,
+    loadMyAgentTokenByModelSeries,
+    loadMyToolCallByToolSeries,
   };
 });
 

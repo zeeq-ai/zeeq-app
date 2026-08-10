@@ -398,6 +398,108 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     }
 
     [Test]
+    public async Task GetSeries_UserFilter_ResolvesMixOfAliasedAndDirectCanonicalKeys()
+    {
+        // Regression test for ResolveNormalizedUserFilterKeysAsync's UNION: one filter key
+        // resolves via an active alias (personal-mixed -> member-mixed), the other filter key has
+        // no alias at all and must match its own raw telemetry email directly. Both branches must
+        // fire in the same query.
+        var (seed, _) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddUserAliases(alias =>
+            {
+                alias.DisplayValue = "personal-mixed@example.com";
+                alias.NormalizedValue = "personal-mixed@example.com";
+            })
+            .BuildAsync();
+        var org = seed.Organization.Id;
+        seed.Owner.Email = "member-mixed@company.com";
+
+        await SeedMetricsAsync(
+            AgentMetric(org, "zeeq_agent_token_usage", 40, "gpt-5-codex", "personal-mixed@example.com"),
+            AgentMetric(org, "zeeq_agent_token_usage", 15, "gpt-5-codex", "direct-mixed@example.com")
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var series = await store.GetSeriesAsync(
+            org,
+            "zeeq_agent_token_usage",
+            MetricWindow.H1,
+            MetricSeriesGroup.None,
+            new MetricSeriesFilters(Users: ["member-mixed@company.com", "direct-mixed@example.com"]),
+            CancellationToken.None
+        );
+
+        await Assert.That(series.Sum(p => p.Value)).IsEqualTo(55d);
+    }
+
+    [Test]
+    public async Task GetSeries_UserFilter_NonMatchingCanonicalKeyReturnsNoRows()
+    {
+        // A non-empty original filter that resolves to zero raw emails must exclude every row,
+        // not fall back to unfiltered — the resolver's empty result and "no filter requested" are
+        // different things.
+        await SeedMetricsAsync(ToolCall("org_q_nomatch", "search_documents", user: "a@x.com"));
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var series = await store.GetSeriesAsync(
+            "org_q_nomatch",
+            "zeeq_tool_call_counter",
+            MetricWindow.H1,
+            MetricSeriesGroup.None,
+            new MetricSeriesFilters(Users: ["nobody@nowhere.example"]),
+            CancellationToken.None
+        );
+
+        await Assert.That(series.Sum(p => p.Value)).IsEqualTo(0d);
+    }
+
+    [Test]
+    public async Task GetPromptLeaderboard_UserFilter_ResolvesCanonicalAliasKey()
+    {
+        // GetPromptLeaderboardAsync previously shared the same join-based filter as GetSeriesAsync
+        // but had no test covering alias resolution specifically (only direct raw-email filtering,
+        // see GetPromptLeaderboard_RanksDocumentPathsAndFiltersByUserAndLibrary). This closes that
+        // gap for the now-join-free implementation.
+        var (seed, _) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddUserAliases(alias =>
+            {
+                alias.DisplayValue = "personal-prompt@example.com";
+                alias.NormalizedValue = "personal-prompt@example.com";
+            })
+            .BuildAsync();
+        var org = seed.Organization.Id;
+        seed.Owner.Email = "member-prompt@company.com";
+
+        await SeedMetricsAsync(
+            PromptGet(org, "backend", "/backend/shared.md", "shared-skill", "personal-prompt@example.com")
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var canonicalItems = await store.GetPromptLeaderboardAsync(
+            org,
+            MetricWindow.H1,
+            users: ["member-prompt@company.com"],
+            library: null,
+            top: 10,
+            CancellationToken.None
+        );
+        var rawAliasItems = await store.GetPromptLeaderboardAsync(
+            org,
+            MetricWindow.H1,
+            users: ["personal-prompt@example.com"],
+            library: null,
+            top: 10,
+            CancellationToken.None
+        );
+
+        await Assert.That(canonicalItems.Count).IsEqualTo(1);
+        await Assert.That(canonicalItems[0].Value).IsEqualTo(1d);
+        await Assert.That(rawAliasItems.Count).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task GetPercentiles_ComputesInterpolatedPercentilesPerBucket()
     {
         // percentile_cont interpolates: for [10,20,30,40,50] p50=30, p95=48, p99=49.6.
@@ -487,6 +589,104 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         // Both "Intro" rows survive as distinct entries (2 from /a.md, 1 from /d.md) rather
         // than merging into a single value=3 row.
         await Assert.That(items.Count(i => i.Item == "Intro")).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task GetLeaderboard_UserFilter_ResolvesCanonicalAliasKey()
+    {
+        // Closes the gap GetLeaderboardAsync previously had no user dimension at all -- same
+        // alias-resolution semantics as GetPromptLeaderboard_UserFilter_ResolvesCanonicalAliasKey:
+        // the canonical (post-alias) email matches, the raw pre-alias email filtered directly does
+        // not (its resolved identity is the alias owner's email, not itself).
+        var (seed, _) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddUserAliases(alias =>
+            {
+                alias.DisplayValue = "personal-lb@example.com";
+                alias.NormalizedValue = "personal-lb@example.com";
+            })
+            .BuildAsync();
+        var org = seed.Organization.Id;
+        seed.Owner.Email = "member-lb@company.com";
+
+        await SeedMetricsAsync(
+            Read(org, "zeeq_section_read_counter", "/a.md", user: "personal-lb@example.com"),
+            Read(org, "zeeq_section_read_counter", "/b.md", user: "someone-else@example.com")
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var canonicalItems = await store.GetLeaderboardAsync(
+            org,
+            ["zeeq_section_read_counter"],
+            MetricWindow.H1,
+            library: null,
+            top: 10,
+            CancellationToken.None,
+            users: ["member-lb@company.com"]
+        );
+        var rawAliasItems = await store.GetLeaderboardAsync(
+            org,
+            ["zeeq_section_read_counter"],
+            MetricWindow.H1,
+            library: null,
+            top: 10,
+            CancellationToken.None,
+            users: ["personal-lb@example.com"]
+        );
+
+        await Assert.That(canonicalItems.Count).IsEqualTo(1);
+        await Assert.That(canonicalItems[0].Item).IsEqualTo("/a.md");
+        await Assert.That(rawAliasItems.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task GetSectionLeaderboard_UserFilter_ResolvesCanonicalAliasKey()
+    {
+        var (seed, _) = await EntityGraph
+            .AddGeneratedSeed(_context)
+            .AddUserAliases(alias =>
+            {
+                alias.DisplayValue = "personal-slb@example.com";
+                alias.NormalizedValue = "personal-slb@example.com";
+            })
+            .BuildAsync();
+        var org = seed.Organization.Id;
+        seed.Owner.Email = "member-slb@company.com";
+
+        await SeedMetricsAsync(
+            Read(
+                org,
+                "zeeq_section_read_counter",
+                "/a.md",
+                "Intro",
+                user: "personal-slb@example.com"
+            ),
+            Read(org, "zeeq_section_read_counter", "/b.md", "Overview", user: "someone-else@example.com")
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var canonicalItems = await store.GetSectionLeaderboardAsync(
+            org,
+            ["zeeq_section_read_counter"],
+            MetricWindow.H1,
+            library: null,
+            top: 10,
+            CancellationToken.None,
+            users: ["member-slb@company.com"]
+        );
+        var rawAliasItems = await store.GetSectionLeaderboardAsync(
+            org,
+            ["zeeq_section_read_counter"],
+            MetricWindow.H1,
+            library: null,
+            top: 10,
+            CancellationToken.None,
+            users: ["personal-slb@example.com"]
+        );
+
+        await Assert.That(canonicalItems.Count).IsEqualTo(1);
+        await Assert.That(canonicalItems[0].Item).IsEqualTo("Intro");
+        await Assert.That(rawAliasItems.Count).IsEqualTo(0);
     }
 
     [Test]
@@ -873,7 +1073,8 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         string org,
         string metricType,
         string path,
-        string? heading = null
+        string? heading = null,
+        string? user = null
     ) =>
         new()
         {
@@ -881,6 +1082,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
             MetricType = metricType,
             MetricValue = 1,
             Library = "zeeq-app",
+            UserEmail = user,
             Tags = heading is null
                 ? new() { ["path"] = path }
                 : new() { ["path"] = path, ["heading"] = heading },

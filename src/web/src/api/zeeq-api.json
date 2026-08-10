@@ -6358,6 +6358,17 @@
               ],
               "format": "int32"
             }
+          },
+          {
+            "name": "users",
+            "in": "query",
+            "schema": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
         ],
         "responses": {
@@ -6440,6 +6451,17 @@
                 "string"
               ],
               "format": "int32"
+            }
+          },
+          {
+            "name": "users",
+            "in": "query",
+            "schema": {
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         ],

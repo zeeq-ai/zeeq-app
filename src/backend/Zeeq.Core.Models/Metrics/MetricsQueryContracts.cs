@@ -233,20 +233,26 @@ public interface IMetricsQueryStore
         CancellationToken cancellationToken
     );
 
-    /// <summary>Top-N ranked items across one or more metric types (UI-7 path leaderboard).</summary>
+    /// <summary>
+    /// Top-N ranked items across one or more metric types (UI-7 path leaderboard), optionally
+    /// scoped to one or more canonical users (resolved the same way as the other user filters —
+    /// see <c>PostgresMetricsQueryStore.ResolveNormalizedUserFilterKeysAsync</c>).
+    /// </summary>
     Task<IReadOnlyList<MetricLeaderboardItem>> GetLeaderboardAsync(
         string organizationId,
         string[] metricTypes,
         MetricWindow window,
         string? library,
         int top,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        string[]? users = null
     );
 
     /// <summary>
     /// Top-N ranked (path, heading) sections/snippets — the same shape as
     /// <see cref="GetLeaderboardAsync" /> but keyed one level finer than the document path, so two
-    /// different sections in the same document rank separately.
+    /// different sections in the same document rank separately. Optionally scoped to one or more
+    /// canonical users, same resolution as <see cref="GetLeaderboardAsync" />.
     /// </summary>
     Task<IReadOnlyList<MetricLeaderboardItem>> GetSectionLeaderboardAsync(
         string organizationId,
@@ -254,7 +260,8 @@ public interface IMetricsQueryStore
         MetricWindow window,
         string? library,
         int top,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        string[]? users = null
     );
 
     /// <summary>Top-N retrieved MCP prompts, keyed by the captured <c>prompt_name</c> tag.</summary>

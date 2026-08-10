@@ -256,9 +256,10 @@ public sealed class MetricsEndpoints : IEndpoint
                         string? window,
                     [FromQuery, MaxLength(MaxIdLength)] string? library,
                     [FromQuery, Range(1, 100)] int? top,
+                    [FromQuery, MaxLength(MaxFilterValues)] string[]? users,
                     [FromServices] GetMetricLeaderboardHandler handler,
                     CancellationToken ct
-                ) => handler.HandleAsync(orgId, window, library, top, ct)
+                ) => handler.HandleAsync(orgId, window, library, top, users, ct)
             )
             .WithName("GetMetricLeaderboard")
             .Produces<MetricLeaderboardItem[]>()
@@ -292,9 +293,10 @@ public sealed class MetricsEndpoints : IEndpoint
                     [FromQuery, AllowedValues("section", "code")] string kind,
                     [FromQuery, MaxLength(MaxIdLength)] string? library,
                     [FromQuery, Range(1, 100)] int? top,
+                    [FromQuery, MaxLength(MaxFilterValues)] string[]? users,
                     [FromServices] GetMetricSectionLeaderboardHandler handler,
                     CancellationToken ct
-                ) => handler.HandleAsync(orgId, window, kind, library, top, ct)
+                ) => handler.HandleAsync(orgId, window, kind, library, top, users, ct)
             )
             .WithName("GetMetricSectionLeaderboard")
             .Produces<MetricLeaderboardItem[]>()
