@@ -6,9 +6,15 @@ Zeeq ("zeek") is an MCP server that provides teams with visibility into which co
 
 This telemetry lets teams *see* how agents are using context to affect code authoring.
 
+![Screenshot of the Zeeq telemetry dashboard for tool calls](https://zeeq.ai/screens/carousel/topline-telemetry.webp)
+
 The same context origin and telemetry are applied to code reviews which can be invoked *in the agent loop* (versus in CI on the PR).
 
 It is designed to be self hostable, relatively consolidated on a few technologies (can run entirely on Postgres; no additional infrastructure), yet operationally scalable.
+
+Zeeq was originally built as an internal platform at [Motion](https://www.usemotion.com/) ($500m, series C, YC startup) to shape agentic coding output and is now released as an open source tool.
+
+It is a key part of Motion's internal agentic coding platform, which is used by a team of 40+ engineers to ship with high confidence using AI coding tools.
 
 ---
 
