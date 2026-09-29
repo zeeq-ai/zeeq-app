@@ -16,9 +16,9 @@ namespace Zeeq.Platform.Telemetry.Processing;
 /// (e.g. Claude's reported USD) pass through unchanged.
 /// </para>
 /// <para>
-/// Pricing rates are sourced from provider API pricing pages as of July 2026.
-/// The embedded catalog is version-stamped; future rate changes should bump the
-/// version and add new entries (keeping old entries for historical accuracy).
+/// Pricing rates are sourced from provider API pricing pages as of September 29, 2026.
+/// The embedded catalog is version-stamped; rate changes should bump the version.
+/// Previously stored cost estimates are not recalculated by this enricher.
 /// Unknown models are estimated using <c>default</c> catch-all rates.
 /// </para>
 /// </remarks>
@@ -116,19 +116,18 @@ public sealed class AgentTelemetryCostEnricher : IAgentTelemetryCostEnricher
 
 /// <summary>
 /// Per-model token pricing rates sourced from provider API pricing pages as of
-/// July 2026. Rates are per-token (not per-million). Cached token rate applies
-/// to cache-read and cache-write tokens combined.
+/// September 29, 2026. Rates are per-token (not per-million). Cached token rates
+/// use cache-read pricing; telemetry that combines cache reads and writes is approximate.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Version-stamped so historical estimates remain traceable. When rates change,
-/// append new entries and bump the version — do not mutate existing entries.
+/// Uses standard processing and short-context rates. Processing tier, regional
+/// premiums, long-context premiums, and separate cache-write charges are not modeled.
+/// Bump the version when rates change and retain entries for older model families.
 /// </para>
 /// <para>
-/// Claude Sonnet 5 intro pricing ($2.00/$10.00 per MTok) is scheduled to revert
-/// to standard pricing ($3.00/$15.00) on 2026-09-01 per
-/// https://platform.claude.com/docs/en/about-claude/pricing — bump the version
-/// and update the <c>claude-sonnet-5</c> entry then rather than mutating it now.
+/// Claude Sonnet 5 remains $2.00/$10.00 per MTok on the current pricing page.
+/// GPT-5.6 Sol promotional pricing is available at least through November 21, 2026.
 /// </para>
 /// </remarks>
 internal static class PricingCatalog
@@ -136,7 +135,7 @@ internal static class PricingCatalog
     /// <summary>
     /// Catalog version for traceability. Bump when rates are updated.
     /// </summary>
-    public const int Version = 3;
+    public const int Version = 4;
 
     /// <summary>
     /// Copilot nano-AIU → USD conversion rate.
@@ -156,11 +155,17 @@ internal static class PricingCatalog
         StringComparer.OrdinalIgnoreCase
     )
     {
-        // --- OpenAI models (pricing as of July 2026) ---
-        // Source: https://platform.openai.com/docs/pricing (standard tier)
-        ["gpt-5.6-sol"] = TokenRates.FromPerMillion(5.00m, 0.50m, 30.00m),
+        // --- OpenAI models (pricing as of September 29, 2026) ---
+        // Source: https://developers.openai.com/api/docs/pricing (standard tier, short context)
+        ["gpt-6.1-sol"] = TokenRates.FromPerMillion(2.00m, 0.10m, 10.00m),
+        ["gpt-6-astra"] = TokenRates.FromPerMillion(10.00m, 1.00m, 50.00m),
+        ["gpt-6-sol"] = TokenRates.FromPerMillion(2.00m, 0.20m, 10.00m),
+        ["gpt-6-luna"] = TokenRates.FromPerMillion(0.10m, 0.01m, 0.50m),
+        ["gpt-5.6-sol"] = TokenRates.FromPerMillion(4.00m, 0.40m, 20.00m),
         ["gpt-5.6-terra"] = TokenRates.FromPerMillion(2.00m, 0.20m, 12.00m),
         ["gpt-5.6-luna"] = TokenRates.FromPerMillion(0.20m, 0.02m, 1.20m),
+        ["gpt-5.6-cyber"] = TokenRates.FromPerMillion(12.50m, 1.25m, 75.00m),
+        ["gpt-5.5-cyber"] = TokenRates.FromPerMillion(12.50m, 1.25m, 75.00m),
         ["gpt-5.5"] = TokenRates.FromPerMillion(5.00m, 0.50m, 30.00m),
         ["gpt-5.5-pro"] = TokenRates.FromPerMillion(30.00m, 30.00m, 180.00m),
         ["gpt-5.4"] = TokenRates.FromPerMillion(2.50m, 0.25m, 15.00m),
@@ -169,8 +174,12 @@ internal static class PricingCatalog
         ["gpt-5.4-pro"] = TokenRates.FromPerMillion(30.00m, 30.00m, 180.00m),
         ["gpt-5.3-codex"] = TokenRates.FromPerMillion(1.75m, 0.175m, 14.00m),
 
-        // --- Anthropic models (pricing as of July 2026) ---
+        // --- Anthropic models (pricing as of September 29, 2026) ---
         // Source: https://platform.claude.com/docs/en/about-claude/pricing (API, standard tier)
+        ["claude-opus-5.5"] = TokenRates.FromPerMillion(4.00m, 0.20m, 20.00m),
+        ["claude-sonnet-5.5"] = TokenRates.FromPerMillion(2.00m, 0.20m, 10.00m),
+        ["claude-fable-5.1"] = TokenRates.FromPerMillion(10.00m, 0.25m, 50.00m),
+        ["claude-mythos-5.1"] = TokenRates.FromPerMillion(10.00m, 0.25m, 50.00m),
         ["claude-opus-5"] = TokenRates.FromPerMillion(5.00m, 0.50m, 25.00m),
         ["claude-sonnet-5"] = TokenRates.FromPerMillion(2.00m, 0.20m, 10.00m),
         ["claude-mythos-5"] = TokenRates.FromPerMillion(10.00m, 1.00m, 50.00m),
