@@ -114,6 +114,12 @@ public sealed class CodeReviewRecord : MutableDomainEntityBase, IOrganizationSco
     /// </summary>
     public int RemainingReviewBudget { get; set; }
 
+    /// <summary>Estimated API-rate USD cost of all reviewer model calls, when priceable.</summary>
+    public decimal? EstimatedCostUsd { get; set; }
+
+    /// <summary>Pricing catalog version used for <see cref="EstimatedCostUsd"/>.</summary>
+    public int? CostCatalogVersion { get; set; }
+
     /// <summary>
     /// Number of critical findings produced by this review.
     /// </summary>

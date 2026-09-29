@@ -397,6 +397,36 @@ public sealed class MetricsEndpoints : IEndpoint
             )
             .RequireActiveOrganization();
 
+        // GET /api/v1/orgs/{orgId}/metrics/reviews/costs
+        group
+            .MapGet(
+                "/reviews/costs",
+                static (
+                    [MaxLength(MaxIdLength)] string orgId,
+                    [FromQuery]
+                    [AllowedValues(
+                        "15m",
+                        "30m",
+                        "1h",
+                        "4h",
+                        "12h",
+                        "24h",
+                        "72h",
+                        "7d",
+                        "14d",
+                        "30d"
+                    )]
+                        string? window,
+                    [FromServices] GetReviewCostsHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, window, ct)
+            )
+            .WithName("GetReviewCosts")
+            .Produces<ReviewCostMetrics>()
+            .Produces<MetricsEndpointError>(StatusCodes.Status400BadRequest)
+            .WithSummary("Review costs in the selected window.")
+            .RequireActiveOrganization();
+
         // GET /api/v1/orgs/{orgId}/metrics/reviews/findings
         group
             .MapGet(

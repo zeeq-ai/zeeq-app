@@ -18,6 +18,7 @@
       :theme="theme"
       :loading="showLoadingMask"
       :loading-options="loadingOptions"
+      @click="emits('pointClick', $event)"
       autoresize
     />
   </div>
@@ -63,6 +64,8 @@ const props = withDefaults(
     height: "24rem",
   },
 );
+
+const emits = defineEmits<{ pointClick: [event: unknown] }>();
 
 const colorMode = useColorMode();
 

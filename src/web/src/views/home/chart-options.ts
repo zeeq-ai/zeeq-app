@@ -20,6 +20,7 @@ import type {
   MetricScatterPoint,
   MetricSeriesPoint,
   ReviewFindingsPoint,
+  ReviewCostSample,
   ReviewVolumePoint,
 } from "@/api/generated";
 import {
@@ -578,6 +579,53 @@ export function tokenScatterOption(
       nameGap: 44,
       nameRotate: 90,
     },
+    series,
+  };
+}
+
+/** Plots one point per completed review; callers can use dataIndex for its deep link. */
+export function reviewCostScatterOption(
+  points: ReviewCostSample[],
+): EChartsOption {
+  const data = points.map((point) => [
+    new Date(point.createdAtUtc).getTime(),
+    toMetricNumber(point.costUsd),
+  ]);
+  const series: ScatterSeriesOption[] = [
+    { id: "review-cost", type: "scatter", symbolSize: 9, data },
+  ];
+
+  return {
+    tooltip: {
+      trigger: "item",
+      formatter: (params: unknown) => {
+        if (
+          typeof params !== "object" ||
+          params === null ||
+          !("dataIndex" in params) ||
+          typeof params.dataIndex !== "number"
+        ) {
+          return "";
+        }
+
+        const point = points[params.dataIndex];
+        if (!point) {
+          return "";
+        }
+
+        const author = point.authorLogin
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;");
+        return `${author}<br/>${new Date(point.createdAtUtc).toLocaleString()}<br/>$${toMetricNumber(point.costUsd).toFixed(4)} · click to open`;
+      },
+    },
+    grid: { left: 68, right: 24, top: 24, bottom: 55, containLabel: true },
+    xAxis: { type: "time" },
+    yAxis: { type: "value", name: "USD" },
+    dataZoom: [
+      { id: "inside", type: "inside" },
+      { id: "slider", type: "slider", height: 18, bottom: 8 },
+    ],
     series,
   };
 }

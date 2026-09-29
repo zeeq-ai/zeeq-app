@@ -19,6 +19,57 @@ namespace Zeeq.Data.Postgres.Metrics;
 /// </remarks>
 internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetricsQueryStore
 {
+    /// <inheritdoc />
+    public async Task<ReviewCostMetrics> GetReviewCostMetricsAsync(
+        string organizationId,
+        MetricWindow window,
+        CancellationToken cancellationToken
+    )
+    {
+        var range = window.ToRange();
+        var windowStart = DateTimeOffset.UtcNow - range.Span;
+        const string metricType = "zeeq_review_cost_usd";
+
+        FormattableString reviewsSql = $"""
+            SELECT created_at_utc,
+                   tags->>'review_id' AS review_id,
+                   COALESCE(tags->>'author_login', 'Unknown') AS author_login,
+                   tags->>'view_token' AS view_token,
+                   metric_value AS cost_usd
+            FROM zeeq.zeeq_metric_events
+            WHERE organization_id = {organizationId}
+              AND metric_type = {metricType}
+              AND created_at_utc >= {windowStart}
+              AND tags ? 'review_id'
+              AND tags ? 'view_token'
+            ORDER BY created_at_utc DESC, tags->>'review_id' DESC
+            LIMIT 2001
+            """;
+
+        FormattableString authorsSql = $"""
+            SELECT date_bin({range.Bucket}, created_at_utc, {windowStart}) AS bucket,
+                   COALESCE(tags->>'author_login', 'Unknown') AS series_key,
+                   SUM(metric_value) AS value
+            FROM zeeq.zeeq_metric_events
+            WHERE organization_id = {organizationId}
+              AND metric_type = {metricType}
+              AND created_at_utc >= {windowStart}
+            GROUP BY 1, 2
+            ORDER BY 1
+            """;
+
+        var reviews = await db
+            .Database.SqlQuery<ReviewCostSample>(reviewsSql)
+            .TagWithOperationCallSite("metrics.reviews.cost.samples")
+            .ToListAsync(cancellationToken);
+        var byAuthor = await db
+            .Database.SqlQuery<MetricSeriesPoint>(authorsSql)
+            .TagWithOperationCallSite("metrics.reviews.cost.authors")
+            .ToListAsync(cancellationToken);
+
+        return new(reviews.Take(2000).ToArray(), byAuthor, reviews.Count > 2000);
+    }
+
     // NOTE: Alias resolution is intentionally SQL-local here. These queries
     // aggregate directly over raw metric rows, so the equivalent trim/lower
     // normalization must remain SQL-translatable rather than calling the C#

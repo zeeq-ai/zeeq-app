@@ -1,3 +1,4 @@
+using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
 using Zeeq.Platform.Telemetry.Processing;
 
@@ -153,9 +154,10 @@ public static class AgentConversationTokenUsageCalculator
         // distinguishes "$0 spent" and "fully known" from "some/all costs unknown" so the UI
         // shows "—" instead of a misleadingly low total.
         decimal? resolvedTotalCostUsd = hasCompleteCost ? totalCostUsd : null;
-        var averageCostPerEventUsd = resolvedTotalCostUsd is { } total && completionEventCount > 0
-            ? total / completionEventCount
-            : (decimal?)null;
+        var averageCostPerEventUsd =
+            resolvedTotalCostUsd is { } total && completionEventCount > 0
+                ? total / completionEventCount
+                : (decimal?)null;
 
         return new AgentConversationTokenUsageSummary(
             completionEventCount,

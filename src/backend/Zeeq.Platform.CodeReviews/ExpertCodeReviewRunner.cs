@@ -9,6 +9,7 @@ using Zeeq.Core.Common;
 using Zeeq.Core.Common.Storage;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
+using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews;
@@ -265,6 +266,12 @@ public sealed partial class ExpertCodeReviewRunner(
                 ExecutionTraceParent = activity.Activity?.Id,
                 ExecutionTraceState = activity.Activity?.TraceStateString,
                 RemainingReviewBudget = 0,
+                EstimatedCostUsd =
+                    telemetry.EstimatedCostUsd ?? (reviewContext.NoAgentsActivated ? 0m : null),
+                CostCatalogVersion =
+                    telemetry.EstimatedCostUsd.HasValue || reviewContext.NoAgentsActivated
+                        ? PricingCatalog.Version
+                        : null,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,
             };
@@ -299,6 +306,8 @@ public sealed partial class ExpertCodeReviewRunner(
 
             // Update the persisted row with findings counts and storage URI.
             review = await codeReviews.UpdateAsync(review, cancellationToken);
+            // MCP reviews terminate here; PR reviews use CodeReviewRunRequestedHandler.
+            CodeReviewCostTelemetry.Record(review);
 
             LogReviewPersisted(
                 logger,

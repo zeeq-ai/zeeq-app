@@ -83,7 +83,9 @@
               :my-document-leaderboard="myLeaderboard"
               :my-section-leaderboard="mySectionLeaderboard"
               :my-snippet-leaderboard="mySnippetLeaderboard"
-              :loading-my-document-leaderboard="loading['myLeaderboard'] ?? false"
+              :loading-my-document-leaderboard="
+                loading['myLeaderboard'] ?? false
+              "
               :loading-my-section-leaderboard="
                 loading['mySectionLeaderboard'] ?? false
               "
@@ -211,8 +213,11 @@
             <PerformanceCostTab
               :duration-percentiles="durationPercentiles"
               :duration-scatter="durationScatter"
+              :review-cost-metrics="reviewCostMetrics"
               :loading-percentiles="loadingPercentiles"
               :loading-scatter="loadingScatter"
+              :loading-costs="loading['reviewCostMetrics'] ?? false"
+              :window="window"
             />
           </template>
         </UTabs>
@@ -280,6 +285,7 @@ const {
   agentTokenByUserSeries,
   agentTokenByModelUserSeries,
   agentCostUsdSeries,
+  reviewCostMetrics,
   percentilesByMetric,
   scatterByMetric,
   myLeaderboard,
@@ -566,6 +572,7 @@ async function loadActiveTab() {
       await Promise.all([
         metricsStore.loadPercentiles(durationKey),
         metricsStore.loadScatter(durationKey),
+        metricsStore.loadReviewCosts(),
       ]);
       break;
   }
@@ -618,8 +625,9 @@ function onLoadMyMemberDrilldown(minimumCostUsd: number) {
     return;
   }
 
-  void sessionsStore.loadMemberConversations(userId, minimumCostUsd).catch(
-    (err: unknown) => {
+  void sessionsStore
+    .loadMemberConversations(userId, minimumCostUsd)
+    .catch((err: unknown) => {
       toast.add({
         title: "Could not load recent sessions",
         description:
@@ -627,8 +635,7 @@ function onLoadMyMemberDrilldown(minimumCostUsd: number) {
         icon: "i-hugeicons-alert-02",
         color: "error",
       });
-    },
-  );
+    });
 }
 
 /** Loads the dashboard session drill-down without touching the Sessions inbox slice. */
