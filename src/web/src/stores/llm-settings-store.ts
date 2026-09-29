@@ -15,10 +15,11 @@ export const llmTierNames = ["fast", "high", "max"] as const;
 export type LlmTierName = (typeof llmTierNames)[number];
 
 /**
- * First-phase provider catalog rendered by the web app.
+ * Provider model catalog rendered by the web app.
  *
  * The backend intentionally accepts any non-empty model string; this catalog is
  * product UI guidance, not a server-side allowlist.
+ * Keep model additions aligned with PricingCatalog in AgentTelemetryCostEnricher.cs.
  */
 export const llmModelCatalog = {
   Fireworks: [
@@ -27,14 +28,24 @@ export const llmModelCatalog = {
     "accounts/fireworks/models/deepseek-v4-flash-0731",
   ],
   OpenAI: [
+    "gpt-6-luna",
+    "gpt-6-sol",
+    "gpt-6.1-sol",
+    "gpt-6-astra",
     "gpt-5.4-mini",
     "gpt-5.6-luna",
     "gpt-5.6-terra",
     "gpt-5.6-sol",
     "gpt-5.4",
     "gpt-5.5",
+    "gpt-5.5-cyber",
+    "gpt-5.6-cyber",
   ],
   "Azure OpenAI": [
+    "gpt-6-luna",
+    "gpt-6-sol",
+    "gpt-6.1-sol",
+    "gpt-6-astra",
     "gpt-5.4-mini",
     "gpt-5.6-luna",
     "gpt-5.6-terra",
@@ -44,6 +55,14 @@ export const llmModelCatalog = {
   ],
   Anthropic: [
     "claude-haiku-4-5",
+    "claude-sonnet-5-5",
+    "claude-opus-5-5",
+    "claude-fable-5-1",
+    "claude-mythos-5-1",
+    "claude-sonnet-5",
+    "claude-opus-5",
+    "claude-fable-5",
+    "claude-mythos-5",
     "claude-sonnet-4-6",
     "claude-opus-4-6",
     "claude-opus-4-7",
@@ -52,24 +71,40 @@ export const llmModelCatalog = {
 } as const;
 
 export type LlmProvider = keyof typeof llmModelCatalog;
+type LlmModelId = (typeof llmModelCatalog)[LlmProvider][number];
 
 /**
  * Human-friendly labels for stored model ids; non-mapped ids display verbatim.
  */
-export const llmModelLabels: Record<string, string> = {
+export const llmModelLabels: Record<string, string> &
+  Record<LlmModelId, string> = {
   // Fireworks
   "accounts/fireworks/models/glm-5p2": "GLM 5.2",
   "accounts/fireworks/models/deepseek-v4-pro": "DeepSeek v4 Pro (Fireworks)",
   "accounts/fireworks/models/deepseek-v4-flash-0731":
     "DeepSeek v4 Flash (Fireworks)",
   // OpenAI
+  "gpt-6-luna": "GPT 6 Luna",
+  "gpt-6-sol": "GPT 6 Sol",
+  "gpt-6.1-sol": "GPT 6.1 Sol",
+  "gpt-6-astra": "GPT 6 Astra",
   "gpt-5.4-mini": "GPT 5.4 Mini",
   "gpt-5.4": "GPT 5.4",
   "gpt-5.5": "GPT 5.5",
   "gpt-5.6-luna": "GPT 5.6 Luna",
   "gpt-5.6-terra": "GPT 5.6 Terra",
   "gpt-5.6-sol": "GPT 5.6 Sol",
+  "gpt-5.5-cyber": "GPT 5.5 Cyber",
+  "gpt-5.6-cyber": "GPT 5.6 Cyber",
   // Anthropic
+  "claude-sonnet-5-5": "Claude Sonnet 5.5",
+  "claude-opus-5-5": "Claude Opus 5.5",
+  "claude-fable-5-1": "Claude Fable 5.1",
+  "claude-mythos-5-1": "Claude Mythos 5.1",
+  "claude-sonnet-5": "Claude Sonnet 5",
+  "claude-opus-5": "Claude Opus 5",
+  "claude-fable-5": "Claude Fable 5",
+  "claude-mythos-5": "Claude Mythos 5",
   "claude-haiku-4-5": "Claude Haiku 4.5",
   "claude-sonnet-4-6": "Claude Sonnet 4.6",
   "claude-opus-4-6": "Claude Opus 4.6",

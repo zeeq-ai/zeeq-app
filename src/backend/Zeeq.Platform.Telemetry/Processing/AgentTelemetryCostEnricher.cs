@@ -135,7 +135,7 @@ internal static class PricingCatalog
     /// <summary>
     /// Catalog version for traceability. Bump when rates are updated.
     /// </summary>
-    public const int Version = 4;
+    public const int Version = 5;
 
     /// <summary>
     /// Copilot nano-AIU → USD conversion rate.
@@ -151,6 +151,8 @@ internal static class PricingCatalog
     /// </remarks>
     public const decimal CopilotNanoAiuToUsdRate = 1.0e-8m;
 
+    // When updating model families here, also update llmModelCatalog and llmModelLabels
+    // in src/web/src/stores/llm-settings-store.ts so the frontend model picker stays in sync.
     private static readonly Dictionary<string, TokenRates> _rates = new(
         StringComparer.OrdinalIgnoreCase
     )
@@ -197,6 +199,26 @@ internal static class PricingCatalog
         ["default"] = TokenRates.FromPerMillion(2.50m, 0.25m, 15.00m),
     };
 
+    // Claude API model IDs use hyphenated versions; harness telemetry also uses dotted versions.
+    // Base versions such as claude-opus-5 already match _rates and need no alias.
+    private static readonly Dictionary<string, string> _modelAliases = new(
+        StringComparer.OrdinalIgnoreCase
+    )
+    {
+        ["claude-opus-5-5"] = "claude-opus-5.5",
+        ["claude-sonnet-5-5"] = "claude-sonnet-5.5",
+        ["claude-fable-5-1"] = "claude-fable-5.1",
+        ["claude-mythos-5-1"] = "claude-mythos-5.1",
+        ["claude-haiku-4-5"] = "claude-haiku-4.5",
+        ["claude-opus-4-8"] = "claude-opus-4.8",
+        ["claude-opus-4-7"] = "claude-opus-4.7",
+        ["claude-opus-4-6"] = "claude-opus-4.6",
+        ["claude-opus-4-5"] = "claude-opus-4.5",
+        ["claude-opus-4-1"] = "claude-opus-4.1",
+        ["claude-sonnet-4-6"] = "claude-sonnet-4.6",
+        ["claude-sonnet-4-5"] = "claude-sonnet-4.5",
+    };
+
     /// <summary>
     /// Looks up token rates for a model name. Returns the <c>default</c>
     /// entry for unknown models.
@@ -209,7 +231,9 @@ internal static class PricingCatalog
             return _rates["default"];
         }
 
-        return _rates.TryGetValue(modelName, out var rates) ? rates : _rates["default"];
+        var canonicalName = _modelAliases.GetValueOrDefault(modelName, modelName);
+
+        return _rates.TryGetValue(canonicalName, out var rates) ? rates : _rates["default"];
     }
 }
 
