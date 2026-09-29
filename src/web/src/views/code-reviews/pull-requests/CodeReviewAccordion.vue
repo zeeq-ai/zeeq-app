@@ -34,6 +34,13 @@
         </span>
         <div class="ml-auto flex shrink-0 items-center gap-2">
           <UBadge
+            v-if="item.costLabel"
+            :label="item.costLabel"
+            color="neutral"
+            variant="outline"
+            class="rounded-full"
+          />
+          <UBadge
             :label="item.review.status"
             :color="item.statusColor"
             variant="subtle"
@@ -93,6 +100,7 @@ type CodeReviewAccordionItemViewModel = {
   review: CodeReviewRecordDto;
   reviewKey: string;
   totalFindings: number;
+  costLabel: string | null;
   statusColor: CodeReviewStatusColor;
   findings: CodeReviewFindingsResponse | null;
   loadingFindings: boolean;
@@ -214,6 +222,7 @@ function createAccordionItemViewModel(
     review,
     reviewKey: key,
     totalFindings: findingsCount,
+    costLabel: reviewCostLabel(review),
     statusColor: statusColor(review, findingsCount),
     findings: props.reviewFindingsByReviewKey[key] ?? null,
     loadingFindings: props.loadingReviewFindingsByReviewKey[key] === true,
@@ -222,6 +231,32 @@ function createAccordionItemViewModel(
     loadingRawXml: props.loadingReviewRawXmlByReviewKey[key] === true,
     rawXmlError: props.reviewRawXmlErrorsByReviewKey[key] ?? null,
   };
+}
+
+/** Keeps a real sub-cent estimate visible while suppressing an exact zero. */
+function reviewCostLabel(review: CodeReviewRecordDto): string | null {
+  const costUsd = review.estimatedCostUsd;
+  if (costUsd === null) {
+    return review.status === "Completed" || review.status === "Errored"
+      ? "Cost unknown"
+      : null;
+  }
+
+  const value = Number(costUsd);
+  if (value === 0) {
+    return null;
+  }
+
+  if (value > 0 && value < 0.0001) {
+    return "<$0.0001";
+  }
+
+  return value.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
 }
 
 /**

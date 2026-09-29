@@ -3,6 +3,7 @@ using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
+using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews;
@@ -238,6 +239,12 @@ public sealed partial class CodeReviewExecutionEngine(
                 counts.Comment
             );
 
+            review.EstimatedCostUsd =
+                telemetry.EstimatedCostUsd ?? (agentResolution.NoAgentsActivated ? 0m : null);
+            review.CostCatalogVersion = review.EstimatedCostUsd.HasValue
+                ? PricingCatalog.Version
+                : null;
+
             return new(
                 Xml: xml,
                 Output: output,
@@ -270,6 +277,10 @@ public sealed partial class CodeReviewExecutionEngine(
             // Durable callers persist this on the errored review row. Synthetic callers can
             // inspect the same partially captured source telemetry without writing a review.
             review.SourceTelemetryPayload = telemetry.SerializeSnapshotPayload();
+            review.EstimatedCostUsd = telemetry.EstimatedCostUsd;
+            review.CostCatalogVersion = review.EstimatedCostUsd.HasValue
+                ? PricingCatalog.Version
+                : null;
 
             throw;
         }

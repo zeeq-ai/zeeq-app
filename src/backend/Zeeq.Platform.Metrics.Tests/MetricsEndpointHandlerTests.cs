@@ -359,10 +359,7 @@ public sealed class MetricsEndpointHandlerTests
     [Test]
     public async Task GetMetricSectionLeaderboard_UsersFilter_ForwardsToStore()
     {
-        var store = new FakeMetricsQueryStore
-        {
-            SectionLeaderboard = [new("Intro", "backend", 2)],
-        };
+        var store = new FakeMetricsQueryStore { SectionLeaderboard = [new("Intro", "backend", 2)] };
         var handler = new GetMetricSectionLeaderboardHandler(store, new MetricsTestHybridCache());
 
         var result = await handler.HandleAsync(
@@ -450,6 +447,12 @@ public sealed class MetricsEndpointHandlerTests
 
     private sealed class FakeMetricsQueryStore : IMetricsQueryStore
     {
+        public Task<ReviewCostMetrics> GetReviewCostMetricsAsync(
+            string organizationId,
+            MetricWindow window,
+            CancellationToken cancellationToken
+        ) => Task.FromResult<ReviewCostMetrics>(new([], [], false));
+
         public MetricSeriesPoint[] Series { get; init; } = [];
         public MetricTwoDimensionalSeriesPoint[] TwoDimensionalSeries { get; init; } = [];
         public MetricLeaderboardItem[] PromptLeaderboard { get; init; } = [];

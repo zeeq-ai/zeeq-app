@@ -1,9 +1,9 @@
 using System.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Zeeq.Core.Common;
 using Zeeq.Core.Models;
 using Zeeq.Platform.Messaging;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -406,6 +406,12 @@ public sealed partial class CodeReviewRunRequestedHandler(
         }
         finally
         {
+            if (reachedTerminalState)
+            {
+                // This handler owns PR reviews; MCP reviews emit in ExpertCodeReviewRunner.
+                CodeReviewCostTelemetry.Record(review);
+            }
+
             await executionLeases.ReleaseAsync(lease.LeaseId, CancellationToken.None);
             activity?.AddEvent(
                 [

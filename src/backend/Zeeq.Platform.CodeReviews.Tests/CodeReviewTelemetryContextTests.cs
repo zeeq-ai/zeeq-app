@@ -11,6 +11,20 @@ namespace Zeeq.Platform.CodeReviews.Tests;
 public sealed class CodeReviewTelemetryContextTests
 {
     [Test]
+    public async Task EstimatedCostUsd_SumsReviewersAndRejectsIncompleteTotals()
+    {
+        var context = new CodeReviewTelemetryContext();
+        await Assert.That(context.EstimatedCostUsd).IsNull();
+
+        context.RecordReviewerCost("OpenAI", "gpt-6.1-sol", 0.012m);
+        context.RecordReviewerCost("Fireworks", "deepseek-v4-pro", 0m);
+        await Assert.That(context.EstimatedCostUsd).IsEqualTo(0.012m);
+
+        context.RecordReviewerCost("Unknown", "unlisted-model", null);
+        await Assert.That(context.EstimatedCostUsd).IsNull();
+    }
+
+    [Test]
     public async Task Snapshot_AggregatesSnippetsUnderDocumentByPath()
     {
         var context = new CodeReviewTelemetryContext();

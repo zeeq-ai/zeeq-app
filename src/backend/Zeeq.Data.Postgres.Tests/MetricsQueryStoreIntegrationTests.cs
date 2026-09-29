@@ -22,6 +22,67 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
 
     [Test]
+    public async Task GetReviewCosts_GroupsByAuthorWithinOrganizationAndWindow()
+    {
+        await SeedMetricsAsync(
+            ReviewCost("org_cost_a", "review_1", "alice", 0.012),
+            ReviewCost("org_cost_a", "review_2", "alice", 0.003),
+            ReviewCost("org_cost_a", "review_3", "bob", 0.005),
+            ReviewCost("org_cost_b", "review_4", "alice", 8.0)
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var result = await store.GetReviewCostMetricsAsync(
+            "org_cost_a",
+            MetricWindow.H24,
+            CancellationToken.None
+        );
+
+        await Assert.That(result.Reviews.Count).IsEqualTo(3);
+        await Assert.That(result.HasMoreReviews).IsFalse();
+        await Assert
+            .That(result.Reviews.Single(point => point.ReviewId == "review_1").ViewToken)
+            .IsEqualTo("token_1");
+        await Assert
+            .That(
+                result.ByAuthor.Where(point => point.SeriesKey == "alice").Sum(point => point.Value)
+            )
+            .IsEqualTo(0.015d)
+            .Within(0.000001d);
+        await Assert
+            .That(result.ByAuthor.Sum(point => point.Value))
+            .IsEqualTo(0.020d)
+            .Within(0.000001d);
+    }
+
+    [Test]
+    public async Task GetReviewCosts_FlagsAndOrdersTruncatedReviewSamples()
+    {
+        await SeedMetricsAsync(
+            Enumerable
+                .Range(0, 2001)
+                .Select(index => ReviewCost("org_cost_cap", $"review_{index:D4}", "alice", 0.001))
+                .ToArray()
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var result = await store.GetReviewCostMetricsAsync(
+            "org_cost_cap",
+            MetricWindow.H24,
+            CancellationToken.None
+        );
+
+        await Assert.That(result.HasMoreReviews).IsTrue();
+        await Assert.That(result.Reviews.Count).IsEqualTo(2000);
+        await Assert.That(result.Reviews[0].ReviewId).IsEqualTo("review_2000");
+        await Assert.That(result.Reviews[^1].ReviewId).IsEqualTo("review_0001");
+        await Assert
+            .That(result.ByAuthor.Sum(point => point.Value))
+            .IsEqualTo(2.001d)
+            .Within(0.000001d);
+    }
+
+    [Test]
     public async Task GetSeries_ScopesToOrganization_NoCrossOrgLeakage()
     {
         // The highest-value test in the feature: an org's series must never include another org's rows.
@@ -416,8 +477,20 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         seed.Owner.Email = "member-mixed@company.com";
 
         await SeedMetricsAsync(
-            AgentMetric(org, "zeeq_agent_token_usage", 40, "gpt-5-codex", "personal-mixed@example.com"),
-            AgentMetric(org, "zeeq_agent_token_usage", 15, "gpt-5-codex", "direct-mixed@example.com")
+            AgentMetric(
+                org,
+                "zeeq_agent_token_usage",
+                40,
+                "gpt-5-codex",
+                "personal-mixed@example.com"
+            ),
+            AgentMetric(
+                org,
+                "zeeq_agent_token_usage",
+                15,
+                "gpt-5-codex",
+                "direct-mixed@example.com"
+            )
         );
 
         var store = new PostgresMetricsQueryStore(_context);
@@ -426,7 +499,9 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
             "zeeq_agent_token_usage",
             MetricWindow.H1,
             MetricSeriesGroup.None,
-            new MetricSeriesFilters(Users: ["member-mixed@company.com", "direct-mixed@example.com"]),
+            new MetricSeriesFilters(
+                Users: ["member-mixed@company.com", "direct-mixed@example.com"]
+            ),
             CancellationToken.None
         );
 
@@ -473,7 +548,13 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         seed.Owner.Email = "member-prompt@company.com";
 
         await SeedMetricsAsync(
-            PromptGet(org, "backend", "/backend/shared.md", "shared-skill", "personal-prompt@example.com")
+            PromptGet(
+                org,
+                "backend",
+                "/backend/shared.md",
+                "shared-skill",
+                "personal-prompt@example.com"
+            )
         );
 
         var store = new PostgresMetricsQueryStore(_context);
@@ -661,7 +742,13 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
                 "Intro",
                 user: "personal-slb@example.com"
             ),
-            Read(org, "zeeq_section_read_counter", "/b.md", "Overview", user: "someone-else@example.com")
+            Read(
+                org,
+                "zeeq_section_read_counter",
+                "/b.md",
+                "Overview",
+                user: "someone-else@example.com"
+            )
         );
 
         var store = new PostgresMetricsQueryStore(_context);
@@ -1066,6 +1153,21 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
             MetricValue = 1,
             ToolName = tool,
             UserEmail = user,
+            CreatedAtUtc = Now,
+        };
+
+    private static MetricEvent ReviewCost(string org, string id, string author, double cost) =>
+        new()
+        {
+            OrganizationId = org,
+            MetricType = "zeeq_review_cost_usd",
+            MetricValue = cost,
+            Tags = new()
+            {
+                ["review_id"] = id,
+                ["view_token"] = $"token_{id[^1]}",
+                ["author_login"] = author,
+            },
             CreatedAtUtc = Now,
         };
 

@@ -44,6 +44,7 @@ public sealed class CodeReviewTelemetryContext(
     private readonly ConcurrentBag<RawToolCall> _toolCalls = [];
     private readonly ConcurrentBag<RawMiss> _misses = [];
     private readonly ConcurrentBag<RawTokenUsage> _tokenUsages = [];
+    private readonly ConcurrentBag<ReviewerCost> _reviewerCosts = [];
     private readonly AsyncLocal<FacetMarker?> _currentFacet = new();
 
     /// <summary>
@@ -110,6 +111,34 @@ public sealed class CodeReviewTelemetryContext(
 
         _tokenUsages.Add(new(inputTokens, cachedInputTokens, outputTokens, totalTokens));
     }
+
+    /// <summary>Records the estimated API cost of one reviewer, including failed reviewers.</summary>
+    public void RecordReviewerCost(string provider, string model, decimal? costUsd) =>
+        _reviewerCosts.Add(new(provider, model, costUsd));
+
+    /// <summary>
+    /// Returns the review total when every reviewer can be priced. No reviewers or an
+    /// unpriced reviewer yield null; callers explicitly set zero for a no-agent review.
+    /// </summary>
+    public decimal? EstimatedCostUsd
+    {
+        get
+        {
+            var costs = _reviewerCosts.ToArray();
+            return costs.Length == 0 || costs.Any(cost => cost.CostUsd is null)
+                ? null
+                : costs.Sum(cost => cost.CostUsd!.Value);
+        }
+    }
+
+    /// <summary>Provider/model identities retained for tracing a review estimate.</summary>
+    public IReadOnlyList<ReviewerCost> ReviewerCosts => [.. _reviewerCosts];
+
+    /// <summary>One reviewer's resolved model and estimated API cost.</summary>
+    /// <param name="Provider">Resolved LLM provider.</param>
+    /// <param name="Model">Resolved model identifier.</param>
+    /// <param name="CostUsd">Estimated USD, or null when usage or a rate is unavailable.</param>
+    public sealed record ReviewerCost(string Provider, string Model, decimal? CostUsd);
 
     /// <summary>
     /// Aggregates the raw concurrent hits into the compact, document-centric snapshot for storage.

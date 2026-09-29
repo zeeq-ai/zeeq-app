@@ -501,6 +501,7 @@ internal sealed class CodeReviewRecordConfiguration : IEntityTypeConfiguration<C
             .HasMaxLength(32)
             .HasConversion<string>();
         entity.Property(record => record.ReviewGroupId).HasMaxLength(128);
+        entity.Property(record => record.EstimatedCostUsd).HasPrecision(18, 8);
         entity.Property(record => record.PreviousReviewId).HasMaxLength(128);
         entity.Property(record => record.ExecutionTraceParent).HasMaxLength(128);
         entity.Property(record => record.ExecutionTraceState).HasMaxLength(512);

@@ -19,6 +19,7 @@
     <ProjectReference Include="..\Zeeq.Core.Common\Zeeq.Core.Common.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Common.AspNetCore\Zeeq.Core.Common.AspNetCore.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Identity\Zeeq.Core.Identity.csproj" />
+    <ProjectReference Include="..\Zeeq.Core.Llm\Zeeq.Core.Llm.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Protobuf Include="Otlp\opentelemetry\proto\collector\logs\v1\logs_service.proto">

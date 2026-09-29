@@ -306,6 +306,11 @@ internal sealed partial class CodeReviewReviewerValidatingExecutor(
         finally
         {
             RecordTokenTelemetry(usageSink);
+            telemetry?.RecordReviewerCost(
+                provider,
+                model,
+                PricingCatalog.EstimateReviewCost(model, usageSink)
+            );
 
             if (_options.RecordMetrics)
             {

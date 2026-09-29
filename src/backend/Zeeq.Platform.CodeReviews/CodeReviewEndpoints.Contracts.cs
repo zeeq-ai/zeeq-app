@@ -118,6 +118,7 @@ public sealed record CodeReviewPullRequestDto(
 /// <param name="RequestOrigin">Source that requested this review execution.</param>
 /// <param name="ReviewGroupId">Optional group id tying related review attempts together.</param>
 /// <param name="RemainingReviewBudget">Remaining review budget after this review was accepted.</param>
+/// <param name="EstimatedCostUsd">Estimated API-rate cost of the reviewer model calls; null when unknown.</param>
 /// <param name="CriticalFindings">Number of critical findings produced by the review.</param>
 /// <param name="MajorFindings">Number of major findings produced by the review.</param>
 /// <param name="MinorFindings">Number of minor findings produced by the review.</param>
@@ -141,6 +142,7 @@ public sealed record CodeReviewRecordDto(
     CodeReviewRequestOrigin RequestOrigin,
     string? ReviewGroupId,
     int RemainingReviewBudget,
+    decimal? EstimatedCostUsd,
     int CriticalFindings,
     int MajorFindings,
     int MinorFindings,
@@ -746,6 +748,7 @@ internal static class CodeReviewEndpointMapping
             record.RequestOrigin,
             record.ReviewGroupId,
             record.RemainingReviewBudget,
+            record.EstimatedCostUsd,
             record.CriticalFindings,
             record.MajorFindings,
             record.MinorFindings,

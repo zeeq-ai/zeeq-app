@@ -57,6 +57,22 @@ public sealed record ReviewFindingsPoint(
     long Comment
 );
 
+/// <summary>One review-level cost measurement for the Review Throughput chart.</summary>
+public sealed record ReviewCostSample(
+    DateTimeOffset CreatedAtUtc,
+    string ReviewId,
+    string AuthorLogin,
+    string ViewToken,
+    double CostUsd
+);
+
+/// <summary>Raw recent costs plus complete bucketed author totals for one window.</summary>
+public sealed record ReviewCostMetrics(
+    IReadOnlyList<ReviewCostSample> Reviews,
+    IReadOnlyList<MetricSeriesPoint> ByAuthor,
+    bool HasMoreReviews
+);
+
 /// <summary>Headline stat-card numbers for the overview tab.</summary>
 public sealed record MetricsOverview(
     double ToolCalls,
@@ -191,6 +207,13 @@ public sealed record FindingReviewGroup(
 /// </summary>
 public interface IMetricsQueryStore
 {
+    /// <summary>Review cost samples and bucketed sums from partitioned metric events.</summary>
+    Task<ReviewCostMetrics> GetReviewCostMetricsAsync(
+        string organizationId,
+        MetricWindow window,
+        CancellationToken cancellationToken
+    );
+
     /// <summary>Bucketed <c>SUM(metric_value)</c> series, optionally grouped by one dimension.</summary>
     Task<IReadOnlyList<MetricSeriesPoint>> GetSeriesAsync(
         string organizationId,

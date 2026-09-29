@@ -6668,6 +6668,55 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/metrics/reviews/costs": {
+      "get": {
+        "tags": [
+          "Metrics"
+        ],
+        "summary": "Review costs in the selected window.",
+        "operationId": "GetReviewCosts",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewCostMetrics"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsEndpointError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/metrics/reviews/findings": {
       "get": {
         "tags": [
@@ -9100,6 +9149,7 @@
           "requestOrigin",
           "reviewGroupId",
           "remainingReviewBudget",
+          "estimatedCostUsd",
           "criticalFindings",
           "majorFindings",
           "minorFindings",
@@ -9187,6 +9237,16 @@
             ],
             "description": "Remaining review budget after this review was accepted.",
             "format": "int32"
+          },
+          "estimatedCostUsd": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "description": "Estimated API-rate cost of the reviewer model calls; null when unknown.",
+            "format": "double"
           },
           "criticalFindings": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
@@ -12924,6 +12984,66 @@
           }
         },
         "description": "Response returned after clearing a private library's active ingest state."
+      },
+      "ReviewCostMetrics": {
+        "required": [
+          "reviews",
+          "byAuthor",
+          "hasMoreReviews"
+        ],
+        "type": "object",
+        "properties": {
+          "reviews": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewCostSample"
+            }
+          },
+          "byAuthor": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetricSeriesPoint"
+            }
+          },
+          "hasMoreReviews": {
+            "type": "boolean"
+          }
+        },
+        "description": "Raw recent costs plus complete bucketed author totals for one window."
+      },
+      "ReviewCostSample": {
+        "required": [
+          "createdAtUtc",
+          "reviewId",
+          "authorLogin",
+          "viewToken",
+          "costUsd"
+        ],
+        "type": "object",
+        "properties": {
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reviewId": {
+            "type": "string"
+          },
+          "authorLogin": {
+            "type": "string"
+          },
+          "viewToken": {
+            "type": "string"
+          },
+          "costUsd": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        },
+        "description": "One review-level cost measurement for the Review Throughput chart."
       },
       "ReviewFindingsGroup": {
         "enum": [

@@ -17,6 +17,7 @@ import {
   type MetricsOverview,
   type MetricsRepositoryOption,
   type ReviewFindingsPoint,
+  type ReviewCostMetrics,
   type ReviewVolumeGroup,
   type ReviewVolumePoint,
 } from "@/api/generated";
@@ -179,6 +180,11 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     [],
   );
   const agentCostUsdSeries = ref<MetricSeriesPoint[]>([]);
+  const reviewCostMetrics = ref<ReviewCostMetrics>({
+    reviews: [],
+    byAuthor: [],
+    hasMoreReviews: false,
+  });
   const percentilesByMetric = ref<Record<string, MetricPercentilePoint[]>>({});
   const scatterByMetric = ref<Record<string, MetricScatterPoint[]>>({});
 
@@ -475,6 +481,16 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     });
   }
 
+  /** Loads review-level costs and bucketed author totals for Review Throughput. */
+  async function loadReviewCosts() {
+    const orgId = requireOrganizationId();
+    await run("reviewCostMetrics", async () => {
+      reviewCostMetrics.value = await Metrics.getReviewCosts(orgId, {
+        window: window.value,
+      });
+    });
+  }
+
   /**
    * Loads bucketed finding-severity sums for the reviews tab (UI-3), both
    * by repository and by request origin, so both panels render at once
@@ -759,6 +775,7 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     agentTokenByUserSeries,
     agentTokenByModelUserSeries,
     agentCostUsdSeries,
+    reviewCostMetrics,
     percentilesByMetric,
     scatterByMetric,
     myLeaderboard,
@@ -786,6 +803,7 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     loadPromptUsageSeries,
     loadPromptLeaderboard,
     loadReviewVolume,
+    loadReviewCosts,
     loadReviewFindings,
     loadFindingReviews,
     loadMoreFindingReviews,

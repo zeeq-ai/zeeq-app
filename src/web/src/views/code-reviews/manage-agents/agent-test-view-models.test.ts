@@ -244,6 +244,7 @@ function testResult(
       requestOrigin: codeReviewRequestOriginEnum.Manual,
       reviewGroupId: null,
       remainingReviewBudget: 0,
+      estimatedCostUsd: null,
       criticalFindings: 0,
       majorFindings: 0,
       minorFindings: 0,
