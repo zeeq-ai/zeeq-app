@@ -14,6 +14,47 @@ public sealed class CostEnricherTests
     private readonly IAgentTelemetryCostEnricher _enricher = new AgentTelemetryCostEnricher();
 
     [Test]
+    [Arguments("gpt-6.1-sol", 2.00, 0.10, 10.00)]
+    [Arguments("gpt-6-astra", 10.00, 1.00, 50.00)]
+    [Arguments("gpt-6-sol", 2.00, 0.20, 10.00)]
+    [Arguments("gpt-6-luna", 0.10, 0.01, 0.50)]
+    [Arguments("gpt-5.6-sol", 4.00, 0.40, 20.00)]
+    [Arguments("gpt-5.6-cyber", 12.50, 1.25, 75.00)]
+    [Arguments("gpt-5.5-cyber", 12.50, 1.25, 75.00)]
+    [Arguments("claude-opus-5.5", 4.00, 0.20, 20.00)]
+    [Arguments("claude-sonnet-5.5", 2.00, 0.20, 10.00)]
+    [Arguments("claude-fable-5.1", 10.00, 0.25, 50.00)]
+    [Arguments("claude-mythos-5.1", 10.00, 0.25, 50.00)]
+    public async Task CurrentModels_ChargeEachTokenCategoryAtPublishedRates(
+        string model,
+        double inputPerMillion,
+        double cachedPerMillion,
+        double outputPerMillion
+    )
+    {
+        // Guards the published rates independently, including reduced cache-read multipliers.
+        // Use short-context requests so the baseline estimate applies to actual provider pricing.
+        var input = new AgentSessionEventRecord(
+            AgentSessionEventType.Completion,
+            Model: model,
+            InputTokens: 100_000
+        );
+        var cached = input with { CachedTokens = 100_000 };
+        var output = input with { InputTokens = 0, OutputTokens = 100_000 };
+
+        var inputResult = _enricher.Enrich(input, "zeeq-agent");
+        var cachedResult = _enricher.Enrich(cached, "zeeq-agent");
+        var outputResult = _enricher.Enrich(output, "zeeq-agent");
+
+        await Assert.That(inputResult.CostUsd).IsEqualTo((decimal)inputPerMillion / 10m);
+        await Assert.That(cachedResult.CostUsd).IsEqualTo((decimal)cachedPerMillion / 10m);
+        await Assert.That(outputResult.CostUsd).IsEqualTo((decimal)outputPerMillion / 10m);
+        await Assert
+            .That(cachedResult.CostSource)
+            .IsEqualTo(AgentSessionEventCostSource.EstimatedFromTokens);
+    }
+
+    [Test]
     public async Task NonCompletionEvent_PassesThrough()
     {
         var evt = new AgentSessionEventRecord(AgentSessionEventType.Prompt);
