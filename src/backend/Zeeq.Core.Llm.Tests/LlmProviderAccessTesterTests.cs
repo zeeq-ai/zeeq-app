@@ -322,7 +322,19 @@ public sealed class LlmProviderAccessTesterTests
     [Test]
     public async Task NormalizeOpenAiChatCompletionsOptions_WithUnsupportedTemperatureZeroModels_RewritesTemperature()
     {
-        foreach (var model in new[] { "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra" })
+        foreach (
+            var model in new[]
+            {
+                "gpt-5.5",
+                "gpt-5.6-luna",
+                "gpt-5.6-sol",
+                "gpt-5.6-terra",
+                "gpt-6-luna",
+                "gpt-6-sol",
+                "gpt-6-astra",
+                "gpt-6.1-sol",
+            }
+        )
         {
             var options = new ChatOptions { Temperature = 0 };
 
