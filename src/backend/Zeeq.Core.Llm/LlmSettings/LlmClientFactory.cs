@@ -315,10 +315,12 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
             // function tools on Chat Completions only when reasoning_effort is
             // absent, so Zeeq intentionally drops explicit reasoning for those
             // tool-call requests instead of routing native OpenAI through
-            // Responses and giving Azure a different behavior. GPT-5.5 and
-            // GPT-5.6 also reject Temperature = 0. This innermost middleware
+            // Responses and giving Azure a different behavior. GPT-5.5,
+            // GPT-5.6, and GPT-6 reject Temperature = 0. This innermost middleware
             // rewrites the MEAI ChatOptions immediately before the provider SDK
-            // sees the request.
+            // sees the request. When adding models here, run provider access tests
+            // through CSharpRepl against the configured deployment to verify
+            // temperature, reasoning, and tool compatibility.
             .Use(
                 getResponseFunc: (messages, options, innerClient, cancellationToken) =>
                 {
@@ -507,6 +509,7 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
     [
         "gpt-5.5",
         "gpt-5.6",
+        "gpt-6",
     ];
 
     /// <summary>

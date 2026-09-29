@@ -19,7 +19,7 @@ export type LlmTierName = (typeof llmTierNames)[number];
  *
  * The backend intentionally accepts any non-empty model string; this catalog is
  * product UI guidance, not a server-side allowlist.
- * Keep model additions aligned with PricingCatalog in AgentTelemetryCostEnricher.cs.
+ * Keep model additions aligned with PricingCatalog in Zeeq.Core.Llm/LlmSettings.
  */
 export const llmModelCatalog = {
   Fireworks: [

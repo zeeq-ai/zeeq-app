@@ -18,9 +18,11 @@ namespace Zeeq.Platform.Telemetry.Processing;
 /// </para>
 /// <para>
 /// Pricing rates are sourced from provider API pricing pages as of September 29, 2026.
-/// The embedded catalog is version-stamped; rate changes should bump the version.
+/// The shared <see cref="PricingCatalog"/> is version-stamped; rate changes should bump the version.
 /// Previously stored cost estimates are not recalculated by this enricher.
 /// Unknown models are estimated using <c>default</c> catch-all rates.
+/// When adding model families, test provider access and update
+/// <see cref="LlmClientFactory"/> compatibility rules for temperature, reasoning, and tools.
 /// </para>
 /// </remarks>
 public sealed class AgentTelemetryCostEnricher : IAgentTelemetryCostEnricher

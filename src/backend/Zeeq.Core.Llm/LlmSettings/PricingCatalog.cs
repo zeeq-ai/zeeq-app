@@ -39,6 +39,8 @@ public static class PricingCatalog
 
     // When updating model families here, also update llmModelCatalog and llmModelLabels
     // in src/web/src/stores/llm-settings-store.ts so the frontend model picker stays in sync.
+    // Test new model families through LlmProviderAccessTester against their provider API and
+    // update LlmClientFactory's temperature/reasoning compatibility rules when needed.
     private static readonly Dictionary<string, TokenRates> _rates = new(
         StringComparer.OrdinalIgnoreCase
     )
