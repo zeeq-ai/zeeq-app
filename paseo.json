@@ -1,0 +1,17 @@
+{
+  "worktree": {
+    "setup": "mise run up",
+    "teardown": "mise run down"
+  },
+  "metadataGeneration": {
+    "branchName": {
+      "instructions": "Use conventional commit: `fix(scope)`, `chore(scope)`, `feat(scope)`.  Common scopes: `dx`, `ops`, `review`, `auth`, `docs`, `config`, `perf`, `db`, `model`, `telemetry`; this is not the full set.  Use other scopes as needed."
+    },
+    "commitMessage": {
+      "instructions": "Use stax to manage the lifecycle.  Conventional commit using `fix(scope): Description goes here in sentence case`.  Choose: `fix`, `chore`, `feat`.  Project uses semantic versioning; feat will trigger a minor version increment.  "
+    },
+    "pullRequest": {
+      "instructions": "PR body is focused, terse.  3-5 sentence prose summary of the changes; a few terse bullet points to call out key changes. "
+    }
+  }
+}
