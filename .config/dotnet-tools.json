@@ -17,7 +17,7 @@
       "rollForward": false
     },
     "glider": {
-      "version": "8.3.0",
+      "version": "12.1.2",
       "commands": [
         "glider"
       ],
@@ -38,7 +38,7 @@
       "rollForward": false
     },
     "aspire.cli": {
-      "version": "13.4.6",
+      "version": "13.5.4",
       "commands": [
         "aspire"
       ],
