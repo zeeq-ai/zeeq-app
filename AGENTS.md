@@ -77,6 +77,11 @@ Pause and ask to connect to an authenticated session if needed; if the applicati
 - Key tables: `auth_user_identities`, `core_organizations`, `core_users`, `core_organization_memberships`
 - Deployment target is GCP CloudSQL Postgres; be aware of limitations
 
+### gcloud / aws
+
+- The configuration is set to local for both gcloud and aws CLI tools via mise
+- Use the `zeeq` profile with `aws`
+
 ## Workflow
 
 Important workflow notes:
