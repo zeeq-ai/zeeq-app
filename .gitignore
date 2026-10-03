@@ -493,8 +493,13 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 
+# gcloud local config
 .config/.gcloud-config/*
 !.config/.gcloud-config/README.md
+
+# aws local config
+.config/.aws-config/*
+!.config/.aws-config/README.md
 
 .playwright-mcp/
 

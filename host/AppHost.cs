@@ -1,9 +1,15 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using Aspire.Hosting.Yarp;
 using DeviceId;
 
-var builder = DistributedApplication.CreateBuilder(args);
+// Consume the cloud selector before .NET parses the remaining configuration arguments.
+var useAwsEmulator = string.Equals(
+    args.FirstOrDefault(),
+    "aws",
+    StringComparison.OrdinalIgnoreCase
+);
+var builder = DistributedApplication.CreateBuilder(useAwsEmulator ? args[1..] : args);
 
 const string docsRootInputName = "DocsRoot";
 const string docsRootParameterName = "docs-root";
@@ -85,31 +91,44 @@ var cloudSqlProxy = builder.AddExecutable(
     ["--port", "55432"]
 );
 
-// Run the pub/sub emulator; occasionally dies so `aspire stop` and `aspire run` to restart stack.
-var pubSubEmulator = builder
-    .AddContainer("gcp-pubsub-emulator", "google/cloud-sdk:568.0.0-emulators")
-    .WithArgs(
-        "gcloud",
-        "beta",
-        "emulators",
-        "pubsub",
-        "start",
-        $"--project={pubSubProjectId}",
-        "--host-port=0.0.0.0:18085"
-    )
-    .WithEnvironment("JAVA_TOOL_OPTIONS", "-Xmx2g") // Maybe prevent the emulator from resetting?
-    .WithHttpEndpoint(port: 18085, targetPort: 18085, name: "http", isProxied: false)
-    .WithLifetime(ContainerLifetime.Persistent)
-    .WithImagePullPolicy(ImagePullPolicy.Missing);
+IResourceBuilder<ContainerResource>? pubSubEmulator = null;
+IResourceBuilder<ContainerResource>? floci = null;
+if (useAwsEmulator)
+{
+    // https://github.com/floci-io/floci — AWS APIs share port 4566.
+    floci = builder
+        .AddContainer("floci", "floci/floci", "2.1.0")
+        .WithHttpEndpoint(port: 4566, targetPort: 4566, name: "http", isProxied: false)
+        .WithHttpHealthCheck(path: "/_floci/health")
+        .WithEnvironment("FLOCI_STORAGE_MODE", "persistent")
+        .WithVolume("zeeq-floci-data", "/app/data")
+        .WithImagePullPolicy(ImagePullPolicy.Missing);
+}
+else
+{
+    // Run the pub/sub emulator; occasionally dies so `aspire stop` and `aspire run` to restart stack.
+    pubSubEmulator = builder
+        .AddContainer("gcp-pubsub-emulator", "google/cloud-sdk:568.0.0-emulators")
+        .WithArgs(
+            "gcloud",
+            "beta",
+            "emulators",
+            "pubsub",
+            "start",
+            $"--project={pubSubProjectId}",
+            "--host-port=0.0.0.0:18085"
+        )
+        .WithEnvironment("JAVA_TOOL_OPTIONS", "-Xmx2g") // Maybe prevent the emulator from resetting?
+        .WithHttpEndpoint(port: 18085, targetPort: 18085, name: "http", isProxied: false)
+        .WithHttpHealthCheck(path: $"/v1/projects/{pubSubProjectId}/topics")
+        .WithImagePullPolicy(ImagePullPolicy.Missing);
+}
 
 // Start the server
 var backend = builder
     .AddProject<Projects.Zeeq_Runtime_Server>("zeeq-server")
     .WaitFor(postgresdb)
-    .WaitFor(pubSubEmulator)
     .WithReference(postgresdb)
-    .WithEnvironment("PUBSUB_EMULATOR_HOST", pubSubEmulatorHost)
-    .WithEnvironment("PUBSUB_PROJECT_ID", pubSubProjectId)
     .WithEnvironment("ZEEQ_MESSAGING_ROLE", standaloneWorkerMode ? "producer" : "producer-consumer")
     .WithUrlForEndpoint(
         "http",
@@ -119,6 +138,8 @@ var backend = builder
             url.Url = "http://zeeq-api.localhost:8095/scalar";
         }
     );
+
+ConfigureCloudEmulator(backend);
 
 if (csharpReplConnectEnabled)
 {
@@ -130,7 +151,7 @@ if (csharpReplConnectEnabled)
 
 if (standaloneWorkerMode)
 {
-    builder
+    var worker = builder
         .AddProject<Projects.Zeeq_Runtime_Server>(
             "zeeq-worker",
             options =>
@@ -140,15 +161,39 @@ if (standaloneWorkerMode)
             }
         )
         .WaitFor(postgresdb)
-        .WaitFor(pubSubEmulator)
         .WithReference(postgresdb)
-        .WithEnvironment("PUBSUB_EMULATOR_HOST", pubSubEmulatorHost)
-        .WithEnvironment("PUBSUB_PROJECT_ID", pubSubProjectId)
         .WithEnvironment("ZEEQ_RUN_MODE", "worker")
         .WithEnvironment("ZEEQ_MESSAGING_ROLE", "producer-consumer")
         .WithEnvironment("AppSettings__Database__WorkerConnectionString", postgresdb)
         .WithExplicitStart()
         .WithParentRelationship(backend);
+
+    ConfigureCloudEmulator(worker);
+}
+
+// Apply the same emulator configuration to both messaging process roles.
+void ConfigureCloudEmulator(IResourceBuilder<ProjectResource> project)
+{
+    if (floci is not null)
+    {
+        project
+            .WaitFor(floci)
+            .WithEnvironment("AWS_ENDPOINT_URL", floci.GetEndpoint("http"))
+            .WithEnvironment("AWS_REGION", "us-east-1")
+            .WithEnvironment("AWS_DEFAULT_REGION", "us-east-1")
+            .WithEnvironment("AWS_ACCESS_KEY_ID", "test")
+            .WithEnvironment("AWS_SECRET_ACCESS_KEY", "test")
+            .WithEnvironment("AWS_SESSION_TOKEN", "")
+            // Keep messaging local until the Brighter AWS transport is implemented.
+            .WithEnvironment("ZeeqMessaging__Provider", "Postgres");
+    }
+    else if (pubSubEmulator is not null)
+    {
+        project
+            .WaitFor(pubSubEmulator)
+            .WithEnvironment("PUBSUB_EMULATOR_HOST", pubSubEmulatorHost)
+            .WithEnvironment("PUBSUB_PROJECT_ID", pubSubProjectId);
+    }
 }
 
 // Standalone build in watch mode that will produce the OpenAPI spec and kick off Kubb
