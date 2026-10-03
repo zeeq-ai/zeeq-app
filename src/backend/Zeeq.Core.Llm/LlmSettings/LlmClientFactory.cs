@@ -320,7 +320,8 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
                 }
             )
             // Chat Completions compatibility. GPT-5.6, GPT-6-sol, and GPT-6-luna
-            // tool calls require reasoning_effort=none on native OpenAI. GPT-6.1-sol
+            // tool calls require reasoning_effort=none on native OpenAI; Azure
+            // GPT-6-sol and GPT-6-luna require it too. GPT-6.1-sol
             // and GPT-6-astra reject none, so native OpenAI uses Responses for those
             // models. GPT-5.5, GPT-5.6, and GPT-6 reject Temperature = 0. This middleware
             // rewrites the MEAI ChatOptions immediately before the provider SDK
@@ -372,7 +373,11 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
             // tools on this endpoint, so keeping tools reliable means removing MEAI reasoning
             // before the provider SDK serializes the request.
             options.Reasoning = null;
-            ClearRawOpenAiChatReasoningEffort(options, useExplicitNone: IsOpenAiProvider(provider));
+            ClearRawOpenAiChatReasoningEffort(
+                options,
+                useExplicitNone: IsOpenAiProvider(provider)
+                    || (IsAzureOpenAiProvider(provider) && IsAzureExplicitNoneRequiredModel(model))
+            );
         }
     }
 
@@ -432,8 +437,8 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
             // that raw options object has no ReasoningEffortLevel. Clearing
             // ChatOptions.Reasoning alone therefore does not remove an already
             // populated raw ReasoningEffortLevel. Native OpenAI models on this path
-            // require the explicit value `none`, while Azure OpenAI rejects
-            // any reasoning_effort value on Chat Completions with tools.
+            // and Azure GPT-6-sol/luna require the explicit value `none`.
+            // Azure GPT-5.6 retains its existing omitted-value compatibility rule.
             // Keep that provider split local to the compatibility shim so
             // both providers still use the same Chat Completions client path.
 #pragma warning disable OPENAI001
@@ -582,6 +587,14 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
     /// </summary>
     private static bool IsAzureOpenAiProvider(string provider) =>
         provider.Trim().Equals("Azure OpenAI", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Azure GPT-6-sol/luna default to reasoning when effort is omitted, so tool calls
+    /// on Chat Completions require an explicit <c>none</c>, just like native OpenAI.
+    /// </summary>
+    private static bool IsAzureExplicitNoneRequiredModel(string model) =>
+        model.Contains("gpt-6-sol", StringComparison.OrdinalIgnoreCase)
+        || model.Contains("gpt-6-luna", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Identifies the native OpenAI provider, which needs <c>reasoning_effort=none</c>
