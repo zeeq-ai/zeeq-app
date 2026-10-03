@@ -8,7 +8,7 @@ using OpenAIChatReasoningEffortLevel = OpenAI.Chat.ChatReasoningEffortLevel;
 namespace Zeeq.Core.Llm.Tests;
 
 /*
-Verification notes for the GPT-5.6 tool-call compatibility shim:
+Verification notes for the OpenAI/Azure tool-call compatibility shim:
 
 These unit tests protect the option-normalization surface, but the behavior that
 matters is the fully wired runtime client because MEAI's OpenAI adapter combines
@@ -32,16 +32,18 @@ provider SDK serializes the request. To verify end-to-end:
      with `ReasoningEffortLevel = High`
 
 4. Send a small prompt such as "Call test_tool, then reply OK." Expected result:
-   Azure OpenAI `gpt-5.6-luna` succeeds because the shim omits raw
-   `reasoning_effort`; native OpenAI `gpt-5.6-luna`, `gpt-5.6-sol`, and
-   `gpt-5.6-terra` succeed because the shim sends `reasoning_effort=none`.
+   Azure OpenAI `gpt-5.6-luna` keeps its existing omitted-effort behavior.
+   Azure and native OpenAI `gpt-6-sol` and `gpt-6-luna` succeed with
+   `reasoning_effort=none`. Test each provider/model pair: PR #209's native
+   OpenAI GPT-6 probes did not catch the Azure GPT-6 omitted-effort failure.
+   Use the client as an Agent Framework agent with tools, as reviewers do,
+   and verify both the tool invocation and final response.
    Also run a no-tool `Temperature = 0` probe for `gpt-5.5` and the GPT-5.6
    models; the shim should rewrite temperature to the provider default and the
    call should complete.
 
-This runtime probe caught provider differences that unit tests alone did not:
-native OpenAI accepts explicit `none`, while Azure OpenAI rejects any serialized
-`reasoning_effort` value for GPT-5.6 function-tool calls on Chat Completions.
+AzureToolCallingTests also checks the Azure SDK's serialized request bodies
+across the full agent tool-call loop without making live provider calls.
 */
 
 /// <summary>
@@ -218,6 +220,43 @@ public sealed class LlmProviderAccessTesterTests
                 .IsEqualTo(OpenAIChatReasoningEffortLevel.None);
 #pragma warning restore OPENAI001
         }
+    }
+
+    [Test]
+    [Arguments("gpt-6-sol", false)]
+    [Arguments("gpt-6-sol", true)]
+    [Arguments("gpt-6-luna", false)]
+    [Arguments("gpt-6-luna", true)]
+    [Arguments("azure-GPT-6-SOL-deployment", true)]
+    public async Task NormalizeOpenAiChatCompletionsOptions_WithAzureGpt6Tools_SetsExplicitNone(
+        string model,
+        bool hasRawFactory
+    )
+    {
+        var options = new ChatOptions
+        {
+            Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High },
+            Tools = [AIFunctionFactory.Create(() => "ok", name: "test_tool")],
+            RawRepresentationFactory = hasRawFactory
+                ? _ =>
+#pragma warning disable OPENAI001
+                new OpenAIChatCompletionOptions
+                {
+                    ReasoningEffortLevel = OpenAIChatReasoningEffortLevel.High,
+                }
+#pragma warning restore OPENAI001
+                : null,
+        };
+
+        LlmClientFactory.NormalizeOpenAiChatCompletionsOptions("Azure OpenAI", model, options);
+
+        await Assert.That(options.Reasoning).IsNull();
+        var rawOptions = (OpenAIChatCompletionOptions)options.RawRepresentationFactory!(null!)!;
+#pragma warning disable OPENAI001
+        await Assert
+            .That(rawOptions.ReasoningEffortLevel)
+            .IsEqualTo(OpenAIChatReasoningEffortLevel.None);
+#pragma warning restore OPENAI001
     }
 
     [Test]
