@@ -24,6 +24,8 @@ Zeeq is designed to be easy to setup and run using [Mise](https://mise.jdx.dev/i
 
 For local setup see: <https://zeeq.ai/docs/managing-zeeq/local-development>
 
+Start the local stack with `mise run up` (GCP Pub/Sub) or `mise run up aws` ([Floci](https://github.com/floci-io/floci) AWS emulator). Stop it with `mise run down`.
+
 ---
 
 ## Self hosted setup

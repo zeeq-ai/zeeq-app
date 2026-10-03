@@ -36,8 +36,8 @@ CSQL_PROXY_INSTANCE_CONNECTION_NAME = "zeeq-ai-prod:us-central1:zeeq-pg-prod"
 PUBSUB_PROJECT_ID = "zeeq-dev-local"
 
 [tasks.up]
-description = "Run the full Aspire stack"
-run = "aspire run --detach"
+description = "Run the Aspire stack (pass aws for Floci; defaults to GCP Pub/Sub)"
+run = "aspire run --detach --non-interactive --"
 
 [tasks.down]
 description = "Stop the full Aspire stack"
