@@ -9,8 +9,8 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using OpenAI;
-using OpenAIChatCompletionOptions = OpenAI.Chat.ChatCompletionOptions;
 using Zeeq.Core.Common;
+using OpenAIChatCompletionOptions = OpenAI.Chat.ChatCompletionOptions;
 
 namespace Zeeq.Core.Llm;
 
@@ -260,9 +260,17 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
                 options.Endpoint = new Uri(endpoint, UriKind.Absolute);
             }
 
-            rawClient = new OpenAIClient(new ApiKeyCredential(apiKey.Trim()), options)
-                .GetChatClient(model.Trim())
-                .AsIChatClient();
+            var openAiClient = new OpenAIClient(new ApiKeyCredential(apiKey.Trim()), options);
+            if (IsOpenAiProvider(provider) && IsResponsesRequiredModel(model))
+            {
+#pragma warning disable OPENAI001
+                rawClient = openAiClient.GetResponsesClient().AsIChatClient(model.Trim());
+#pragma warning restore OPENAI001
+            }
+            else
+            {
+                rawClient = openAiClient.GetChatClient(model.Trim()).AsIChatClient();
+            }
         }
         else
         {
@@ -311,12 +319,10 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
                     config.EnableSensitiveData = true; // TODO: This should be only on local
                 }
             )
-            // OpenAI Chat Completions compatibility. GPT-5.6 models work with
-            // function tools on Chat Completions only when reasoning_effort is
-            // absent, so Zeeq intentionally drops explicit reasoning for those
-            // tool-call requests instead of routing native OpenAI through
-            // Responses and giving Azure a different behavior. GPT-5.5,
-            // GPT-5.6, and GPT-6 reject Temperature = 0. This innermost middleware
+            // Chat Completions compatibility. GPT-5.6, GPT-6-sol, and GPT-6-luna
+            // tool calls require reasoning_effort=none on native OpenAI. GPT-6.1-sol
+            // and GPT-6-astra reject none, so native OpenAI uses Responses for those
+            // models. GPT-5.5, GPT-5.6, and GPT-6 reject Temperature = 0. This middleware
             // rewrites the MEAI ChatOptions immediately before the provider SDK
             // sees the request. When adding models here, run provider access tests
             // through CSharpRepl against the configured deployment to verify
@@ -358,28 +364,19 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
             options.Temperature = 1;
         }
 
-        if (
-            options.Tools is { Count: > 0 }
-            && IsReasoningWithToolsUnsupportedModel(model)
-        )
+        if (options.Tools is { Count: > 0 } && IsReasoningWithToolsUnsupportedModel(model))
         {
             // NOTE: We intentionally trade explicit reasoning effort for one
             // Chat Completions code path across OpenAI and Azure OpenAI.
-            // GPT-5.6 rejects reasoning_effort with function tools on this
-            // endpoint, so keeping tools reliable means removing MEAI reasoning
+            // GPT-5.6, GPT-6-sol, and GPT-6-luna reject reasoning_effort with function
+            // tools on this endpoint, so keeping tools reliable means removing MEAI reasoning
             // before the provider SDK serializes the request.
             options.Reasoning = null;
-            ClearRawOpenAiChatReasoningEffort(
-                options,
-                useExplicitNone: IsOpenAiProvider(provider)
-            );
+            ClearRawOpenAiChatReasoningEffort(options, useExplicitNone: IsOpenAiProvider(provider));
         }
     }
 
-    private static void ClearRawOpenAiChatReasoningEffort(
-        ChatOptions options,
-        bool useExplicitNone
-    )
+    private static void ClearRawOpenAiChatReasoningEffort(ChatOptions options, bool useExplicitNone)
     {
         var properties = options.AdditionalProperties ??= [];
         if (
@@ -434,8 +431,8 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
             // ChatCompletionOptions and only maps ChatOptions.Reasoning when
             // that raw options object has no ReasoningEffortLevel. Clearing
             // ChatOptions.Reasoning alone therefore does not remove an already
-            // populated raw ReasoningEffortLevel. Native OpenAI GPT-5.6
-            // requires the explicit value `none`, while Azure OpenAI rejects
+            // populated raw ReasoningEffortLevel. Native OpenAI models on this path
+            // require the explicit value `none`, while Azure OpenAI rejects
             // any reasoning_effort value on Chat Completions with tools.
             // Keep that provider split local to the compatibility shim so
             // both providers still use the same Chat Completions client path.
@@ -446,9 +443,7 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
             }
             else
             {
-                rawOptions.ReasoningEffortLevel = default(
-                    OpenAI.Chat.ChatReasoningEffortLevel?
-                );
+                rawOptions.ReasoningEffortLevel = default(OpenAI.Chat.ChatReasoningEffortLevel?);
             }
 #pragma warning restore OPENAI001
         }
@@ -516,7 +511,18 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
     /// Models that reject <c>reasoning_effort</c> with function tools on Chat Completions.
     /// Checked case-insensitively against a substring of the configured model identifier.
     /// </summary>
-    private static readonly string[] ReasoningWithToolsUnsupportedModelLabels = ["gpt-5.6"];
+    private static readonly string[] ReasoningWithToolsUnsupportedModelLabels =
+    [
+        "gpt-5.6",
+        "gpt-6-sol",
+        "gpt-6-luna",
+    ];
+
+    /// <summary>
+    /// Native OpenAI models that reject both reasoning with tools and reasoning_effort=none
+    /// on Chat Completions. The Responses endpoint supports their tool calls.
+    /// </summary>
+    private static readonly string[] ResponsesRequiredModelLabels = ["gpt-6.1-sol", "gpt-6-astra"];
 
     /// <summary>
     /// Returns true when <paramref name="model" /> appears in
@@ -542,6 +548,19 @@ public sealed class LlmClientFactory(IServiceProvider services, ILoggerFactory l
     private static bool IsReasoningWithToolsUnsupportedModel(string model)
     {
         foreach (var label in ReasoningWithToolsUnsupportedModelLabels)
+        {
+            if (model.Contains(label, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsResponsesRequiredModel(string model)
+    {
+        foreach (var label in ResponsesRequiredModelLabels)
         {
             if (model.Contains(label, StringComparison.OrdinalIgnoreCase))
             {
