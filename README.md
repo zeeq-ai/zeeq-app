@@ -39,5 +39,4 @@ Deploying to Google Cloud? See: <https://zeeq.ai/docs/configuration/gcp-runtime>
 Zeeq AI
 Copyright (C) 2026 Zeeq Labs, Inc
 
-Zeeq is licensed under the GNU Affero General Public License,
-version 3 or later. See [LICENSE](LICENSE) for details.
+Zeeq is licensed under the GNU Affero General Public License, version 3 or later. See [LICENSE](LICENSE) for details.

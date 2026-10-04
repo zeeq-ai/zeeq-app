@@ -1,8 +1,10 @@
 using System.Reflection;
+using Amazon.Runtime;
 using Zeeq.Integrations.Notion;
 using Zeeq.Platform.CodeReviews;
 using Zeeq.Platform.Ingest;
 using Zeeq.Platform.Membership;
+using Zeeq.Platform.Messaging.AwsSqs;
 using Zeeq.Platform.Messaging.GcpPubSub;
 
 namespace Zeeq.Runtime.Server.Setup;
@@ -47,6 +49,14 @@ internal static class MessagingExtensions
             CancellationToken startupCancellationToken = default
         )
         {
+            if (!Enum.IsDefined(role))
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(role),
+                    role,
+                    "Unknown messaging runtime role."
+                );
+            }
             AddRuntimeMessagingServices(services);
 
             var provider = GetProvider(configuration);
@@ -85,6 +95,55 @@ internal static class MessagingExtensions
                         );
                     }
 
+                    break;
+
+                case MessagingProvider.AwsSqs:
+                    var sqsOptions = GetAwsSqsOptions(configuration);
+                    // The application owns poison-message storage for both cloud transports.
+                    services.AddSingleton<IDeadLetterWriter>(
+                        new PostgresDeadLetterWriter(
+                            appSettings.Database.EffectiveConnectionString,
+                            postgresOptions
+                        )
+                    );
+                    var credentials = FallbackCredentialsFactory.GetCredentials();
+                    switch (role)
+                    {
+                        case ZeeqMessagingRuntimeRole.Producer:
+                            services.AddZeeqAwsSqsMessageProducers(
+                                messagingOptions,
+                                sqsOptions,
+                                credentials,
+                                startupCancellationToken,
+                                assemblies
+                            );
+                            break;
+                        case ZeeqMessagingRuntimeRole.Consumer:
+                            services.AddZeeqAwsSqsMessageConsumers(
+                                messagingOptions,
+                                sqsOptions,
+                                credentials,
+                                startupCancellationToken,
+                                assemblies
+                            );
+                            break;
+                        case ZeeqMessagingRuntimeRole.ProducerConsumer:
+                            services.AddZeeqAwsSqsMessaging(
+                                messagingOptions,
+                                sqsOptions,
+                                credentials,
+                                registerConsumers: true,
+                                startupCancellationToken,
+                                assemblies
+                            );
+                            break;
+                        default:
+                            throw new ArgumentOutOfRangeException(
+                                nameof(role),
+                                role,
+                                "Unsupported SQS messaging role."
+                            );
+                    }
                     break;
 
                 case MessagingProvider.GcpPubSub:
@@ -168,7 +227,7 @@ internal static class MessagingExtensions
     /// <remarks>
     /// Missing configuration deliberately resolves to Postgres. That keeps local
     /// and production behavior unchanged unless an operator explicitly opts into
-    /// Pub/Sub with <c>ZeeqMessaging:Provider=GcpPubSub</c>.
+    /// a cloud transport with <c>ZeeqMessaging:Provider</c>.
     /// </remarks>
     /// <param name="configuration">Configuration root.</param>
     /// <returns>The selected messaging provider.</returns>
@@ -186,13 +245,16 @@ internal static class MessagingExtensions
             return MessagingProvider.Postgres;
         }
 
-        if (Enum.TryParse<MessagingProvider>(providerName, ignoreCase: true, out var provider))
+        if (
+            Enum.TryParse<MessagingProvider>(providerName, ignoreCase: true, out var provider)
+            && Enum.IsDefined(provider)
+        )
         {
             return provider;
         }
 
         throw new InvalidOperationException(
-            $"Unsupported messaging provider '{providerName}'. Supported providers are Postgres and GcpPubSub."
+            $"Unsupported messaging provider '{providerName}'. Supported providers are Postgres, GcpPubSub and AwsSqs."
         );
     }
 
@@ -260,6 +322,29 @@ internal static class MessagingExtensions
         };
     }
 
+    /// <summary>Binds SQS options with AWS CLI-compatible endpoint and region fallbacks.</summary>
+    private static AwsSqsMessagingOptions GetAwsSqsOptions(IConfiguration configuration)
+    {
+        var section = configuration.GetSection(AwsSqsMessagingOptions.SectionName);
+        var options =
+            section.Get<AwsSqsMessagingOptions>()
+            ?? throw new InvalidOperationException(
+                "ZeeqMessaging:AwsSqs must specify QueuePrefix."
+            );
+        return options with
+        {
+            ServiceUrl =
+                options.ServiceUrl
+                ?? configuration["AWS_ENDPOINT_URL_SQS"]
+                ?? configuration["AWS_ENDPOINT_URL"],
+            Region =
+                section["Region"]
+                ?? configuration["AWS_REGION"]
+                ?? configuration["AWS_DEFAULT_REGION"]
+                ?? options.Region,
+        };
+    }
+
     /// <summary>
     /// Gets assemblies scanned for messaging publishers, consumers, and handlers.
     /// </summary>
@@ -296,4 +381,7 @@ internal enum MessagingProvider
     /// Use Brighter's Google Cloud Pub/Sub messaging gateway.
     /// </summary>
     GcpPubSub,
+
+    /// <summary>Use Brighter's point-to-point AWS SQS messaging gateway.</summary>
+    AwsSqs,
 }
