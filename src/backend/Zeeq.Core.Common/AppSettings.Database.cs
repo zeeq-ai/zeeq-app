@@ -1,4 +1,4 @@
-using Npgsql;
+using System.Collections.Concurrent;
 
 namespace Zeeq.Core.Common;
 
@@ -18,39 +18,10 @@ public sealed partial record AppSettings
 /// </summary>
 public record DatabaseSettings
 {
-    private readonly Lazy<string> _effectiveConnectionString;
-    private readonly Lazy<string> _effectiveWorkerConnectionString;
-    private readonly Lazy<string> _effectiveCacheConnectionString;
-
-    /// <summary>
-    /// Builds the lazily-evaluated, search_path-augmented connection strings.
-    /// </summary>
-    /// <remarks>
-    /// The `Lazy&lt;string&gt;` factories close over `this`, not the property values
-    /// at construction time, so they see whatever `init` values configuration
-    /// binding ultimately applies and then parse each connection string via
-    /// <see cref="NpgsqlConnectionStringBuilder"/> only once, on first access.
-    /// </remarks>
-    public DatabaseSettings()
-    {
-        _effectiveConnectionString = new Lazy<string>(() =>
-            PostgresConnectionStringSchemas.EnsureRequiredSearchPath(ConnectionString)
-        );
-        _effectiveWorkerConnectionString = new Lazy<string>(() =>
-            PostgresConnectionStringSchemas.EnsureRequiredSearchPath(
-                string.IsNullOrWhiteSpace(WorkerConnectionString)
-                    ? ConnectionString
-                    : WorkerConnectionString
-            )
-        );
-        _effectiveCacheConnectionString = new Lazy<string>(() =>
-            PostgresConnectionStringSchemas.EnsureRequiredSearchPath(
-                string.IsNullOrWhiteSpace(CacheConnectionString)
-                    ? ConnectionString
-                    : CacheConnectionString
-            )
-        );
-    }
+    // Record copies can share this cache safely: normalization is keyed by input, never by captured this.
+    private readonly ConcurrentDictionary<string, string> _normalizedConnectionStrings = new(
+        StringComparer.Ordinal
+    );
 
     /// <summary>
     /// The connection string used to connect to the underlying database.
@@ -70,7 +41,11 @@ public record DatabaseSettings
     /// (zeeq, public, messaging, cache, cron) added to the search_path if missing.
     /// Use this, not <see cref="ConnectionString"/>, when opening a connection.
     /// </summary>
-    public string EffectiveConnectionString => _effectiveConnectionString.Value;
+    public string EffectiveConnectionString =>
+        _normalizedConnectionStrings.GetOrAdd(
+            ConnectionString,
+            PostgresConnectionStringSchemas.EnsureRequiredSearchPath
+        );
 
     /// <summary>
     /// Connection string used by the standalone worker process.
@@ -88,7 +63,13 @@ public record DatabaseSettings
     /// Effective worker connection string after applying the main connection fallback
     /// and ensuring required schemas are present on the search_path.
     /// </summary>
-    public string EffectiveWorkerConnectionString => _effectiveWorkerConnectionString.Value;
+    public string EffectiveWorkerConnectionString =>
+        _normalizedConnectionStrings.GetOrAdd(
+            string.IsNullOrWhiteSpace(WorkerConnectionString)
+                ? ConnectionString
+                : WorkerConnectionString,
+            PostgresConnectionStringSchemas.EnsureRequiredSearchPath
+        );
 
     /// <summary>
     /// Connection string for the distributed cache provider.
@@ -105,12 +86,18 @@ public record DatabaseSettings
     /// Effective cache connection string after applying the main connection fallback
     /// and ensuring required schemas are present on the search_path.
     /// </summary>
-    public string EffectiveCacheConnectionString => _effectiveCacheConnectionString.Value;
+    public string EffectiveCacheConnectionString =>
+        _normalizedConnectionStrings.GetOrAdd(
+            string.IsNullOrWhiteSpace(CacheConnectionString)
+                ? ConnectionString
+                : CacheConnectionString,
+            PostgresConnectionStringSchemas.EnsureRequiredSearchPath
+        );
 
-    /// <summary>
-    /// The database provider to use for the application. This determines which
-    /// EF Core provider to use and how to configure the database context.
-    /// </summary>
+    /// <summary>Run EF migrations at startup. Disable when an installation runs its own migration task.</summary>
+    public bool MigrateOnStartup { get; init; } = true;
+
+    /// <summary>Database provider.</summary>
     public DatabaseProvider Provider { get; init; } = DatabaseProvider.Postgres;
 }
 

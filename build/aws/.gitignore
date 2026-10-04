@@ -1,0 +1,4 @@
+node_modules/
+Pulumi.*.yaml
+installation.json
+application.local.json

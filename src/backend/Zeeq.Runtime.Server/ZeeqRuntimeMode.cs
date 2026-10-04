@@ -12,10 +12,19 @@ internal static class ZeeqRuntimeMode
     /// Gets the current hosting mode.
     /// </summary>
     public static ZeeqRunMode Current =>
-        Environment.GetEnvironmentVariable(RunModeVariable) is { } mode
-        && string.Equals(mode, "worker", StringComparison.OrdinalIgnoreCase)
-            ? ZeeqRunMode.Worker
-            : ZeeqRunMode.Web;
+        Environment.GetEnvironmentVariable(RunModeVariable)?.Trim().ToLowerInvariant() switch
+        {
+            null or "" or "web" => ZeeqRunMode.Web,
+            "worker" => ZeeqRunMode.Worker,
+            "migrate" => ZeeqRunMode.Migrate,
+            "db-cleanup" => ZeeqRunMode.DatabaseCleanup,
+            "db-bootstrap" => ZeeqRunMode.DatabaseBootstrap,
+            "verify-infrastructure" => ZeeqRunMode.VerifyInfrastructure,
+            "topology" => ZeeqRunMode.Topology,
+            _ => throw new InvalidOperationException(
+                "Unsupported ZEEQ_RUN_MODE. Use web, worker, migrate, db-bootstrap, db-cleanup, verify-infrastructure, or topology."
+            ),
+        };
 
     /// <summary>
     /// Gets the messaging role for the current process.
@@ -53,6 +62,21 @@ internal enum ZeeqRunMode
     /// Starts the generic-host message worker without HTTP middleware.
     /// </summary>
     Worker,
+
+    /// <summary>Applies migrations and cache DDL without starting application services.</summary>
+    Migrate,
+
+    /// <summary>Prepares RDS roles and extensions.</summary>
+    DatabaseBootstrap,
+
+    /// <summary>Removes installation-owned SQL objects from a reused dedicated database.</summary>
+    DatabaseCleanup,
+
+    /// <summary>Verifies the restricted database and runtime AWS permissions without application credentials.</summary>
+    VerifyInfrastructure,
+
+    /// <summary>Exports the runtime queue catalog without accessing infrastructure.</summary>
+    Topology,
 }
 
 /// <summary>

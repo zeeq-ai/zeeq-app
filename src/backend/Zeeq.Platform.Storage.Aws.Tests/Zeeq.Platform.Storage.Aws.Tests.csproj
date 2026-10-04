@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <NoWarn>CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Zeeq.Platform.Storage.Aws/Zeeq.Platform.Storage.Aws.csproj" />
+    <ProjectReference Include="../Zeeq.Core.Common/Zeeq.Core.Common.csproj" />
+    <ProjectReference Include="../Zeeq.Core.Identity/Zeeq.Core.Identity.csproj" />
+  </ItemGroup>
+</Project>

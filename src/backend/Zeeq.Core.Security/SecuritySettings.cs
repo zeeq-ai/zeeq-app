@@ -14,7 +14,7 @@ public sealed record SecuritySettings
     /// <summary>
     /// Active encryption provider used for newly encrypted rows. One of
     /// <see cref="DataEncryptionProviders.DataProtection"/> or
-    /// <see cref="DataEncryptionProviders.CloudKms"/>.
+    /// <see cref="DataEncryptionProviders.CloudKms"/> or <see cref="DataEncryptionProviders.AwsKms"/>.
     /// </summary>
     public required string EncryptionProvider { get; init; }
 
@@ -23,8 +23,9 @@ public sealed record SecuritySettings
     /// </summary>
     public required string DataProtectionKeyRingPath { get; init; }
 
-    /// <summary>
-    /// Google Cloud KMS crypto key resource name used by the <see cref="DataEncryptionProviders.CloudKms"/> provider.
-    /// </summary>
+    /// <summary>AWS KMS key ARN for tenant secret encryption and decryption. Replacing it requires ciphertext migration.</summary>
+    public string AwsKmsKeyArn { get; init; } = string.Empty;
+
+    /// <summary>Google KMS key resource name.</summary>
     public required string GoogleKmsKeyName { get; init; }
 }

@@ -61,9 +61,13 @@
     <ProjectReference Include="..\Zeeq.Platform.Messaging.GcpPubSub\Zeeq.Platform.Messaging.GcpPubSub.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Messaging.Postgres\Zeeq.Platform.Messaging.Postgres.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Messaging\Zeeq.Platform.Messaging.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Storage.Aws\Zeeq.Platform.Storage.Aws.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Storage.Google\Zeeq.Platform.Storage.Google.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Metrics\Zeeq.Platform.Metrics.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Telemetry\Zeeq.Platform.Telemetry.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Deployment/*.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <!-- This section is a set of post-build commands to generate the schema-->
   <Target

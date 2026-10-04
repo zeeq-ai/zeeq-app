@@ -14,8 +14,9 @@ public static class DataEncryptionProviders
     /// </summary>
     public const string DataProtection = "data-protection";
 
-    /// <summary>
-    /// Google Cloud KMS provider for production.
-    /// </summary>
+    /// <summary>AWS KMS provider with organization-bound encryption context.</summary>
+    public const string AwsKms = "aws-kms";
+
+    /// <summary>Google Cloud KMS provider.</summary>
     public const string CloudKms = "cloud-kms";
 }

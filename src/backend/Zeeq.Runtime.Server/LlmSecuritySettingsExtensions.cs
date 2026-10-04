@@ -22,6 +22,7 @@ internal static class LlmSecuritySettingsExtensions
             {
                 EncryptionProvider = settings.EncryptionProvider,
                 DataProtectionKeyRingPath = settings.DataProtectionKeyRingPath,
+                AwsKmsKeyArn = settings.AwsKmsKeyArn,
                 GoogleKmsKeyName = settings.GoogleKmsKeyName,
             };
     }

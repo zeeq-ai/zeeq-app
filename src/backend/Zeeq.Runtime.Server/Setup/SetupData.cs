@@ -33,7 +33,10 @@ internal static class DataExtensions
         /// </summary>
         public async Task UseZeeqDataAsync(AppSettings appSettings)
         {
-            if (appSettings.Database.Provider == DatabaseProvider.Postgres)
+            if (
+                appSettings.Database.Provider == DatabaseProvider.Postgres
+                && appSettings.Database.MigrateOnStartup
+            )
             {
                 await services.UsePostgresAsync();
             }

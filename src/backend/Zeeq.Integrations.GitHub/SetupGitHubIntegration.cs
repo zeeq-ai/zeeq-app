@@ -1,12 +1,11 @@
-using Zeeq.Core.Common;
-using Zeeq.Integrations.GitHub.CheckRuns;
-using Zeeq.Platform.CodeReviews;
-using Humanizer;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Octokit.Webhooks;
 using Octokit.Webhooks.Models;
 using Serilog;
+using Zeeq.Core.Common;
+using Zeeq.Integrations.GitHub.CheckRuns;
+using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Integrations.GitHub;
 
@@ -32,8 +31,12 @@ public static class SetupGitHubIntegration
                         appSettings.GitHub.AppId,
                         appSettings.GitHub.ClientId,
                         appSettings.GitHub.AppSlug,
-                        PrivateKeyPem = appSettings.GitHub.PrivateKeyPem.Truncate(24),
-                        WebhookSecret = appSettings.GitHub.WebhookSecret?.Truncate(4),
+                        HasPrivateKey = !string.IsNullOrWhiteSpace(
+                            appSettings.GitHub.PrivateKeyPem
+                        ),
+                        HasWebhookSecret = !string.IsNullOrWhiteSpace(
+                            appSettings.GitHub.WebhookSecret
+                        ),
                         SecretsConfigured = appSettings.GitHub.HasConfiguredSecrets,
                     }
                 );

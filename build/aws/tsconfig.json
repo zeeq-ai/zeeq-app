@@ -1,0 +1,1 @@
+{"compilerOptions":{"target":"ES2022","module":"commonjs","moduleResolution":"node","strict":true,"esModuleInterop":true,"skipLibCheck":true,"ignoreDeprecations":"6.0"},"include":["*.ts","tests/*.ts"]}

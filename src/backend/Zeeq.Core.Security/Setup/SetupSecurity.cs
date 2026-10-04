@@ -88,6 +88,22 @@ public static class SetupSecurity
             return;
         }
 
+        if (
+            settings.EncryptionProvider.Equals(
+                DataEncryptionProviders.AwsKms,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            if (string.IsNullOrWhiteSpace(settings.AwsKmsKeyArn))
+            {
+                throw new InvalidOperationException(
+                    "AppSettings:Llm:AwsKmsKeyArn is required for aws-kms encryption."
+                );
+            }
+            return;
+        }
+
         throw new InvalidOperationException(
             $"Unsupported data encryption provider '{settings.EncryptionProvider}'."
         );

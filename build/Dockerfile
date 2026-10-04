@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1-labs
+ARG ZEEQ_BUILD_TARGET=gcp
 
 # Multi-stage Dockerfile for Zeeq Server
 #*----------------------------------------------------------------------------------
@@ -29,8 +30,18 @@ RUN VITE_BASE=/web/ yarn --cwd ./src/web build
 #*----------------------------------------------------------------------------------
 # Stage 3: Build the .NET Server
 #*----------------------------------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build-gcp
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build-aws
+FROM build-${ZEEQ_BUILD_TARGET} AS build
 WORKDIR /srcroot
+ARG ZEEQ_BUILD_TARGET=gcp
+ARG BUILDARCH
+# AWS builds on ARM hosts need a native compiler workaround for Grpc.Tools on 16KB pages.
+# GCP builds retain the compiler supplied by the pinned Grpc.Tools package.
+RUN case "$ZEEQ_BUILD_TARGET" in gcp|aws) ;; *) echo "Unsupported ZEEQ_BUILD_TARGET: $ZEEQ_BUILD_TARGET" >&2; exit 1 ;; esac && \
+  if [ "$ZEEQ_BUILD_TARGET" = aws ] && [ "$BUILDARCH" = arm64 ]; then \
+    apt-get update && apt-get install -y --no-install-recommends protobuf-compiler && rm -rf /var/lib/apt/lists/*; \
+  fi
 
 # See: https://docs.docker.com/engine/reference/builder/#automatic-platform-args-in-the-global-scope
 ARG TARGETARCH
@@ -47,7 +58,8 @@ COPY --parents ./src/backend/Directory.* ./
 COPY --parents ./src/backend/**/*.csproj ./
 
 # Restore dependencies
-RUN dotnet restore ./src/backend/Zeeq.Runtime.Server/Zeeq.Runtime.Server.csproj -a $TARGETARCH
+COPY nuget.config ./
+RUN dotnet restore ./src/backend/Zeeq.Runtime.Server/Zeeq.Runtime.Server.csproj -a $TARGETARCH --verbosity normal
 
 # Copy the full backend source tree (core, integrations, mcp, platform, runtime)
 COPY ./src/backend ./src/backend
@@ -56,7 +68,8 @@ COPY ./src/backend ./src/backend
 COPY --from=web-build /srcroot/src/web/dist ./src/backend/Zeeq.Runtime.Server/wwwroot/web
 
 # Build the application without restore (already restored above)
-RUN dotnet publish ./src/backend/Zeeq.Runtime.Server/Zeeq.Runtime.Server.csproj \
+RUN if [ "$ZEEQ_BUILD_TARGET" = aws ] && [ "$BUILDARCH" = arm64 ]; then export PROTOBUF_PROTOC=/usr/bin/protoc; fi && \
+  dotnet publish ./src/backend/Zeeq.Runtime.Server/Zeeq.Runtime.Server.csproj \
   --configuration Release \
   --no-restore \
   --output /app/publish \
@@ -71,6 +84,7 @@ RUN dotnet publish ./src/backend/Zeeq.Runtime.Server/Zeeq.Runtime.Server.csproj 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
+ARG ZEEQ_BUILD_TARGET=gcp
 ARG GIT_SHA
 ARG ZEEQ_VERSION
 ARG ZEEQ_VERSION_TAG
@@ -94,6 +108,12 @@ RUN apt-get update && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/*
 
+# Only AWS images need the RDS trust bundle; GCP builds do not contact this endpoint.
+RUN case "$ZEEQ_BUILD_TARGET" in \
+    aws) curl -fsSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o /app/rds-ca.pem ;; \
+    gcp) ;; \
+    *) echo "Unsupported ZEEQ_BUILD_TARGET: $ZEEQ_BUILD_TARGET" >&2; exit 1 ;; \
+  esac
 COPY --from=build /app/publish .
 
 # 8080: web/API, 8081: OTLP/gRPC ingest, 8082: OTLP/HTTP ingest.

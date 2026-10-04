@@ -13,6 +13,7 @@ using Zeeq.Platform.Documents;
 using Zeeq.Platform.Ingest;
 using Zeeq.Platform.Llm;
 using Zeeq.Platform.Metrics;
+using Zeeq.Platform.Storage.Aws;
 using Zeeq.Platform.Storage.Google;
 using Zeeq.Platform.Telemetry.Setup;
 using Zeeq.Runtime.Server;
@@ -27,7 +28,21 @@ if (ZeeqRuntimeMode.Current == ZeeqRunMode.Worker)
     return;
 }
 
+if (
+    ZeeqRuntimeMode.Current
+    is ZeeqRunMode.Migrate
+        or ZeeqRunMode.DatabaseBootstrap
+        or ZeeqRunMode.DatabaseCleanup
+        or ZeeqRunMode.VerifyInfrastructure
+        or ZeeqRunMode.Topology
+)
+{
+    await ZeeqDeploymentHost.RunAsync(args, ZeeqRuntimeMode.Current);
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddZeeqConfigJson();
 
 builder.AddZeeqLogging();
 
@@ -75,6 +90,7 @@ builder
     .AddZeeqLlm(appSettings.Llm, builder.Environment)
     .AddZeeqLlmPlatform()
     .AddGoogleKmsDataEncryption(securitySettings)
+    .AddAwsKmsDataEncryption(securitySettings)
     .AddZeeqCodeReviews(appSettings.CodeReview)
     .AddZeeqIngest(appSettings)
     // Registered here too, not just in ZeeqWorkerHost: ZEEQ_MESSAGING_ROLE

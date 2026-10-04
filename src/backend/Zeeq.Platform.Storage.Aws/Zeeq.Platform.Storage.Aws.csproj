@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.KeyManagementService" />
+    <ProjectReference Include="../Zeeq.Core.Security/Zeeq.Core.Security.csproj" />
+  </ItemGroup>
+</Project>
