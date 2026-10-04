@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Hybrid;
 
 namespace Zeeq.Runtime.Server.Setup;
@@ -155,6 +156,28 @@ internal static class CacheExtensions
             {
                 Log.Here().Warning("HybridCache is not registered; skipping cache initialization");
 
+                return;
+            }
+
+            if (!appSettings.Cache.CreateIfNotExists)
+            {
+                // HybridCache can fall back to L1 on L2 failure. Prove the restricted login can use L2.
+                var distributed = services.GetRequiredService<IDistributedCache>();
+                var key = $"__zeeq_cache_readiness_{Guid.NewGuid():N}";
+                await distributed.SetAsync(
+                    key,
+                    [1],
+                    new DistributedCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30),
+                    }
+                );
+                var value = await distributed.GetAsync(key);
+                await distributed.RemoveAsync(key);
+                if (value is not [1])
+                {
+                    throw new InvalidOperationException("Distributed cache readiness failed.");
+                }
                 return;
             }
 

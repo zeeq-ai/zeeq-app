@@ -1,0 +1,43 @@
+{
+  "AppSettings": {
+    "Auth": {
+      "Providers": [
+        {
+          "Name": "google",
+          "DisplayName": "Google",
+          "ClientId": "YOUR_CLIENT_ID",
+          "ClientSecret": "YOUR_CLIENT_SECRET",
+          "IssuerUri": "https://accounts.google.com",
+          "ServerCallbackUri": "https://YOUR_HOSTNAME/auth/callback/google",
+          "Scopes": [
+            "openid",
+            "profile",
+            "email"
+          ]
+        }
+      ],
+      "OpenIddict": {
+        "SigningCertificateBase64": "BASE64_PFX",
+        "SigningCertificatePassword": "PFX_PASSWORD",
+        "EncryptionCertificateBase64": "BASE64_PFX",
+        "EncryptionCertificatePassword": "PFX_PASSWORD"
+      }
+    },
+    "GitHub": {
+      "AlwaysUseGhTokenForSync": false
+    },
+    "Llm": {
+      "Models": {
+        "Fast": {
+          "Provider": "Fireworks",
+          "Model": "YOUR_MODEL",
+          "Endpoint": "https://api.fireworks.ai/inference/v1",
+          "ApiKey": "YOUR_API_KEY"
+        }
+      },
+      "Embeddings": {
+        "Enabled": false
+      }
+    }
+  }
+}

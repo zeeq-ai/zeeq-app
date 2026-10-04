@@ -49,9 +49,10 @@ public sealed record LlmSettings
         init;
     } = ".secrets/data-protection-keys";
 
-    /// <summary>
-    /// Google Cloud KMS crypto key resource name used by the `cloud-kms` provider.
-    /// </summary>
+    /// <summary>AWS KMS key ARN used by the aws-kms provider.</summary>
+    public string AwsKmsKeyArn { get; init; } = string.Empty;
+
+    /// <summary>Google KMS key resource name.</summary>
     public string GoogleKmsKeyName
     {
         get => field.Trim();

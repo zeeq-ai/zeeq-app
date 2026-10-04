@@ -201,8 +201,8 @@ public static class PostgresSetupExtension
             )
             .UseOpenIddict()
             .UseSnakeCaseNamingConvention()
-            .EnableDetailedErrors(true)
-            .EnableSensitiveDataLogging(true);
+            .EnableDetailedErrors(false)
+            .EnableSensitiveDataLogging(false);
     }
 
     /// <summary>

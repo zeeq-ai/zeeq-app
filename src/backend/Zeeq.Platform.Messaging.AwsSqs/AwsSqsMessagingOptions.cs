@@ -22,6 +22,9 @@ public sealed record AwsSqsMessagingOptions
     /// <summary>Missing-queue policy. Zeeq reconciles missing queues before Brighter validates them.</summary>
     public OnMissingChannel MissingChannelPolicy { get; init; } = OnMissingChannel.Validate;
 
+    /// <summary>Allow runtime creation of missing queues. Disable when Pulumi owns the topology.</summary>
+    public bool CreateMissingQueues { get; init; } = true;
+
     /// <summary>SQS long-poll seconds, independent of Zeeq's empty-channel delay.</summary>
     public int LongPollSeconds { get; init; } = 20;
 }

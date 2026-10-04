@@ -1,0 +1,5 @@
+{
+  "network": { "vpcId": "vpc-EXISTING", "publicSubnetIds": ["subnet-PUBLIC_A", "subnet-PUBLIC_B"], "privateSubnetIds": ["subnet-PRIVATE_A", "subnet-PRIVATE_B"] },
+  "ingress": { "type": "application", "arn": "arn:aws:elasticloadbalancing:REGION:ACCOUNT:loadbalancer/app/EXISTING/ID", "dnsName": "EXISTING.REGION.elb.amazonaws.com", "zoneId": "LOAD_BALANCER_ZONE", "securityGroupId": "sg-EXISTING_ALB", "listenerArn": "arn:aws:elasticloadbalancing:REGION:ACCOUNT:listener/app/EXISTING/ID/ID", "certificateArn": "arn:aws:acm:REGION:ACCOUNT:certificate/EXISTING", "rulePriority": 100 },
+  "database": { "host": "EXISTING.REGION.rds.amazonaws.com", "port": 5432, "securityGroupId": "sg-EXISTING_RDS", "ownerConnectionSecretArn": "arn:aws:secretsmanager:REGION:ACCOUNT:secret:OWNER", "runtimeConnectionSecretArn": "arn:aws:secretsmanager:REGION:ACCOUNT:secret:RUNTIME" }
+}

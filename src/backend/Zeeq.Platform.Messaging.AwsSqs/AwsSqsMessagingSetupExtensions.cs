@@ -145,7 +145,11 @@ public static class AwsSqsMessagingSetupExtensions
         if (sqsOptions.MissingChannelPolicy == OnMissingChannel.Validate)
         {
             using var client = AwsSqsGatewayConnectionFactory.CreateClient(connection);
-            new AwsSqsTopologyService(client, NullLogger<AwsSqsTopologyService>.Instance)
+            new AwsSqsTopologyService(
+                client,
+                NullLogger<AwsSqsTopologyService>.Instance,
+                sqsOptions
+            )
                 .EnsureTopologyAsync(
                     topology,
                     registerProducers,

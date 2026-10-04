@@ -104,9 +104,10 @@ public static class RuntimeSecretsProviderFactory
 /// </remarks>
 public sealed class OpenIddictCertificateSettings
 {
-    /// <summary>
-    /// Path to the PFX certificate used to sign OpenIddict tokens.
-    /// </summary>
+    /// <summary>Base64-encoded PFX payload. Mutually exclusive with the file path.</summary>
+    public string? SigningCertificateBase64 { get; set; }
+
+    /// <summary>Signing PFX file path.</summary>
     public string? SigningCertificatePath { get; set; }
 
     /// <summary>
@@ -114,9 +115,10 @@ public sealed class OpenIddictCertificateSettings
     /// </summary>
     public string? SigningCertificatePassword { get; set; }
 
-    /// <summary>
-    /// Path to the PFX certificate used to encrypt OpenIddict tokens.
-    /// </summary>
+    /// <summary>Base64-encoded PFX payload. Mutually exclusive with the file path.</summary>
+    public string? EncryptionCertificateBase64 { get; set; }
+
+    /// <summary>Encryption PFX file path.</summary>
     public string? EncryptionCertificatePath { get; set; }
 
     /// <summary>
@@ -129,14 +131,22 @@ public sealed class OpenIddictCertificateSettings
     /// </summary>
     public bool HasAnyConfiguredCertificate =>
         !string.IsNullOrWhiteSpace(SigningCertificatePath)
-        || !string.IsNullOrWhiteSpace(EncryptionCertificatePath);
+        || !string.IsNullOrWhiteSpace(SigningCertificateBase64)
+        || !string.IsNullOrWhiteSpace(EncryptionCertificatePath)
+        || !string.IsNullOrWhiteSpace(EncryptionCertificateBase64);
 
     /// <summary>
     /// Whether both signing and encryption certificate paths were configured.
     /// </summary>
     public bool HasCompleteConfiguredCertificates =>
-        !string.IsNullOrWhiteSpace(SigningCertificatePath)
-        && !string.IsNullOrWhiteSpace(EncryptionCertificatePath);
+        (
+            !string.IsNullOrWhiteSpace(SigningCertificatePath)
+            || !string.IsNullOrWhiteSpace(SigningCertificateBase64)
+        )
+        && (
+            !string.IsNullOrWhiteSpace(EncryptionCertificatePath)
+            || !string.IsNullOrWhiteSpace(EncryptionCertificateBase64)
+        );
 
     /// <summary>
     /// Directory used to persist self-signed development signing/encryption
@@ -175,9 +185,35 @@ public sealed class OpenIddictCertificateSettings
             OpenIddictCertificateSettings source
         )
         {
+            if (
+                (
+                    !string.IsNullOrWhiteSpace(source.SigningCertificateBase64)
+                    && !string.IsNullOrWhiteSpace(source.SigningCertificatePath)
+                )
+                || (
+                    !string.IsNullOrWhiteSpace(source.EncryptionCertificateBase64)
+                    && !string.IsNullOrWhiteSpace(source.EncryptionCertificatePath)
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    "Configure a certificate path or payload for each purpose, not both in the same configuration source."
+                );
+            }
+            if (!string.IsNullOrWhiteSpace(source.SigningCertificateBase64))
+            {
+                target.SigningCertificateBase64 = source.SigningCertificateBase64;
+                target.SigningCertificatePath = null;
+            }
+            if (!string.IsNullOrWhiteSpace(source.EncryptionCertificateBase64))
+            {
+                target.EncryptionCertificateBase64 = source.EncryptionCertificateBase64;
+                target.EncryptionCertificatePath = null;
+            }
             if (!string.IsNullOrWhiteSpace(source.SigningCertificatePath))
             {
                 target.SigningCertificatePath = source.SigningCertificatePath;
+                target.SigningCertificateBase64 = null;
             }
 
             if (!string.IsNullOrWhiteSpace(source.SigningCertificatePassword))
@@ -188,6 +224,7 @@ public sealed class OpenIddictCertificateSettings
             if (!string.IsNullOrWhiteSpace(source.EncryptionCertificatePath))
             {
                 target.EncryptionCertificatePath = source.EncryptionCertificatePath;
+                target.EncryptionCertificateBase64 = null;
             }
 
             if (!string.IsNullOrWhiteSpace(source.EncryptionCertificatePassword))
@@ -364,13 +401,15 @@ public sealed class ConfiguredCertificateRuntimeSecretsProvider(
     /// <inheritdoc />
     public void ValidateStartup()
     {
-        _ = LoadCertificate(
+        using var signing = LoadCertificate(
             settings.SigningCertificatePath,
+            settings.SigningCertificateBase64,
             settings.SigningCertificatePassword,
             "signing"
         );
-        _ = LoadCertificate(
+        using var encryption = LoadCertificate(
             settings.EncryptionCertificatePath,
+            settings.EncryptionCertificateBase64,
             settings.EncryptionCertificatePassword,
             "encryption"
         );
@@ -381,11 +420,13 @@ public sealed class ConfiguredCertificateRuntimeSecretsProvider(
     {
         var signingCertificate = LoadCertificate(
             settings.SigningCertificatePath,
+            settings.SigningCertificateBase64,
             settings.SigningCertificatePassword,
             "signing"
         );
         var encryptionCertificate = LoadCertificate(
             settings.EncryptionCertificatePath,
+            settings.EncryptionCertificateBase64,
             settings.EncryptionCertificatePassword,
             "encryption"
         );
@@ -394,30 +435,58 @@ public sealed class ConfiguredCertificateRuntimeSecretsProvider(
         options.AddEncryptionCertificate(encryptionCertificate);
     }
 
-    private static X509Certificate2 LoadCertificate(string? path, string? password, string purpose)
+    private static X509Certificate2 LoadCertificate(
+        string? path,
+        string? base64,
+        string? password,
+        string purpose
+    )
     {
-        if (string.IsNullOrWhiteSpace(path))
+        if (!string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(base64))
         {
             throw new InvalidOperationException(
-                $"OpenIddict {purpose} certificate path is not configured."
+                $"OpenIddict {purpose}: configure a file path or a PFX payload, not both."
             );
         }
-
-        if (!File.Exists(path))
+        X509Certificate2 certificate;
+        if (!string.IsNullOrWhiteSpace(base64))
         {
-            throw new InvalidOperationException(
-                $"OpenIddict {purpose} certificate file does not exist: {path}"
+            var bytes = Convert.FromBase64String(base64);
+            try
+            {
+                certificate = X509CertificateLoader.LoadPkcs12(
+                    bytes,
+                    password,
+                    OperatingSystem.IsMacOS()
+                        ? X509KeyStorageFlags.DefaultKeySet
+                        : X509KeyStorageFlags.EphemeralKeySet
+                );
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(bytes);
+            }
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                throw new InvalidOperationException(
+                    $"OpenIddict {purpose} certificate file is not configured or does not exist."
+                );
+            }
+            certificate = X509CertificateLoader.LoadPkcs12FromFile(
+                path,
+                password,
+                OperatingSystem.IsMacOS()
+                    ? X509KeyStorageFlags.DefaultKeySet
+                    : X509KeyStorageFlags.EphemeralKeySet
             );
         }
-
-        var certificate = X509CertificateLoader.LoadPkcs12FromFile(
-            path,
-            password,
-            X509KeyStorageFlags.DefaultKeySet
-        );
 
         if (!certificate.HasPrivateKey)
         {
+            certificate.Dispose();
             throw new InvalidOperationException(
                 $"OpenIddict {purpose} certificate must include a private key."
             );

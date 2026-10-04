@@ -3,3 +3,16 @@
 **/**.Tests/
 src/web/node_modules/
 src/web/dist/
+
+# Keep credentials, local planning files and install state out of build contexts.
+.git/
+.config/
+.agents/
+**/.secrets/
+**/node_modules/
+build/aws/Pulumi.*.yaml
+build/aws/installation.json
+build/aws/application.local.json
+**/*.pfx
+**/*.key
+**/.env

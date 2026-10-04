@@ -9,6 +9,7 @@ using Zeeq.Platform.Documents;
 using Zeeq.Platform.Ingest;
 using Zeeq.Platform.Llm;
 using Zeeq.Platform.Metrics;
+using Zeeq.Platform.Storage.Aws;
 using Zeeq.Platform.Storage.Google;
 using Zeeq.Platform.Telemetry.Setup;
 
@@ -30,6 +31,7 @@ internal static class ZeeqWorkerHost
     public static async Task RunAsync(string[] args)
     {
         var builder = Host.CreateApplicationBuilder(args);
+        builder.Configuration.AddZeeqConfigJson();
 
         builder.AddZeeqLogging();
 
@@ -84,6 +86,7 @@ internal static class ZeeqWorkerHost
                 .AddZeeqLlm(workerAppSettings.Llm, builder.Environment)
                 .AddZeeqLlmPlatform()
                 .AddGoogleKmsDataEncryption(securitySettings)
+                .AddAwsKmsDataEncryption(securitySettings)
                 .AddZeeqCodeReviews(workerAppSettings.CodeReview)
                 .AddZeeqCodeReviewToolset()
                 .AddZeeqIngest(workerAppSettings)

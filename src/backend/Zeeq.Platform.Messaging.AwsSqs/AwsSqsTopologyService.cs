@@ -8,7 +8,8 @@ namespace Zeeq.Platform.Messaging.AwsSqs;
 /// <summary>Creates missing queues without deleting or mutating existing topology, as in the GCP adapter.</summary>
 public sealed partial class AwsSqsTopologyService(
     IAmazonSQS client,
-    ILogger<AwsSqsTopologyService> logger
+    ILogger<AwsSqsTopologyService> logger,
+    AwsSqsMessagingOptions? options = null
 )
 {
     /// <summary>Reconciles the selected process role's queues before Brighter validates its channels.</summary>
@@ -45,6 +46,12 @@ public sealed partial class AwsSqsTopologyService(
                 }
                 catch (QueueDoesNotExistException)
                 {
+                    if (options is { CreateMissingQueues: false })
+                    {
+                        throw new InvalidOperationException(
+                            $"Required Pulumi-managed SQS queue '{name}' is missing."
+                        );
+                    }
                     var attributes = publication.QueueAttributes;
                     // CreateQueue is idempotent for matching attributes, including simultaneous startup.
                     // NOTE: QueueNameExists means conflicting attributes, not a matching startup race.

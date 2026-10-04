@@ -1,0 +1,3 @@
+name: zeeq-aws
+runtime: nodejs
+description: Account-portable Zeeq ECS/RDS installation
