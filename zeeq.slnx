@@ -34,6 +34,7 @@
     <Project Path="src/backend/Zeeq.Platform.Memories/Zeeq.Platform.Memories.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Llm/Zeeq.Platform.Llm.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Messaging.GcpPubSub/Zeeq.Platform.Messaging.GcpPubSub.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Messaging.AwsSqs/Zeeq.Platform.Messaging.AwsSqs.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Messaging/Zeeq.Platform.Messaging.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Messaging.Postgres/Zeeq.Platform.Messaging.Postgres.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Membership/Zeeq.Platform.Membership.csproj" />
@@ -68,6 +69,7 @@
     <Project Path="src/backend/Zeeq.Platform.Llm.Tests/Zeeq.Platform.Llm.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Messaging.GcpPubSub.Tests/Zeeq.Platform.Messaging.GcpPubSub.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Messaging.GcpPubSub.Tests.Integration/Zeeq.Platform.Messaging.GcpPubSub.Tests.Integration.csproj" />
+    <Project Path="src/backend/Zeeq.Platform.Messaging.AwsSqs.Tests.Integration/Zeeq.Platform.Messaging.AwsSqs.Tests.Integration.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Messaging.Postgres.Tests/Zeeq.Platform.Messaging.Postgres.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Messaging.Tests/Zeeq.Platform.Messaging.Tests.csproj" />
     <Project Path="src/backend/Zeeq.Platform.Membership.Tests/Zeeq.Platform.Membership.Tests.csproj" />
