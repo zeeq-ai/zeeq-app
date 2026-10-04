@@ -74,6 +74,7 @@
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.3" />
     <PackageVersion Include="Paramore.Brighter" Version="10.6.0" />
+    <PackageVersion Include="Paramore.Brighter.MessagingGateway.AWSSQS" Version="10.6.0" />
     <PackageVersion Include="Paramore.Brighter.Extensions.DependencyInjection" Version="10.6.0" />
     <PackageVersion Include="Paramore.Brighter.MessagingGateway.GcpPubSub" Version="10.6.0" />
     <PackageVersion Include="Paramore.Brighter.MessagingGateway.Postgres" Version="10.6.0" />
@@ -97,6 +98,8 @@
     <PackageVersion Include="T-Digest.NET" Version="1.0.3" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.12.0" />
     <PackageVersion Include="Testcontainers.PubSub" Version="4.12.0" />
+    <PackageVersion Include="Testcontainers.Floci" Version="4.12.0" />
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <PackageVersion Include="Tiktoken" Version="3.1.5" />
     <PackageVersion Include="ToonSharp" Version="1.0.0" />
     <PackageVersion Include="TUnit" Version="1.56.0" />
