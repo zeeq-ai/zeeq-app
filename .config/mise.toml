@@ -40,5 +40,9 @@ description = "Run the Aspire stack (pass aws for Floci; defaults to GCP Pub/Sub
 run = "aspire run --detach --non-interactive --"
 
 [tasks.down]
-description = "Stop the full Aspire stack"
+description = "Stop the full Aspire stack (does not stop persistent containers)"
 run = "aspire stop"
+
+[tasks.aws-sso]
+description = "Authenticate with AWS SSO (use with the AWS CLI)"
+run = "aws sso login --profile zeeq"

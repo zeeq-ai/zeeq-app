@@ -8,6 +8,7 @@
     <PackageReference Include="Testcontainers.Floci" />
     <!-- Override Testcontainers' vulnerable SSH.NET transitive dependency in this harness. -->
     <PackageReference Include="SSH.NET" />
+    <ProjectReference Include="../Zeeq.Platform.Messaging.GcpPubSub/Zeeq.Platform.Messaging.GcpPubSub.csproj" />
     <ProjectReference Include="../Zeeq.Platform.Messaging.AwsSqs/Zeeq.Platform.Messaging.AwsSqs.csproj" />
   </ItemGroup>
 </Project>
