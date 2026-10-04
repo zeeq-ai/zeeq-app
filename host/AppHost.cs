@@ -184,8 +184,13 @@ void ConfigureCloudEmulator(IResourceBuilder<ProjectResource> project)
             .WithEnvironment("AWS_ACCESS_KEY_ID", "test")
             .WithEnvironment("AWS_SECRET_ACCESS_KEY", "test")
             .WithEnvironment("AWS_SESSION_TOKEN", "")
-            // Keep messaging local until the Brighter AWS transport is implemented.
-            .WithEnvironment("ZeeqMessaging__Provider", "Postgres");
+            .WithEnvironment("ZeeqMessaging__Provider", "AwsSqs")
+            .WithEnvironment("ZeeqMessaging__AwsSqs__QueuePrefix", "zeeq-dev")
+            .WithEnvironment("ZeeqMessaging__AwsSqs__MissingChannelPolicy", "Validate")
+            // Three tenant routes per topic keep local consumer counts small.
+            .WithEnvironment("ZeeqMessaging__TenantBuckets__PriorityBucketCount", "1")
+            .WithEnvironment("ZeeqMessaging__TenantBuckets__DefaultBucketCount", "1")
+            .WithEnvironment("ZeeqMessaging__TenantBuckets__LowBucketCount", "1");
     }
     else if (pubSubEmulator is not null)
     {

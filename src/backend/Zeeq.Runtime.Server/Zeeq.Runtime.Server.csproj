@@ -57,6 +57,7 @@
     <ProjectReference Include="..\Zeeq.Platform.Documents\Zeeq.Platform.Documents.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Ingest\Zeeq.Platform.Ingest.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Llm\Zeeq.Platform.Llm.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Messaging.AwsSqs\Zeeq.Platform.Messaging.AwsSqs.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Messaging.GcpPubSub\Zeeq.Platform.Messaging.GcpPubSub.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Messaging.Postgres\Zeeq.Platform.Messaging.Postgres.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Messaging\Zeeq.Platform.Messaging.csproj" />
