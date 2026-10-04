@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <NoWarn>CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="TUnit" />
+    <PackageReference Include="Testcontainers.Floci" />
+    <!-- Override Testcontainers' vulnerable SSH.NET transitive dependency in this harness. -->
+    <PackageReference Include="SSH.NET" />
+    <ProjectReference Include="../Zeeq.Platform.Messaging.AwsSqs/Zeeq.Platform.Messaging.AwsSqs.csproj" />
+  </ItemGroup>
+</Project>

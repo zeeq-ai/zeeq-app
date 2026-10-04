@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Paramore.Brighter.MessagingGateway.AWSSQS" />
+    <ProjectReference Include="../Zeeq.Platform.Messaging/Zeeq.Platform.Messaging.csproj" />
+  </ItemGroup>
+</Project>
