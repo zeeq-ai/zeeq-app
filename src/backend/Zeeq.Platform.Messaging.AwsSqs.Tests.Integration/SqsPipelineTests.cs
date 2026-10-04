@@ -3,6 +3,7 @@ namespace Zeeq.Platform.Messaging.AwsSqs.Tests.Integration;
 /// <summary>Verifies the real mapper, routing, retry/fallback and acknowledgement pipeline.</summary>
 [Category("SqsEmulator")]
 [ClassDataSource<FlociFixture>(Shared = SharedType.PerTestSession)]
+[NotInParallel("SqsPipeline")]
 public sealed class SqsPipelineTests(FlociFixture fixture)
 {
     [Test]

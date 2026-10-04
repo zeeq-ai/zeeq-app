@@ -1,5 +1,6 @@
 using Amazon;
 using Amazon.Runtime;
+using Amazon.SQS;
 using Paramore.Brighter.MessagingGateway.AWSSQS;
 
 namespace Zeeq.Platform.Messaging.AwsSqs;
@@ -40,5 +41,13 @@ public static class AwsSqsGatewayConnectionFactory
                 }
             }
         );
+    }
+
+    /// <summary>Creates a topology client with the same signing and endpoint settings as Brighter.</summary>
+    public static AmazonSQSClient CreateClient(AWSMessagingGatewayConnection connection)
+    {
+        var config = new AmazonSQSConfig { RegionEndpoint = connection.Region };
+        connection.ClientConfigAction?.Invoke(config);
+        return new AmazonSQSClient(connection.Credentials, config);
     }
 }
