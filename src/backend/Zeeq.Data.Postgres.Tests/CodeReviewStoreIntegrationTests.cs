@@ -1,11 +1,12 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using Zeeq.Biome;
 using Zeeq.Core.Common.Storage;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.CodeReviews;
 using Zeeq.Platform.CodeReviews;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -50,23 +51,23 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     {
         var firstCreatedAt = DateTimeOffset.UtcNow.AddMinutes(-2);
         var secondCreatedAt = DateTimeOffset.UtcNow;
-        var (seed, repository, lookups) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestLookups(
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out var repository)
+            .AddLookups(
+                out var lookups,
                 lookup =>
                 {
                     lookup.PullRequestNumber = 42;
                     lookup.PullRequestCreatedAtUtc = firstCreatedAt;
-                    lookup.PersistOnBuild = false;
                 },
                 lookup =>
                 {
                     lookup.PullRequestNumber = 42;
                     lookup.PullRequestCreatedAtUtc = secondCreatedAt;
-                    lookup.PersistOnBuild = false;
                 }
             )
+            .Transient()
             .BuildAsync();
         var store = new PostgresPullRequestLookupStore(_context);
 
@@ -88,29 +89,28 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task PullRequestRecordStore_ListRecentAsync_UsesCreatedAtAndIdCursor()
     {
-        var (seed, _, pullRequests) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords(
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out _)
+            .AddPullRequests(
+                out var pullRequests,
                 pullRequest =>
                 {
                     pullRequest.PullRequestNumber = 1;
                     pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-3);
-                    pullRequest.PersistOnBuild = false;
                 },
                 pullRequest =>
                 {
                     pullRequest.PullRequestNumber = 2;
                     pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2);
-                    pullRequest.PersistOnBuild = false;
                 },
                 pullRequest =>
                 {
                     pullRequest.PullRequestNumber = 3;
                     pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
-                    pullRequest.PersistOnBuild = false;
                 }
             )
+            .Transient()
             .BuildAsync();
         var older = pullRequests[0];
         var middle = pullRequests[1];
@@ -148,41 +148,42 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task PullRequestRecordStore_ListRecentAsync_MineIncludesActiveGitHubAliases()
     {
-        // NOTE: A follow-up review suspected this deconstruction no longer
-        // matched the EntityGraph result shape after AddUserAliases; the
-        // CodeReviewStoreIntegrationTests project compiles and this test passes.
-        var (seed, _, pullRequests, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords(
-                pullRequest =>
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out _)
+            .Add(
+                CodeReviewBlueprints.PullRequest,
+                out var pullRequests,
+                (pullRequest, ctx) =>
                 {
                     pullRequest.PullRequestNumber = 1;
                     pullRequest.AuthorLogin = "claimed-author";
-                    pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-3);
-                    pullRequest.PersistOnBuild = false;
+                    pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(3));
                 },
-                pullRequest =>
+                (pullRequest, ctx) =>
                 {
                     pullRequest.PullRequestNumber = 2;
                     pullRequest.AuthorLogin = " @CharlieDigital ";
-                    pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2);
-                    pullRequest.PersistOnBuild = false;
+                    pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(2));
                 },
-                pullRequest =>
+                (pullRequest, ctx) =>
                 {
                     pullRequest.PullRequestNumber = 3;
                     pullRequest.AuthorLogin = "someone-else";
-                    pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
-                    pullRequest.PersistOnBuild = false;
+                    pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(1));
                 }
             )
-            .AddUserAliases(alias =>
-            {
-                alias.Kind = UserAliasKind.GitHub;
-                alias.DisplayValue = "CharlieDigital";
-                alias.NormalizedValue = "charliedigital";
-            })
+            .Transient()
+            .Under(seed.Owner)
+            .AddAliases(
+                out _,
+                alias =>
+                {
+                    alias.Kind = UserAliasKind.GitHub;
+                    alias.DisplayValue = "CharlieDigital";
+                    alias.NormalizedValue = "charliedigital";
+                }
+            )
             .BuildAsync();
         var claimed = pullRequests[0];
         var aliased = pullRequests[1];
@@ -207,31 +208,35 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewRecordStore_ListRecentAsync_UsesCreatedAtAndIdCursor()
     {
-        var (seed, _, pullRequests, reviews) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords(pullRequest =>
-            {
-                pullRequest.PullRequestNumber = 77;
-                pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-4);
-            })
-            .AddCodeReviewRecords(
-                review =>
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out _)
+            .Add(
+                CodeReviewBlueprints.PullRequest,
+                out var pullRequests,
+                (pullRequest, ctx) =>
                 {
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-3);
-                    review.PersistOnBuild = false;
-                },
-                review =>
-                {
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2);
-                    review.PersistOnBuild = false;
-                },
-                review =>
-                {
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
-                    review.PersistOnBuild = false;
+                    pullRequest.PullRequestNumber = 77;
+                    pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(4));
                 }
             )
+            .Add(
+                CodeReviewBlueprints.Review,
+                out var reviews,
+                (review, ctx) =>
+                {
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(3));
+                },
+                (review, ctx) =>
+                {
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(2));
+                },
+                (review, ctx) =>
+                {
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(1));
+                }
+            )
+            .Transient()
             .BuildAsync();
         var pullRequest = pullRequests[0];
         var older = reviews[0];
@@ -270,31 +275,35 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewRecordStore_ListForPullRequestAsync_UsesPullRequestCreatedAtLowerBound()
     {
-        var (seed, _, pullRequests, reviews) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords(pullRequest =>
-            {
-                pullRequest.PullRequestNumber = 88;
-                pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-10);
-            })
-            .AddCodeReviewRecords(
-                review =>
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out _)
+            .Add(
+                CodeReviewBlueprints.PullRequest,
+                out var pullRequests,
+                (pullRequest, ctx) =>
                 {
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-3);
-                    review.PersistOnBuild = false;
-                },
-                review =>
-                {
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2);
-                    review.PersistOnBuild = false;
-                },
-                review =>
-                {
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
-                    review.PersistOnBuild = false;
+                    pullRequest.PullRequestNumber = 88;
+                    pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(10));
                 }
             )
+            .Add(
+                CodeReviewBlueprints.Review,
+                out var reviews,
+                (review, ctx) =>
+                {
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(3));
+                },
+                (review, ctx) =>
+                {
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(2));
+                },
+                (review, ctx) =>
+                {
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(1));
+                }
+            )
+            .Transient()
             .BuildAsync();
         var pullRequest = pullRequests[0];
         var older = reviews[0];
@@ -337,34 +346,38 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewRecordStore_FindNewestCompletedForPullRequestAsync_IgnoresRunningReviews()
     {
-        var (seed, _, pullRequests, reviews) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords(pullRequest =>
-            {
-                pullRequest.PullRequestNumber = 90;
-                pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-10);
-            })
-            .AddCodeReviewRecords(
-                review =>
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out _)
+            .Add(
+                CodeReviewBlueprints.PullRequest,
+                out var pullRequests,
+                (pullRequest, ctx) =>
                 {
-                    review.Status = CodeReviewStatus.Completed;
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-3);
-                    review.PersistOnBuild = false;
-                },
-                review =>
-                {
-                    review.Status = CodeReviewStatus.Completed;
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2);
-                    review.PersistOnBuild = false;
-                },
-                review =>
-                {
-                    review.Status = CodeReviewStatus.Running;
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
-                    review.PersistOnBuild = false;
+                    pullRequest.PullRequestNumber = 90;
+                    pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(10));
                 }
             )
+            .Add(
+                CodeReviewBlueprints.Review,
+                out var reviews,
+                (review, ctx) =>
+                {
+                    review.Status = CodeReviewStatus.Completed;
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(3));
+                },
+                (review, ctx) =>
+                {
+                    review.Status = CodeReviewStatus.Completed;
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(2));
+                },
+                (review, ctx) =>
+                {
+                    review.Status = CodeReviewStatus.Running;
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(1));
+                }
+            )
+            .Transient()
             .BuildAsync();
         var pullRequest = pullRequests[0];
         var olderCompleted = reviews[0];
@@ -390,35 +403,39 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewRecordStore_FindNewestCompletedForBranchAsync_FiltersByBranchAndRepository()
     {
-        var (seed, repository, _, reviews) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords(pullRequest =>
-            {
-                pullRequest.PullRequestNumber = 91;
-                pullRequest.Branch = "feature/target";
-                pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-10);
-            })
-            .AddCodeReviewRecords(
-                review =>
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out var repository)
+            .Add(
+                CodeReviewBlueprints.PullRequest,
+                out _,
+                (pullRequest, ctx) =>
                 {
-                    review.Status = CodeReviewStatus.Completed;
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-3);
-                    review.PersistOnBuild = false;
-                },
-                review =>
-                {
-                    review.Status = CodeReviewStatus.Completed;
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2);
-                    review.PersistOnBuild = false;
-                },
-                review =>
-                {
-                    review.Status = CodeReviewStatus.Completed;
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
-                    review.PersistOnBuild = false;
+                    pullRequest.PullRequestNumber = 91;
+                    pullRequest.Branch = "feature/target";
+                    pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(10));
                 }
             )
+            .Add(
+                CodeReviewBlueprints.Review,
+                out var reviews,
+                (review, ctx) =>
+                {
+                    review.Status = CodeReviewStatus.Completed;
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(3));
+                },
+                (review, ctx) =>
+                {
+                    review.Status = CodeReviewStatus.Completed;
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(2));
+                },
+                (review, ctx) =>
+                {
+                    review.Status = CodeReviewStatus.Completed;
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(1));
+                }
+            )
+            .Transient()
             .BuildAsync();
         var olderTarget = reviews[0];
         var newerTarget = reviews[1];
@@ -447,37 +464,44 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         var pullRequestCreatedAt = DateTimeOffset
             .UtcNow.AddMinutes(-10)
             .TruncateToPostgresPrecision();
-        var (seed, repository, pullRequests, reviews, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords(pullRequest =>
-            {
-                pullRequest.PullRequestNumber = 89;
-                pullRequest.CreatedAtUtc = pullRequestCreatedAt;
-            })
-            .AddCodeReviewRecords(
-                review =>
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out var repository)
+            .AddPullRequests(
+                out var pullRequests,
+                pullRequest =>
                 {
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-3);
-                    review.PersistOnBuild = false;
-                },
-                review =>
-                {
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2);
-                    review.PersistOnBuild = false;
-                },
-                review =>
-                {
-                    review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
-                    review.PersistOnBuild = false;
+                    pullRequest.PullRequestNumber = 89;
+                    pullRequest.CreatedAtUtc = pullRequestCreatedAt;
                 }
             )
-            .AddUserAliases(alias =>
-            {
-                alias.Kind = UserAliasKind.GitHub;
-                alias.DisplayValue = "CharlieDigital";
-                alias.NormalizedValue = "charliedigital";
-            })
+            .Add(
+                CodeReviewBlueprints.Review,
+                out var reviews,
+                (review, ctx) =>
+                {
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(3));
+                },
+                (review, ctx) =>
+                {
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(2));
+                },
+                (review, ctx) =>
+                {
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(1));
+                }
+            )
+            .Transient()
+            .Under(seed.Owner)
+            .AddAliases(
+                out _,
+                alias =>
+                {
+                    alias.Kind = UserAliasKind.GitHub;
+                    alias.DisplayValue = "CharlieDigital";
+                    alias.NormalizedValue = "charliedigital";
+                }
+            )
             .BuildAsync();
         var pullRequest = pullRequests[0];
         var older = reviews[0];
@@ -590,21 +614,30 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task ActiveCodeReviewLockStore_TryAcquireAsync_ReturnsFalseForDuplicateLock()
     {
-        var (_, _, _, _, activeLocks) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords(pullRequest =>
-            {
-                pullRequest.PullRequestNumber = 10;
-                pullRequest.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5);
-                pullRequest.PersistOnBuild = false;
-            })
-            .AddCodeReviewRecords(review =>
-            {
-                review.CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-4);
-                review.PersistOnBuild = false;
-            })
-            .AddActiveCodeReviewLocks(activeLock => activeLock.PersistOnBuild = false)
+        await TestBiome
+            .Start(_context, out _)
+            .AddRepository(out _)
+            .Add(
+                CodeReviewBlueprints.PullRequest,
+                out _,
+                (pullRequest, ctx) =>
+                {
+                    pullRequest.PullRequestNumber = 10;
+                    pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(5));
+                }
+            )
+            .Transient()
+            .Add(
+                CodeReviewBlueprints.Review,
+                out _,
+                (review, ctx) =>
+                {
+                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(4));
+                }
+            )
+            .Transient()
+            .AddActiveLocks(out var activeLocks)
+            .Transient()
             .BuildAsync();
         var activeLock = activeLocks[0];
         var store = new PostgresActiveCodeReviewLockStore(_context);
@@ -625,11 +658,12 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     {
         var oldReviewCreatedAt = DateTimeOffset.UtcNow.TruncateToPostgresPrecision();
         var newerReviewCreatedAt = oldReviewCreatedAt.AddMinutes(1);
-        var (_, repository, pullRequests, reviews) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords()
-            .AddCodeReviewRecords(
+        await TestBiome
+            .Start(_context, out _)
+            .AddRepository(out var repository)
+            .AddPullRequests(out var pullRequests)
+            .AddReviews(
+                out var reviews,
                 review =>
                 {
                     review.CreatedAtUtc = oldReviewCreatedAt;
@@ -687,33 +721,36 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeRepositoryStore_ReviewConfiguration_RoundTripsTypedJsonb()
     {
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository(repository =>
-            {
-                repository.ReviewConfiguration = new()
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(
+                out var repository,
+                repository =>
                 {
-                    FileFilter = new()
+                    repository.ReviewConfiguration = new()
                     {
-                        IncludedFiles =
-                        [
-                            new()
-                            {
-                                MatchType = CodeReviewFileNameMatchType.PathPrefix,
-                                Pattern = "src/backend/",
-                            },
-                        ],
-                        ExcludedFiles =
-                        [
-                            new()
-                            {
-                                MatchType = CodeReviewFileNameMatchType.Glob,
-                                Pattern = "*.generated.cs",
-                            },
-                        ],
-                    },
-                };
-            })
+                        FileFilter = new()
+                        {
+                            IncludedFiles =
+                            [
+                                new()
+                                {
+                                    MatchType = CodeReviewFileNameMatchType.PathPrefix,
+                                    Pattern = "src/backend/",
+                                },
+                            ],
+                            ExcludedFiles =
+                            [
+                                new()
+                                {
+                                    MatchType = CodeReviewFileNameMatchType.Glob,
+                                    Pattern = "*.generated.cs",
+                                },
+                            ],
+                        },
+                    };
+                }
+            )
             .BuildAsync();
         var store = new PostgresCodeRepositoryStore(_context);
 
@@ -736,9 +773,9 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeRepositoryStore_UpsertAsync_PersistsLibraryPickerVisibility()
     {
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out var repository)
             .BuildAsync();
         var store = new PostgresCodeRepositoryStore(_context);
 
@@ -760,13 +797,16 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeRepositoryStore_FindActiveAsync_ExcludesPausedRepositories()
     {
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository(repository =>
-            {
-                repository.OwnerQualifiedName = "zeeq-ai/paused";
-                repository.Enabled = false;
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(
+                out var repository,
+                repository =>
+                {
+                    repository.OwnerQualifiedName = "zeeq-ai/paused";
+                    repository.Enabled = false;
+                }
+            )
             .BuildAsync();
         var store = new PostgresCodeRepositoryStore(_context);
 
@@ -783,13 +823,19 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeRepositoryStore_FindActiveForOrganizationByProviderIdentityAsync_ScopesByOrganization()
     {
-        var (_, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository(repository => repository.OwnerQualifiedName = "zeeq-ai/shared")
+        await TestBiome
+            .Start(_context, out _)
+            .AddRepository(
+                out var repository,
+                repository => repository.OwnerQualifiedName = "zeeq-ai/shared"
+            )
             .BuildAsync();
-        var (otherSeed, otherRepository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository(repository => repository.OwnerQualifiedName = "zeeq-ai/shared")
+        await TestBiome
+            .Start(_context, out var otherSeed)
+            .AddRepository(
+                out var otherRepository,
+                repository => repository.OwnerQualifiedName = "zeeq-ai/shared"
+            )
             .BuildAsync();
         var store = new PostgresCodeRepositoryStore(_context);
 
@@ -809,13 +855,16 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeRepositoryStore_FindActiveForOrganizationAsync_IncludesPausedRepositories()
     {
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository(repository =>
-            {
-                repository.OwnerQualifiedName = "zeeq-ai/paused";
-                repository.Enabled = false;
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(
+                out var repository,
+                repository =>
+                {
+                    repository.OwnerQualifiedName = "zeeq-ai/paused";
+                    repository.Enabled = false;
+                }
+            )
             .BuildAsync();
         var store = new PostgresCodeRepositoryStore(_context);
 
@@ -833,7 +882,7 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewOrganizationSettingsStore_SaveAsync_UpdatesExecutionLimits()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresCodeReviewOrganizationSettingsStore(_context);
         var settings = await store.GetAsync(seed.Organization.Id, CancellationToken.None);
         var updated = settings with { MaxConcurrentReviews = 2 };
@@ -854,9 +903,9 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewerAgentStore_AddUpdateDisable_FiltersByRepositoryAndEnabledState()
     {
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out var repository)
             .BuildAsync();
         var now = DateTimeOffset.UtcNow;
         var store = new PostgresCodeReviewerAgentStore(_context);
@@ -932,9 +981,9 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewExecutionLeaseStore_TryAcquireAsync_EnforcesOrganizationCapacity()
     {
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out var repository)
             .BuildAsync();
         var store = CreateExecutionLeaseStore();
 
@@ -968,9 +1017,9 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewExecutionLeaseStore_TryAcquireAsync_AllowsConfiguredSlotCountsAndExpiredCleanup()
     {
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out var repository)
             .BuildAsync();
         var store = CreateExecutionLeaseStore();
 
@@ -1021,9 +1070,9 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewExecutionLeaseStore_TryAcquireAsync_AllowsTwoConfiguredSlots()
     {
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out var repository)
             .BuildAsync();
         var store = CreateExecutionLeaseStore();
 
@@ -1048,11 +1097,11 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewArtifactStore_WriteFindingsAsync_UsesStreamStorageAndGeneratedUri()
     {
-        var (_, _, _, reviews) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords()
-            .AddCodeReviewRecords()
+        await TestBiome
+            .Start(_context, out _)
+            .AddRepository(out _)
+            .AddPullRequests(out _)
+            .AddReviews(out var reviews)
             .BuildAsync();
         var review = reviews[0];
         var storage = new PostgresStorageProvider(_context);
@@ -1081,24 +1130,30 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     {
         var reviewCreatedAt = DateTimeOffset.UtcNow.TruncateToPostgresPrecision();
         var nextReviewCreatedAt = reviewCreatedAt.AddTicks(10);
-        var (_, repository, pullRequests, reviews) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords()
-            .AddCodeReviewRecords(
+        await TestBiome
+            .Start(_context, out _)
+            .AddRepository(out var repository)
+            .AddPullRequests(out var pullRequests)
+            .AddReview(
+                out var firstReview,
                 review =>
                 {
                     review.Status = CodeReviewStatus.Pending;
                     review.CreatedAtUtc = reviewCreatedAt;
-                },
+                }
+            )
+            .Under(pullRequests[0])
+            .AddReview(
+                out var secondReview,
                 review =>
                 {
                     review.Status = CodeReviewStatus.Pending;
                     review.CreatedAtUtc = nextReviewCreatedAt;
-                    review.PersistOnBuild = false;
                 }
             )
+            .Transient()
             .BuildAsync();
+        var reviews = new[] { firstReview, secondReview };
         var now = DateTimeOffset.UtcNow;
         var expiredLock = new ActiveCodeReviewLock
         {
@@ -1149,12 +1204,12 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task ActiveCodeReviewLockStore_RefreshAsync_PushesExpiryForward()
     {
-        var (_, _, _, _, activeLocks) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords()
-            .AddCodeReviewRecords()
-            .AddActiveCodeReviewLocks()
+        await TestBiome
+            .Start(_context, out _)
+            .AddRepository(out _)
+            .AddPullRequests(out _)
+            .AddReviews(out _)
+            .AddActiveLocks(out var activeLocks)
             .BuildAsync();
         var activeLock = activeLocks[0];
         var store = new PostgresActiveCodeReviewLockStore(_context);
@@ -1181,26 +1236,25 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     public async Task GitHubWebhookDeliveryStore_ClaimAsync_IsIdempotent()
     {
         var deliveryId = SeedContext.NewId("delivery");
-        var (_, _, deliveries) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddGitHubWebhookDeliveries(
+        await TestBiome
+            .Start(_context, out _)
+            .AddRepository(out _)
+            .AddDeliveries(
+                out var deliveries,
                 delivery =>
                 {
                     delivery.DeliveryId = deliveryId;
-                    delivery.PersistOnBuild = false;
                 },
                 delivery =>
                 {
                     delivery.DeliveryId = deliveryId;
-                    delivery.PersistOnBuild = false;
                 },
                 delivery =>
                 {
                     delivery.DeliveryId = deliveryId;
-                    delivery.PersistOnBuild = false;
                 }
             )
+            .Transient()
             .BuildAsync();
         var store = new PostgresGitHubWebhookDeliveryStore(_context);
 
@@ -1311,9 +1365,9 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewRecordStore_ListForAgentAsync_MatchesBySessionIdOnly()
     {
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out var repository)
             .BuildAsync();
         var session = SeedContext.NewId("sess");
         var store = new PostgresCodeReviewRecordStore(_context);
@@ -1347,9 +1401,9 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewRecordStore_ListForAgentAsync_MatchesByGroupIdOnly()
     {
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out var repository)
             .BuildAsync();
         var group = SeedContext.NewId("crg");
         var store = new PostgresCodeReviewRecordStore(_context);
@@ -1383,9 +1437,9 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewRecordStore_ListForAgentAsync_ReturnsUnionWhenBothKeysProvided()
     {
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out var repository)
             .BuildAsync();
         var session = SeedContext.NewId("sess");
         var group = SeedContext.NewId("crg");
@@ -1440,9 +1494,9 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewRecordStore_ListForAgentAsync_ReturnsEmptyWhenBothKeysNull()
     {
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out var repository)
             .BuildAsync();
         var store = new PostgresCodeReviewRecordStore(_context);
         var review = AgentReview(
@@ -1467,14 +1521,8 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewRecordStore_ListForAgentAsync_EnforcesOrgScoping()
     {
-        var (seed1, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .BuildAsync();
-        var (seed2, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .BuildAsync();
+        await TestBiome.Start(_context, out var seed1).AddRepository(out _).BuildAsync();
+        await TestBiome.Start(_context, out var seed2).AddRepository(out _).BuildAsync();
         var session = SeedContext.NewId("sess");
         var store = new PostgresCodeReviewRecordStore(_context);
 
@@ -1507,10 +1555,7 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewRecordStore_ListForAgentAsync_ReturnsNewestFirst()
     {
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .BuildAsync();
+        await TestBiome.Start(_context, out var seed).AddRepository(out _).BuildAsync();
         var session = SeedContext.NewId("sess");
         var store = new PostgresCodeReviewRecordStore(_context);
 
@@ -1552,10 +1597,7 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewRecordStore_ListForAgentAsync_ClampsToMaxRecords()
     {
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .BuildAsync();
+        await TestBiome.Start(_context, out var seed).AddRepository(out _).BuildAsync();
         var session = SeedContext.NewId("sess");
         var store = new PostgresCodeReviewRecordStore(_context);
 
@@ -1590,10 +1632,7 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewRecordStore_AddAsync_AgentRecordWithNullPrAndRepoRoundTrips()
     {
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .BuildAsync();
+        await TestBiome.Start(_context, out var seed).AddRepository(out _).BuildAsync();
         var store = new PostgresCodeReviewRecordStore(_context);
         var session = SeedContext.NewId("sess");
         var group = SeedContext.NewId("crg");
@@ -1619,11 +1658,11 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewRecordStore_Update_PersistsTelemetryInSourceTelemetryPayload_RoundTrips()
     {
-        var (_, _, _, reviews) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords()
-            .AddCodeReviewRecords()
+        await TestBiome
+            .Start(_context, out _)
+            .AddRepository(out _)
+            .AddPullRequests(out _)
+            .AddReviews(out var reviews)
             .BuildAsync();
         var review = reviews[0];
         var store = new PostgresCodeReviewRecordStore(_context);
@@ -1660,11 +1699,11 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeReviewRecordStore_Update_WhenTelemetryEmpty_StoresEmptyObject()
     {
-        var (_, _, _, reviews) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords()
-            .AddCodeReviewRecords()
+        await TestBiome
+            .Start(_context, out _)
+            .AddRepository(out _)
+            .AddPullRequests(out _)
+            .AddReviews(out var reviews)
             .BuildAsync();
         var review = reviews[0];
         var store = new PostgresCodeReviewRecordStore(_context);
@@ -1762,16 +1801,19 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeRepositoryStore_ReviewConfiguration_RoundTripsCheckRunConfig()
     {
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository(repository =>
-            {
-                repository.ReviewConfiguration = new()
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(
+                out var repository,
+                repository =>
                 {
-                    FileFilter = new(),
-                    CheckRun = new() { BlockOnCritical = true, BlockOnMajor = false },
-                };
-            })
+                    repository.ReviewConfiguration = new()
+                    {
+                        FileFilter = new(),
+                        CheckRun = new() { BlockOnCritical = true, BlockOnMajor = false },
+                    };
+                }
+            )
             .BuildAsync();
         var store = new PostgresCodeRepositoryStore(_context);
 
@@ -1791,12 +1833,15 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CodeRepositoryStore_ReviewConfiguration_CheckRunDefaultsToEmptyWhenAbsent()
     {
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository(repository =>
-            {
-                repository.ReviewConfiguration = new() { FileFilter = new() };
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(
+                out var repository,
+                repository =>
+                {
+                    repository.ReviewConfiguration = new() { FileFilter = new() };
+                }
+            )
             .BuildAsync();
         var store = new PostgresCodeRepositoryStore(_context);
 
@@ -1816,14 +1861,17 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task PullRequestRecordStore_CheckRunState_RoundTripsAsNonNullableJsonb()
     {
-        var (seed, _, pullRequests) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords(pullRequest =>
-            {
-                pullRequest.PullRequestNumber = 42;
-                pullRequest.PersistOnBuild = false;
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out _)
+            .AddPullRequests(
+                out var pullRequests,
+                pullRequest =>
+                {
+                    pullRequest.PullRequestNumber = 42;
+                }
+            )
+            .Transient()
             .BuildAsync();
         var pr = pullRequests[0];
         pr.CheckRunState = new()
@@ -1852,14 +1900,17 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     public async Task PullRequestRecordStore_CheckRunState_RoundTripsRemovedState()
     {
         var removedAt = DateTimeOffset.UtcNow.TruncateToPostgresPrecision();
-        var (seed, _, pullRequests) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords(pullRequest =>
-            {
-                pullRequest.PullRequestNumber = 43;
-                pullRequest.PersistOnBuild = false;
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out _)
+            .AddPullRequests(
+                out var pullRequests,
+                pullRequest =>
+                {
+                    pullRequest.PullRequestNumber = 43;
+                }
+            )
+            .Transient()
             .BuildAsync();
         var pr = pullRequests[0];
         pr.CheckRunState = new()
@@ -1888,14 +1939,17 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task PullRequestRecordStore_CheckRunState_IsNullByDefault()
     {
-        var (seed, _, pullRequests) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .AddPullRequestRecords(pullRequest =>
-            {
-                pullRequest.PullRequestNumber = 44;
-                pullRequest.PersistOnBuild = false;
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out _)
+            .AddPullRequests(
+                out var pullRequests,
+                pullRequest =>
+                {
+                    pullRequest.PullRequestNumber = 44;
+                }
+            )
+            .Transient()
             .BuildAsync();
         var pr = pullRequests[0];
         var store = new PostgresPullRequestRecordStore(_context);

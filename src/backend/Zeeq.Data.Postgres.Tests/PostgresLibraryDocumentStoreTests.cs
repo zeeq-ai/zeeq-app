@@ -3,7 +3,7 @@ using Zeeq.Core.Documents;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Documents;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -79,9 +79,9 @@ public sealed class PostgresLibraryDocumentStoreTests : PgTransactionalTestBase
     public async Task DeleteLibraryAsync_LibraryReferencedByOneRepository_RemovesIdFromLibraryIdsAndDeletesLibrary()
     {
         var libraryId = SeedContext.NewId("library");
-        var (seed, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository(proto => proto.LibraryIds = [libraryId])
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(out var repository, proto => proto.LibraryIds = [libraryId])
             .BuildAsync();
         var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
         var library = await CreateLibraryWithIdAsync(
@@ -112,10 +112,13 @@ public sealed class PostgresLibraryDocumentStoreTests : PgTransactionalTestBase
     {
         var libraryId = SeedContext.NewId("library");
         var unrelatedLibraryId = SeedContext.NewId("library");
-        var (seed, repo1, repo2) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository(proto => proto.LibraryIds = [libraryId, unrelatedLibraryId])
-            .AddCodeRepository(proto => proto.LibraryIds = [libraryId])
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRepository(
+                out var repo1,
+                proto => proto.LibraryIds = [libraryId, unrelatedLibraryId]
+            )
+            .AddRepository(out var repo2, proto => proto.LibraryIds = [libraryId])
             .BuildAsync();
         var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
         var library = await CreateLibraryWithIdAsync(
@@ -150,9 +153,9 @@ public sealed class PostgresLibraryDocumentStoreTests : PgTransactionalTestBase
 
         // Create a repository in a different organization with the same library id string.
         var otherSeed = SeedContext.Generate();
-        var otherRepo = await EntityGraph
-            .SeedWith(otherSeed, _context)
-            .AddCodeRepository(proto => proto.LibraryIds = [library.Id])
+        await TestBiome
+            .Start(otherSeed, _context)
+            .AddRepository(out var otherRepo, proto => proto.LibraryIds = [library.Id])
             .BuildAsync();
         _context.ChangeTracker.Clear();
 
@@ -300,7 +303,7 @@ public sealed class PostgresLibraryDocumentStoreTests : PgTransactionalTestBase
         Library Library
     )> CreateStoreWithLibraryAsync()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
         var library = await CreateLibraryAsync(store, seed.Organization.Id, "test-lib");
 
@@ -313,7 +316,7 @@ public sealed class PostgresLibraryDocumentStoreTests : PgTransactionalTestBase
         Library Library
     )> CreateStoreWithPrivateLibraryAsync()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
         var now = DateTimeOffset.UtcNow;
         var library = await store.CreateLibraryAsync(

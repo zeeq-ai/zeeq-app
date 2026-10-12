@@ -1,9 +1,9 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.CodeReviews;
 using Zeeq.Platform.CodeReviews;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
-using Microsoft.EntityFrameworkCore;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -24,10 +24,7 @@ public sealed class GitHubCommentAnchorStoreIntegrationTests(PgDatabaseFixture p
     [Test]
     public async Task FindAsync_ReturnsNullWhenAnchorDoesNotExist()
     {
-        var (_, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddRepository(out var repository).BuildAsync();
         var target = NewTarget(repository);
         var store = new PostgresGitHubCommentAnchorStore(_context);
 
@@ -39,10 +36,7 @@ public sealed class GitHubCommentAnchorStoreIntegrationTests(PgDatabaseFixture p
     [Test]
     public async Task UpsertResolvedAsync_CreatesAnchorForTarget()
     {
-        var (_, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddRepository(out var repository).BuildAsync();
         var target = NewTarget(repository);
         var store = new PostgresGitHubCommentAnchorStore(_context);
 
@@ -66,10 +60,7 @@ public sealed class GitHubCommentAnchorStoreIntegrationTests(PgDatabaseFixture p
     [Test]
     public async Task UpsertResolvedAsync_RepairsStoredCommentId()
     {
-        var (_, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddRepository(out var repository).BuildAsync();
         var target = NewTarget(repository);
         var store = new PostgresGitHubCommentAnchorStore(_context);
         await store.UpsertResolvedAsync(
@@ -103,10 +94,7 @@ public sealed class GitHubCommentAnchorStoreIntegrationTests(PgDatabaseFixture p
     [Test]
     public async Task AnchorTable_EnforcesOneRowPerLogicalTarget()
     {
-        var (_, repository) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddCodeRepository()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddRepository(out var repository).BuildAsync();
         var target = NewTarget(repository);
         var first = new GitHubCommentAnchor
         {
@@ -146,10 +134,7 @@ public sealed class GitHubCommentAnchorStoreIntegrationTests(PgDatabaseFixture p
     public async Task UpsertResolvedAsync_IsIdempotentWhenConcurrentWritersCreateSameTarget()
     {
         await using var seedContext = _postgres.CreateContext();
-        var (_, repository) = await EntityGraph
-            .AddGeneratedSeed(seedContext)
-            .AddCodeRepository()
-            .BuildAsync();
+        await TestBiome.Start(seedContext, out _).AddRepository(out var repository).BuildAsync();
         var target = NewTarget(repository);
 
         await using var firstContext = _postgres.CreateContext();

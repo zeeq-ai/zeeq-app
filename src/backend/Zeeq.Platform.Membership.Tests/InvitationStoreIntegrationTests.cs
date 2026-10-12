@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Platform.Membership.Tests;
 
@@ -25,13 +25,16 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
         // Guards that a created invitation is persisted with a non-null ID and
         // is retrievable by the invited email via ListPendingInvitationsForEmailAsync.
         var store = CreateStore();
-        var (_, invitations) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddPendingInvitation(invitation =>
-            {
-                invitation.Email = "invited@test.com";
-                invitation.PersistOnBuild = false;
-            })
+        await TestBiome
+            .Start(_context, out _)
+            .AddInvitations(
+                out var invitations,
+                invitation =>
+                {
+                    invitation.Email = "invited@test.com";
+                }
+            )
+            .Transient()
             .BuildAsync();
         var invitation = invitations[0];
 
@@ -58,9 +61,10 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
         var email = "filter-invites@test.com";
         var now = DateTimeOffset.UtcNow;
 
-        await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddPendingInvitation(
+        await TestBiome
+            .Start(_context, out _)
+            .AddInvitations(
+                out _,
                 invitation =>
                 {
                     invitation.Email = email;
@@ -99,10 +103,10 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
         // Guards that accepting an invitation sets UserId, transitions Status
         // to Active, and makes the membership visible in ListActiveMemberships.
         var store = CreateStore();
-        var (seed, invitations, users) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddPendingInvitation(invitation => invitation.Email = "join@test.com")
-            .AddUsers(user => user.Email = "join@test.com")
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddInvitations(out var invitations, invitation => invitation.Email = "join@test.com")
+            .AddUsers(out var users, user => user.Email = "join@test.com")
             .BuildAsync();
         var invitation = invitations[0];
         var invitedUser = users[0];
@@ -135,10 +139,13 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
     public async Task AcceptInvitationAsDefaultAsync_WithPendingInvitation_SetsInvitedOrgAsDefault()
     {
         var store = CreateStore();
-        var (seed, invitations, users) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddPendingInvitation(invitation => invitation.Email = "default-join@test.com")
-            .AddUsers(user => user.Email = "default-join@test.com")
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddInvitations(
+                out var invitations,
+                invitation => invitation.Email = "default-join@test.com"
+            )
+            .AddUsers(out var users, user => user.Email = "default-join@test.com")
             .BuildAsync();
         var invitation = invitations[0];
         var invitedUser = users[0];
@@ -163,9 +170,10 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
     public async Task FindSameDomainInvitationDetailsAsync_WithCallerEmail_ReturnsOwnerAndOrganizationDetails()
     {
         var store = CreateStore();
-        var (seed, invitations) = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.DisplayName = "Acme";
@@ -173,13 +181,17 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
                     organization.AutoInviteSameDomainEnabled = true;
                     organization.AutoInviteSameDomain = "test.com";
                     organization.AutoInviteDefaultRole = "member";
+                },
+                []
+            )
+            .AddInvitations(
+                out var invitations,
+                invitation =>
+                {
+                    invitation.Email = "same-domain@test.com";
+                    invitation.IsSameDomainAutoInvite = true;
                 }
             )
-            .AddPendingInvitation(invitation =>
-            {
-                invitation.Email = "same-domain@test.com";
-                invitation.IsSameDomainAutoInvite = true;
-            })
             .BuildAsync();
         seed.Owner.PictureUrl = "https://example.com/owner.png";
         await _context.SaveChangesAsync();
@@ -203,9 +215,12 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
     public async Task FindSameDomainInvitationDetailsAsync_WithWrongEmail_ReturnsNull()
     {
         var store = CreateStore();
-        var (_, invitations) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddPendingInvitation(invitation => invitation.Email = "same-domain@test.com")
+        await TestBiome
+            .Start(_context, out _)
+            .AddInvitations(
+                out var invitations,
+                invitation => invitation.Email = "same-domain@test.com"
+            )
             .BuildAsync();
 
         var details = await store.FindSameDomainInvitationDetailsAsync(
@@ -221,9 +236,12 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
     public async Task FindSameDomainInvitationDetailsAsync_WithOrdinaryInvitation_ReturnsNull()
     {
         var store = CreateStore();
-        var (_, invitations) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddPendingInvitation(invitation => invitation.Email = "ordinary@test.com")
+        await TestBiome
+            .Start(_context, out _)
+            .AddInvitations(
+                out var invitations,
+                invitation => invitation.Email = "ordinary@test.com"
+            )
             .BuildAsync();
 
         var details = await store.FindSameDomainInvitationDetailsAsync(
@@ -242,13 +260,16 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
         // active membership in the same org declines the invitation instead
         // of violating the filtered unique index.
         var store = CreateStore();
-        var (seed, inv) = await EntityGraph
-            .AddGeneratedSeed(_context, userCount: 2)
-            .AddPendingInvitation(invitation =>
-            {
-                invitation.Email = "existing@test.com";
-                invitation.Role = "admin";
-            })
+        await TestBiome
+            .Start(_context, out var seed, userCount: 2)
+            .AddInvitations(
+                out var inv,
+                invitation =>
+                {
+                    invitation.Email = "existing@test.com";
+                    invitation.Role = "admin";
+                }
+            )
             .BuildAsync();
         var invitation = inv[0];
         var member = seed.Users[1];
@@ -285,9 +306,12 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
         // Guards that an already-declined invitation cannot be re-accepted —
         // the store returns false for non-Pending rows.
         var store = CreateStore();
-        var (_, invitations) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddPendingInvitation(invitation => invitation.Email = "declined-accept@test.com")
+        await TestBiome
+            .Start(_context, out _)
+            .AddInvitations(
+                out var invitations,
+                invitation => invitation.Email = "declined-accept@test.com"
+            )
             .BuildAsync();
         var invitation = invitations[0];
 
@@ -308,9 +332,12 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
         // Guards that declining a pending invitation transitions it to Declined
         // status and removes it from the pending list for that email.
         var store = CreateStore();
-        var (_, invitations) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddPendingInvitation(invitation => invitation.Email = "decline@test.com")
+        await TestBiome
+            .Start(_context, out _)
+            .AddInvitations(
+                out var invitations,
+                invitation => invitation.Email = "decline@test.com"
+            )
             .BuildAsync();
         var invitation = invitations[0];
 
@@ -343,8 +370,13 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
         // Run this test:
         // dotnet run --project src/backend/Zeeq.Platform.Membership.Tests --output detailed --disable-logo --treenode-filter "/*/*/*/CreateInvitationHandler_ValidRequest_CreatesPendingInvitation"
         var store = CreateStore();
-        var seed = await EntityGraph
-            .AddGeneratedSeed(_context, organization => organization.DisplayName = "Test Org")
+        await TestBiome
+            .Start(
+                _context,
+                out var seed,
+                organization => organization.DisplayName = "Test Org",
+                []
+            )
             .BuildAsync();
         var org = seed.Organization;
         var handler = new CreateInvitationHandler(store);
@@ -375,30 +407,37 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
     public async Task ListInvitationsHandler_WithMixedInvitations_ReturnsOnlyCallerEmail()
     {
         var store = CreateStore();
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.DisplayName = "Test Org";
-                }
+                },
+                []
             )
-            .AddPendingInvitation(invitation => invitation.Email = "current-user@test.com")
+            .AddInvitations(out _, invitation => invitation.Email = "current-user@test.com")
             .BuildAsync();
-        await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out _,
                 organization =>
                 {
                     organization.DisplayName = "Other Org";
                     organization.Slug = "other-invite-org";
+                },
+                []
+            )
+            .AddInvitations(
+                out _,
+                invitation =>
+                {
+                    invitation.Email = "someone-else@test.com";
+                    invitation.Role = "admin";
                 }
             )
-            .AddPendingInvitation(invitation =>
-            {
-                invitation.Email = "someone-else@test.com";
-                invitation.Role = "admin";
-            })
             .BuildAsync();
 
         var org = seed.Organization;
@@ -420,10 +459,10 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
     {
         var store = CreateStore();
         var invitedEmail = "accept-integration@test.com";
-        var (seed, invitations, users) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddPendingInvitation(invitation => invitation.Email = invitedEmail)
-            .AddUsers(user => user.Email = invitedEmail)
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddInvitations(out var invitations, invitation => invitation.Email = invitedEmail)
+            .AddUsers(out var users, user => user.Email = invitedEmail)
             .BuildAsync();
         var invitation = invitations[0];
         var invitedUser = users[0];
@@ -460,9 +499,12 @@ public sealed class InvitationStoreIntegrationTests(PgDatabaseFixture postgres)
     public async Task DeclineInvitationHandler_WithAddressedInvitation_TransitionsToDeclined()
     {
         var store = CreateStore();
-        var (_, invitations) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddPendingInvitation(invitation => invitation.Email = "decline-integration@test.com")
+        await TestBiome
+            .Start(_context, out _)
+            .AddInvitations(
+                out var invitations,
+                invitation => invitation.Email = "decline-integration@test.com"
+            )
             .BuildAsync();
         var invitation = invitations[0];
 

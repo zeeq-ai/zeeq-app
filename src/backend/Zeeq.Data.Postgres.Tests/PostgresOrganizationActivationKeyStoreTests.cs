@@ -3,7 +3,7 @@ using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Identity;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -20,21 +20,26 @@ public sealed class PostgresOrganizationActivationKeyStoreTests(PgDatabaseFixtur
         var rawKey = OrganizationActivationKeyMaterial.GenerateKey();
         var keyHash = OrganizationActivationKeyMaterial.ComputeHash(rawKey);
         var store = new PostgresOrganizationActivationKeyStore(_context);
-        var (seed, admins, organizationGraphs) = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.DisplayName = "Inactive Org";
                     organization.ActivatedAtUtc = null;
+                },
+                []
+            )
+            .AddUsers(out var admins, admin => admin.DisplayName = "Admin")
+            .AddOrganizations(
+                out var organizationGraphs,
+                organization =>
+                {
+                    organization.DisplayName = "Second Inactive Org";
+                    organization.IsActivated = false;
                 }
             )
-            .AddUsers(admin => admin.DisplayName = "Admin")
-            .AddOrganizations(organization =>
-            {
-                organization.DisplayName = "Second Inactive Org";
-                organization.IsActivated = false;
-            })
             .BuildAsync();
         var admin = admins[0];
         var secondOrganization = organizationGraphs[0].Organization;
@@ -103,8 +108,8 @@ public sealed class PostgresOrganizationActivationKeyStoreTests(PgDatabaseFixtur
         var rawKey = OrganizationActivationKeyMaterial.GenerateKey();
         var keyHash = OrganizationActivationKeyMaterial.ComputeHash(rawKey);
         var store = new PostgresOrganizationActivationKeyStore(_context);
-        var seed = await EntityGraph
-            .AddGeneratedSeed(_context, organization => organization.ActivatedAtUtc = null)
+        await TestBiome
+            .Start(_context, out var seed, organization => organization.ActivatedAtUtc = null, [])
             .BuildAsync();
 
         await store.CreateKeyAsync(

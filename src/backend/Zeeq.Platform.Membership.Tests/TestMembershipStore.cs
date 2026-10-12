@@ -1,6 +1,6 @@
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Platform.Membership.Tests;
 

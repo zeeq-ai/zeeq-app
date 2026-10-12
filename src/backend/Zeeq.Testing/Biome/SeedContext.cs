@@ -1,6 +1,6 @@
 using Zeeq.Core.Models;
 
-namespace Zeeq.Testing.EntityGraphs;
+namespace Zeeq.Testing.Biomes;
 
 /// <summary>
 /// Seed graph used by backend tests that need an organization, root team, and
@@ -94,6 +94,12 @@ public sealed class SeedContext
     public static SeedContext Generate(
         Action<Organization>? organizationSetup,
         params Action<User>[] userSetupActions
+    ) => GenerateAt(DateTimeOffset.UtcNow, organizationSetup, userSetupActions);
+
+    internal static SeedContext GenerateAt(
+        DateTimeOffset now,
+        Action<Organization>? organizationSetup,
+        params Action<User>[] userSetupActions
     )
     {
         if (userSetupActions.Length == 0)
@@ -101,7 +107,6 @@ public sealed class SeedContext
             userSetupActions = [_ => { }];
         }
 
-        var now = DateTimeOffset.UtcNow;
         var users = new User[userSetupActions.Length];
 
         for (var i = 0; i < users.Length; i++)

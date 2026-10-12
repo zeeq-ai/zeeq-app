@@ -1,7 +1,7 @@
 using Zeeq.Core.Documents;
 using Zeeq.Data.Postgres.Documents;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -442,8 +442,8 @@ public sealed class LibraryDocumentStoreIntegrationTests : PgTransactionalTestBa
         // organization that linked a library to it, not just one — the
         // union-filter computation (PublicRepositorySyncRequestedHandler)
         // depends on seeing all of them, not an org-scoped subset.
-        var seedA = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
-        var seedB = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seedA).BuildAsync();
+        await TestBiome.Start(_context, out var seedB).BuildAsync();
         var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
         var libraryA = await store.CreateLibraryAsync(
             LibraryBuilder
@@ -968,7 +968,7 @@ public sealed class LibraryDocumentStoreIntegrationTests : PgTransactionalTestBa
         Library Library
     )> CreateStoreWithLibraryAsync()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
         var library = await CreateLibraryAsync(store, seed.Organization.Id, "docs");
 

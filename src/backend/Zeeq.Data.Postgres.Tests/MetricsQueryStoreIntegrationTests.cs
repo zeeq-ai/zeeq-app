@@ -1,7 +1,7 @@
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Metrics;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -232,13 +232,17 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     [Test]
     public async Task GetSeries_GroupByUser_ResolvesEmailAliasesToCanonicalMemberEmail()
     {
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddUserAliases(alias =>
-            {
-                alias.DisplayValue = "personal@example.com";
-                alias.NormalizedValue = "personal@example.com";
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .Under(seed.Owner)
+            .AddAliases(
+                out _,
+                alias =>
+                {
+                    alias.DisplayValue = "personal@example.com";
+                    alias.NormalizedValue = "personal@example.com";
+                }
+            )
             .BuildAsync();
         var org = seed.Organization.Id;
         seed.Owner.Email = "member@company.com";
@@ -266,14 +270,18 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     public async Task GetSeries_GroupByUser_DoesNotResolveDisabledEmailAliases()
     {
         var now = DateTimeOffset.UtcNow;
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddUserAliases(alias =>
-            {
-                alias.DisplayValue = "disabled-personal@example.com";
-                alias.NormalizedValue = "disabled-personal@example.com";
-                alias.DisabledAtUtc = now;
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .Under(seed.Owner)
+            .AddAliases(
+                out _,
+                alias =>
+                {
+                    alias.DisplayValue = "disabled-personal@example.com";
+                    alias.NormalizedValue = "disabled-personal@example.com";
+                    alias.DisabledAtUtc = now;
+                }
+            )
             .BuildAsync();
         var org = seed.Organization.Id;
         seed.Owner.Email = "member@company.com";
@@ -309,13 +317,17 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         // email claim). When the alias join resolves to such a user, the series key must
         // fall back to the telemetry-reported email on the metric row itself -- never to
         // the bare internal user_id, which is meaningless to anyone reading the dashboard.
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddUserAliases(alias =>
-            {
-                alias.DisplayValue = "personal-no-email@example.com";
-                alias.NormalizedValue = "personal-no-email@example.com";
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .Under(seed.Owner)
+            .AddAliases(
+                out _,
+                alias =>
+                {
+                    alias.DisplayValue = "personal-no-email@example.com";
+                    alias.NormalizedValue = "personal-no-email@example.com";
+                }
+            )
             .BuildAsync();
         var org = seed.Organization.Id;
         seed.Owner.Email = null;
@@ -348,13 +360,17 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     [Test]
     public async Task GetSeries_UserFilter_UsesCanonicalAliasKey()
     {
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddUserAliases(alias =>
-            {
-                alias.DisplayValue = "personal-filter@example.com";
-                alias.NormalizedValue = "personal-filter@example.com";
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .Under(seed.Owner)
+            .AddAliases(
+                out _,
+                alias =>
+                {
+                    alias.DisplayValue = "personal-filter@example.com";
+                    alias.NormalizedValue = "personal-filter@example.com";
+                }
+            )
             .BuildAsync();
         var org = seed.Organization.Id;
         seed.Owner.Email = "member-filter@company.com";
@@ -394,13 +410,17 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     [Test]
     public async Task GetTwoDimensionalSeries_UserFilter_UsesCanonicalAliasKey()
     {
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddUserAliases(alias =>
-            {
-                alias.DisplayValue = "personal-2d@example.com";
-                alias.NormalizedValue = "personal-2d@example.com";
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .Under(seed.Owner)
+            .AddAliases(
+                out _,
+                alias =>
+                {
+                    alias.DisplayValue = "personal-2d@example.com";
+                    alias.NormalizedValue = "personal-2d@example.com";
+                }
+            )
             .BuildAsync();
         var org = seed.Organization.Id;
         seed.Owner.Email = "member-2d@company.com";
@@ -465,13 +485,17 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         // resolves via an active alias (personal-mixed -> member-mixed), the other filter key has
         // no alias at all and must match its own raw telemetry email directly. Both branches must
         // fire in the same query.
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddUserAliases(alias =>
-            {
-                alias.DisplayValue = "personal-mixed@example.com";
-                alias.NormalizedValue = "personal-mixed@example.com";
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .Under(seed.Owner)
+            .AddAliases(
+                out _,
+                alias =>
+                {
+                    alias.DisplayValue = "personal-mixed@example.com";
+                    alias.NormalizedValue = "personal-mixed@example.com";
+                }
+            )
             .BuildAsync();
         var org = seed.Organization.Id;
         seed.Owner.Email = "member-mixed@company.com";
@@ -536,13 +560,17 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         // but had no test covering alias resolution specifically (only direct raw-email filtering,
         // see GetPromptLeaderboard_RanksDocumentPathsAndFiltersByUserAndLibrary). This closes that
         // gap for the now-join-free implementation.
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddUserAliases(alias =>
-            {
-                alias.DisplayValue = "personal-prompt@example.com";
-                alias.NormalizedValue = "personal-prompt@example.com";
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .Under(seed.Owner)
+            .AddAliases(
+                out _,
+                alias =>
+                {
+                    alias.DisplayValue = "personal-prompt@example.com";
+                    alias.NormalizedValue = "personal-prompt@example.com";
+                }
+            )
             .BuildAsync();
         var org = seed.Organization.Id;
         seed.Owner.Email = "member-prompt@company.com";
@@ -679,13 +707,17 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         // alias-resolution semantics as GetPromptLeaderboard_UserFilter_ResolvesCanonicalAliasKey:
         // the canonical (post-alias) email matches, the raw pre-alias email filtered directly does
         // not (its resolved identity is the alias owner's email, not itself).
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddUserAliases(alias =>
-            {
-                alias.DisplayValue = "personal-lb@example.com";
-                alias.NormalizedValue = "personal-lb@example.com";
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .Under(seed.Owner)
+            .AddAliases(
+                out _,
+                alias =>
+                {
+                    alias.DisplayValue = "personal-lb@example.com";
+                    alias.NormalizedValue = "personal-lb@example.com";
+                }
+            )
             .BuildAsync();
         var org = seed.Organization.Id;
         seed.Owner.Email = "member-lb@company.com";
@@ -723,13 +755,17 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     [Test]
     public async Task GetSectionLeaderboard_UserFilter_ResolvesCanonicalAliasKey()
     {
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddUserAliases(alias =>
-            {
-                alias.DisplayValue = "personal-slb@example.com";
-                alias.NormalizedValue = "personal-slb@example.com";
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .Under(seed.Owner)
+            .AddAliases(
+                out _,
+                alias =>
+                {
+                    alias.DisplayValue = "personal-slb@example.com";
+                    alias.NormalizedValue = "personal-slb@example.com";
+                }
+            )
             .BuildAsync();
         var org = seed.Organization.Id;
         seed.Owner.Email = "member-slb@company.com";
@@ -933,7 +969,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     [Test]
     public async Task ListFindingReviewGroups_ResolvesInternalAuthorUserIdToEmail()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var org = seed.Organization.Id;
         seed.Owner.Email = "member@company.com";
 
@@ -964,7 +1000,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     [Test]
     public async Task ListFindingReviewGroups_DoesNotResolveWebhookAuthorThatLooksLikeUserId()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var org = seed.Organization.Id;
         seed.Owner.Email = "member@company.com";
 
@@ -998,7 +1034,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         // The repository row still exists (just soft-deleted), so review rows whose repo mapping was
         // later removed still resolve to a readable name rather than the raw id. code_review_repositories
         // has an org FK, so seed a real organization graph first.
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var org = seed.Organization.Id;
 
         await SeedRepositoriesAsync(Repository(org, "repo_q", "acme/widgets", disabled: true));
@@ -1048,7 +1084,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     [Test]
     public async Task GetFilterOptions_ReturnsDistinctValuesIncludingSoftDeletedRepos()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var org = seed.Organization.Id;
 
         await SeedMetricsAsync(

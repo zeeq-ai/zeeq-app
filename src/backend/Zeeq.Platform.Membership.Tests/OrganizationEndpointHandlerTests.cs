@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Zeeq.Core.Common;
 using Zeeq.Core.Models;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Platform.Membership.Tests;
 
@@ -21,9 +21,9 @@ public sealed class OrganizationEndpointHandlerTests
     [Test]
     public async Task CreateOrganizationHandler_WithFiveCreatedOrganizations_ReturnsValidationProblem()
     {
-        var (seed, organizationGraphs) = await EntityGraph
-            .AddGeneratedSeed()
-            .AddOrganizations(4)
+        await TestBiome
+            .Start(out var seed)
+            .AddOrganizations(out var organizationGraphs, 4)
             .BuildAsync();
         var store = new TestMembershipStore()
             .AddSeed(seed)
@@ -111,20 +111,25 @@ public sealed class OrganizationEndpointHandlerTests
     [Test]
     public async Task UpdateOrganizationHandler_DuplicateSlug_ReturnsValidationProblem()
     {
-        var (seed, organizationGraphs) = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 null,
+                out var seed,
                 organization =>
                 {
                     organization.DisplayName = "Target";
                     organization.Slug = "target";
+                },
+                []
+            )
+            .AddOrganizations(
+                out var organizationGraphs,
+                organization =>
+                {
+                    organization.DisplayName = "Taken";
+                    organization.Slug = "taken";
                 }
             )
-            .AddOrganizations(organization =>
-            {
-                organization.DisplayName = "Taken";
-                organization.Slug = "taken";
-            })
             .BuildAsync();
         var org = seed.Organization;
         var store = new TestMembershipStore()
@@ -148,15 +153,17 @@ public sealed class OrganizationEndpointHandlerTests
     [Test]
     public async Task UpdateOrganizationHandler_NullIconUrl_ClearsIcon()
     {
-        var seed = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 null,
+                out var seed,
                 organization =>
                 {
                     organization.DisplayName = "Target";
                     organization.Slug = "target";
                     organization.IconUrl = "data:image/png;base64,abc";
-                }
+                },
+                []
             )
             .BuildAsync();
         var org = seed.Organization;
@@ -182,7 +189,7 @@ public sealed class OrganizationEndpointHandlerTests
     [Test]
     public async Task UpdateSameDomainOnboardingHandler_InvalidRole_ReturnsValidationProblem()
     {
-        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        await TestBiome.Start(out var seed).BuildAsync();
         seed.Owner.Email = "owner@example.com";
         var store = new TestMembershipStore().AddSeed(seed);
         var handler = new UpdateSameDomainOnboardingHandler(store);
@@ -201,7 +208,7 @@ public sealed class OrganizationEndpointHandlerTests
     [Test]
     public async Task UpdateSameDomainOnboardingHandler_MissingEnabled_ReturnsValidationProblem()
     {
-        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        await TestBiome.Start(out var seed).BuildAsync();
         seed.Owner.Email = "owner@example.com";
         var store = new TestMembershipStore().AddSeed(seed);
         var handler = new UpdateSameDomainOnboardingHandler(store);
@@ -220,7 +227,7 @@ public sealed class OrganizationEndpointHandlerTests
     [Test]
     public async Task UpdateSameDomainOnboardingHandler_Enable_WithPublicCreatorDomain_ReturnsValidationProblem()
     {
-        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        await TestBiome.Start(out var seed).BuildAsync();
         seed.Owner.Email = "owner@gmail.com";
         var store = new TestMembershipStore().AddSeed(seed);
         var handler = new UpdateSameDomainOnboardingHandler(store);
@@ -240,7 +247,7 @@ public sealed class OrganizationEndpointHandlerTests
     [Test]
     public async Task UpdateSameDomainOnboardingHandler_Enable_WithDuplicateDomain_ReturnsValidationProblem()
     {
-        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        await TestBiome.Start(out var seed).BuildAsync();
         seed.Owner.Email = "owner@example.com";
         var store = new TestMembershipStore().AddSeed(seed);
         store.Organizations.Add(
@@ -271,7 +278,7 @@ public sealed class OrganizationEndpointHandlerTests
     [Test]
     public async Task UpdateSameDomainOnboardingHandler_Enable_WithOmittedRole_DefaultsToMember()
     {
-        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        await TestBiome.Start(out var seed).BuildAsync();
         seed.Owner.Email = "owner@example.com";
         var store = new TestMembershipStore().AddSeed(seed);
         var handler = new UpdateSameDomainOnboardingHandler(store);
@@ -292,15 +299,17 @@ public sealed class OrganizationEndpointHandlerTests
     [Test]
     public async Task UpdateSameDomainOnboardingHandler_Disable_ClearsDomain()
     {
-        var seed = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 null,
+                out var seed,
                 organization =>
                 {
                     organization.AutoInviteSameDomainEnabled = true;
                     organization.AutoInviteSameDomain = "example.com";
                     organization.AutoInviteDefaultRole = "admin";
-                }
+                },
+                []
             )
             .BuildAsync();
         seed.Owner.Email = "owner@example.com";
@@ -325,7 +334,7 @@ public sealed class OrganizationEndpointHandlerTests
     [Test]
     public async Task GetOrganizationsHandler_WithPrivateCreatorDomain_ReturnsCanEnable()
     {
-        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        await TestBiome.Start(out var seed).BuildAsync();
         seed.Owner.Email = "owner@example.com";
         var store = new TestMembershipStore().AddSeed(seed);
         var handler = new GetOrganizationsHandler(store);

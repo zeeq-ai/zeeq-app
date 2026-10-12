@@ -3,7 +3,7 @@ using Zeeq.Core.Common;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Identity;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Core.Identity.Tests;
 
@@ -451,7 +451,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     public async Task ReplaceUserAliasesAsync_EmailAliasMatchingAnotherMemberEmail_ThrowsConflict()
     {
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context, userCount: 2).BuildAsync();
+        await TestBiome.Start(_context, out var seed, userCount: 2).BuildAsync();
         var member = seed.Users[1];
         member.Email = "other@example.com";
         await _context.SaveChangesAsync();
@@ -478,7 +478,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     public async Task ReplaceUserAliasesAsync_EmailAliasMatchingTrimmedMemberEmail_ThrowsConflict()
     {
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context, userCount: 2).BuildAsync();
+        await TestBiome.Start(_context, out var seed, userCount: 2).BuildAsync();
         var member = seed.Users[1];
         member.Email = "  Other@Example.com  ";
         await _context.SaveChangesAsync();
@@ -499,9 +499,11 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     {
         var store = CreateStore();
         var now = DateTimeOffset.UtcNow;
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddUserAliases(
+        await TestBiome
+            .Start(_context, out var seed)
+            .Under(seed.Owner)
+            .AddAliases(
+                out _,
                 alias =>
                 {
                     alias.DisplayValue = "active@example.com";
@@ -533,15 +535,19 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     {
         var store = CreateStore();
         var now = DateTimeOffset.UtcNow;
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddUserAliases(alias =>
-            {
-                alias.DisplayValue = "old@example.com";
-                alias.NormalizedValue = "reactivate@example.com";
-                alias.CreatedAtUtc = now;
-                alias.DisabledAtUtc = now;
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .Under(seed.Owner)
+            .AddAliases(
+                out _,
+                alias =>
+                {
+                    alias.DisplayValue = "old@example.com";
+                    alias.NormalizedValue = "reactivate@example.com";
+                    alias.CreatedAtUtc = now;
+                    alias.DisabledAtUtc = now;
+                }
+            )
             .BuildAsync();
 
         var aliases = await store.ReplaceUserAliasesAsync(
@@ -566,9 +572,11 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     public async Task ReplaceUserAliasesAsync_OmittedAlias_DisablesInsteadOfDeleting()
     {
         var store = CreateStore();
-        var (seed, aliases) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddUserAliases(
+        await TestBiome
+            .Start(_context, out var seed)
+            .Under(seed.Owner)
+            .AddAliases(
+                out var aliases,
                 alias =>
                 {
                     alias.DisplayValue = "keep@example.com";
@@ -601,7 +609,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     public async Task ReplaceUserAliasesAsync_WithoutActiveMembership_ThrowsConflict()
     {
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var membership = seed.OrganizationMemberships[0];
         membership.Status = MembershipStatus.Disabled;
         membership.DisabledAtUtc = DateTimeOffset.UtcNow;
@@ -622,7 +630,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     public async Task ReplaceUserAliasesAsync_WithMismatchedNormalizedValue_ThrowsArgumentException()
     {
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
 
         Func<Task> act = async () =>
             await store.ReplaceUserAliasesAsync(
@@ -639,7 +647,7 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
     public async Task ReplaceUserAliasesAsync_WithUnsupportedAliasKind_ThrowsArgumentOutOfRangeException()
     {
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
 
         Func<Task> act = async () =>
             await store.ReplaceUserAliasesAsync(

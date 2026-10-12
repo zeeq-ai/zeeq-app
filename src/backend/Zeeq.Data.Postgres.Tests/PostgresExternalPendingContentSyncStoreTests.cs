@@ -1,7 +1,7 @@
 using Zeeq.Core.Documents;
 using Zeeq.Data.Postgres.Documents;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -398,7 +398,7 @@ public sealed class PostgresExternalPendingContentSyncStoreTests : PgTransaction
         string LibraryId
     )> CreateStoreAndLibraryAsync()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var libraryStore = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
         var now = DateTimeOffset.UtcNow;
         var library = await libraryStore.CreateLibraryAsync(

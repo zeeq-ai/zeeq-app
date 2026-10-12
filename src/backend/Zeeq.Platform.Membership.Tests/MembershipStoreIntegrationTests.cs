@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Identity;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Platform.Membership.Tests;
 
@@ -97,7 +97,7 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
     public async Task ListActiveMembershipsForUserAsync_WithActiveMembership_ReturnsMembershipWithRole()
     {
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         // Guards that only memberships with Status=Active and no DisabledAtUtc
         // are returned for the target user, and that the role and org ID match.
 
@@ -117,7 +117,7 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
         // Guards that disabled organizations are excluded from active membership
         // queries even when the membership row itself is still Active.
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
 
         seed.Organization.DisabledAtUtc = DateTimeOffset.UtcNow;
         await _context.SaveChangesAsync();
@@ -136,7 +136,7 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
         // Guards that a user cannot see another user's memberships — the query
         // is scoped to the requesting userId.
         var store = CreateStore();
-        await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out _).BuildAsync();
 
         var list = await store.ListActiveMembershipsForUserAsync(
             NewId("user"),
@@ -152,7 +152,7 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
         // Guards that disabled/removed membership rows (Status != Active or
         // DisabledAtUtc set) are excluded from active membership queries.
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var membership = seed.OrganizationMemberships[0];
 
         membership.Status = MembershipStatus.Disabled;
@@ -173,9 +173,9 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
         // Guards that pending invitations (Status=Pending, UserId=null) are
         // excluded from the member list — only active members with a user row appear.
         var store = CreateStore();
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context, userCount: 2)
-            .AddPendingInvitation(invitation => invitation.Email = "pending@test.com")
+        await TestBiome
+            .Start(_context, out var seed, userCount: 2)
+            .AddInvitations(out _, invitation => invitation.Email = "pending@test.com")
             .BuildAsync();
 
         var members = await store.ListMembersForOrganizationAsync(
@@ -198,9 +198,10 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
         // dotnet run --project src/backend/Zeeq.Platform.Membership.Tests --output detailed --disable-logo --treenode-filter "/*/*/*/SetDefaultOrganizationAsync_WithExistingMemberships_UpdatesDefaultAndClearsOld"
         await using var context = Postgres.CreateContext();
         var store = new PostgresZeeqMembershipStore(context);
-        var (seed, organizationGraphs) = await EntityGraph
-            .AddGeneratedSeed(context)
+        await TestBiome
+            .Start(context, out var seed)
             .AddOrganizations(
+                out var organizationGraphs,
                 org =>
                 {
                     org.Slug = NewId("org-a-def");
@@ -263,7 +264,7 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
         // Guards that self-service leave disables the membership row and clears
         // the IsDefault flag, removing the user from the active org list.
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var membership = seed.OrganizationMemberships[0];
 
         await store.LeaveOrganizationAsync(
@@ -289,7 +290,7 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
         // Guards that admin-initiated removal disables the membership row,
         // clears IsDefault, and preserves audit history (row persists).
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var membership = seed.OrganizationMemberships[0];
 
         await store.RemoveMemberAsync(seed.Organization.Id, seed.Owner.Id, CancellationToken.None);
@@ -311,14 +312,18 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
         // Org-scoped aliases are attribution keys for historical PRs and
         // telemetry, so removing a member must not delete or disable aliases.
         var store = CreateStore();
-        var (seed, aliases) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddUserAliases(alias =>
-            {
-                alias.Kind = UserAliasKind.GitHub;
-                alias.DisplayValue = "CharlieDigital";
-                alias.NormalizedValue = "charliedigital";
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .Under(seed.Owner)
+            .AddAliases(
+                out var aliases,
+                alias =>
+                {
+                    alias.Kind = UserAliasKind.GitHub;
+                    alias.DisplayValue = "CharlieDigital";
+                    alias.NormalizedValue = "charliedigital";
+                }
+            )
             .BuildAsync();
         var alias = aliases[0];
 
@@ -340,7 +345,7 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
         // Guards that role changes are persisted atomically via ExecuteUpdateAsync
         // and are immediately visible to subsequent queries.
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context, userCount: 2).BuildAsync();
+        await TestBiome.Start(_context, out var seed, userCount: 2).BuildAsync();
         var member = seed.Users[1];
         var memberMembership = seed.OrganizationMemberships[1];
 
@@ -365,7 +370,7 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
         // Guards that updating a non-existent user's role is a no-op and does
         // not affect other members in the same organization.
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context, userCount: 2).BuildAsync();
+        await TestBiome.Start(_context, out var seed, userCount: 2).BuildAsync();
         var member = seed.Users[1];
         var memberMembership = seed.OrganizationMemberships[1];
 
@@ -389,7 +394,7 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
     {
         // Guards that the filtered unique index on (organization_id, user_id)
         // for active memberships prevents duplicate rows at the database level.
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
 
         _context.OrganizationMemberships.Add(
             new OrganizationMembership
@@ -421,7 +426,7 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
     public async Task FindMembershipActivationStateAsync_WithActiveMembership_ReturnsActiveState()
     {
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
 
         var state = await store.FindMembershipActivationStateAsync(
             seed.Organization.Id,
@@ -438,7 +443,7 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
     public async Task FindMembershipActivationStateAsync_WithDisabledMembership_ReturnsInactiveState()
     {
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         await store.RemoveMemberAsync(seed.Organization.Id, seed.Owner.Id, CancellationToken.None);
 
         var state = await store.FindMembershipActivationStateAsync(
@@ -458,7 +463,7 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
     public async Task FindMembershipActivationStateAsync_WithHistoricalAndCurrentMembership_ReturnsCurrentActiveState()
     {
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
 
         // Simulate: the user was removed (row soft-deleted, retained for
         // audit history) and later re-invited/re-added to the same
@@ -497,7 +502,7 @@ public sealed class MembershipStoreIntegrationTests(PgDatabaseFixture postgres)
     public async Task FindMembershipActivationStateAsync_WithNoMembershipRow_ReturnsNull()
     {
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
 
         var state = await store.FindMembershipActivationStateAsync(
             seed.Organization.Id,

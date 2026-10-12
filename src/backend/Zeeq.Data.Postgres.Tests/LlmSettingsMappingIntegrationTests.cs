@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Zeeq.Core.Models;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -25,9 +25,10 @@ public sealed class LlmSettingsMappingIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task OrganizationLlmConfiguration_RoundTripsThroughJsonbColumn()
     {
-        var seed = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.LlmConfiguration = new OrganizationLlmConfiguration
@@ -51,7 +52,8 @@ public sealed class LlmSettingsMappingIntegrationTests : PgTransactionalTestBase
                             KeyId = "key_max",
                         },
                     };
-                }
+                },
+                []
             )
             .BuildAsync();
 
@@ -89,7 +91,7 @@ public sealed class LlmSettingsMappingIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task OrganizationLlmConfiguration_DefaultsToFireworksTiers()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
 
         var storedJson = await ExecuteScalarAsync<string>(
             "SELECT llm_configuration::text FROM zeeq.core_organizations WHERE id = @id",
@@ -114,7 +116,7 @@ public sealed class LlmSettingsMappingIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task EncryptedValue_PersistsKindAsStringAndCiphertextAsBytes()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var now = DateTimeOffset.UtcNow;
         var encryptedValue = new EncryptedValue
         {

@@ -4,7 +4,7 @@ using Zeeq.Core.Models;
 using Zeeq.Core.Security;
 using Zeeq.Data.Postgres.LlmSettings;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -25,7 +25,7 @@ public sealed class LlmSettingsStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task LlmSettingsStore_ReadsAndUpdatesTypedConfigurationByOrganization()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var updatedAt = DateTimeOffset.UtcNow.TruncateToPostgresPrecision();
         var configuration = new OrganizationLlmConfiguration
         {
@@ -94,7 +94,7 @@ public sealed class LlmSettingsStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task LlmSettingsStore_TreatsLegacyDeepSeekDefaultAsNoConfiguration()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
 
         // Simulate an org still carrying the pre-Fireworks migration-seeded default.
         var organization = await _context
@@ -115,9 +115,9 @@ public sealed class LlmSettingsStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task EncryptedValueStore_EnforcesOrganizationScopeAndActiveRows()
     {
-        var (seed, organizationGraphs) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddOrganizations(1)
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddOrganizations(out var organizationGraphs, 1)
             .BuildAsync();
 
         var organizationId = seed.Organization.Id;
