@@ -1,9 +1,9 @@
 using System.Data;
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Carts;
 using Zeeq.Data.Postgres.Carts;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
-using Microsoft.EntityFrameworkCore;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -23,7 +23,7 @@ public sealed class CartStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CreateAsync_WithValidCart_PersistsRow()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresCartStore(_context);
         var cart = TestCart(seed.Organization.Id, seed.Owner.Id);
 
@@ -42,7 +42,7 @@ public sealed class CartStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CreateAsync_AtCartLimit_ThrowsCartLimitExceededException()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresCartStore(_context);
 
         // Seed 5 carts for the same owner.
@@ -68,7 +68,7 @@ public sealed class CartStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task CreateAsync_WithDuplicateClientSuppliedId_ThrowsInvalidOperationException()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresCartStore(_context);
         var cart = TestCart(seed.Organization.Id, seed.Owner.Id, id: "dup_id");
 
@@ -83,7 +83,7 @@ public sealed class CartStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task ListForOwnerAsync_ReturnsOnlyCallersCartsOrderedByUpdatedAtDescending()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresCartStore(_context);
 
         var cart1 = await store.CreateAsync(
@@ -113,7 +113,7 @@ public sealed class CartStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task FindAsync_WithCartFromDifferentOrganization_ReturnsNull()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresCartStore(_context);
 
         var cart = await store.CreateAsync(
@@ -130,7 +130,7 @@ public sealed class CartStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task DeleteAsync_RemovesRow_ReturnsFalseWhenAlreadyGone()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresCartStore(_context);
         var cart = await store.CreateAsync(
             TestCart(seed.Organization.Id, seed.Owner.Id),
@@ -160,7 +160,7 @@ public sealed class CartStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task Carts_Table_IsUnlogged()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresCartStore(_context);
 
         await store.CreateAsync(

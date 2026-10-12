@@ -103,6 +103,8 @@
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <PackageVersion Include="Tiktoken" Version="3.1.5" />
     <PackageVersion Include="ToonSharp" Version="1.0.0" />
+    <PackageVersion Include="Zeeq.Biome" Version="1.1.0" />
+    <PackageVersion Include="Zeeq.Biome.EntityFrameworkCore" Version="1.1.0" />
     <PackageVersion Include="TUnit" Version="1.56.0" />
     <PackageVersion Include="TUnit.Core" Version="1.56.0" />
   </ItemGroup>

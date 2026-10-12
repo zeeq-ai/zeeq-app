@@ -5,7 +5,7 @@ using OpenIddict.Abstractions;
 using Zeeq.Core.Common;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Platform.Membership.Tests;
 
@@ -236,7 +236,7 @@ public sealed class MembershipEndpointHandlerTests
     [Test]
     public async Task SwitchOrgHandler_WithRootTeamMembership_UsesTargetRootTeam()
     {
-        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        await TestBiome.Start(out var seed).BuildAsync();
         var store = new TestMembershipStore().AddSeed(seed);
 
         // Guards that switching organizations writes the target org's root
@@ -257,7 +257,7 @@ public sealed class MembershipEndpointHandlerTests
     [Test]
     public async Task SwitchOrgHandler_WithInactiveOrganization_ReturnsNotFound()
     {
-        var seed = await EntityGraph.AddGeneratedSeed().BuildAsync();
+        await TestBiome.Start(out var seed).BuildAsync();
         seed.Organization.ActivatedAtUtc = null;
         var store = new TestMembershipStore().AddSeed(seed);
 

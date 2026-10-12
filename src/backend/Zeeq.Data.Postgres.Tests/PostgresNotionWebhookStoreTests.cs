@@ -3,7 +3,7 @@ using Zeeq.Core.Documents;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Documents;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -203,7 +203,7 @@ public sealed class PostgresNotionWebhookStoreTests : PgTransactionalTestBase
     [Test]
     public async Task ResetAsync_ClearsWebhookStateAdvancesSerialAndDisablesVerificationToken()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var verificationToken = NewEncryptedToken(seed.Organization.Id);
         _context.EncryptedValues.Add(verificationToken);
         var now = DateTimeOffset.UtcNow;
@@ -273,7 +273,7 @@ public sealed class PostgresNotionWebhookStoreTests : PgTransactionalTestBase
         string? verificationTokenValueId = null
     )
     {
-        var seed = await EntityGraph.AddGeneratedSeed(context).BuildAsync();
+        await TestBiome.Start(context, out var seed).BuildAsync();
         var now = DateTimeOffset.UtcNow;
         var library = new Library
         {

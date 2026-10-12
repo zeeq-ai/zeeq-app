@@ -1,12 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Testing.Tests;
 
 /// <summary>
-/// Integration tests for Zeeq entity graph test scaffolding.
+/// Integration tests for Biome test scaffolding.
 ///
 /// Run:
 /// dotnet run --project src/backend/Zeeq.Testing.Tests --output detailed --disable-logo
@@ -18,13 +18,18 @@ public sealed class EntityGraphBuilderTests(PgDatabaseFixture postgres)
     [Test]
     public async Task SeedContext_GenerateWithUserActions_CreatesActiveOrganizationGraph()
     {
-        var seed = SeedContext.Generate(
-            user => user.Email = "owner@example.test",
-            user =>
-            {
-                user.Email = "member@example.test";
-                user.DisplayName = "Member User";
-            }
+        TestBiome.Start(
+            null,
+            out var seed,
+            null,
+            [
+                user => user.Email = "owner@example.test",
+                user =>
+                {
+                    user.Email = "member@example.test";
+                    user.DisplayName = "Member User";
+                },
+            ]
         );
 
         await Assert.That(seed.Users).Count().IsEqualTo(2);
@@ -40,7 +45,7 @@ public sealed class EntityGraphBuilderTests(PgDatabaseFixture postgres)
     [Test]
     public async Task AddGeneratedSeed_PersistsSeedGraph()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context, userCount: 2).BuildAsync();
+        await TestBiome.Start(_context, out var seed, userCount: 2).BuildAsync();
 
         _context.ChangeTracker.Clear();
 
@@ -66,9 +71,12 @@ public sealed class EntityGraphBuilderTests(PgDatabaseFixture postgres)
     [Test]
     public async Task AddPendingInvitation_PersistsPendingMembership()
     {
-        var (seed, invitations) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddPendingInvitation(invitation => invitation.Email = "invited@example.test")
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddInvitations(
+                out var invitations,
+                invitation => invitation.Email = "invited@example.test"
+            )
             .BuildAsync();
         var invitation = invitations[0];
 
@@ -89,9 +97,10 @@ public sealed class EntityGraphBuilderTests(PgDatabaseFixture postgres)
     {
         var email = "multi-invite@example.test";
         var now = DateTimeOffset.UtcNow;
-        var (_, invitations) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddPendingInvitation(
+        await TestBiome
+            .Start(_context, out _)
+            .AddInvitations(
+                out var invitations,
                 invitation =>
                 {
                     invitation.Email = email;
@@ -127,13 +136,16 @@ public sealed class EntityGraphBuilderTests(PgDatabaseFixture postgres)
     [Test]
     public async Task AddPendingInvitation_WithNonPersistentPrototype_ReturnsInvitationWithoutPersisting()
     {
-        var (seed, invitations) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddPendingInvitation(invitation =>
-            {
-                invitation.Email = "create-input@example.test";
-                invitation.PersistOnBuild = false;
-            })
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddInvitations(
+                out var invitations,
+                invitation =>
+                {
+                    invitation.Email = "create-input@example.test";
+                }
+            )
+            .Transient()
             .BuildAsync();
         var invitation = invitations[0];
 
@@ -152,9 +164,10 @@ public sealed class EntityGraphBuilderTests(PgDatabaseFixture postgres)
     [Test]
     public async Task AddOrganizations_WithPrototypes_PersistsOrganizationGraphsForSeedOwner()
     {
-        var (seed, organizationGraphs) = await EntityGraph
-            .AddGeneratedSeed(_context)
+        await TestBiome
+            .Start(_context, out var seed)
             .AddOrganizations(
+                out var organizationGraphs,
                 organization =>
                 {
                     organization.Slug = "graph-org-a";
@@ -199,11 +212,14 @@ public sealed class EntityGraphBuilderTests(PgDatabaseFixture postgres)
     [Test]
     public async Task AddOrganizations_WithInactivePrototype_PersistsInactiveOrganization()
     {
-        // Guards that EntityGraph can construct inactive organization preconditions
+        // Guards that Biome can construct inactive organization preconditions
         // without post-build mutation in activation-flow tests.
-        var (_, organizationGraphs) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddOrganizations(organization => organization.IsActivated = false)
+        await TestBiome
+            .Start(_context, out _)
+            .AddOrganizations(
+                out var organizationGraphs,
+                organization => organization.IsActivated = false
+            )
             .BuildAsync();
         var organizationId = organizationGraphs[0].Organization.Id;
 
@@ -221,9 +237,12 @@ public sealed class EntityGraphBuilderTests(PgDatabaseFixture postgres)
     {
         var seed = SeedContext.Generate();
 
-        var organization = await EntityGraph
-            .SeedWith(seed, _context)
-            .Add(seedContext => seedContext.Organization)
+        await TestBiome
+            .Start(seed, _context)
+            .AddOne(
+                Zeeq.Biome.Blueprint.For<SeedContext, Organization>(ctx => ctx.Seed.Organization),
+                out var organization
+            )
             .BuildAsync();
 
         _context.ChangeTracker.Clear();
@@ -253,9 +272,15 @@ public sealed class EntityGraphBuilderTests(PgDatabaseFixture postgres)
             UpdatedAtUtc = DateTimeOffset.UtcNow,
         };
 
-        var users = await EntityGraph
-            .SeedWith(seed, _context)
-            .Push(new[] { seed.Owner, extraUser })
+        await TestBiome
+            .Start(seed, _context)
+            .Add(
+                Zeeq.Biome.Blueprint.For<SeedContext, User>(ctx =>
+                    ctx.Index == 0 ? seed.Owner : extraUser
+                ),
+                out var users,
+                2
+            )
             .BuildAsync();
 
         _context.ChangeTracker.Clear();
@@ -271,9 +296,10 @@ public sealed class EntityGraphBuilderTests(PgDatabaseFixture postgres)
     [Test]
     public async Task AddUsers_WithSetupActions_CreatesOneUserPerAction()
     {
-        var (_, users) = await EntityGraph
-            .AddGeneratedSeed(_context)
+        await TestBiome
+            .Start(_context, out _)
             .AddUsers(
+                out var users,
                 user => user.Email = "alice@example.test",
                 user =>
                 {
@@ -300,7 +326,7 @@ public sealed class EntityGraphBuilderTests(PgDatabaseFixture postgres)
     [Test]
     public async Task AddUsers_WithCount_CreatesDefaultUsers()
     {
-        var (_, users) = await EntityGraph.AddGeneratedSeed(_context).AddUsers(2).BuildAsync();
+        await TestBiome.Start(_context, out _).AddUsers(out var users, 2).BuildAsync();
 
         _context.ChangeTracker.Clear();
 

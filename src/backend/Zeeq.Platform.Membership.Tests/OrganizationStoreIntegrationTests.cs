@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Platform.Membership.Tests;
 
@@ -22,14 +22,16 @@ public sealed class OrganizationStoreIntegrationTests(PgDatabaseFixture postgres
     public async Task FindOrganizationByIdAsync_Exists_ReturnsOrg()
     {
         var store = CreateStore();
-        var seed = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.DisplayName = "Test Org";
                     organization.Slug = "acme";
-                }
+                },
+                []
             )
             .BuildAsync();
         var org = seed.Organization;
@@ -51,14 +53,16 @@ public sealed class OrganizationStoreIntegrationTests(PgDatabaseFixture postgres
     public async Task FindOrganizationBySlugAsync_Exists_ReturnsOrg()
     {
         var store = CreateStore();
-        await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out _,
                 organization =>
                 {
                     organization.DisplayName = "Test Org";
                     organization.Slug = "my-org";
-                }
+                },
+                []
             )
             .BuildAsync();
         var found = await store.FindOrganizationBySlugAsync("my-org", CancellationToken.None);
@@ -71,20 +75,25 @@ public sealed class OrganizationStoreIntegrationTests(PgDatabaseFixture postgres
     public async Task FindOrganizationsByIdsAsync_WithMixedIds_ReturnsExistingOnly()
     {
         var store = CreateStore();
-        var (seed, organizationGraphs) = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.DisplayName = "Test Org";
                     organization.Slug = "a";
+                },
+                []
+            )
+            .AddOrganizations(
+                out var organizationGraphs,
+                organization =>
+                {
+                    organization.DisplayName = "Test Org";
+                    organization.Slug = "b";
                 }
             )
-            .AddOrganizations(organization =>
-            {
-                organization.DisplayName = "Test Org";
-                organization.Slug = "b";
-            })
             .BuildAsync();
         var orgA = seed.Organization;
         var orgB = organizationGraphs[0].Organization;
@@ -104,13 +113,15 @@ public sealed class OrganizationStoreIntegrationTests(PgDatabaseFixture postgres
     {
         var store = CreateStore();
         var activatedAt = DateTimeOffset.UtcNow.TruncateToPostgresPrecision();
-        var seed = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.ActivatedAtUtc = activatedAt;
-                }
+                },
+                []
             )
             .BuildAsync();
 
@@ -131,13 +142,15 @@ public sealed class OrganizationStoreIntegrationTests(PgDatabaseFixture postgres
     {
         var store = CreateStore();
         var disabledAt = DateTimeOffset.UtcNow.TruncateToPostgresPrecision();
-        var seed = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.DisabledAtUtc = disabledAt;
-                }
+                },
+                []
             )
             .BuildAsync();
 
@@ -177,14 +190,16 @@ public sealed class OrganizationStoreIntegrationTests(PgDatabaseFixture postgres
     public async Task IsSlugAvailableAsync_TakenSlug_ReturnsFalse()
     {
         var store = CreateStore();
-        await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out _,
                 organization =>
                 {
                     organization.DisplayName = "Test Org";
                     organization.Slug = "taken";
-                }
+                },
+                []
             )
             .BuildAsync();
         var available = await store.IsSlugAvailableAsync("taken", null, CancellationToken.None);
@@ -195,14 +210,16 @@ public sealed class OrganizationStoreIntegrationTests(PgDatabaseFixture postgres
     public async Task IsSlugAvailableAsync_OwnSlug_ReturnsTrue()
     {
         var store = CreateStore();
-        var seed = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.DisplayName = "Test Org";
                     organization.Slug = "my-slug";
-                }
+                },
+                []
             )
             .BuildAsync();
         var org = seed.Organization;
@@ -214,14 +231,16 @@ public sealed class OrganizationStoreIntegrationTests(PgDatabaseFixture postgres
     public async Task UpdateOrganizationAsync_WithValidChanges_PersistsUpdates()
     {
         var store = CreateStore();
-        var seed = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.DisplayName = "Test Org";
                     organization.Slug = "before";
-                }
+                },
+                []
             )
             .BuildAsync();
         var org = seed.Organization;
@@ -239,7 +258,7 @@ public sealed class OrganizationStoreIntegrationTests(PgDatabaseFixture postgres
     public async Task FindUserEmailByIdAsync_WithExistingUser_ReturnsEmail()
     {
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
 
         var email = await store.FindUserEmailByIdAsync(seed.Owner.Id, CancellationToken.None);
 
@@ -250,7 +269,7 @@ public sealed class OrganizationStoreIntegrationTests(PgDatabaseFixture postgres
     public async Task FindUserEmailsByIdsAsync_WithExistingUsers_ReturnsEmailsByUserId()
     {
         var store = CreateStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context, userCount: 2).BuildAsync();
+        await TestBiome.Start(_context, out var seed, userCount: 2).BuildAsync();
 
         var emails = await store.FindUserEmailsByIdsAsync(
             [seed.Users[0].Id, seed.Users[1].Id, "missing_user"],
@@ -266,15 +285,17 @@ public sealed class OrganizationStoreIntegrationTests(PgDatabaseFixture postgres
     public async Task IsAutoInviteSameDomainAvailableAsync_WithClaimedDomain_ReturnsFalse()
     {
         var store = CreateStore();
-        var seed = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.AutoInviteSameDomainEnabled = true;
                     organization.AutoInviteSameDomain = "example.com";
                     organization.AutoInviteDefaultRole = "member";
-                }
+                },
+                []
             )
             .BuildAsync();
 
@@ -297,14 +318,16 @@ public sealed class OrganizationStoreIntegrationTests(PgDatabaseFixture postgres
     public async Task OrganizationSlugUniqueIndex_WithDuplicateSlug_ThrowsDbUpdateException()
     {
         var slug = "duplicate-" + Guid.NewGuid().ToString("N");
-        await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out _,
                 organization =>
                 {
                     organization.DisplayName = "Test Org";
                     organization.Slug = slug;
-                }
+                },
+                []
             )
             .BuildAsync();
 

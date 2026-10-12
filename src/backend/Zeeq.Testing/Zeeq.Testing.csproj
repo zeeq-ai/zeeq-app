@@ -13,6 +13,8 @@
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.PubSub" />
     <PackageReference Include="TUnit.Core" />
+    <PackageReference Include="Zeeq.Biome" />
+    <PackageReference Include="Zeeq.Biome.EntityFrameworkCore" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Zeeq.Data.Postgres.Migrations\Zeeq.Data.Postgres.Migrations.csproj" />

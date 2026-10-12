@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Documents;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -29,13 +29,17 @@ public sealed class DocsIngestDataModelIntegrationTests(PgDatabaseFixture postgr
         // stamp — the mechanism that ties documents to an ingest run.
         var runId = SeedContext.NewId("run");
 
-        var (_, _, docs) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .AddDocsPublicDocuments(p =>
-            {
-                p.SyncRunId = runId;
-            })
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var source)
+            .Under(source)
+            .AddPublicDocuments(
+                out var docs,
+                p =>
+                {
+                    p.SyncRunId = runId;
+                }
+            )
             .BuildAsync();
         _context.ChangeTracker.Clear();
 
@@ -52,16 +56,20 @@ public sealed class DocsIngestDataModelIntegrationTests(PgDatabaseFixture postgr
         var run2 = SeedContext.NewId("run");
         var now = DateTimeOffset.UtcNow;
 
-        var (_, source, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .AddDocsPublicDocuments(p =>
-            {
-                p.Path = "/guides/update.md";
-                p.Content = "# Old\n\nOld body.";
-                p.ContentHash = "hash1";
-                p.SyncRunId = run1;
-            })
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var source)
+            .Under(source)
+            .AddPublicDocuments(
+                out _,
+                p =>
+                {
+                    p.Path = "/guides/update.md";
+                    p.Content = "# Old\n\nOld body.";
+                    p.ContentHash = "hash1";
+                    p.SyncRunId = run1;
+                }
+            )
             .BuildAsync();
 
         _context.ChangeTracker.Clear();
@@ -98,16 +106,20 @@ public sealed class DocsIngestDataModelIntegrationTests(PgDatabaseFixture postgr
         var run1 = SeedContext.NewId("run");
         var run2 = SeedContext.NewId("run");
 
-        var (_, source, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .AddDocsPublicDocuments(p =>
-            {
-                p.Path = "/guides/stable.md";
-                p.Content = "# Stable\n\nBody.";
-                p.ContentHash = "hash_stable";
-                p.SyncRunId = run1;
-            })
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var source)
+            .Under(source)
+            .AddPublicDocuments(
+                out _,
+                p =>
+                {
+                    p.Path = "/guides/stable.md";
+                    p.Content = "# Stable\n\nBody.";
+                    p.ContentHash = "hash_stable";
+                    p.SyncRunId = run1;
+                }
+            )
             .BuildAsync();
 
         var original = await _context.DocsPublicDocuments.SingleAsync(d =>
@@ -145,16 +157,20 @@ public sealed class DocsIngestDataModelIntegrationTests(PgDatabaseFixture postgr
         var run1 = SeedContext.NewId("run");
         var run2 = SeedContext.NewId("run");
 
-        var (_, source, docs) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .AddDocsPublicDocuments(p =>
-            {
-                p.Path = "/old-location/guide.md";
-                p.Content = "# Guide\n\nBody.";
-                p.ContentHash = "hash_move";
-                p.SyncRunId = run1;
-            })
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var source)
+            .Under(source)
+            .AddPublicDocuments(
+                out var docs,
+                p =>
+                {
+                    p.Path = "/old-location/guide.md";
+                    p.Content = "# Guide\n\nBody.";
+                    p.ContentHash = "hash_move";
+                    p.SyncRunId = run1;
+                }
+            )
             .BuildAsync();
 
         _context.ChangeTracker.Clear();
@@ -194,10 +210,12 @@ public sealed class DocsIngestDataModelIntegrationTests(PgDatabaseFixture postgr
         var run1 = SeedContext.NewId("run");
         var run2 = SeedContext.NewId("run");
 
-        var (_, source, docs) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .AddDocsPublicDocuments(
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var source)
+            .Under(source)
+            .AddPublicDocuments(
+                out var docs,
                 p =>
                 {
                     p.Path = "/kept.md";
@@ -236,10 +254,12 @@ public sealed class DocsIngestDataModelIntegrationTests(PgDatabaseFixture postgr
         var run1 = SeedContext.NewId("run");
         var run2 = SeedContext.NewId("run");
 
-        var (_, _, docs) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .AddDocsPublicDocuments(
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var source)
+            .Under(source)
+            .AddPublicDocuments(
+                out var docs,
                 p =>
                 {
                     p.Path = "/ok.md";
@@ -278,22 +298,30 @@ public sealed class DocsIngestDataModelIntegrationTests(PgDatabaseFixture postgr
         // public_source_id does not touch another source's documents.
         var run = SeedContext.NewId("run");
 
-        var (_, sourceA, _, sourceB, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource(s => s.RepoUrl = "https://github.com/example/a")
-            .AddDocsPublicDocuments(p =>
-            {
-                p.Path = "/a.md";
-                p.ContentHash = "ha";
-                p.SyncRunId = run;
-            })
-            .AddDocsPublicSource(s => s.RepoUrl = "https://github.com/example/b")
-            .AddDocsPublicDocuments(p =>
-            {
-                p.Path = "/b.md";
-                p.ContentHash = "hb";
-                p.SyncRunId = run;
-            })
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var sourceA, s => s.RepoUrl = "https://github.com/example/a")
+            .Under(sourceA)
+            .AddPublicDocuments(
+                out _,
+                p =>
+                {
+                    p.Path = "/a.md";
+                    p.ContentHash = "ha";
+                    p.SyncRunId = run;
+                }
+            )
+            .AddPublicSource(out var sourceB, s => s.RepoUrl = "https://github.com/example/b")
+            .Under(sourceB)
+            .AddPublicDocuments(
+                out _,
+                p =>
+                {
+                    p.Path = "/b.md";
+                    p.ContentHash = "hb";
+                    p.SyncRunId = run;
+                }
+            )
             .BuildAsync();
         _context.ChangeTracker.Clear();
 
@@ -320,10 +348,7 @@ public sealed class DocsIngestDataModelIntegrationTests(PgDatabaseFixture postgr
     {
         // Guards that a run record transitions Running → Succeeded
         // with accurate file counts — the audit trail for operators.
-        var (_, runs) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsIngestRuns()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddRuns(out var runs).BuildAsync();
         var run = runs[0];
         _context.ChangeTracker.Clear();
 
@@ -357,10 +382,7 @@ public sealed class DocsIngestDataModelIntegrationTests(PgDatabaseFixture postgr
         // Guards that a run with file failures finalizes as Partial
         // (not Failed) — some files did succeed. Counts distinguish
         // "partial success" from "total crash."
-        var (_, runs) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsIngestRuns()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddRuns(out var runs).BuildAsync();
 
         var run = runs[0];
 
@@ -395,15 +417,15 @@ public sealed class DocsIngestDataModelIntegrationTests(PgDatabaseFixture postgr
     {
         // Guards that run-record queries scoped to an org do not leak
         // runs from other organizations.
-        var (seedA, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsIngestRuns(p => p.RepoUrl = "https://github.com/acme/docs-a")
+        await TestBiome
+            .Start(_context, out var seedA)
+            .AddRuns(out _, p => p.RepoUrl = "https://github.com/acme/docs-a")
             .BuildAsync();
         _context.ChangeTracker.Clear();
 
-        var (seedB, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsIngestRuns(p => p.RepoUrl = "https://github.com/acme/docs-b")
+        await TestBiome
+            .Start(_context, out var seedB)
+            .AddRuns(out _, p => p.RepoUrl = "https://github.com/acme/docs-b")
             .BuildAsync();
 
         var orgARuns = await _context

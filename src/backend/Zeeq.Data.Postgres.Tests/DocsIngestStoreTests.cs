@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Documents;
 using Zeeq.Data.Postgres.Documents;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -29,10 +29,7 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
     public async Task Source_CreateThenGetById_RoundTrips()
     {
         var store = new PostgresDocsPublicSourceStore(_context);
-        var (_, source) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddPublicSource(out var source).BuildAsync();
         _context.ChangeTracker.Clear();
 
         var fetched = await store.GetByIdAsync(source.Id, CancellationToken.None);
@@ -45,9 +42,12 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
     public async Task Source_GetByRepoUrl_FindsExactMatch()
     {
         var store = new PostgresDocsPublicSourceStore(_context);
-        var (_, source) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource(s => s.RepoUrl = "https://github.com/example/get-by-url")
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(
+                out var source,
+                s => s.RepoUrl = "https://github.com/example/get-by-url"
+            )
             .BuildAsync();
         _context.ChangeTracker.Clear();
 
@@ -64,10 +64,7 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
     public async Task Source_Update_PersistsMutableFields()
     {
         var store = new PostgresDocsPublicSourceStore(_context);
-        var (_, source) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddPublicSource(out var source).BuildAsync();
         _context.ChangeTracker.Clear();
 
         var updated = new DocsPublicSource
@@ -98,34 +95,22 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
         var past = DateTimeOffset.UtcNow.AddMinutes(-5);
         var future = DateTimeOffset.UtcNow.AddHours(1);
 
-        var (_, due) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddPublicSource(out var due).BuildAsync();
         due.SyncStatus = "idle";
         due.Status = "active";
         due.NextSyncAt = past;
 
-        var (_, notYetDue) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddPublicSource(out var notYetDue).BuildAsync();
         notYetDue.SyncStatus = "idle";
         notYetDue.Status = "active";
         notYetDue.NextSyncAt = future;
 
-        var (_, alreadyRunning) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddPublicSource(out var alreadyRunning).BuildAsync();
         alreadyRunning.SyncStatus = "running";
         alreadyRunning.Status = "active";
         alreadyRunning.NextSyncAt = past;
 
-        var (_, quarantined) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddPublicSource(out var quarantined).BuildAsync();
         quarantined.SyncStatus = "idle";
         quarantined.Status = "quarantined";
         quarantined.NextSyncAt = past;
@@ -157,10 +142,7 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
 
         for (var i = 0; i < 3; i++)
         {
-            var (_, source) = await EntityGraph
-                .AddGeneratedSeed(_context)
-                .AddDocsPublicSource()
-                .BuildAsync();
+            await TestBiome.Start(_context, out _).AddPublicSource(out var source).BuildAsync();
             source.SyncStatus = "idle";
             source.Status = "active";
             source.NextSyncAt = past;
@@ -180,10 +162,7 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
         var store = new PostgresDocsPublicSourceStore(_context);
         var now = DateTimeOffset.UtcNow;
 
-        var (_, staleQueued) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddPublicSource(out var staleQueued).BuildAsync();
         staleQueued.SyncStatus = "queued";
         staleQueued.NextSyncAt = now.AddHours(1);
         staleQueued.ActiveSyncRunId = "run_stale_queued";
@@ -203,10 +182,7 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
             }
         );
 
-        var (_, freshRunning) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddPublicSource(out var freshRunning).BuildAsync();
         freshRunning.SyncStatus = "running";
         freshRunning.ActiveSyncRunId = "run_fresh_running";
         freshRunning.ActiveSyncRunCreatedAtUtc = now;
@@ -246,10 +222,7 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
         var store = new PostgresDocsPublicSourceStore(_context);
         var now = DateTimeOffset.UtcNow;
 
-        var (_, source) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddPublicSource(out var source).BuildAsync();
         source.SyncStatus = "queued";
         source.NextSyncAt = now.AddHours(1);
         source.ActiveSyncRunId = "run_missing";
@@ -283,10 +256,7 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
     public async Task Document_UpsertNewPath_ReturnsAdded()
     {
         var store = new PostgresDocsPublicDocumentStore(_context);
-        var (_, source) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddPublicSource(out var source).BuildAsync();
 
         var result = await store.UpsertAsync(
             new DocsPublicDocument
@@ -313,15 +283,19 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
     public async Task Document_UpsertSamePathChangedHash_ReturnsUpdated()
     {
         var store = new PostgresDocsPublicDocumentStore(_context);
-        var (_, source, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .AddDocsPublicDocuments(p =>
-            {
-                p.Path = "/guides/update.md";
-                p.ContentHash = "hash_v1";
-                p.SyncRunId = "run_1";
-            })
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var source)
+            .Under(source)
+            .AddPublicDocuments(
+                out _,
+                p =>
+                {
+                    p.Path = "/guides/update.md";
+                    p.ContentHash = "hash_v1";
+                    p.SyncRunId = "run_1";
+                }
+            )
             .BuildAsync();
         _context.ChangeTracker.Clear();
 
@@ -351,15 +325,19 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
     public async Task Document_UpsertSamePathSameHash_ReturnsUnchangedAndDoesNotAdvanceUpdatedAt()
     {
         var store = new PostgresDocsPublicDocumentStore(_context);
-        var (_, source, docs) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .AddDocsPublicDocuments(p =>
-            {
-                p.Path = "/guides/stable.md";
-                p.ContentHash = "hash_stable";
-                p.SyncRunId = "run_1";
-            })
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var source)
+            .Under(source)
+            .AddPublicDocuments(
+                out var docs,
+                p =>
+                {
+                    p.Path = "/guides/stable.md";
+                    p.ContentHash = "hash_stable";
+                    p.SyncRunId = "run_1";
+                }
+            )
             .BuildAsync();
         var originalUpdatedAt = docs[0].UpdatedAt;
         _context.ChangeTracker.Clear();
@@ -392,15 +370,19 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
     public async Task Document_UpsertSameHashNewPath_ReturnsMovedAndRecordsPreviousPath()
     {
         var store = new PostgresDocsPublicDocumentStore(_context);
-        var (_, source, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .AddDocsPublicDocuments(p =>
-            {
-                p.Path = "/old-location/guide.md";
-                p.ContentHash = "hash_move";
-                p.SyncRunId = "run_1";
-            })
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var source)
+            .Under(source)
+            .AddPublicDocuments(
+                out _,
+                p =>
+                {
+                    p.Path = "/old-location/guide.md";
+                    p.ContentHash = "hash_move";
+                    p.SyncRunId = "run_1";
+                }
+            )
             .BuildAsync();
         _context.ChangeTracker.Clear();
 
@@ -434,10 +416,12 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
         // genuinely ambiguous — it must not throw and must not guess which of
         // the two existing rows "moved".
         var store = new PostgresDocsPublicDocumentStore(_context);
-        var (_, source, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .AddDocsPublicDocuments(
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var source)
+            .Under(source)
+            .AddPublicDocuments(
+                out _,
                 p =>
                 {
                     p.Path = "/templates/a.md";
@@ -482,19 +466,29 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
     public async Task Document_UpsertSameHashDifferentSource_ReturnsAddedNotMoved()
     {
         var store = new PostgresDocsPublicDocumentStore(_context);
-        var (_, sourceA, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource(s => s.RepoUrl = "https://github.com/example/isolation-a")
-            .AddDocsPublicDocuments(p =>
-            {
-                p.Path = "/guide.md";
-                p.ContentHash = "hash_cross_store";
-                p.SyncRunId = "run_1";
-            })
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(
+                out var sourceA,
+                s => s.RepoUrl = "https://github.com/example/isolation-a"
+            )
+            .Under(sourceA)
+            .AddPublicDocuments(
+                out _,
+                p =>
+                {
+                    p.Path = "/guide.md";
+                    p.ContentHash = "hash_cross_store";
+                    p.SyncRunId = "run_1";
+                }
+            )
             .BuildAsync();
-        var (_, sourceB) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource(s => s.RepoUrl = "https://github.com/example/isolation-b")
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(
+                out var sourceB,
+                s => s.RepoUrl = "https://github.com/example/isolation-b"
+            )
             .BuildAsync();
         _context.ChangeTracker.Clear();
 
@@ -523,10 +517,12 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
     public async Task Document_DeleteUnstamped_RemovesOnlyRowsFromOtherRunsInThatSource()
     {
         var store = new PostgresDocsPublicDocumentStore(_context);
-        var (_, sourceA, docsA) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource(s => s.RepoUrl = "https://github.com/example/sweep-a")
-            .AddDocsPublicDocuments(
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var sourceA, s => s.RepoUrl = "https://github.com/example/sweep-a")
+            .Under(sourceA)
+            .AddPublicDocuments(
+                out var docsA,
                 p =>
                 {
                     p.Path = "/kept.md";
@@ -539,14 +535,18 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
                 }
             )
             .BuildAsync();
-        var (_, sourceB, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource(s => s.RepoUrl = "https://github.com/example/sweep-b")
-            .AddDocsPublicDocuments(p =>
-            {
-                p.Path = "/other-source.md";
-                p.SyncRunId = "run_old";
-            })
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var sourceB, s => s.RepoUrl = "https://github.com/example/sweep-b")
+            .Under(sourceB)
+            .AddPublicDocuments(
+                out _,
+                p =>
+                {
+                    p.Path = "/other-source.md";
+                    p.SyncRunId = "run_old";
+                }
+            )
             .BuildAsync();
         _context.ChangeTracker.Clear();
 
@@ -573,10 +573,11 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
         // — the suffix-match tier added to PostgresDocsPublicDocumentStore to
         // reach parity with the private library-document store.
         var store = new PostgresDocsPublicDocumentStore(_context);
-        var (_, source, docs) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .AddDocsPublicDocuments(p => p.Path = "/some/path/doc.md")
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var source)
+            .Under(source)
+            .AddPublicDocuments(out var docs, p => p.Path = "/some/path/doc.md")
             .BuildAsync();
         _context.ChangeTracker.Clear();
 
@@ -594,10 +595,12 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
     public async Task Document_GetByPath_ShortSuffix_ReturnsMostSpecificCandidate()
     {
         var store = new PostgresDocsPublicDocumentStore(_context);
-        var (_, source, docs) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .AddDocsPublicDocuments(
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var source)
+            .Under(source)
+            .AddPublicDocuments(
+                out var docs,
                 p => p.Path = "/to-the-file.md",
                 p => p.Path = "/some/path/to-the-file.md"
             )
@@ -648,10 +651,7 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
     public async Task Run_Finalize_SetsCountsStatusAndCompletion()
     {
         var store = new PostgresDocsIngestRunStore(_context);
-        var (_, runs) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsIngestRuns()
-            .BuildAsync();
+        await TestBiome.Start(_context, out _).AddRuns(out var runs).BuildAsync();
         var run = runs[0];
         _context.ChangeTracker.Clear();
 
@@ -688,9 +688,10 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
     public async Task Run_MarkStalled_OnlyUpdatesRunningRun()
     {
         var store = new PostgresDocsIngestRunStore(_context);
-        var (_, runs) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsIngestRuns(
+        await TestBiome
+            .Start(_context, out _)
+            .AddRuns(
+                out var runs,
                 p =>
                 {
                     p.Id = "run_running";
@@ -747,9 +748,10 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
     public async Task Run_ListByOrganization_ReturnsNewestFirstScopedToOrg()
     {
         var store = new PostgresDocsIngestRunStore(_context);
-        var (seedA, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsIngestRuns(
+        await TestBiome
+            .Start(_context, out var seedA)
+            .AddRuns(
+                out _,
                 p =>
                 {
                     p.RepoUrl = "https://github.com/acme/list-a-1";
@@ -762,9 +764,9 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
                 }
             )
             .BuildAsync();
-        await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsIngestRuns(p => p.RepoUrl = "https://github.com/acme/list-b")
+        await TestBiome
+            .Start(_context, out _)
+            .AddRuns(out _, p => p.RepoUrl = "https://github.com/acme/list-b")
             .BuildAsync();
         _context.ChangeTracker.Clear();
 
@@ -789,9 +791,10 @@ public sealed class DocsIngestStoreTests(PgDatabaseFixture postgres)
         // translating correctly against real Postgres.
         var store = new PostgresDocsIngestRunStore(_context);
         const string libraryId = "lib_keyset_paging";
-        var (seed, _) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsIngestRuns(
+        await TestBiome
+            .Start(_context, out var seed)
+            .AddRuns(
+                out _,
                 p =>
                 {
                     p.LibraryId = libraryId;

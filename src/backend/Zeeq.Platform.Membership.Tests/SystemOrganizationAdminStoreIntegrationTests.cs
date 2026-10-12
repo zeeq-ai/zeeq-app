@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Identity;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Platform.Membership.Tests;
 
@@ -20,16 +20,18 @@ public sealed class SystemOrganizationAdminStoreIntegrationTests(PgDatabaseFixtu
     public async Task ListOrganizationsAsync_ReturnsCreatorMemberCountsTierAndLlmSummary()
     {
         var store = CreateSystemStore();
-        var seed = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.DisplayName = "Acme Platform";
                     organization.Slug = "acme-platform";
                     organization.Tier = OrganizationTier.Priority;
                     organization.LlmConfiguration = TestLlmConfiguration();
-                }
+                },
+                []
             )
             .BuildAsync();
         var extraUserId = NewId("user");
@@ -77,14 +79,16 @@ public sealed class SystemOrganizationAdminStoreIntegrationTests(PgDatabaseFixtu
     public async Task ListOrganizationsAsync_MatchesDisplayNameIdAndSlug()
     {
         var store = CreateSystemStore();
-        var seed = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.DisplayName = "Northwind Research";
                     organization.Slug = "northwind";
-                }
+                },
+                []
             )
             .BuildAsync();
 
@@ -188,7 +192,7 @@ public sealed class SystemOrganizationAdminStoreIntegrationTests(PgDatabaseFixtu
     public async Task ListMembersAsync_ReturnsActiveMembersOnly()
     {
         var store = CreateSystemStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var extraUserId = NewId("user");
         var disabledUserId = NewId("user");
         await SeedUser(_context, extraUserId);
@@ -250,14 +254,16 @@ public sealed class SystemOrganizationAdminStoreIntegrationTests(PgDatabaseFixtu
     {
         var store = CreateSystemStore();
         var disabledAt = DateTimeOffset.UtcNow.AddMinutes(-10).TruncateToPostgresPrecision();
-        var seed = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.ActivatedAtUtc = null;
                     organization.DisabledAtUtc = disabledAt;
-                }
+                },
+                []
             )
             .BuildAsync();
 
@@ -278,14 +284,16 @@ public sealed class SystemOrganizationAdminStoreIntegrationTests(PgDatabaseFixtu
     {
         var store = CreateSystemStore();
         var activatedAt = DateTimeOffset.UtcNow.AddMinutes(-10).TruncateToPostgresPrecision();
-        var seed = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.ActivatedAtUtc = activatedAt;
                     organization.DisabledAtUtc = null;
-                }
+                },
+                []
             )
             .BuildAsync();
 
@@ -305,7 +313,7 @@ public sealed class SystemOrganizationAdminStoreIntegrationTests(PgDatabaseFixtu
     public async Task UpdateOrganizationAdminStateAsync_DeactivateClearsActivatedAndSetsDisabled()
     {
         var store = CreateSystemStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
 
         var updated = await store.UpdateOrganizationAdminStateAsync(
             seed.Organization.Id,
@@ -323,7 +331,7 @@ public sealed class SystemOrganizationAdminStoreIntegrationTests(PgDatabaseFixtu
     public async Task UpdateOrganizationAdminStateAsync_TierUpdatePersists()
     {
         var store = CreateSystemStore();
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
 
         var updated = await store.UpdateOrganizationAdminStateAsync(
             seed.Organization.Id,
@@ -340,15 +348,17 @@ public sealed class SystemOrganizationAdminStoreIntegrationTests(PgDatabaseFixtu
     public async Task UpdateOrganizationAdminStateAsync_CombinedActivateAndTierPersistsBoth()
     {
         var store = CreateSystemStore();
-        var seed = await EntityGraph
-            .AddGeneratedSeed(
+        await TestBiome
+            .Start(
                 _context,
+                out var seed,
                 organization =>
                 {
                     organization.ActivatedAtUtc = null;
                     organization.DisabledAtUtc = DateTimeOffset.UtcNow;
                     organization.Tier = OrganizationTier.Default;
-                }
+                },
+                []
             )
             .BuildAsync();
 

@@ -1,8 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Documents;
 using Zeeq.Data.Postgres.Documents;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
-using Microsoft.EntityFrameworkCore;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -266,7 +266,7 @@ public sealed class DocumentWritePathIntegrationTests : PgTransactionalTestBase
         string RootTeamId
     )> CreateWriterWithLibraryAsync()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
         var library = await CreateLibraryAsync(store, seed.Organization.Id, "docs");
         var writer = new LibraryDocumentWriteService(store);

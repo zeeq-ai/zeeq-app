@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Zeeq.Core.Models;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Platform.Membership.Tests;
 
@@ -18,9 +18,12 @@ public sealed class InvitationEndpointHandlerTests
     [Test]
     public async Task CreateInvitationHandler_DuplicateInvitation_ReturnsValidationProblem()
     {
-        var (seed, invitations) = await EntityGraph
-            .AddGeneratedSeed()
-            .AddPendingInvitation(invitation => invitation.Email = "invited@test.com")
+        await TestBiome
+            .Start(out var seed)
+            .AddInvitations(
+                out var invitations,
+                invitation => invitation.Email = "invited@test.com"
+            )
             .BuildAsync();
         var store = new TestMembershipStore().AddSeed(seed).AddInvitations(invitations);
 
@@ -42,9 +45,9 @@ public sealed class InvitationEndpointHandlerTests
     [Test]
     public async Task AcceptInvitationHandler_WrongEmail_ReturnsNotFoundAndDoesNotAccept()
     {
-        var (seed, invitations) = await EntityGraph
-            .AddGeneratedSeed()
-            .AddPendingInvitation(invitation => invitation.Email = "other@test.com")
+        await TestBiome
+            .Start(out var seed)
+            .AddInvitations(out var invitations, invitation => invitation.Email = "other@test.com")
             .BuildAsync();
         var invitation = invitations[0];
         var store = new TestMembershipStore().AddSeed(seed).AddInvitations(invitations);
@@ -67,9 +70,9 @@ public sealed class InvitationEndpointHandlerTests
     [Test]
     public async Task AcceptInvitationAsDefaultHandler_WithManualInvitation_AcceptsInvitation()
     {
-        var (seed, invitations) = await EntityGraph
-            .AddGeneratedSeed()
-            .AddPendingInvitation(invitation => invitation.Email = "manual@test.com")
+        await TestBiome
+            .Start(out var seed)
+            .AddInvitations(out var invitations, invitation => invitation.Email = "manual@test.com")
             .BuildAsync();
         var invitation = invitations[0];
         var store = new TestMembershipStore().AddSeed(seed).AddInvitations(invitations);

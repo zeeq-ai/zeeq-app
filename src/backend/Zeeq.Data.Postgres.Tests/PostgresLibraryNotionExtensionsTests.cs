@@ -1,7 +1,7 @@
 using Zeeq.Core.Documents;
 using Zeeq.Data.Postgres.Documents;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -24,7 +24,7 @@ public sealed class PostgresLibraryNotionExtensionsTests : PgTransactionalTestBa
     [Test]
     public async Task Library_ExternalSourceJsonb_RoundTripsNotionConfiguration()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
         var now = DateTimeOffset.UtcNow;
 
@@ -75,7 +75,7 @@ public sealed class PostgresLibraryNotionExtensionsTests : PgTransactionalTestBa
     [Test]
     public async Task Library_RepositoryClaim_ExcludesNotionSourcedLibraries()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
         var now = DateTimeOffset.UtcNow;
 
@@ -103,7 +103,7 @@ public sealed class PostgresLibraryNotionExtensionsTests : PgTransactionalTestBa
     [Test]
     public async Task Library_NotionClaim_IncludesIncrementalOrFullDueLibraries()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
         var now = DateTimeOffset.UtcNow;
 
@@ -145,7 +145,7 @@ public sealed class PostgresLibraryNotionExtensionsTests : PgTransactionalTestBa
     [Test]
     public async Task LibraryDocument_GetByExternalId_ResolvesAcrossPathRename()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var libraryStore = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
         var now = DateTimeOffset.UtcNow;
         var library = await libraryStore.CreateLibraryAsync(

@@ -4,7 +4,7 @@ using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Snippets;
 using Zeeq.Data.Postgres.Documents;
 using Zeeq.Testing;
-using Zeeq.Testing.EntityGraphs;
+using Zeeq.Testing.Biomes;
 
 namespace Zeeq.Data.Postgres.Tests;
 
@@ -830,13 +830,17 @@ public sealed class SnippetStoreIntegrationTests : PgTransactionalTestBase
     [Test]
     public async Task PublicClaim_MarksIndexing_AndReconciles()
     {
-        var (_, source, docs) = await EntityGraph
-            .AddGeneratedSeed(_context)
-            .AddDocsPublicSource()
-            .AddDocsPublicDocuments(p =>
-            {
-                p.Path = "/guides/public.md";
-            })
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var source)
+            .Under(source)
+            .AddPublicDocuments(
+                out var docs,
+                p =>
+                {
+                    p.Path = "/guides/public.md";
+                }
+            )
             .BuildAsync();
         _context.ChangeTracker.Clear();
 
@@ -951,7 +955,7 @@ public sealed class SnippetStoreIntegrationTests : PgTransactionalTestBase
         string LibraryId
     )> SeedLibraryAsync()
     {
-        var seed = await EntityGraph.AddGeneratedSeed(_context).BuildAsync();
+        await TestBiome.Start(_context, out var seed).BuildAsync();
         var store = new PostgresLibraryDocumentStore(_context, new DocumentSearchScope());
         var now = DateTimeOffset.UtcNow;
         var library = await store.CreateLibraryAsync(
