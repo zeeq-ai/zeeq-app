@@ -163,7 +163,7 @@ jobs:
           dotnet build zeeq.slnx \
             --configuration Release \
             --no-restore \
-            \
+            -warnaserror \
             -p:GIT_SHA="${GITHUB_SHA}" \
             -p:ZEEQ_VERSION="${{ needs.plan.outputs.version }}" \
             -p:ZEEQ_VERSION_TAG="${{ needs.plan.outputs.tag }}"

@@ -73,6 +73,7 @@ RUN if [ "$ZEEQ_BUILD_TARGET" = aws ] && [ "$BUILDARCH" = arm64 ]; then export P
   dotnet publish ./src/backend/Zeeq.Runtime.Server/Zeeq.Runtime.Server.csproj \
   --configuration Release \
   --no-restore \
+  -warnaserror \
   --output /app/publish \
   -a $TARGETARCH \
   -p:GIT_SHA=$GIT_SHA \
