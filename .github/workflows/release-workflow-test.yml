@@ -26,7 +26,7 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          global-json-file: global.json
 
       - name: Set up Node
         uses: actions/setup-node@v7
@@ -73,6 +73,7 @@ jobs:
           dotnet build zeeq.slnx \
             --configuration Release \
             --no-restore \
+            \
             -p:GIT_SHA="${GITHUB_SHA}" \
             -p:ZEEQ_VERSION="${{ steps.version.outputs.version }}" \
             -p:ZEEQ_VERSION_TAG="${{ steps.version.outputs.tag }}"
