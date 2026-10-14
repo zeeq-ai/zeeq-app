@@ -32,7 +32,7 @@ jobs:
       - name: Restore .NET dependencies
         run: dotnet restore zeeq.slnx
       - name: Build the canonical runtime topology exporter
-        run: dotnet build src/backend/Zeeq.Runtime.Server -c Release --no-restore --nologo
+        run: dotnet build src/backend/Zeeq.Runtime.Server -c Release --no-restore --nologo -warnaserror
       - name: Verify AWS runtime primitives
         run: dotnet run --project src/backend/Zeeq.Platform.Storage.Aws.Tests -c Release -- --disable-logo
       - name: Install deployment dependencies

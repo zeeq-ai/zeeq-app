@@ -75,7 +75,7 @@ jobs:
       # Build the test projects once so compile failures are reported separately
       # from runtime integration-test failures.
       - name: Build tests
-        run: dotnet build --no-restore --nologo
+        run: dotnet build --no-restore --nologo -warnaserror
 
       # Run every TUnit test in the solution. PostgreSQL integration tests use
       # Testcontainers rather than a shared service database so migrations and
