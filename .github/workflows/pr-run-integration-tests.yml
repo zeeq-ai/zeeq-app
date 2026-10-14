@@ -12,6 +12,12 @@ on:
   pull_request:
     paths:
       - src/backend/**
+      - host/Zeeq.AspireHost.csproj
+      - global.json
+      - .config/dotnet-tools.json
+      - .config/mise.toml
+      - build/Dockerfile
+      - .github/workflows/**
 
 permissions:
   # checkout needs read access to the repository contents.
@@ -60,7 +66,7 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          global-json-file: global.json
 
       # Restore NuGet packages before building/running tests.
       - name: Restore dependencies
