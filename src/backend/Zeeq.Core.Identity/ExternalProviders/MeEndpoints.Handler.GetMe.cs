@@ -56,8 +56,11 @@ public sealed class GetMeHandler(
         var memberships = await membershipStore.ListActiveMembershipsForUserAsync(userId!, ct);
         var currentMembership = memberships.FirstOrDefault(m => m.OrganizationId == orgId);
 
-        // Resolve pending invitations by email (UserId is null on these rows)
-        var pending = await membershipStore.ListPendingInvitationsForEmailAsync(email!, ct);
+        // Resolve pending invitations by email (UserId is null on these rows). External
+        // identities may have no email claim, in which case there is nothing to match.
+        var pending = string.IsNullOrWhiteSpace(email)
+            ? []
+            : await membershipStore.ListPendingInvitationsForEmailAsync(email, ct);
 
         // Collect org IDs from both active and pending, then batch-lookup display info
         var orgIds = memberships

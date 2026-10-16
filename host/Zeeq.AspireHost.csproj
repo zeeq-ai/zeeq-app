@@ -13,6 +13,8 @@
     <PackageReference Include="Aspire.Hosting.Yarp" Version="13.6.1" />
     <PackageReference Include="Aspire.Hosting.DevTunnels" Version="13.6.1" />
     <PackageReference Include="DeviceId" Version="6.11.0" />
+    <!-- Security override (GHSA-qhrr-8q5h-9q3h): Aspire.Hosting 13.6.1 and StreamJsonRpc 2.25.29 pull MessagePack 2.5.302 transitively. 2.5.303 is the fixed 2.x patch. Remove once Aspire depends on >= 2.5.303. -->
+    <PackageReference Include="MessagePack" Version="2.5.303" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\src\backend\Zeeq.Runtime.Server\Zeeq.Runtime.Server.csproj" />

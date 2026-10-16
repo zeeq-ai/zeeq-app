@@ -130,6 +130,120 @@ public sealed class GetMeHandlerTests
     }
 
     [Test]
+    public async Task HandleAsync_WithoutEmailClaim_ReturnsProfileAndSkipsInvitationLookup()
+    {
+        var org = TestOrganization();
+        var store = new TestMembershipStore([org], [ActiveMembership(org.Id, "usr_123")]);
+        var handler = CreateHandler(store);
+
+        // Guards that external identities without an email claim (e.g. the MockOAuth
+        // default user) still get a valid /me response instead of a NullReferenceException
+        // from the invitation lookup, and that no email is fabricated.
+        var result = await InvokeHandleAsync(
+            handler,
+            TestPrincipal("usr_123", org.Id, email: null),
+            CancellationToken.None
+        );
+        var response = GetOkValue(result);
+        var organizations = GetProperty<IEnumerable>(response, "Organizations")
+            .Cast<object>()
+            .ToArray();
+
+        await Assert.That(GetProperty<string>(response, "UserId")).IsEqualTo("usr_123");
+        await Assert.That(GetProperty<string>(response, "OrganizationId")).IsEqualTo(org.Id);
+        await Assert.That(response.GetType().GetProperty("Email")?.GetValue(response)).IsNull();
+        await Assert.That(organizations).HasSingleItem();
+        await Assert
+            .That(GetProperty<MembershipStatus>(organizations[0], "Status"))
+            .IsEqualTo(MembershipStatus.Active);
+        await Assert.That(store.PendingInvitationLookupEmails).IsEmpty();
+    }
+
+    [Test]
+    [Arguments("")]
+    [Arguments("   ")]
+    public async Task HandleAsync_WithBlankEmailClaim_SkipsInvitationLookupAndReturnsNoPendingOrgs(
+        string email
+    )
+    {
+        var org = TestOrganization();
+        var store = new TestMembershipStore([org], [ActiveMembership(org.Id, "usr_123")]);
+        var handler = CreateHandler(store);
+
+        // Guards that a blank email claim is treated like a missing one rather than
+        // being passed to the invitation lookup.
+        var result = await InvokeHandleAsync(
+            handler,
+            TestPrincipal("usr_123", org.Id, email: email),
+            CancellationToken.None
+        );
+        var response = GetOkValue(result);
+        var organizations = GetProperty<IEnumerable>(response, "Organizations")
+            .Cast<object>()
+            .ToArray();
+
+        await Assert.That(organizations).HasSingleItem();
+        await Assert
+            .That(GetProperty<MembershipStatus>(organizations[0], "Status"))
+            .IsEqualTo(MembershipStatus.Active);
+        await Assert.That(store.PendingInvitationLookupEmails).IsEmpty();
+    }
+
+    [Test]
+    public async Task HandleAsync_WithEmailClaim_MergesPendingInvitationsIntoOrgList()
+    {
+        var activeOrg = TestOrganization();
+        var invitingOrg = new Organization
+        {
+            Id = "org_456",
+            DisplayName = "Inviting Org",
+            Slug = "inviting-org",
+            CreatedByUserId = "usr_999",
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+        };
+        var invitation = new OrganizationMembership
+        {
+            Id = "mem_invite",
+            OrganizationId = invitingOrg.Id,
+            Role = "member",
+            Status = MembershipStatus.Pending,
+            InvitedEmail = "user@example.com",
+            CreatedByUserId = "usr_999",
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+        };
+        var store = new TestMembershipStore(
+            [activeOrg, invitingOrg],
+            [ActiveMembership(activeOrg.Id, "usr_123")],
+            [invitation]
+        );
+        var handler = CreateHandler(store);
+
+        // Guards that real-email callers keep seeing their pending invitations,
+        // alongside active orgs, after the missing-email guard was added.
+        var result = await InvokeHandleAsync(
+            handler,
+            TestPrincipal("usr_123", activeOrg.Id),
+            CancellationToken.None
+        );
+        var response = GetOkValue(result);
+        var organizations = GetProperty<IEnumerable>(response, "Organizations")
+            .Cast<object>()
+            .ToArray();
+
+        await Assert.That(store.PendingInvitationLookupEmails).HasSingleItem();
+        await Assert.That(organizations.Length).IsEqualTo(2);
+        await Assert
+            .That(GetProperty<MembershipStatus>(organizations[0], "Status"))
+            .IsEqualTo(MembershipStatus.Active);
+        await Assert
+            .That(GetProperty<MembershipStatus>(organizations[1], "Status"))
+            .IsEqualTo(MembershipStatus.Pending);
+        await Assert
+            .That(GetProperty<string>(organizations[1], "InvitationId"))
+            .IsEqualTo("mem_invite");
+    }
+
+    [Test]
     public async Task UserAliasEndpointMapping_SerializesKindWithCustomWireName()
     {
         var alias = new UserAlias
@@ -215,7 +329,8 @@ public sealed class GetMeHandlerTests
         string orgId,
         string provider = "mock",
         string providerSubject = "mock_123",
-        string[]? roles = null
+        string[]? roles = null,
+        string? email = "user@example.com"
     ) =>
         new(
             new ClaimsIdentity(
@@ -223,7 +338,9 @@ public sealed class GetMeHandlerTests
                     [
                         new Claim(OpenIddictConstants.Claims.Subject, userId),
                         new Claim(AuthClaims.OrganizationId, orgId),
-                        new Claim(OpenIddictConstants.Claims.Email, "user@example.com"),
+                        .. email is null
+                            ? Array.Empty<Claim>()
+                            : [new Claim(OpenIddictConstants.Claims.Email, email)],
                         new Claim(AuthClaims.Provider, provider),
                         new Claim(AuthClaims.ProviderSubject, providerSubject),
                     ],
@@ -272,9 +389,12 @@ public sealed class GetMeHandlerTests
 
     private sealed class TestMembershipStore(
         IReadOnlyList<Organization> organizations,
-        IReadOnlyList<OrganizationMembership> memberships
+        IReadOnlyList<OrganizationMembership> memberships,
+        IReadOnlyList<OrganizationMembership>? pendingInvitations = null
     ) : IZeeqMembershipStore
     {
+        public List<string> PendingInvitationLookupEmails { get; } = [];
+
         public Task<Organization?> FindOrganizationByIdAsync(string orgId, CancellationToken ct) =>
             Task.FromResult(organizations.FirstOrDefault(org => org.Id == orgId));
 
@@ -391,7 +511,23 @@ public sealed class GetMeHandlerTests
         public Task<IReadOnlyList<OrganizationMembership>> ListPendingInvitationsForEmailAsync(
             string email,
             CancellationToken ct
-        ) => Task.FromResult<IReadOnlyList<OrganizationMembership>>([]);
+        )
+        {
+            // Mirrors PostgresZeeqMembershipStore, which trims the email and throws on null.
+            PendingInvitationLookupEmails.Add(email.Trim());
+
+            return Task.FromResult<IReadOnlyList<OrganizationMembership>>(
+                (pendingInvitations ?? [])
+                    .Where(invitation =>
+                        string.Equals(
+                            invitation.InvitedEmail,
+                            email.Trim(),
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    .ToArray()
+            );
+        }
 
         public Task<
             IReadOnlyList<OrganizationMembership>
@@ -443,8 +579,10 @@ public sealed class GetMeHandlerTests
             CancellationToken cancellationToken
         ) => throw new NotSupportedException();
 
-        public Task<string?> FindUserEmailAsync(string userId, CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
+        public Task<string?> FindUserEmailAsync(
+            string userId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
 
         public Task<IReadOnlyList<UserAlias>> ListUserAliasesAsync(
             string organizationId,

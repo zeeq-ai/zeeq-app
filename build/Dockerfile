@@ -14,10 +14,12 @@ WORKDIR /srcroot
 # member whose manifest isn't copied yet, which makes an --immutable install
 # fail as if the lockfile were out of date.
 COPY ./package.json ./yarn.lock ./.yarnrc.yml ./
+COPY ./.yarn/patches/ ./.yarn/patches/
 COPY ./src/web/package.json ./src/web/package.json
 COPY --parents ./src/plugins/**/package.json ./
 
-RUN corepack enable && yarn install --immutable
+RUN corepack enable && yarn install --immutable && \
+  node --test .yarn/patches/http-cache-semantics.test.cjs
 
 #*----------------------------------------------------------------------------------
 # Stage 2: Build the Vue SPA
