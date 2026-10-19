@@ -210,7 +210,7 @@ public interface IMetricsQueryStore
     /// <summary>Review cost samples and bucketed sums from partitioned metric events.</summary>
     Task<ReviewCostMetrics> GetReviewCostMetricsAsync(
         string organizationId,
-        MetricWindow window,
+        MetricQueryRange range,
         CancellationToken cancellationToken
     );
 
@@ -218,7 +218,7 @@ public interface IMetricsQueryStore
     Task<IReadOnlyList<MetricSeriesPoint>> GetSeriesAsync(
         string organizationId,
         string metricType,
-        MetricWindow window,
+        MetricQueryRange range,
         MetricSeriesGroup groupBy,
         MetricSeriesFilters filters,
         CancellationToken cancellationToken
@@ -228,7 +228,7 @@ public interface IMetricsQueryStore
     Task<IReadOnlyList<MetricTwoDimensionalSeriesPoint>> GetTwoDimensionalSeriesAsync(
         string organizationId,
         string metricType,
-        MetricWindow window,
+        MetricQueryRange range,
         MetricSeriesGroup primaryGroupBy,
         MetricSeriesGroup secondaryGroupBy,
         MetricSeriesFilters filters,
@@ -239,7 +239,7 @@ public interface IMetricsQueryStore
     Task<IReadOnlyList<MetricPercentilePoint>> GetPercentileSeriesAsync(
         string organizationId,
         string metricType,
-        MetricWindow window,
+        MetricQueryRange range,
         string? repositoryId,
         string? facet,
         CancellationToken cancellationToken
@@ -249,7 +249,7 @@ public interface IMetricsQueryStore
     Task<IReadOnlyList<MetricScatterPoint>> GetScatterSampleAsync(
         string organizationId,
         string metricType,
-        MetricWindow window,
+        MetricQueryRange range,
         string? repositoryId,
         string? facet,
         int limit,
@@ -264,7 +264,7 @@ public interface IMetricsQueryStore
     Task<IReadOnlyList<MetricLeaderboardItem>> GetLeaderboardAsync(
         string organizationId,
         string[] metricTypes,
-        MetricWindow window,
+        MetricQueryRange range,
         string? library,
         int top,
         CancellationToken cancellationToken,
@@ -280,7 +280,7 @@ public interface IMetricsQueryStore
     Task<IReadOnlyList<MetricLeaderboardItem>> GetSectionLeaderboardAsync(
         string organizationId,
         string[] metricTypes,
-        MetricWindow window,
+        MetricQueryRange range,
         string? library,
         int top,
         CancellationToken cancellationToken,
@@ -290,7 +290,7 @@ public interface IMetricsQueryStore
     /// <summary>Top-N retrieved MCP prompts, keyed by the captured <c>prompt_name</c> tag.</summary>
     Task<IReadOnlyList<MetricLeaderboardItem>> GetPromptLeaderboardAsync(
         string organizationId,
-        MetricWindow window,
+        MetricQueryRange range,
         string[]? users,
         string? library,
         int top,
@@ -300,7 +300,7 @@ public interface IMetricsQueryStore
     /// <summary>Bucketed review volume from <c>code_review_records</c>, optionally grouped/filtered.</summary>
     Task<IReadOnlyList<ReviewVolumePoint>> GetReviewVolumeSeriesAsync(
         string organizationId,
-        MetricWindow window,
+        MetricQueryRange range,
         string[]? repositoryIds,
         string[]? authorLogins,
         CodeReviewRequestOrigin? requestOrigin,
@@ -311,7 +311,7 @@ public interface IMetricsQueryStore
     /// <summary>Bucketed finding-severity sums from <c>code_review_records</c>, optionally grouped/filtered.</summary>
     Task<IReadOnlyList<ReviewFindingsPoint>> GetReviewFindingsSeriesAsync(
         string organizationId,
-        MetricWindow window,
+        MetricQueryRange range,
         string[]? repositoryIds,
         string[]? authorLogins,
         ReviewFindingsGroup groupBy,
@@ -321,7 +321,7 @@ public interface IMetricsQueryStore
     /// <summary>Headline overview numbers for the current window.</summary>
     Task<MetricsOverview> GetOverviewAsync(
         string organizationId,
-        MetricWindow window,
+        MetricQueryRange range,
         CancellationToken cancellationToken
     );
 
@@ -330,7 +330,7 @@ public interface IMetricsQueryStore
     /// in the window (drill-down list behind the Critical/Major findings stat cards).
     /// </summary>
     /// <param name="organizationId">Tenant scope for the query.</param>
-    /// <param name="window">Dashboard time window.</param>
+    /// <param name="range">Resolved dashboard UTC bounds and bucket width.</param>
     /// <param name="severity">Which finding column gates and sorts the group total (critical or major).</param>
     /// <param name="cursorCreatedAtUtc">
     /// Exclusive lower-bound timestamp from a previous page's last item, or null for the first page.
@@ -342,7 +342,7 @@ public interface IMetricsQueryStore
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<IReadOnlyList<FindingReviewGroup>> ListFindingReviewGroupsAsync(
         string organizationId,
-        MetricWindow window,
+        MetricQueryRange range,
         FindingSeverity severity,
         DateTimeOffset? cursorCreatedAtUtc,
         string? cursorId,

@@ -28,17 +28,27 @@ public sealed class ListFindingReviewsHandler(
     > HandleAsync(
         string organizationId,
         string? window,
+        string? startDate,
+        string? endDate,
         FindingSeverity severity,
         string? cursor,
         int? limit,
         CancellationToken cancellationToken
     )
     {
-        if (!MetricWindowQuery.TryParse(window, out var parsedWindow))
+        if (
+            !MetricRangeQuery.TryResolve(
+                window,
+                startDate,
+                endDate,
+                DateTimeOffset.UtcNow,
+                out var range,
+                out _,
+                out var rangeError
+            )
+        )
         {
-            return TypedResults.BadRequest(
-                new MetricsEndpointError("invalid_window", $"Unknown window '{window}'.")
-            );
+            return TypedResults.BadRequest(rangeError);
         }
 
         // Enum query binding accepts any integer-parseable value, not just the two documented
@@ -59,7 +69,11 @@ public sealed class ListFindingReviewsHandler(
         if (!string.IsNullOrEmpty(cursor))
         {
             if (
-                !ReviewFindingsListCursor.TryDecode(cursor, out var decodedCreatedAtUtc, out var decodedId)
+                !ReviewFindingsListCursor.TryDecode(
+                    cursor,
+                    out var decodedCreatedAtUtc,
+                    out var decodedId
+                )
             )
             {
                 return TypedResults.BadRequest(
@@ -77,7 +91,7 @@ public sealed class ListFindingReviewsHandler(
         // pageSize rows, and there's at least one more" — same idiom as the ingest run list.
         var groups = await store.ListFindingReviewGroupsAsync(
             organizationId,
-            parsedWindow,
+            range,
             severity,
             cursorCreatedAtUtc,
             cursorId,

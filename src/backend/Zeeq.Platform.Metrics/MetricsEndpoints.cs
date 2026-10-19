@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
 using Zeeq.Core.Identity;
@@ -64,20 +65,29 @@ public sealed class MetricsEndpoints : IEndpoint
                         AgentCostUsd
                     )]
                         string metricType,
-                    [FromQuery]
-                    [AllowedValues(
-                        "15m",
-                        "30m",
-                        "1h",
-                        "4h",
-                        "12h",
-                        "24h",
-                        "72h",
-                        "7d",
-                        "14d",
-                        "30d"
-                    )]
+                    [
+                        FromQuery,
+                        Description(
+                            "Relative preset: 15m, 30m, 1h, 4h, 12h, 24h, 72h, 7d, 14d, 30d. Omit when supplying calendar dates."
+                        )
+                    ]
                         string? window,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC start date in yyyy-MM-dd format; supply with endDate instead of window."
+                        )
+                    ]
+                        string? startDate,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC end date in yyyy-MM-dd format; select at most 30 dates, with no future dates."
+                        )
+                    ]
+                        string? endDate,
                     [FromQuery] MetricSeriesGroup groupBy,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? users,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? tools,
@@ -89,6 +99,8 @@ public sealed class MetricsEndpoints : IEndpoint
                         orgId,
                         metricType,
                         window,
+                        startDate,
+                        endDate,
                         groupBy,
                         users,
                         tools,
@@ -122,20 +134,29 @@ public sealed class MetricsEndpoints : IEndpoint
                         AgentCostUsd
                     )]
                         string metricType,
-                    [FromQuery]
-                    [AllowedValues(
-                        "15m",
-                        "30m",
-                        "1h",
-                        "4h",
-                        "12h",
-                        "24h",
-                        "72h",
-                        "7d",
-                        "14d",
-                        "30d"
-                    )]
+                    [
+                        FromQuery,
+                        Description(
+                            "Relative preset: 15m, 30m, 1h, 4h, 12h, 24h, 72h, 7d, 14d, 30d. Omit when supplying calendar dates."
+                        )
+                    ]
                         string? window,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC start date in yyyy-MM-dd format; supply with endDate instead of window."
+                        )
+                    ]
+                        string? startDate,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC end date in yyyy-MM-dd format; select at most 30 dates, with no future dates."
+                        )
+                    ]
+                        string? endDate,
                     [FromQuery] MetricSeriesGroup primaryGroupBy,
                     [FromQuery] MetricSeriesGroup secondaryGroupBy,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? users,
@@ -148,6 +169,8 @@ public sealed class MetricsEndpoints : IEndpoint
                         orgId,
                         metricType,
                         window,
+                        startDate,
+                        endDate,
                         primaryGroupBy,
                         secondaryGroupBy,
                         users,
@@ -172,25 +195,44 @@ public sealed class MetricsEndpoints : IEndpoint
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
                     [AllowedValues(ReviewDuration, ReviewTokens, ReviewCost)] string metricType,
-                    [FromQuery]
-                    [AllowedValues(
-                        "15m",
-                        "30m",
-                        "1h",
-                        "4h",
-                        "12h",
-                        "24h",
-                        "72h",
-                        "7d",
-                        "14d",
-                        "30d"
-                    )]
+                    [
+                        FromQuery,
+                        Description(
+                            "Relative preset: 15m, 30m, 1h, 4h, 12h, 24h, 72h, 7d, 14d, 30d. Omit when supplying calendar dates."
+                        )
+                    ]
                         string? window,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC start date in yyyy-MM-dd format; supply with endDate instead of window."
+                        )
+                    ]
+                        string? startDate,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC end date in yyyy-MM-dd format; select at most 30 dates, with no future dates."
+                        )
+                    ]
+                        string? endDate,
                     [FromQuery, MaxLength(MaxIdLength)] string? repositoryId,
                     [FromQuery, MaxLength(MaxFacetLength)] string? facet,
                     [FromServices] GetMetricPercentilesHandler handler,
                     CancellationToken ct
-                ) => handler.HandleAsync(orgId, metricType, window, repositoryId, facet, ct)
+                ) =>
+                    handler.HandleAsync(
+                        orgId,
+                        metricType,
+                        window,
+                        startDate,
+                        endDate,
+                        repositoryId,
+                        facet,
+                        ct
+                    )
             )
             .WithName("GetMetricPercentiles")
             .Produces<MetricPercentilePoint[]>()
@@ -206,26 +248,46 @@ public sealed class MetricsEndpoints : IEndpoint
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
                     [AllowedValues(ReviewDuration, ReviewTokens, ReviewCost)] string metricType,
-                    [FromQuery]
-                    [AllowedValues(
-                        "15m",
-                        "30m",
-                        "1h",
-                        "4h",
-                        "12h",
-                        "24h",
-                        "72h",
-                        "7d",
-                        "14d",
-                        "30d"
-                    )]
+                    [
+                        FromQuery,
+                        Description(
+                            "Relative preset: 15m, 30m, 1h, 4h, 12h, 24h, 72h, 7d, 14d, 30d. Omit when supplying calendar dates."
+                        )
+                    ]
                         string? window,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC start date in yyyy-MM-dd format; supply with endDate instead of window."
+                        )
+                    ]
+                        string? startDate,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC end date in yyyy-MM-dd format; select at most 30 dates, with no future dates."
+                        )
+                    ]
+                        string? endDate,
                     [FromQuery, MaxLength(MaxIdLength)] string? repositoryId,
                     [FromQuery, MaxLength(MaxFacetLength)] string? facet,
                     [FromQuery, Range(1, 2000)] int? limit,
                     [FromServices] GetMetricScatterHandler handler,
                     CancellationToken ct
-                ) => handler.HandleAsync(orgId, metricType, window, repositoryId, facet, limit, ct)
+                ) =>
+                    handler.HandleAsync(
+                        orgId,
+                        metricType,
+                        window,
+                        startDate,
+                        endDate,
+                        repositoryId,
+                        facet,
+                        limit,
+                        ct
+                    )
             )
             .WithName("GetMetricScatter")
             .Produces<MetricScatterPoint[]>()
@@ -240,26 +302,35 @@ public sealed class MetricsEndpoints : IEndpoint
                 "/leaderboard",
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
-                    [FromQuery]
-                    [AllowedValues(
-                        "15m",
-                        "30m",
-                        "1h",
-                        "4h",
-                        "12h",
-                        "24h",
-                        "72h",
-                        "7d",
-                        "14d",
-                        "30d"
-                    )]
+                    [
+                        FromQuery,
+                        Description(
+                            "Relative preset: 15m, 30m, 1h, 4h, 12h, 24h, 72h, 7d, 14d, 30d. Omit when supplying calendar dates."
+                        )
+                    ]
                         string? window,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC start date in yyyy-MM-dd format; supply with endDate instead of window."
+                        )
+                    ]
+                        string? startDate,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC end date in yyyy-MM-dd format; select at most 30 dates, with no future dates."
+                        )
+                    ]
+                        string? endDate,
                     [FromQuery, MaxLength(MaxIdLength)] string? library,
                     [FromQuery, Range(1, 100)] int? top,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? users,
                     [FromServices] GetMetricLeaderboardHandler handler,
                     CancellationToken ct
-                ) => handler.HandleAsync(orgId, window, library, top, users, ct)
+                ) => handler.HandleAsync(orgId, window, startDate, endDate, library, top, users, ct)
             )
             .WithName("GetMetricLeaderboard")
             .Produces<MetricLeaderboardItem[]>()
@@ -276,27 +347,47 @@ public sealed class MetricsEndpoints : IEndpoint
                 "/leaderboard/sections",
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
-                    [FromQuery]
-                    [AllowedValues(
-                        "15m",
-                        "30m",
-                        "1h",
-                        "4h",
-                        "12h",
-                        "24h",
-                        "72h",
-                        "7d",
-                        "14d",
-                        "30d"
-                    )]
+                    [
+                        FromQuery,
+                        Description(
+                            "Relative preset: 15m, 30m, 1h, 4h, 12h, 24h, 72h, 7d, 14d, 30d. Omit when supplying calendar dates."
+                        )
+                    ]
                         string? window,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC start date in yyyy-MM-dd format; supply with endDate instead of window."
+                        )
+                    ]
+                        string? startDate,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC end date in yyyy-MM-dd format; select at most 30 dates, with no future dates."
+                        )
+                    ]
+                        string? endDate,
                     [FromQuery, AllowedValues("section", "code")] string kind,
                     [FromQuery, MaxLength(MaxIdLength)] string? library,
                     [FromQuery, Range(1, 100)] int? top,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? users,
                     [FromServices] GetMetricSectionLeaderboardHandler handler,
                     CancellationToken ct
-                ) => handler.HandleAsync(orgId, window, kind, library, top, users, ct)
+                ) =>
+                    handler.HandleAsync(
+                        orgId,
+                        window,
+                        startDate,
+                        endDate,
+                        kind,
+                        library,
+                        top,
+                        users,
+                        ct
+                    )
             )
             .WithName("GetMetricSectionLeaderboard")
             .Produces<MetricLeaderboardItem[]>()
@@ -321,26 +412,35 @@ public sealed class MetricsEndpoints : IEndpoint
                 "/leaderboard/prompts",
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
-                    [FromQuery]
-                    [AllowedValues(
-                        "15m",
-                        "30m",
-                        "1h",
-                        "4h",
-                        "12h",
-                        "24h",
-                        "72h",
-                        "7d",
-                        "14d",
-                        "30d"
-                    )]
+                    [
+                        FromQuery,
+                        Description(
+                            "Relative preset: 15m, 30m, 1h, 4h, 12h, 24h, 72h, 7d, 14d, 30d. Omit when supplying calendar dates."
+                        )
+                    ]
                         string? window,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC start date in yyyy-MM-dd format; supply with endDate instead of window."
+                        )
+                    ]
+                        string? startDate,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC end date in yyyy-MM-dd format; select at most 30 dates, with no future dates."
+                        )
+                    ]
+                        string? endDate,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? users,
                     [FromQuery, MaxLength(MaxIdLength)] string? library,
                     [FromQuery, Range(1, 100)] int? top,
                     [FromServices] GetPromptLeaderboardHandler handler,
                     CancellationToken ct
-                ) => handler.HandleAsync(orgId, window, users, library, top, ct)
+                ) => handler.HandleAsync(orgId, window, startDate, endDate, users, library, top, ct)
             )
             .WithName("GetPromptLeaderboard")
             .Produces<MetricLeaderboardItem[]>()
@@ -357,20 +457,29 @@ public sealed class MetricsEndpoints : IEndpoint
                 "/reviews/volume",
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
-                    [FromQuery]
-                    [AllowedValues(
-                        "15m",
-                        "30m",
-                        "1h",
-                        "4h",
-                        "12h",
-                        "24h",
-                        "72h",
-                        "7d",
-                        "14d",
-                        "30d"
-                    )]
+                    [
+                        FromQuery,
+                        Description(
+                            "Relative preset: 15m, 30m, 1h, 4h, 12h, 24h, 72h, 7d, 14d, 30d. Omit when supplying calendar dates."
+                        )
+                    ]
                         string? window,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC start date in yyyy-MM-dd format; supply with endDate instead of window."
+                        )
+                    ]
+                        string? startDate,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC end date in yyyy-MM-dd format; select at most 30 dates, with no future dates."
+                        )
+                    ]
+                        string? endDate,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? repositoryIds,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? authorLogins,
                     [FromQuery] CodeReviewRequestOrigin? origin,
@@ -381,6 +490,8 @@ public sealed class MetricsEndpoints : IEndpoint
                     handler.HandleAsync(
                         orgId,
                         window,
+                        startDate,
+                        endDate,
                         repositoryIds,
                         authorLogins,
                         origin,
@@ -403,23 +514,32 @@ public sealed class MetricsEndpoints : IEndpoint
                 "/reviews/costs",
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
-                    [FromQuery]
-                    [AllowedValues(
-                        "15m",
-                        "30m",
-                        "1h",
-                        "4h",
-                        "12h",
-                        "24h",
-                        "72h",
-                        "7d",
-                        "14d",
-                        "30d"
-                    )]
+                    [
+                        FromQuery,
+                        Description(
+                            "Relative preset: 15m, 30m, 1h, 4h, 12h, 24h, 72h, 7d, 14d, 30d. Omit when supplying calendar dates."
+                        )
+                    ]
                         string? window,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC start date in yyyy-MM-dd format; supply with endDate instead of window."
+                        )
+                    ]
+                        string? startDate,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC end date in yyyy-MM-dd format; select at most 30 dates, with no future dates."
+                        )
+                    ]
+                        string? endDate,
                     [FromServices] GetReviewCostsHandler handler,
                     CancellationToken ct
-                ) => handler.HandleAsync(orgId, window, ct)
+                ) => handler.HandleAsync(orgId, window, startDate, endDate, ct)
             )
             .WithName("GetReviewCosts")
             .Produces<ReviewCostMetrics>()
@@ -433,26 +553,45 @@ public sealed class MetricsEndpoints : IEndpoint
                 "/reviews/findings",
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
-                    [FromQuery]
-                    [AllowedValues(
-                        "15m",
-                        "30m",
-                        "1h",
-                        "4h",
-                        "12h",
-                        "24h",
-                        "72h",
-                        "7d",
-                        "14d",
-                        "30d"
-                    )]
+                    [
+                        FromQuery,
+                        Description(
+                            "Relative preset: 15m, 30m, 1h, 4h, 12h, 24h, 72h, 7d, 14d, 30d. Omit when supplying calendar dates."
+                        )
+                    ]
                         string? window,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC start date in yyyy-MM-dd format; supply with endDate instead of window."
+                        )
+                    ]
+                        string? startDate,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC end date in yyyy-MM-dd format; select at most 30 dates, with no future dates."
+                        )
+                    ]
+                        string? endDate,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? repositoryIds,
                     [FromQuery, MaxLength(MaxFilterValues)] string[]? authorLogins,
                     [FromQuery] ReviewFindingsGroup groupBy,
                     [FromServices] GetReviewFindingsHandler handler,
                     CancellationToken ct
-                ) => handler.HandleAsync(orgId, window, repositoryIds, authorLogins, groupBy, ct)
+                ) =>
+                    handler.HandleAsync(
+                        orgId,
+                        window,
+                        startDate,
+                        endDate,
+                        repositoryIds,
+                        authorLogins,
+                        groupBy,
+                        ct
+                    )
             )
             .WithName("GetReviewFindings")
             .Produces<ReviewFindingsPoint[]>()
@@ -469,26 +608,45 @@ public sealed class MetricsEndpoints : IEndpoint
                 "/reviews/findings/list",
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
-                    [FromQuery]
-                    [AllowedValues(
-                        "15m",
-                        "30m",
-                        "1h",
-                        "4h",
-                        "12h",
-                        "24h",
-                        "72h",
-                        "7d",
-                        "14d",
-                        "30d"
-                    )]
+                    [
+                        FromQuery,
+                        Description(
+                            "Relative preset: 15m, 30m, 1h, 4h, 12h, 24h, 72h, 7d, 14d, 30d. Omit when supplying calendar dates."
+                        )
+                    ]
                         string? window,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC start date in yyyy-MM-dd format; supply with endDate instead of window."
+                        )
+                    ]
+                        string? startDate,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC end date in yyyy-MM-dd format; select at most 30 dates, with no future dates."
+                        )
+                    ]
+                        string? endDate,
                     [FromQuery] FindingSeverity severity,
                     [FromQuery, MaxLength(MaxIdLength)] string? cursor,
                     [FromQuery, Range(1, 100)] int? limit,
                     [FromServices] ListFindingReviewsHandler handler,
                     CancellationToken ct
-                ) => handler.HandleAsync(orgId, window, severity, cursor, limit, ct)
+                ) =>
+                    handler.HandleAsync(
+                        orgId,
+                        window,
+                        startDate,
+                        endDate,
+                        severity,
+                        cursor,
+                        limit,
+                        ct
+                    )
             )
             .WithName("ListFindingReviews")
             .Produces<FindingReviewListResponse>()
@@ -510,23 +668,32 @@ public sealed class MetricsEndpoints : IEndpoint
                 "/overview",
                 static (
                     [MaxLength(MaxIdLength)] string orgId,
-                    [FromQuery]
-                    [AllowedValues(
-                        "15m",
-                        "30m",
-                        "1h",
-                        "4h",
-                        "12h",
-                        "24h",
-                        "72h",
-                        "7d",
-                        "14d",
-                        "30d"
-                    )]
+                    [
+                        FromQuery,
+                        Description(
+                            "Relative preset: 15m, 30m, 1h, 4h, 12h, 24h, 72h, 7d, 14d, 30d. Omit when supplying calendar dates."
+                        )
+                    ]
                         string? window,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC start date in yyyy-MM-dd format; supply with endDate instead of window."
+                        )
+                    ]
+                        string? startDate,
+                    [
+                        FromQuery,
+                        MaxLength(10),
+                        Description(
+                            "Inclusive UTC end date in yyyy-MM-dd format; select at most 30 dates, with no future dates."
+                        )
+                    ]
+                        string? endDate,
                     [FromServices] GetMetricsOverviewHandler handler,
                     CancellationToken ct
-                ) => handler.HandleAsync(orgId, window, ct)
+                ) => handler.HandleAsync(orgId, window, startDate, endDate, ct)
             )
             .WithName("GetMetricsOverview")
             .Produces<MetricsOverview>()

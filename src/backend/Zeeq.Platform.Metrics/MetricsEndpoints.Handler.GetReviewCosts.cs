@@ -11,20 +11,29 @@ public sealed class GetReviewCostsHandler(IMetricsQueryStore store, HybridCache 
     public async Task<Results<Ok<ReviewCostMetrics>, BadRequest<MetricsEndpointError>>> HandleAsync(
         string organizationId,
         string? window,
+        string? startDate,
+        string? endDate,
         CancellationToken cancellationToken
     )
     {
-        if (!MetricWindowQuery.TryParse(window, out var parsedWindow))
+        if (
+            !MetricRangeQuery.TryResolve(
+                window,
+                startDate,
+                endDate,
+                DateTimeOffset.UtcNow,
+                out var range,
+                out var rangeIdentity,
+                out var rangeError
+            )
+        )
         {
-            return TypedResults.BadRequest(
-                new MetricsEndpointError("invalid_window", $"Unknown window '{window}'.")
-            );
+            return TypedResults.BadRequest(rangeError);
         }
 
         var result = await cache.GetOrCreateAsync(
-            MetricsEndpointCache.Key(organizationId, "reviews.costs", parsedWindow.ToString()),
-            async token =>
-                await store.GetReviewCostMetricsAsync(organizationId, parsedWindow, token),
+            MetricsEndpointCache.Key(organizationId, "reviews.costs", rangeIdentity),
+            async token => await store.GetReviewCostMetricsAsync(organizationId, range, token),
             MetricsEndpointCache.Options,
             cancellationToken: cancellationToken
         );

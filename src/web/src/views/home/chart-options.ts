@@ -23,10 +23,8 @@ import type {
   ReviewCostSample,
   ReviewVolumePoint,
 } from "@/api/generated";
-import {
-  toMetricNumber,
-  type MetricWindowRangeMs,
-} from "@/stores/metrics-store";
+import { toMetricNumber } from "@/stores/metrics-store";
+import type { MetricChartDomain } from "@/stores/metric-period";
 
 /**
  * A grouped time series pivoted to a shared bucket axis, series ordered by total desc.
@@ -38,6 +36,10 @@ import {
 export type PivotedSeries = {
   bucketTimesMs: number[];
   series: { name: string; values: number[] }[];
+  /** True for explicit-UTC (custom date range) charts; drives ECharts `useUTC` and label formatting. */
+  utc: boolean;
+  /** Custom-domain points outside the elapsed or selected range that were not plotted. */
+  outOfDomainCount: number;
 };
 
 /** Label shown for a null series key (ungrouped or missing dimension value). */
@@ -74,16 +76,16 @@ const severityBands: { key: SeverityKey; name: string }[] = [
  * axis. Missing (bucket, series) cells become 0 so stacking aligns; series are
  * returned largest-total first for stable stack/legend order.
  *
- * When `windowRange` is given, the bucket axis is the *full* set of buckets
- * for the window — including ones with no data — rather than just the
+ * When `domain` is given, the bucket axis is the *full* set of buckets
+ * for the period — including ones with no data — rather than just the
  * buckets that happen to appear in `points`. The API only returns buckets
  * with at least one point, so without this, empty buckets are silently
  * dropped from the x-axis: unrelated non-adjacent buckets end up drawn next
  * to each other with no gap, which looks like grouped/side-by-side bars
  * instead of one (possibly single-segment) stacked bar per bucket.
  *
- * The grid is anchored epoch-aligned (`floor(Date.now() / bucketMs) * bucketMs`),
- * not off a server response point:
+ * Relative (rolling preset) domains are anchored epoch-aligned
+ * (`floor(Date.now() / bucketMs) * bucketMs`), not off a server response point:
  * - Server's `date_bin` origin (`windowStart = UtcNow - span`) is recomputed
  *   per uncached request (`PostgresMetricsQueryStore.GetSeriesAsync`), so
  *   it's not a stable anchor across requests.
@@ -94,16 +96,28 @@ const severityBands: { key: SeverityKey; name: string }[] = [
  *   requests for the same logical bucket, which `timeSeriesOption` relies on
  *   for stable per-bar `id`s (see below) — an anchor derived from response
  *   data would drift every time `windowStart` does, i.e. on every cache miss.
+ *
+ * Absolute (custom UTC range) domains are exact: the server bins from the selected
+ * start's UTC midnight, so each point maps to `floor((bucket - start) / bucketMs)`.
+ * Only elapsed buckets (before `effectiveEndMs`) are generated so a range that includes
+ * today never draws future hours as measured zero. The stores resolve this domain using the
+ * response-time clock, separate from the backend query's fixed half-open selected end, so
+ * late data is retained once its bucket has elapsed. A genuinely future bucket is counted in
+ * `outOfDomainCount` and cannot extend the grid (and store validation rejects it). Points outside the
+ * selected dates are also counted there, never silently folded into another bucket.
  */
 export function pivotByBucket<T>(
   points: T[],
   bucketOf: (point: T) => Date,
   seriesKeyOf: (point: T) => string | null,
   valueOf: (point: T) => number,
-  windowRange?: MetricWindowRangeMs,
+  domain?: MetricChartDomain,
 ): PivotedSeries {
-  if (points.length === 0) {
-    return { bucketTimesMs: [], series: [] };
+  const utc = domain?.mode === "absolute";
+  // An empty historical custom range still has a selected UTC domain and should
+  // keep its elapsed bucket grid. Empty relative periods retain the no-data shape.
+  if (points.length === 0 && domain?.mode !== "absolute") {
+    return { bucketTimesMs: [], series: [], utc, outOfDomainCount: 0 };
   }
 
   // Kubb types `bucket` as `Date`, but the client does not deserialize JSON
@@ -115,8 +129,23 @@ export function pivotByBucket<T>(
   let bucketTimesMs: number[];
   let indexForBucket: (bucketMs: number) => number | undefined;
 
-  if (windowRange) {
-    const { spanMs, bucketMs } = windowRange;
+  if (domain?.mode === "absolute") {
+    const { startMs, selectedEndMs, effectiveEndMs, bucketMs } = domain;
+    const selectedCount = Math.round((selectedEndMs - startMs) / bucketMs);
+    const elapsedCount = Math.min(
+      selectedCount,
+      Math.max(0, Math.ceil((effectiveEndMs - startMs) / bucketMs)),
+    );
+    indexForBucket = (pointMs) => {
+      const index = Math.floor((pointMs - startMs) / bucketMs);
+      return index >= 0 && index < elapsedCount ? index : undefined;
+    };
+    bucketTimesMs = Array.from(
+      { length: elapsedCount },
+      (_, index) => startMs + index * bucketMs,
+    );
+  } else if (domain) {
+    const { spanMs, bucketMs } = domain;
     // Epoch-aligned, not server-anchored — see the doc comment above for why.
     const latestEdgeMs = Math.floor(Date.now() / bucketMs) * bucketMs;
     const bucketCount = Math.max(1, Math.floor(spanMs / bucketMs));
@@ -140,10 +169,12 @@ export function pivotByBucket<T>(
   }
 
   const seriesValues = new Map<string, number[]>();
+  let outOfDomainCount = 0;
   for (const point of points) {
     const name = seriesKeyOf(point) ?? ungroupedLabel;
     const index = indexForBucket(bucketTimeOf(point));
     if (index === undefined) {
+      outOfDomainCount++;
       continue;
     }
     let values = seriesValues.get(name);
@@ -158,7 +189,7 @@ export function pivotByBucket<T>(
     .map(([name, values]) => ({ name, values }))
     .sort((left, right) => sum(right.values) - sum(left.values));
 
-  return { bucketTimesMs, series };
+  return { bucketTimesMs, series, utc, outOfDomainCount };
 }
 
 /** Maximum distinct series/slices before the tail folds into a single "Other". */
@@ -185,7 +216,7 @@ export function capSeries(
     tail.reduce((total, entry) => total + entry.values[index], 0),
   );
   return {
-    bucketTimesMs: pivot.bucketTimesMs,
+    ...pivot,
     series: [...kept, { name: otherLabel, values: otherValues }],
   };
 }
@@ -228,6 +259,10 @@ export function timeSeriesOption(
   }));
 
   return {
+    // Explicit in both modes: ECharts chooses time-axis ticks and default axis-tooltip
+    // headers from `useUTC`, so UTC labels alone are not enough for a custom range, and
+    // switching back to a rolling preset must not retain a stale `true` through merging.
+    useUTC: capped.utc,
     tooltip: { trigger: "axis" },
     // Vertical scrollable strip on the right rather than the bottom
     // horizontal pager: with 10-20+ series (e.g. many distinct users) the
@@ -258,7 +293,8 @@ export function timeSeriesOption(
     xAxis: {
       type: "time",
       axisLabel: {
-        formatter: (value: number) => formatBucketLabel(new Date(value)),
+        formatter: (value: number) =>
+          formatBucketLabel(new Date(value), capped.utc),
         // A category axis only ever showed as many ticks as fit (one per
         // bucket, evenly spaced); a time axis picks its own tick interval
         // independent of our formatted label's width, so wide labels like
@@ -339,7 +375,7 @@ export function severityBarOption(
 /** Builds bucketed review-volume stacked bars over time (UI-4). */
 export function volumeBarOption(
   points: ReviewVolumePoint[],
-  windowRange: MetricWindowRangeMs,
+  domain: MetricChartDomain,
   options: SeriesLabelOptions = {},
 ): EChartsOption {
   const pivot = pivotByBucket(
@@ -347,7 +383,7 @@ export function volumeBarOption(
     (point) => point.bucket,
     (point) => point.seriesKey,
     (point) => toMetricNumber(point.count),
-    windowRange,
+    domain,
   );
   return timeSeriesOption(pivot, options);
 }
@@ -502,12 +538,13 @@ export function truncateAgentLabel(seriesKey: string): string {
 /** Builds the p50/p95/p99 line option for a histogram metric (UI-8/9). */
 export function percentileLinesOption(
   points: MetricPercentilePoint[],
+  utc = false,
 ): EChartsOption {
   const buckets = [...points].sort(
     (left, right) =>
       new Date(left.bucket).getTime() - new Date(right.bucket).getTime(),
   );
-  const labels = buckets.map((point) => formatBucketLabel(point.bucket));
+  const labels = buckets.map((point) => formatBucketLabel(point.bucket, utc));
   const lines: {
     name: string;
     pick: (point: MetricPercentilePoint) => number;
@@ -526,6 +563,7 @@ export function percentileLinesOption(
   }));
 
   return {
+    useUTC: utc,
     tooltip: { trigger: "axis" },
     legend: { bottom: 0 },
     grid: { left: 56, right: 24, top: 24, bottom: 56, containLabel: true },
@@ -586,6 +624,7 @@ export function tokenScatterOption(
 /** Plots one point per completed review; callers can use dataIndex for its deep link. */
 export function reviewCostScatterOption(
   points: ReviewCostSample[],
+  utc = false,
 ): EChartsOption {
   const data = points.map((point) => [
     new Date(point.createdAtUtc).getTime(),
@@ -596,6 +635,7 @@ export function reviewCostScatterOption(
   ];
 
   return {
+    useUTC: utc,
     tooltip: {
       trigger: "item",
       formatter: (params: unknown) => {
@@ -616,7 +656,7 @@ export function reviewCostScatterOption(
         const author = point.authorLogin
           .replaceAll("&", "&amp;")
           .replaceAll("<", "&lt;");
-        return `${author}<br/>${new Date(point.createdAtUtc).toLocaleString()}<br/>$${toMetricNumber(point.costUsd).toFixed(4)} · click to open`;
+        return `${author}<br/>${formatTimestamp(point.createdAtUtc, utc)}<br/>$${toMetricNumber(point.costUsd).toFixed(4)} · click to open`;
       },
     },
     grid: { left: 68, right: 24, top: 24, bottom: 55, containLabel: true },
@@ -699,14 +739,26 @@ export function leaderboardBarOption(
   };
 }
 
-/** Formats a bucket ISO timestamp as a compact local label. */
-export function formatBucketLabel(bucket: Date | string): string {
+/**
+ * Formats a bucket timestamp as a compact label: browser-local for rolling presets
+ * (unchanged), explicit UTC for custom date ranges.
+ */
+export function formatBucketLabel(bucket: Date | string, utc = false): string {
   return new Date(bucket).toLocaleString(undefined, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    ...(utc ? { timeZone: "UTC" } : {}),
   });
+}
+
+/** Full date-time for tooltips; custom date ranges are labeled in UTC explicitly. */
+export function formatTimestamp(value: Date | string, utc = false): string {
+  return new Date(value).toLocaleString(
+    undefined,
+    utc ? { timeZone: "UTC", timeZoneName: "short" } : undefined,
+  );
 }
 
 function sum(values: number[]): number {

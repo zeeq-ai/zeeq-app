@@ -2,14 +2,23 @@
   <ZeeqView id="home" title="Home">
     <!--
     Toolbar (outside the tabs so it persists across tab switches): shared
-    window selector + auto-refresh cadence + manual refresh + last-updated.
+    reporting-period selector + auto-refresh cadence + manual refresh + last-updated.
     Matches the toolbar pattern used by other views (e.g. Libraries.vue).
     -->
     <template #toolbar>
       <div class="flex w-full flex-wrap items-center justify-between gap-3">
-        <MetricsWindowSelect v-model="window" />
+        <MetricsWindowSelect
+          :period="period"
+          :recent-ranges="recentRanges"
+          :today-utc="todayUtc"
+          @select="onPeriodSelect"
+          @editing-change="editorOpen = $event"
+        />
 
         <div class="flex items-center gap-3">
+          <span v-if="historicalPeriod" class="text-sm text-muted">
+            Historical period · manual refresh
+          </span>
           <span v-if="lastUpdatedAt" class="text-sm text-muted">
             Updated {{ updatedAgo }}
           </span>
@@ -32,12 +41,17 @@
     </template>
 
     <div class="flex flex-col gap-4">
+      <!-- Full UTC dates, partial-today / historical state and the generic older-telemetry note. -->
+      <MetricPeriodNotice :period="period" :today-utc="todayUtc" />
+
+      <!-- Failed panels of the current period; same-period panels keep their last good data. -->
       <UAlert
         v-if="error"
         color="error"
         variant="subtle"
         icon="i-hugeicons-alert-02"
         :title="error"
+        description="Panels that loaded earlier for this period keep their last successful data."
       />
 
       <!--
@@ -53,20 +67,21 @@
           <template #overview>
             <OverviewTab
               :overview="overview"
-              :loading="loading['overview'] ?? false"
+              :loading="isLoading('overview')"
               :tool-call-series="toolCallSeries"
               :user-agent-series="userAgentSeries"
               :tool-call-by-tool-series="toolCallByToolSeries"
-              :loading-tool-calls="loading['toolCallSeries'] ?? false"
-              :loading-user-agents="loading['userAgentSeries'] ?? false"
-              :loading-tool-call-by-tool="
-                loading['toolCallByToolSeries'] ?? false
-              "
+              :loading-tool-calls="isLoading('toolCallSeries')"
+              :loading-user-agents="isLoading('userAgentSeries')"
+              :loading-tool-call-by-tool="isLoading('toolCallByToolSeries')"
               :users="filterUsers"
               :user-items="userItems"
               :tools="filterTools"
               :tool-items="toolItems"
-              :window="window"
+              :domain="chartDomain"
+              :period="period"
+              :recent-ranges="recentRanges"
+              :today-utc="todayUtc"
               :finding-review-items="findingReviewItems"
               :finding-review-next-cursor="findingReviewNextCursor"
               :finding-reviews-loading="findingReviewsLoading"
@@ -75,6 +90,7 @@
               @update:tools="onToolsChange"
               @load-finding-reviews="onLoadFindingReviews"
               @load-more-finding-reviews="onLoadMoreFindingReviews"
+              @range-used="recordRecentRange"
             />
           </template>
 
@@ -83,22 +99,20 @@
               :my-document-leaderboard="myLeaderboard"
               :my-section-leaderboard="mySectionLeaderboard"
               :my-snippet-leaderboard="mySnippetLeaderboard"
-              :loading-my-document-leaderboard="
-                loading['myLeaderboard'] ?? false
-              "
+              :loading-my-document-leaderboard="isLoading('myLeaderboard')"
               :loading-my-section-leaderboard="
-                loading['mySectionLeaderboard'] ?? false
+                isLoading('mySectionLeaderboard')
               "
               :loading-my-snippet-leaderboard="
-                loading['mySnippetLeaderboard'] ?? false
+                isLoading('mySnippetLeaderboard')
               "
               :my-agent-token-by-model-series="myAgentTokenByModelSeries"
               :loading-my-agent-token-by-model-series="
-                loading['myAgentTokenByModelSeries'] ?? false
+                isLoading('myAgentTokenByModelSeries')
               "
               :my-tool-call-by-tool-series="myToolCallByToolSeries"
               :loading-my-tool-call-by-tool-series="
-                loading['myToolCallByToolSeries'] ?? false
+                isLoading('myToolCallByToolSeries')
               "
               :my-sessions="mySessions"
               :loading-my-sessions="loadingMySessions"
@@ -107,7 +121,7 @@
               :member-conversations="memberConversations"
               :loading-member-conversations="loadingMemberConversations"
               :member-conversations-error="memberConversationsError"
-              :window="window"
+              :domain="chartDomain"
               @load-member-drilldown="onLoadMyMemberDrilldown"
             />
           </template>
@@ -118,18 +132,17 @@
               :review-findings-by-origin="reviewFindingsByOrigin"
               :review-volume="reviewVolume"
               :loading-findings="
-                (loading['reviewFindingsByRepo'] ||
-                  loading['reviewFindingsByOrigin']) ??
-                false
+                isLoading('reviewFindingsByRepo') ||
+                isLoading('reviewFindingsByOrigin')
               "
-              :loading-volume="loading['reviewVolume'] ?? false"
+              :loading-volume="isLoading('reviewVolume')"
               :origin="filterOrigin ?? allFilterValue"
               :origin-items="originItems"
               :repository-ids="filterRepositoryIds"
               :repository-items="repositoryItems"
               :author-logins="filterAuthorLogins"
               :author-items="authorItems"
-              :window="window"
+              :domain="chartDomain"
               :review-volume-group="reviewVolumeGroup"
               @update:origin="onOriginChange"
               @update:repositoryIds="onRepositoriesChange"
@@ -146,16 +159,12 @@
               :section-leaderboard="sectionLeaderboard"
               :snippet-leaderboard="snippetLeaderboard"
               :loading-reads="loadingReads"
-              :loading-leaderboard="loading['leaderboard'] ?? false"
-              :loading-section-leaderboard="
-                loading['sectionLeaderboard'] ?? false
-              "
-              :loading-snippet-leaderboard="
-                loading['snippetLeaderboard'] ?? false
-              "
+              :loading-leaderboard="isLoading('leaderboard')"
+              :loading-section-leaderboard="isLoading('sectionLeaderboard')"
+              :loading-snippet-leaderboard="isLoading('snippetLeaderboard')"
               :library="knowledgeLibrary ?? allFilterValue"
               :library-items="libraryItems"
-              :window="window"
+              :domain="chartDomain"
               @update:library="onLibraryChange"
             />
           </template>
@@ -166,17 +175,15 @@
               :prompt-get-by-library-series="promptGetByLibrarySeries"
               :prompt-get-by-user-agent-series="promptGetByUserAgentSeries"
               :prompt-leaderboard="promptLeaderboard"
-              :loading-by-user="loading['promptGetByUserSeries'] ?? false"
-              :loading-by-library="loading['promptGetByLibrarySeries'] ?? false"
-              :loading-by-client="
-                loading['promptGetByUserAgentSeries'] ?? false
-              "
-              :loading-leaderboard="loading['promptLeaderboard'] ?? false"
+              :loading-by-user="isLoading('promptUsage')"
+              :loading-by-library="isLoading('promptUsage')"
+              :loading-by-client="isLoading('promptUsage')"
+              :loading-leaderboard="isLoading('promptLeaderboard')"
               :users="promptFilterUsers"
               :user-items="userItems"
               :library="promptLibrary ?? allFilterValue"
               :library-items="libraryItems"
-              :window="window"
+              :domain="chartDomain"
               @update:users="onPromptUsersChange"
               @update:library="onPromptLibraryChange"
             />
@@ -188,22 +195,16 @@
               :agent-token-by-user-series="agentTokenByUserSeries"
               :agent-token-by-model-user-series="agentTokenByModelUserSeries"
               :agent-cost-usd-series="agentCostUsdSeries"
-              :loading-token-by-model="
-                loading['agentTokenByModelSeries'] ?? false
-              "
-              :loading-token-by-model-user="
-                loading['agentTokenByModelUserSeries'] ?? false
-              "
-              :loading-token-by-user="
-                loading['agentTokenByUserSeries'] ?? false
-              "
-              :loading-cost-usd="loading['agentCostUsdSeries'] ?? false"
+              :loading-token-by-model="isLoading('agentUsage')"
+              :loading-token-by-model-user="isLoading('agentUsage')"
+              :loading-token-by-user="isLoading('agentUsage')"
+              :loading-cost-usd="isLoading('agentUsage')"
               :members="organizationMembers"
               :loading-members="membersLoading"
               :member-conversations="memberConversations"
               :loading-member-conversations="loadingMemberConversations"
               :member-conversations-error="memberConversationsError"
-              :window="window"
+              :domain="chartDomain"
               @select-member="onSelectAgentUsageMember"
               @close-member-sessions="sessionsStore.clearMemberConversations"
             />
@@ -216,8 +217,8 @@
               :review-cost-metrics="reviewCostMetrics"
               :loading-percentiles="loadingPercentiles"
               :loading-scatter="loadingScatter"
-              :loading-costs="loading['reviewCostMetrics'] ?? false"
-              :window="window"
+              :loading-costs="isLoading('reviewCostMetrics')"
+              :domain="chartDomain"
             />
           </template>
         </UTabs>
@@ -233,16 +234,20 @@ import {
   codeReviewRequestOriginEnum,
   type FindingSeverity,
 } from "@/api/generated";
+import { histogramMetricType, useMetricsStore } from "@/stores/metrics-store";
 import {
-  histogramMetricType,
-  useMetricsStore,
-  type MetricWindowToken,
-} from "@/stores/metrics-store";
+  isHistoricalPeriod,
+  metricPeriodKey,
+  type MetricDateRange,
+  type MetricPeriod,
+} from "@/stores/metric-period";
+import { throwFirstRejection } from "@/utils/settled";
 import { useAppStore } from "@/stores/app-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
 import { useSessionsStore } from "@/stores/sessions-store";
 import MetricsWindowSelect from "./MetricsWindowSelect.vue";
+import MetricPeriodNotice from "./MetricPeriodNotice.vue";
 import OverviewTab from "./OverviewTab.vue";
 import MeTab from "./MeTab.vue";
 import CodeReviewsTab from "./CodeReviewsTab.vue";
@@ -255,13 +260,17 @@ import {
   useMetricsAutoRefresh,
 } from "./useMetricsAutoRefresh";
 import { repositoryLabel } from "./repository-labels";
+import { useUtcToday } from "./useUtcToday";
 
 // Root view is the only store consumer; children receive data as props.
 const toast = useToast();
 const appStore = useAppStore();
 const metricsStore = useMetricsStore();
+const { isLoading } = metricsStore;
 const {
-  window,
+  period,
+  recentRanges,
+  chartDomain,
   overview,
   toolCallSeries,
   userAgentSeries,
@@ -472,19 +481,11 @@ const durationScatter = computed(
 );
 
 // Derived loading flags for panels backed by multiple / keyed store loads.
-const loadingReads = computed(
-  () =>
-    loading.value["documentReadSeries"] ||
-    loading.value["sectionReadSeries"] ||
-    loading.value["snippetReadSeries"] ||
-    false,
+const loadingReads = computed(() => isLoading("knowledgeReads"));
+const loadingPercentiles = computed(() =>
+  isLoading(`percentiles:${durationKey}`),
 );
-const loadingPercentiles = computed(
-  () => loading.value[`percentiles:${durationKey}`] ?? false,
-);
-const loadingScatter = computed(
-  () => loading.value[`scatter:${durationKey}`] ?? false,
-);
+const loadingScatter = computed(() => isLoading(`scatter:${durationKey}`));
 
 /** First-page loading state for the findings drill-down slideover, keyed by severity. */
 const findingReviewsLoading = computed(() => ({
@@ -498,52 +499,85 @@ const findingReviewsLoadingMore = computed(() => ({
   Major: loading.value["findingReviews:Major:more"] ?? false,
 }));
 
-/** Loads only the panels the active tab shows (re-fetch on tab return is fine). */
+/** Identity (org + period + tab) a batch started under; compared after awaits to detect staleness. */
+function toastIdentity(): string {
+  return `${metricsStore.activeOrganizationId}|${metricPeriodKey(period.value)}|${activeTab.value}`;
+}
+
+/**
+ * Loads only the panels the active tab shows (re-fetch on tab return is fine). Every request
+ * in the batch is allowed to settle before any failure is rethrown, so a queued reload never
+ * starts while an old sibling is still in flight.
+ */
 async function loadActiveTab() {
   switch (activeTab.value) {
     case "overview":
-      await Promise.all([
-        metricsStore.loadOverview(),
-        metricsStore.loadToolCallSeries(),
-        metricsStore.loadUserAgentSeries(),
-        metricsStore.loadToolCallByToolSeries(),
-      ]);
+      throwFirstRejection(
+        await Promise.allSettled([
+          metricsStore.loadOverview(),
+          metricsStore.loadToolCallSeries(),
+          metricsStore.loadUserAgentSeries(),
+          metricsStore.loadToolCallByToolSeries(),
+        ]),
+      );
       break;
     case "me":
-      await Promise.all([
-        metricsStore.loadMyKnowledgeLeaderboards(),
-        metricsStore.loadMyAgentTokenByModelSeries(),
-        metricsStore.loadMyToolCallByToolSeries(),
-        sessionsStore.loadMySessions(),
-      ]);
+      throwFirstRejection(
+        await Promise.allSettled([
+          metricsStore.loadMyKnowledgeLeaderboards(),
+          metricsStore.loadMyAgentTokenByModelSeries(),
+          metricsStore.loadMyToolCallByToolSeries(),
+          sessionsStore.loadMySessions(),
+        ]),
+      );
       break;
     case "reviews":
-      await Promise.all([
-        metricsStore.loadReviewFindings(),
-        metricsStore.loadReviewVolume(),
-      ]);
+      throwFirstRejection(
+        await Promise.allSettled([
+          metricsStore.loadReviewFindings(),
+          metricsStore.loadReviewVolume(),
+        ]),
+      );
       break;
     case "knowledge":
-      await Promise.all([
-        metricsStore.loadKnowledgeSeries(),
-        metricsStore.loadLeaderboard(),
-        metricsStore.loadSectionLeaderboard(),
-      ]);
+      throwFirstRejection(
+        await Promise.allSettled([
+          metricsStore.loadKnowledgeSeries(),
+          metricsStore.loadLeaderboard(),
+          metricsStore.loadSectionLeaderboard(),
+        ]),
+      );
       break;
     case "prompts":
-      await Promise.all([
-        metricsStore.loadPromptUsageSeries(),
-        metricsStore.loadPromptLeaderboard(),
-      ]);
+      throwFirstRejection(
+        await Promise.allSettled([
+          metricsStore.loadPromptUsageSeries(),
+          metricsStore.loadPromptLeaderboard(),
+        ]),
+      );
       break;
     case "agents": {
-      await Promise.all([
-        metricsStore.loadAgentUsageSeries(),
-        organizationSettingsStore.ensureMembersLoaded(),
-      ]);
+      // A stale store request returns without committing, so after the await the arrays may be
+      // the *cleared* state of a newer org/period/tab rather than this batch's result. Only
+      // react if the batch's identity is still the live one.
+      const batchIdentity = toastIdentity();
+      throwFirstRejection(
+        await Promise.allSettled([
+          metricsStore.loadAgentUsageSeries(),
+          organizationSettingsStore.ensureMembersLoaded(),
+        ]),
+      );
       const wasSwitch = sessionsTabSwitch;
       sessionsTabSwitch = false;
-      if (wasSwitch && isSessionTelemetryEmpty.value) {
+      // "Never recorded" can only be inferred for a rolling preset: an empty custom interval
+      // (especially a historical one) may just predate retained telemetry, so it relies on the
+      // empty state + coverage notice instead of this setup prompt.
+      if (
+        wasSwitch &&
+        period.value.mode === "relative" &&
+        batchIdentity === toastIdentity() &&
+        isSessionTelemetryEmpty.value
+      ) {
         // Stable id: useToast().add() merges into an existing toast with the same id (resetting
         // its 30s duration) instead of stacking a second, identical toast — so a still-open
         // toast from a prior visit gets refreshed rather than duplicated. (Don't call
@@ -569,14 +603,31 @@ async function loadActiveTab() {
       break;
     }
     case "performance":
-      await Promise.all([
-        metricsStore.loadPercentiles(durationKey),
-        metricsStore.loadScatter(durationKey),
-        metricsStore.loadReviewCosts(),
-      ]);
+      throwFirstRejection(
+        await Promise.allSettled([
+          metricsStore.loadPercentiles(durationKey),
+          metricsStore.loadScatter(durationKey),
+          metricsStore.loadReviewCosts(),
+        ]),
+      );
       break;
   }
 }
+
+// UTC "today" re-evaluates at midnight; a range ending before it is a completed, fixed period.
+const todayUtc = useUtcToday();
+const historicalPeriod = computed(() =>
+  isHistoricalPeriod(period.value, todayUtc.value),
+);
+
+/** True while the date editor is open (the selector reports it): the timer pauses. */
+const editorOpen = ref(false);
+
+// The saved cadence is never rewritten; the effective timer simply stops while editing or when
+// the period is historical (nothing new can arrive), and resumes unchanged afterwards.
+const timerSuspended = computed(
+  () => editorOpen.value || historicalPeriod.value,
+);
 
 const {
   mode: autoRefreshMode,
@@ -585,7 +636,7 @@ const {
   refreshNow,
   beginInteraction,
   endInteraction,
-} = useMetricsAutoRefresh(loadActiveTab);
+} = useMetricsAutoRefresh(loadActiveTab, timerSuspended);
 
 const updatedAgo = useTimeAgo(() => lastUpdatedAt.value ?? Date.now());
 
@@ -677,26 +728,38 @@ function onAuthorsChange(value: string[]) {
   void refreshNow().catch(() => {});
 }
 
+/** Commits a period chosen in the toolbar selector; the period watcher below reloads. */
+function onPeriodSelect(next: MetricPeriod) {
+  metricsStore.applyPeriod(next);
+}
+
 /**
  * Loads a page for the findings drill-down slideover — fired on open and on every tab/period
- * change inside it. `windowToken` is the slideover's own local selection, independent of the
- * dashboard's shared `window`.
+ * change inside it. `findingsPeriod` is the slideover's own local selection, independent of the
+ * dashboard's shared period.
  */
 function onLoadFindingReviews(
   severity: FindingSeverity,
-  windowToken: MetricWindowToken,
+  findingsPeriod: MetricPeriod,
 ) {
-  void metricsStore.loadFindingReviews(severity, windowToken).catch(() => {});
+  void metricsStore
+    .loadFindingReviews(severity, findingsPeriod)
+    .catch(() => {});
 }
 
 /** Loads the next page for the findings drill-down slideover's active severity/period. */
 function onLoadMoreFindingReviews(
   severity: FindingSeverity,
-  windowToken: MetricWindowToken,
+  findingsPeriod: MetricPeriod,
 ) {
   void metricsStore
-    .loadMoreFindingReviews(severity, windowToken)
+    .loadMoreFindingReviews(severity, findingsPeriod)
     .catch(() => {});
+}
+
+/** Remembers a range picked in the findings-local selector without changing the dashboard period. */
+function recordRecentRange(range: MetricDateRange) {
+  metricsStore.recordRecentRange(range);
 }
 
 // Load the filter option lists once; failures are non-fatal (dropdowns stay empty).
@@ -705,15 +768,23 @@ onMounted(() => {
   void metricsStore.loadFilterOptions().catch(() => {});
 });
 
-// Reload when the active tab or window changes (and once on mount). Filter refs
-// are deliberately NOT watched here — each filter change reloads via its own
-// handler's refreshNow(), so a filter update refreshes exactly once with no
-// overlap. Errors surface via the store's `error` ref, so swallow here.
+// Reload when the active tab or period changes (and once on mount). A change while a batch is
+// running is queued as one trailing reload (see useMetricsAutoRefresh), never skipped. Filter
+// refs are deliberately NOT watched here — each filter change reloads via its own handler's
+// refreshNow(). Errors surface via the store's per-panel errors, so swallow here.
 watch(
-  [activeTab, window],
+  [activeTab, period],
   () => {
     void refreshNow().catch(() => {});
   },
   { immediate: true },
 );
+
+// When UTC midnight completes the last day of a range that was still live, fetch it once more
+// so the final day settles; dates never move and the timer then stays suspended.
+watch(todayUtc, (_today, endedDay) => {
+  if (period.value.mode === "absolute" && period.value.endDate === endedDay) {
+    void refreshNow().catch(() => {});
+  }
+});
 </script>

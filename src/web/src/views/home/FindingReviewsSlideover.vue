@@ -3,8 +3,10 @@
   Drill-down for the Critical/Major findings stat cards: a single panel that
   switches between severities via UTabs (rather than two separate slideover
   instances) and carries its own period selector — defaulted from the parent
-  dashboard's window but overridable locally without back-propagating, so
-  browsing a longer range in here never resets the rest of the dashboard.
+  dashboard's full period (preset or custom UTC range) but overridable locally
+  without back-propagating, so browsing a different range in here never resets
+  the rest of the dashboard. A custom range applied here is still remembered in
+  the shared recent-range history (via `rangeUsed`).
   Lists review groups (deduplicated to the latest attempt per PR/agent
   session — see the store action's comment) with at least one finding of the
   active severity in the selected window. Each row opens the standalone
@@ -38,11 +40,11 @@
               placeholder="All repos"
               class="w-52"
             />
-            <USelect
-              v-model="activeWindow"
-              :items="metricWindowItems"
-              icon="i-hugeicons-clock-01"
-              class="w-44"
+            <MetricsWindowSelect
+              :period="activePeriod"
+              :recent-ranges="recentRanges"
+              :today-utc="todayUtc"
+              @select="onPeriodSelect"
             />
           </div>
           <UTabs
@@ -84,7 +86,7 @@
           v-else
           icon="i-hugeicons-alert-02"
           title="No findings"
-          :description="`No ${severityLabel} findings in this window.`"
+          :description="`No ${severityLabel} findings in this period.`"
           class="py-16"
         />
 
@@ -95,7 +97,7 @@
           variant="subtle"
           block
           :loading="loadingMore"
-          @click="emits('loadMore', activeSeverity, activeWindow)"
+          @click="emits('loadMore', activeSeverity, activePeriod)"
         />
       </div>
     </template>
@@ -110,11 +112,9 @@ import {
   type FindingReviewListItemResponse,
   type FindingSeverity,
 } from "@/api/generated";
-import {
-  metricWindowItems,
-  toMetricNumber,
-  type MetricWindowToken,
-} from "@/stores/metrics-store";
+import { toMetricNumber } from "@/stores/metrics-store";
+import type { MetricDateRange, MetricPeriod } from "@/stores/metric-period";
+import MetricsWindowSelect from "./MetricsWindowSelect.vue";
 
 /** One rendered row's precomputed view model — see the MVVM note in the frontend guidance. */
 type FindingReviewRow = {
@@ -138,8 +138,12 @@ const open = defineModel<boolean>("open", { required: true });
 const props = defineProps<{
   /** Severity the panel activates when it opens; the user can switch tabs after that. */
   initialSeverity: FindingSeverity;
-  /** Dashboard's shared window, used as this panel's default — never written back to it. */
-  parentWindow: MetricWindowToken;
+  /** Dashboard's applied period, used as this panel's default — never written back to it. */
+  parentPeriod: MetricPeriod;
+  /** Recent custom ranges (shared history) offered by this panel's own selector. */
+  recentRanges: MetricDateRange[];
+  /** UTC "today" (yyyy-MM-dd) for the calendar. */
+  todayUtc: string;
   items: Record<FindingSeverity, FindingReviewListItemResponse[]>;
   nextCursor: Record<FindingSeverity, string | null>;
   loadingBySeverity: Record<FindingSeverity, boolean>;
@@ -147,14 +151,16 @@ const props = defineProps<{
 }>();
 
 const emits = defineEmits<{
-  /** Fired on open and whenever the active severity or local window changes. */
-  load: [severity: FindingSeverity, window: MetricWindowToken];
-  loadMore: [severity: FindingSeverity, window: MetricWindowToken];
+  /** Fired on open and whenever the active severity or local period changes. */
+  load: [severity: FindingSeverity, period: MetricPeriod];
+  loadMore: [severity: FindingSeverity, period: MetricPeriod];
+  /** A custom range was applied locally; the root adds it to the shared recent-range history. */
+  rangeUsed: [range: MetricDateRange];
 }>();
 
 /** Backing refs for the tab/period selectors — see the computed setters below. */
 const internalSeverity = ref<FindingSeverity>(props.initialSeverity);
-const internalWindow = ref<MetricWindowToken>(props.parentWindow);
+const internalPeriod = ref<MetricPeriod>(props.parentPeriod);
 
 /**
  * User/repo filters — client-side only, over whatever page(s) are currently loaded for the
@@ -186,20 +192,26 @@ const activeSeverity = computed<FindingSeverity>({
   },
 });
 
-/** Local period override; emits `load` on user-driven change only — see {@link activeSeverity}. */
-const activeWindow = computed<MetricWindowToken>({
-  get: () => internalWindow.value,
-  set: (value) => {
-    internalWindow.value = value;
-    emitLoad();
-  },
-});
+/** Local period override (never written back to the dashboard). */
+const activePeriod = computed(() => internalPeriod.value);
 
-function emitLoad() {
-  emits("load", internalSeverity.value, internalWindow.value);
+/**
+ * Applies a period chosen in the local selector: reloads the list, and remembers a custom range
+ * in the shared history. Emits on user-driven change only — see {@link activeSeverity}.
+ */
+function onPeriodSelect(next: MetricPeriod) {
+  internalPeriod.value = next;
+  if (next.mode === "absolute") {
+    emits("rangeUsed", { startDate: next.startDate, endDate: next.endDate });
+  }
+  emitLoad();
 }
 
-// Reset to the card that was clicked and the dashboard's current window each time the panel
+function emitLoad() {
+  emits("load", internalSeverity.value, internalPeriod.value);
+}
+
+// Reset to the card that was clicked and the dashboard's current period each time the panel
 // opens, then trigger the first load — a plain assignment (not the computed setters above) so
 // this doesn't fight with a user's in-progress tab/period choice from the prior open.
 watch(open, (isOpen) => {
@@ -207,7 +219,7 @@ watch(open, (isOpen) => {
     return;
   }
   internalSeverity.value = props.initialSeverity;
-  internalWindow.value = props.parentWindow;
+  internalPeriod.value = props.parentPeriod;
   selectedAuthors.value = [];
   selectedRepos.value = [];
   emitLoad();

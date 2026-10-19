@@ -4,8 +4,8 @@ namespace Zeeq.Core.Models;
 /// Supported dashboard time windows for metric queries.
 /// </summary>
 /// <remarks>
-/// The set is closed by design: endpoints accept only these windows so query
-/// plans stay predictable and partition-pruned. Each window maps to a total
+/// Relative presets are a closed set; calendar selections use MetricQueryRange instead.
+/// Each preset maps to a total
 /// look-back span and a fixed bucket width via <see cref="MetricWindowExtensions.ToRange" />.
 /// </remarks>
 public enum MetricWindow

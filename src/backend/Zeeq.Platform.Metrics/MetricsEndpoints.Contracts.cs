@@ -51,7 +51,7 @@ public sealed record FindingReviewListResponse(
 
 /// <summary>
 /// Parses the closed set of dashboard time windows from their wire tokens (<c>15m</c>, <c>24h</c>,
-/// <c>7d</c>, …). Arbitrary ranges are rejected by construction so query plans stay predictable.
+/// <c>7d</c>, …). Calendar bounds are resolved separately by MetricRangeQuery.
 /// </summary>
 internal static class MetricWindowQuery
 {
@@ -150,7 +150,7 @@ internal static class MetricsEndpointCache
 
     /// <summary>Builds a deterministic cache key from an org, route, and normalized parts.</summary>
     public static string Key(string organizationId, string route, params string?[] parts) =>
-        $"metrics:{organizationId}:{route}:{string.Join('|', parts)}";
+        $"metrics:v2:{organizationId}:{route}:{string.Join('|', parts)}";
 
     /// <summary>Joins a multi-select filter into a stable, order-insensitive key fragment.</summary>
     public static string Join(string[]? values) =>

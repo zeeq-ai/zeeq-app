@@ -1,5 +1,5 @@
-using Zeeq.Core.Models;
 using Microsoft.Extensions.Caching.Hybrid;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.Metrics;
 
@@ -16,24 +16,34 @@ public sealed class GetMetricLeaderboardHandler(IMetricsQueryStore store, Hybrid
     > HandleAsync(
         string organizationId,
         string? window,
+        string? startDate,
+        string? endDate,
         string? library,
         int? top,
         string[]? users,
         CancellationToken cancellationToken
     )
     {
-        if (!MetricWindowQuery.TryParse(window, out var parsedWindow))
+        if (
+            !MetricRangeQuery.TryResolve(
+                window,
+                startDate,
+                endDate,
+                DateTimeOffset.UtcNow,
+                out var range,
+                out var rangeIdentity,
+                out var rangeError
+            )
+        )
         {
-            return TypedResults.BadRequest(
-                new MetricsEndpointError("invalid_window", $"Unknown window '{window}'.")
-            );
+            return TypedResults.BadRequest(rangeError);
         }
 
         var boundedTop = Math.Clamp(top ?? DefaultTop, 1, MaxTop);
         var key = MetricsEndpointCache.Key(
             organizationId,
             "leaderboard",
-            parsedWindow.ToString(),
+            rangeIdentity,
             library,
             boundedTop.ToString(),
             MetricsEndpointCache.Join(users)
@@ -46,7 +56,7 @@ public sealed class GetMetricLeaderboardHandler(IMetricsQueryStore store, Hybrid
                     await store.GetLeaderboardAsync(
                         organizationId,
                         MetricTaxonomy.LeaderboardTypes,
-                        parsedWindow,
+                        range,
                         library,
                         boundedTop,
                         token,

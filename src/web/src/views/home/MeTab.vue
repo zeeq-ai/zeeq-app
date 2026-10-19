@@ -38,7 +38,13 @@
       <UCard :ui="{ header: 'py-3.5 sm:py-3.5', body: 'p-0 sm:p-0' }">
         <template #header>
           <div class="flex items-center justify-between gap-3">
-            <span class="min-w-0 truncate font-medium">Recent sessions</span>
+            <div class="min-w-0">
+              <span class="block truncate font-medium">Recent sessions</span>
+              <!-- Session lists are explicitly recent and never filtered by the reporting period. -->
+              <span class="block truncate text-xs text-muted">
+                Recent sessions · independent of reporting period
+              </span>
+            </div>
             <div class="flex shrink-0 items-center gap-1">
               <UButton
                 label="See details"
@@ -175,12 +181,8 @@ import type {
   MetricLeaderboardItem,
   MetricSeriesPoint,
 } from "@/api/generated";
-import {
-  formatMetricMillions,
-  metricWindowRangeMs,
-  toMetricNumber,
-  type MetricWindowToken,
-} from "@/stores/metrics-store";
+import { formatMetricMillions, toMetricNumber } from "@/stores/metrics-store";
+import type { MetricChartDomain } from "@/stores/metric-period";
 import {
   formatFullDateTime,
   formatTokenCount,
@@ -216,7 +218,7 @@ const props = defineProps<{
   memberConversations: AgentConversationListItemDto[];
   loadingMemberConversations: boolean;
   memberConversationsError: string | null;
-  window: MetricWindowToken;
+  domain: MetricChartDomain;
 }>();
 
 const emits = defineEmits<{
@@ -322,7 +324,7 @@ const tokenByModelOption = computed(() =>
       (point) => point.bucket,
       (point) => point.seriesKey,
       (point) => toMetricNumber(point.value),
-      metricWindowRangeMs(props.window),
+      props.domain,
     ),
     tokenMillionAxisOptions,
   ),

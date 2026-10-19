@@ -1,5 +1,5 @@
-using Zeeq.Core.Models;
 using Microsoft.Extensions.Caching.Hybrid;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.Metrics;
 
@@ -17,17 +17,27 @@ public sealed class GetMetricScatterHandler(IMetricsQueryStore store, HybridCach
         string organizationId,
         string metricType,
         string? window,
+        string? startDate,
+        string? endDate,
         string? repositoryId,
         string? facet,
         int? limit,
         CancellationToken cancellationToken
     )
     {
-        if (!MetricWindowQuery.TryParse(window, out var parsedWindow))
+        if (
+            !MetricRangeQuery.TryResolve(
+                window,
+                startDate,
+                endDate,
+                DateTimeOffset.UtcNow,
+                out var range,
+                out var rangeIdentity,
+                out var rangeError
+            )
+        )
         {
-            return TypedResults.BadRequest(
-                new MetricsEndpointError("invalid_window", $"Unknown window '{window}'.")
-            );
+            return TypedResults.BadRequest(rangeError);
         }
 
         if (!MetricTaxonomy.HistogramTypes.Contains(metricType))
@@ -45,7 +55,7 @@ public sealed class GetMetricScatterHandler(IMetricsQueryStore store, HybridCach
             organizationId,
             "scatter",
             metricType,
-            parsedWindow.ToString(),
+            rangeIdentity,
             repositoryId,
             facet,
             boundedLimit.ToString()
@@ -58,7 +68,7 @@ public sealed class GetMetricScatterHandler(IMetricsQueryStore store, HybridCach
                     await store.GetScatterSampleAsync(
                         organizationId,
                         metricType,
-                        parsedWindow,
+                        range,
                         repositoryId,
                         facet,
                         boundedLimit,

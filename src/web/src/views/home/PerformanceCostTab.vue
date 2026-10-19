@@ -129,11 +129,8 @@ import type {
   MetricScatterPoint,
   ReviewCostMetrics,
 } from "@/api/generated";
-import {
-  metricWindowRangeMs,
-  toMetricNumber,
-  type MetricWindowToken,
-} from "@/stores/metrics-store";
+import { toMetricNumber } from "@/stores/metrics-store";
+import type { MetricChartDomain } from "@/stores/metric-period";
 import MetricChart from "./MetricChart.vue";
 import {
   percentileLinesOption,
@@ -150,7 +147,7 @@ const props = defineProps<{
   loadingPercentiles: boolean;
   loadingScatter: boolean;
   loadingCosts: boolean;
-  window: MetricWindowToken;
+  domain: MetricChartDomain;
 }>();
 
 const router = useRouter();
@@ -185,7 +182,7 @@ const aggregateOption = computed(() =>
       (point) => point.bucket,
       () => null,
       (point) => toMetricNumber(point.value),
-      metricWindowRangeMs(props.window),
+      props.domain,
     ),
     { showLegend: false, yAxisName: "USD", yAxisLabelFormatter: formatUsd },
   ),
@@ -202,7 +199,7 @@ const authorOption = computed(() =>
       (point) => point.bucket,
       (point) => point.seriesKey ?? "Unknown",
       (point) => toMetricNumber(point.value),
-      metricWindowRangeMs(props.window),
+      props.domain,
     ),
     { maxSeries: 100, yAxisName: "USD", yAxisLabelFormatter: formatUsd },
   ),

@@ -1,8 +1,8 @@
 <template>
-  <!-- Library root dashboard: local window + four equal metric panels scoped to one library. -->
+  <!-- Library root dashboard: shared reporting period + four equal metric panels scoped to one library. -->
   <div class="flex h-full min-h-0 flex-col overflow-y-auto">
     <div
-      class="flex h-11.25 shrink-0 items-center justify-between gap-3 border-b border-default px-3"
+      class="flex min-h-11.25 shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-default px-3 py-1.5"
     >
       <div class="min-w-0">
         <div class="truncate text-sm font-medium">Library metrics</div>
@@ -18,13 +18,18 @@
           @click="emits('refresh')"
         />
         <MetricsWindowSelect
-          :model-value="window"
-          @update:model-value="(value) => emits('update:window', value)"
+          :period="period"
+          :recent-ranges="recentRanges"
+          :today-utc="todayUtc"
+          @select="(value) => emits('selectPeriod', value)"
         />
       </div>
     </div>
 
     <div class="flex flex-col gap-3 p-3">
+      <!-- Full UTC dates and the generic older-telemetry note for custom ranges. -->
+      <MetricPeriodNotice :period="period" :today-utc="todayUtc" />
+
       <UAlert
         v-if="error"
         color="error"
@@ -101,12 +106,14 @@
 
 <script setup lang="ts">
 import type { MetricLeaderboardItem, MetricSeriesPoint } from "@/api/generated";
-import {
-  metricWindowRangeMs,
-  toMetricNumber,
-  type MetricWindowToken,
-} from "@/stores/metrics-store";
+import { toMetricNumber } from "@/stores/metrics-store";
+import type {
+  MetricChartDomain,
+  MetricDateRange,
+  MetricPeriod,
+} from "@/stores/metric-period";
 import MetricChart from "@/views/home/MetricChart.vue";
+import MetricPeriodNotice from "@/views/home/MetricPeriodNotice.vue";
 import MetricsWindowSelect from "@/views/home/MetricsWindowSelect.vue";
 import {
   leaderboardBarOption,
@@ -115,7 +122,13 @@ import {
 } from "@/views/home/chart-options";
 
 const props = defineProps<{
-  window: MetricWindowToken;
+  /** Applied reporting period shared with the Home dashboard. */
+  period: MetricPeriod;
+  /** Resolved chart domain (explicit bounds, bucket width, UTC mode). */
+  domain: MetricChartDomain;
+  recentRanges: MetricDateRange[];
+  /** UTC "today" (yyyy-MM-dd) for the calendar and live/historical classification. */
+  todayUtc: string;
   documentReadSeries: MetricSeriesPoint[];
   sectionReadSeries: MetricSeriesPoint[];
   snippetReadSeries: MetricSeriesPoint[];
@@ -132,7 +145,7 @@ const props = defineProps<{
 
 const emits = defineEmits<{
   refresh: [];
-  "update:window": [value: MetricWindowToken];
+  selectPeriod: [value: MetricPeriod];
 }>();
 
 /** Library-scoped read counters are projected into read-type series for the trend chart. */
@@ -161,7 +174,7 @@ const readsOption = computed(() =>
       (point) => point.bucket,
       (point) => point.seriesKey,
       (point) => toMetricNumber(point.value),
-      metricWindowRangeMs(props.window),
+      props.domain,
     ),
     { maxSeries: 3 },
   ),

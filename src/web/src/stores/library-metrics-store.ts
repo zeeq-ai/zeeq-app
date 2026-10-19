@@ -1,3 +1,4 @@
+import { computed, ref, watch } from "vue";
 import { defineStore, acceptHMRUpdate } from "pinia";
 import {
   Metrics,
@@ -7,22 +8,55 @@ import {
 } from "@/api/generated";
 import { useAppStore } from "@/stores/app-store";
 import {
-  counterMetricType,
-  sharedMetricWindow,
-} from "@/stores/metrics-store";
+  isBucketOutsidePeriod,
+  metricPeriodKey,
+  metricPeriodQuery,
+  resolveChartDomain,
+  type MetricPeriod,
+} from "@/stores/metric-period";
+import { sharedMetricPeriodState } from "@/stores/metric-period-state";
+import { counterMetricType } from "@/stores/metrics-store";
+import { unwrapSettled } from "@/utils/settled";
+
+const outOfPeriodMessage =
+  "The server returned telemetry outside the selected or elapsed period.";
+
+/** Whether the visible Library metrics should settle a custom range whose final UTC day just ended. */
+export function shouldReloadLibraryMetricsOnUtcRollover(
+  period: MetricPeriod,
+  endedDayUtc: string,
+  activeLibraryName: string | null,
+  showLibraryMetrics: boolean,
+): boolean {
+  return (
+    showLibraryMetrics &&
+    !!activeLibraryName &&
+    period.mode === "absolute" &&
+    period.endDate === endedDayUtc
+  );
+}
 
 /**
  * Metrics state for the Libraries root panel.
  *
  * Kept separate from the Home dashboard metrics store so the Libraries route
- * has its own window and library scope without mutating Home's filters/data.
+ * has its own library scope and data without mutating Home's filters/data, but
+ * it shares the applied reporting period and recent-range history with Home
+ * (`metric-period-state.ts`).
+ *
+ * Staleness: `loadRequestId` bumps on every `loadMetrics`/`clearMetrics` and on
+ * every organization/period change (synchronously), and each panel write — data,
+ * error and loading — is gated on it, so an old identity's response can never
+ * populate the new one. Data is reset when the (org, library, period) identity
+ * changes; a same-identity refresh keeps the last successful data while it reloads.
  */
 export const useLibraryMetricsStore = defineStore(
   "library-metrics-store",
   () => {
     const appStore = useAppStore();
 
-    const window = sharedMetricWindow;
+    const { period, recentRanges, applyPeriod, recordRecentRange } =
+      sharedMetricPeriodState;
     const documentReadSeries = ref<MetricSeriesPoint[]>([]);
     const sectionReadSeries = ref<MetricSeriesPoint[]>([]);
     const snippetReadSeries = ref<MetricSeriesPoint[]>([]);
@@ -30,45 +64,86 @@ export const useLibraryMetricsStore = defineStore(
     const sectionLeaderboard = ref<MetricLeaderboardItem[]>([]);
     const snippetLeaderboard = ref<MetricLeaderboardItem[]>([]);
     const loading = ref<Record<string, boolean>>({});
-    const error = ref<string | null>(null);
+    const errors = ref<Record<string, string>>({});
+
+    /** True from a period change until the next `loadMetrics` starts (old numbers are hidden). */
+    const awaitingLoad = ref(false);
+    const domainNowMs = ref(Date.now());
 
     const activeOrganizationId = computed(
       () =>
         appStore.currentOrganization?.id ?? appStore.user?.organizationId ?? "",
     );
-    const loadingReads = computed(() => loading.value.reads ?? false);
+    const loadingReads = computed(
+      () => awaitingLoad.value || (loading.value.reads ?? false),
+    );
     const loadingLeaderboard = computed(
-      () => loading.value.leaderboard ?? false,
+      () => awaitingLoad.value || (loading.value.leaderboard ?? false),
     );
     const loadingSectionLeaderboard = computed(
-      () => loading.value.sectionLeaderboard ?? false,
+      () => awaitingLoad.value || (loading.value.sectionLeaderboard ?? false),
     );
     const loadingSnippetLeaderboard = computed(
-      () => loading.value.snippetLeaderboard ?? false,
+      () => awaitingLoad.value || (loading.value.snippetLeaderboard ?? false),
     );
     const refreshing = computed(() =>
       Object.values(loading.value).some(Boolean),
     );
+    const chartDomain = computed(() =>
+      resolveChartDomain(period.value, domainNowMs.value),
+    );
+    const error = computed<string | null>(() => {
+      const messages = Object.values(errors.value);
+      if (messages.length === 0) {
+        return null;
+      }
+      return messages.length === 1
+        ? messages[0]
+        : `${messages[0]} (${messages.length} panels could not be loaded.)`;
+    });
 
     let loadRequestId = 0;
+    let loadedIdentity: string | null = null;
+
+    // Invalidate in-flight work on org/period changes before a view reload can be scheduled.
+    watch(
+      [period, activeOrganizationId],
+      () => {
+        loadRequestId++;
+        loadedIdentity = null;
+        resetMetricData();
+        awaitingLoad.value = true;
+      },
+      { flush: "sync" },
+    );
 
     async function loadMetrics(libraryName: string | null) {
-      const requestId = ++loadRequestId;
       const orgId = activeOrganizationId.value;
       if (!orgId || !libraryName) {
+        // clearMetrics invalidates pending work and clears data, errors, loading, and awaitingLoad.
         clearMetrics();
         return;
       }
 
-      resetMetricData();
+      const requestId = ++loadRequestId;
+      awaitingLoad.value = false;
+      domainNowMs.value = Date.now();
+      const requestPeriod = period.value;
+      const identity = `${orgId}|${libraryName}|${metricPeriodKey(requestPeriod)}`;
+      if (identity !== loadedIdentity) {
+        resetMetricData();
+        loadedIdentity = identity;
+      }
+
       await Promise.all([
-        loadReadSeries(orgId, libraryName, requestId),
-        loadLeaderboard(orgId, libraryName, requestId),
+        loadReadSeries(orgId, libraryName, requestPeriod, requestId),
+        loadLeaderboard(orgId, libraryName, requestPeriod, requestId),
         loadSectionLeaderboard(
           "sectionLeaderboard",
           "section",
           orgId,
           libraryName,
+          requestPeriod,
           requestId,
         ),
         loadSectionLeaderboard(
@@ -76,14 +151,17 @@ export const useLibraryMetricsStore = defineStore(
           "code",
           orgId,
           libraryName,
+          requestPeriod,
           requestId,
         ),
       ]);
     }
 
     function clearMetrics() {
-      resetMetricData();
       loadRequestId++;
+      loadedIdentity = null;
+      awaitingLoad.value = false;
+      resetMetricData();
     }
 
     function resetMetricData() {
@@ -94,29 +172,46 @@ export const useLibraryMetricsStore = defineStore(
       sectionLeaderboard.value = [];
       snippetLeaderboard.value = [];
       loading.value = {};
-      error.value = null;
+      errors.value = {};
+    }
+
+    /** Fails a panel rather than silently dropping buckets outside selected dates or elapsed time. */
+    function withinPeriod<T>(
+      points: T[],
+      dateOf: (point: T) => Date,
+      requestPeriod: MetricPeriod,
+      responseNowMs = Date.now(),
+    ): T[] {
+      const domain = resolveChartDomain(requestPeriod, responseNowMs);
+      if (
+        points.some((point) => isBucketOutsidePeriod(dateOf(point), domain))
+      ) {
+        throw new Error(outOfPeriodMessage);
+      }
+      return points;
     }
 
     /**
      * Loads the document/section/snippet read series together and assigns all
      * three refs in one atomic step. The three counter types are independent
-     * requests, so gathering them via `Promise.all` before writing any ref
-     * (rather than each request writing its own ref the instant it resolves)
-     * prevents the "Reads over time" chart from ever rendering a transient
-     * state where only 1-2 of the 3 series have arrived.
+     * requests, so gathering them (all settled, so none keeps running after a
+     * sibling fails) before writing any ref prevents the "Reads over time"
+     * chart from ever rendering a transient state where only 1-2 of the 3
+     * series have arrived.
      */
     async function loadReadSeries(
       orgId: string,
       libraryName: string,
+      requestPeriod: MetricPeriod,
       requestId: number,
     ) {
       await run("reads", requestId, async () => {
         const seriesFilters = {
-          window: window.value,
+          ...metricPeriodQuery(requestPeriod),
           groupBy: metricSeriesGroupEnum.None,
           libraries: [libraryName],
         };
-        const [documents, sections, snippets] = await Promise.all([
+        const [documents, sections, snippets] = await Promise.allSettled([
           Metrics.getMetricSeries(
             orgId,
             counterMetricType.documentRead,
@@ -133,22 +228,42 @@ export const useLibraryMetricsStore = defineStore(
             seriesFilters,
           ),
         ]);
+        const responseNowMs = Date.now();
+        const documentPoints = withinPeriod(
+          unwrapSettled(documents),
+          (point) => point.bucket,
+          requestPeriod,
+          responseNowMs,
+        );
+        const sectionPoints = withinPeriod(
+          unwrapSettled(sections),
+          (point) => point.bucket,
+          requestPeriod,
+          responseNowMs,
+        );
+        const snippetPoints = withinPeriod(
+          unwrapSettled(snippets),
+          (point) => point.bucket,
+          requestPeriod,
+          responseNowMs,
+        );
 
         if (requestId !== loadRequestId) return;
-        documentReadSeries.value = documents;
-        sectionReadSeries.value = sections;
-        snippetReadSeries.value = snippets;
+        documentReadSeries.value = documentPoints;
+        sectionReadSeries.value = sectionPoints;
+        snippetReadSeries.value = snippetPoints;
       });
     }
 
     async function loadLeaderboard(
       orgId: string,
       libraryName: string,
+      requestPeriod: MetricPeriod,
       requestId: number,
     ) {
       await run("leaderboard", requestId, async () => {
         const items = await Metrics.getMetricLeaderboard(orgId, {
-          window: window.value,
+          ...metricPeriodQuery(requestPeriod),
           library: libraryName,
           top: 10,
         });
@@ -164,11 +279,12 @@ export const useLibraryMetricsStore = defineStore(
       kind: "section" | "code",
       orgId: string,
       libraryName: string,
+      requestPeriod: MetricPeriod,
       requestId: number,
     ) {
       await run(key, requestId, async () => {
         const items = await Metrics.getMetricSectionLeaderboard(orgId, {
-          window: window.value,
+          ...metricPeriodQuery(requestPeriod),
           library: libraryName,
           kind,
           top: 10,
@@ -183,20 +299,33 @@ export const useLibraryMetricsStore = defineStore(
       });
     }
 
+    /** Runs one panel load; stale requests never touch loading or error state. */
     async function run(
       key: string,
       requestId: number,
       action: () => Promise<void>,
     ) {
       loading.value = { ...loading.value, [key]: true };
+      if (key in errors.value) {
+        const { [key]: _cleared, ...remaining } = errors.value;
+        errors.value = remaining;
+      }
       try {
         await action();
+        if (requestId === loadRequestId) {
+          // Move the chart clock past the response so a today-inclusive range can show a bucket
+          // newer than the clock captured at request start; the selected range never moves.
+          domainNowMs.value = Math.max(domainNowMs.value, Date.now());
+        }
       } catch (err: unknown) {
         if (requestId === loadRequestId) {
-          error.value =
-            err instanceof Error
-              ? err.message
-              : "Could not load library metrics.";
+          errors.value = {
+            ...errors.value,
+            [key]:
+              err instanceof Error
+                ? err.message
+                : "Could not load library metrics.",
+          };
         }
       } finally {
         if (requestId === loadRequestId) {
@@ -206,7 +335,11 @@ export const useLibraryMetricsStore = defineStore(
     }
 
     return {
-      window,
+      period,
+      recentRanges,
+      applyPeriod,
+      recordRecentRange,
+      chartDomain,
       documentReadSeries,
       sectionReadSeries,
       snippetReadSeries,
@@ -214,6 +347,7 @@ export const useLibraryMetricsStore = defineStore(
       sectionLeaderboard,
       snippetLeaderboard,
       error,
+      errors,
       activeOrganizationId,
       loadingReads,
       loadingLeaderboard,

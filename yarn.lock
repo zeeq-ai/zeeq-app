@@ -15983,6 +15983,7 @@ __metadata:
   dependencies:
     "@comark/vue": "npm:^0.4.0"
     "@iconify-json/hugeicons": "npm:^1.2.29"
+    "@internationalized/date": "npm:^3.12.2"
     "@kubb/cli": "npm:^4.38.1"
     "@kubb/core": "npm:^4.38.1"
     "@kubb/plugin-client": "npm:^4.38.1"

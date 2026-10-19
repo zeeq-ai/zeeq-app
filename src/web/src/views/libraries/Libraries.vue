@@ -51,7 +51,10 @@
       <LibraryMetricsPanel
         v-if="showLibraryMetrics"
         class="min-w-0 flex-1"
-        :window="libraryMetricsWindow"
+        :period="libraryMetricsPeriod"
+        :domain="libraryMetricsDomain"
+        :recent-ranges="libraryMetricsRecentRanges"
+        :today-utc="todayUtc"
         :document-read-series="documentReadSeries"
         :section-read-series="sectionReadSeries"
         :snippet-read-series="snippetReadSeries"
@@ -64,7 +67,7 @@
         :loading-snippet-leaderboard="loadingSnippetLeaderboard"
         :refreshing="refreshingLibraryMetrics"
         :error="libraryMetricsError"
-        @update:window="onLibraryMetricsWindowChange"
+        @select-period="onLibraryMetricsPeriodSelect"
         @refresh="onRefreshLibraryMetrics"
       />
       <div v-else class="flex min-w-0 flex-1">
@@ -392,9 +395,12 @@
 import { storeToRefs } from "pinia";
 import { useClipboard, useIntervalFn, useStorage } from "@vueuse/core";
 import { useLibraryStore } from "@/stores/library-store";
-import { useLibraryMetricsStore } from "@/stores/library-metrics-store";
+import {
+  shouldReloadLibraryMetricsOnUtcRollover,
+  useLibraryMetricsStore,
+} from "@/stores/library-metrics-store";
 import { useGitHubSettingsStore } from "@/stores/github-settings-store";
-import type { MetricWindowToken } from "@/stores/metrics-store";
+import type { MetricPeriod } from "@/stores/metric-period";
 import type { LibraryResponse } from "@/api/generated/types/LibraryResponse";
 import type { IngestRunPageResponse } from "@/api/generated/types/IngestRunPageResponse";
 import type { NotionWebhookStateResponse } from "@/api/generated/types/NotionWebhookStateResponse";
@@ -411,6 +417,7 @@ import DocumentSearchPanel from "./DocumentSearchPanel.vue";
 import DocumentParsePreviewSlideover from "./DocumentParsePreviewSlideover.vue";
 import DocumentRenameSlideover from "./DocumentRenameSlideover.vue";
 import LibraryMetricsPanel from "./LibraryMetricsPanel.vue";
+import { useUtcToday } from "@/views/home/useUtcToday";
 import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 import { toGitHubWebUrl } from "@/utils/githubUrl";
 
@@ -443,7 +450,9 @@ const {
 } = storeToRefs(store);
 
 const {
-  window: libraryMetricsWindow,
+  period: libraryMetricsPeriod,
+  chartDomain: libraryMetricsDomain,
+  recentRanges: libraryMetricsRecentRanges,
   documentReadSeries,
   sectionReadSeries,
   snippetReadSeries,
@@ -484,6 +493,9 @@ const editorLoading = computed(
     loadingDocument.value,
 );
 
+/** UTC "today" for the metrics calendar; re-evaluates at midnight. */
+const todayUtc = useUtcToday();
+
 const showLibraryMetrics = computed(
   () =>
     !!activeLibraryName.value &&
@@ -495,7 +507,7 @@ watch(
   [
     showLibraryMetrics,
     activeLibraryName,
-    libraryMetricsWindow,
+    libraryMetricsPeriod,
     libraryMetricsOrganizationId,
   ],
   () => {
@@ -505,11 +517,28 @@ watch(
       libraryMetricsStore.clearMetrics();
     }
   },
-  { immediate: true },
+  { immediate: true, flush: "sync" },
 );
 
-function onLibraryMetricsWindowChange(value: MetricWindowToken) {
-  libraryMetricsWindow.value = value;
+// A custom range ending on the day that just ended needs one last fetch to finalize it.
+watch(todayUtc, (_today, endedDayUtc) => {
+  const libraryName = activeLibraryName.value;
+  if (
+    shouldReloadLibraryMetricsOnUtcRollover(
+      libraryMetricsPeriod.value,
+      endedDayUtc,
+      libraryName,
+      showLibraryMetrics.value,
+    )
+  ) {
+    // loadMetrics snapshots the current period and advances its generation before fetching.
+    void libraryMetricsStore.loadMetrics(libraryName);
+  }
+});
+
+/** Applies a period chosen in the metrics header; the watcher above reloads the panels. */
+function onLibraryMetricsPeriodSelect(value: MetricPeriod) {
+  libraryMetricsStore.applyPeriod(value);
 }
 
 function onRefreshLibraryMetrics() {

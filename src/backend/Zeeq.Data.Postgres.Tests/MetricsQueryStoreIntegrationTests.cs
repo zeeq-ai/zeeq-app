@@ -20,6 +20,16 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     : PgTransactionalTestBase(postgres)
 {
     private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
+    private static readonly MetricQueryRange OneHourRange = new(
+        Now.AddHours(-1),
+        Now.AddMinutes(1),
+        TimeSpan.FromMinutes(5)
+    );
+    private static readonly MetricQueryRange OneDayRange = new(
+        Now.AddDays(-1),
+        Now.AddMinutes(1),
+        TimeSpan.FromHours(1)
+    );
 
     [Test]
     public async Task GetReviewCosts_GroupsByAuthorWithinOrganizationAndWindow()
@@ -34,7 +44,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var store = new PostgresMetricsQueryStore(_context);
         var result = await store.GetReviewCostMetricsAsync(
             "org_cost_a",
-            MetricWindow.H24,
+            OneDayRange,
             CancellationToken.None
         );
 
@@ -68,7 +78,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var store = new PostgresMetricsQueryStore(_context);
         var result = await store.GetReviewCostMetricsAsync(
             "org_cost_cap",
-            MetricWindow.H24,
+            OneDayRange,
             CancellationToken.None
         );
 
@@ -80,6 +90,333 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
             .That(result.ByAuthor.Sum(point => point.Value))
             .IsEqualTo(2.001d)
             .Within(0.000001d);
+    }
+
+    [Test]
+    public async Task MetricAndReviewQueries_UseInclusiveStartExclusiveEndAndOrganizationBounds()
+    {
+        var organizationId = "org_range_bounds";
+        var range = new MetricQueryRange(
+            Now.AddMinutes(-10),
+            Now.AddMinutes(10),
+            TimeSpan.FromMinutes(5)
+        );
+        var beforeStart = range.StartUtc.AddMilliseconds(-1);
+        var beforeEnd = range.EndExclusiveUtc.AddMilliseconds(-1);
+        var atEnd = range.EndExclusiveUtc;
+
+        var metricEvents = new[]
+        {
+            At(ToolCall(organizationId, "range"), beforeStart),
+            At(ToolCall(organizationId, "range"), range.StartUtc),
+            At(ToolCall(organizationId, "range"), beforeEnd),
+            At(ToolCall(organizationId, "range"), atEnd),
+            At(ToolCall("org_range_bounds_other", "range"), range.StartUtc),
+            At(ReviewCost(organizationId, "range_cost_start", "range-author", 1), range.StartUtc),
+            At(ReviewCost(organizationId, "range_cost_end", "range-author", 2), beforeEnd),
+            At(ReviewCost(organizationId, "range_cost_before", "range-author", 4), beforeStart),
+            At(ReviewCost(organizationId, "range_cost_at_end", "range-author", 8), atEnd),
+            At(
+                ReviewCost("org_range_bounds_other", "range_cost_other", "range-author", 16),
+                range.StartUtc
+            ),
+            At(
+                AgentMetric(
+                    organizationId,
+                    "zeeq_agent_token_usage",
+                    2,
+                    "range-model",
+                    "range-user"
+                ),
+                range.StartUtc
+            ),
+            At(
+                AgentMetric(
+                    organizationId,
+                    "zeeq_agent_token_usage",
+                    3,
+                    "range-model",
+                    "range-user"
+                ),
+                beforeEnd
+            ),
+            At(
+                AgentMetric(organizationId, "zeeq_agent_token_usage", 5, "outside", "range-user"),
+                atEnd
+            ),
+            At(
+                AgentMetric(
+                    "org_range_bounds_other",
+                    "zeeq_agent_token_usage",
+                    7,
+                    "outside",
+                    "range-user"
+                ),
+                range.StartUtc
+            ),
+            At(ScatterMetric(organizationId, 20, 200), range.StartUtc),
+            At(ScatterMetric(organizationId, 40, 400), beforeEnd),
+            At(ScatterMetric(organizationId, 1, 10), beforeStart),
+            At(ScatterMetric(organizationId, 80, 800), atEnd),
+            At(ScatterMetric("org_range_bounds_other", 100, 1000), range.StartUtc),
+            At(LeaderboardMetric(organizationId, "zeeq_document_read_counter", 1), range.StartUtc),
+            At(LeaderboardMetric(organizationId, "zeeq_document_read_counter", 1), beforeEnd),
+            At(LeaderboardMetric(organizationId, "zeeq_document_read_counter", 4), beforeStart),
+            At(LeaderboardMetric(organizationId, "zeeq_document_read_counter", 8), atEnd),
+            At(
+                LeaderboardMetric("org_range_bounds_other", "zeeq_document_read_counter", 16),
+                range.StartUtc
+            ),
+            At(
+                LeaderboardMetric(organizationId, "zeeq_section_read_counter", 1, "Range heading"),
+                range.StartUtc
+            ),
+            At(
+                LeaderboardMetric(organizationId, "zeeq_section_read_counter", 1, "Range heading"),
+                beforeEnd
+            ),
+            At(
+                LeaderboardMetric(
+                    organizationId,
+                    "zeeq_section_read_counter",
+                    4,
+                    "Outside heading"
+                ),
+                beforeStart
+            ),
+            At(
+                LeaderboardMetric(organizationId, "zeeq_section_read_counter", 8, "End heading"),
+                atEnd
+            ),
+            At(
+                LeaderboardMetric(
+                    "org_range_bounds_other",
+                    "zeeq_section_read_counter",
+                    16,
+                    "Range heading"
+                ),
+                range.StartUtc
+            ),
+            At(
+                PromptGet(organizationId, "zeeq-app", "/range/prompt.md", "range-prompt"),
+                range.StartUtc
+            ),
+            At(
+                PromptGet(organizationId, "zeeq-app", "/range/prompt.md", "range-prompt"),
+                beforeEnd
+            ),
+            At(PromptGet(organizationId, "zeeq-app", "/range/outside.md", "outside"), beforeStart),
+            At(PromptGet(organizationId, "zeeq-app", "/range/end.md", "end"), atEnd),
+            At(
+                PromptGet("org_range_bounds_other", "zeeq-app", "/range/prompt.md", "range-prompt"),
+                range.StartUtc
+            ),
+        };
+        await SeedMetricsAsync(metricEvents);
+
+        var startReview = Review(organizationId, critical: 1, createdAtUtc: range.StartUtc);
+        startReview.ReviewGroupId = "range_start_group";
+        var lastReview = Review(organizationId, critical: 2, createdAtUtc: beforeEnd);
+        lastReview.ReviewGroupId = "range_end_group";
+        var beforeReview = Review(organizationId, critical: 4, createdAtUtc: beforeStart);
+        beforeReview.ReviewGroupId = "range_before_group";
+        var atEndReview = Review(organizationId, critical: 8, createdAtUtc: atEnd);
+        atEndReview.ReviewGroupId = "range_at_end_group";
+        var otherOrganizationReview = Review(
+            "org_range_bounds_other",
+            critical: 16,
+            createdAtUtc: range.StartUtc
+        );
+        otherOrganizationReview.ReviewGroupId = "range_other_org_group";
+        await SeedReviewsAsync(
+            startReview,
+            lastReview,
+            beforeReview,
+            atEndReview,
+            otherOrganizationReview
+        );
+
+        var store = new PostgresMetricsQueryStore(_context);
+
+        var costs = await store.GetReviewCostMetricsAsync(
+            organizationId,
+            range,
+            CancellationToken.None
+        );
+        await Assert.That(costs.Reviews.Count).IsEqualTo(2);
+        await Assert.That(costs.ByAuthor.Sum(point => point.Value)).IsEqualTo(3d);
+
+        var series = await store.GetSeriesAsync(
+            organizationId,
+            "zeeq_tool_call_counter",
+            range,
+            MetricSeriesGroup.None,
+            new MetricSeriesFilters(),
+            CancellationToken.None
+        );
+        await Assert.That(series.Sum(point => point.Value)).IsEqualTo(2d);
+
+        var twoDimensional = await store.GetTwoDimensionalSeriesAsync(
+            organizationId,
+            "zeeq_agent_token_usage",
+            range,
+            MetricSeriesGroup.Model,
+            MetricSeriesGroup.User,
+            new MetricSeriesFilters(),
+            CancellationToken.None
+        );
+        await Assert.That(twoDimensional.Sum(point => point.Value)).IsEqualTo(5d);
+
+        var percentiles = await store.GetPercentileSeriesAsync(
+            organizationId,
+            "zeeq_review_duration_ms",
+            range,
+            repositoryId: null,
+            facet: null,
+            CancellationToken.None
+        );
+        await Assert.That(percentiles.Sum(point => point.P50)).IsEqualTo(60d);
+
+        var scatter = await store.GetScatterSampleAsync(
+            organizationId,
+            "zeeq_review_duration_ms",
+            range,
+            repositoryId: null,
+            facet: null,
+            limit: 10,
+            CancellationToken.None
+        );
+        await Assert.That(scatter.Count).IsEqualTo(2);
+
+        var leaderboard = await store.GetLeaderboardAsync(
+            organizationId,
+            ["zeeq_document_read_counter"],
+            range,
+            library: null,
+            top: 10,
+            CancellationToken.None
+        );
+        await Assert.That(leaderboard.Single().Item).IsEqualTo("/range/document.md");
+        await Assert.That(leaderboard.Single().Value).IsEqualTo(2d);
+
+        var sectionLeaderboard = await store.GetSectionLeaderboardAsync(
+            organizationId,
+            ["zeeq_section_read_counter"],
+            range,
+            library: null,
+            top: 10,
+            CancellationToken.None
+        );
+        await Assert.That(sectionLeaderboard.Single().Item).IsEqualTo("Range heading");
+        await Assert.That(sectionLeaderboard.Single().Value).IsEqualTo(2d);
+
+        var promptLeaderboard = await store.GetPromptLeaderboardAsync(
+            organizationId,
+            range,
+            users: null,
+            library: null,
+            top: 10,
+            CancellationToken.None
+        );
+        await Assert.That(promptLeaderboard.Single().Item).IsEqualTo("zeeq-app:/range/prompt.md");
+        await Assert.That(promptLeaderboard.Single().Value).IsEqualTo(2d);
+
+        var reviewVolume = await store.GetReviewVolumeSeriesAsync(
+            organizationId,
+            range,
+            repositoryIds: null,
+            authorLogins: null,
+            requestOrigin: null,
+            groupBy: ReviewVolumeGroup.Origin,
+            CancellationToken.None
+        );
+        await Assert.That(reviewVolume.Sum(point => point.Count)).IsEqualTo(2L);
+
+        var reviewFindings = await store.GetReviewFindingsSeriesAsync(
+            organizationId,
+            range,
+            repositoryIds: null,
+            authorLogins: null,
+            groupBy: ReviewFindingsGroup.Origin,
+            CancellationToken.None
+        );
+        await Assert.That(reviewFindings.Sum(point => point.Critical)).IsEqualTo(3L);
+
+        var overview = await store.GetOverviewAsync(organizationId, range, CancellationToken.None);
+        await Assert.That(overview.ToolCalls).IsEqualTo(2d);
+        await Assert.That(overview.Reviews).IsEqualTo(2L);
+        await Assert.That(overview.CriticalFindings).IsEqualTo(3L);
+
+        var findingGroups = await store.ListFindingReviewGroupsAsync(
+            organizationId,
+            range,
+            FindingSeverity.Critical,
+            cursorCreatedAtUtc: null,
+            cursorId: null,
+            limit: 10,
+            CancellationToken.None
+        );
+        await Assert.That(findingGroups.Count).IsEqualTo(2);
+        await Assert.That(findingGroups.Sum(group => group.GroupCriticalFindings)).IsEqualTo(3L);
+    }
+
+    [Test]
+    public async Task ListFindingReviewGroups_UsesOnlyAttemptsInsideSelectedRange()
+    {
+        var organizationId = "org_range_attempts";
+        var range = new MetricQueryRange(
+            Now.AddMinutes(-10),
+            Now.AddMinutes(10),
+            TimeSpan.FromMinutes(5)
+        );
+        var before = Review(
+            organizationId,
+            critical: 100,
+            createdAtUtc: range.StartUtc.AddMilliseconds(-1)
+        );
+        before.ReviewGroupId = "range_attempts_group";
+
+        var firstInside = Review(
+            organizationId,
+            critical: 2,
+            createdAtUtc: range.StartUtc.AddMinutes(2)
+        );
+        firstInside.ReviewGroupId = "range_attempts_group";
+        firstInside.Title = "first attempt inside range";
+
+        var latestInside = Review(
+            organizationId,
+            critical: 3,
+            createdAtUtc: range.StartUtc.AddMinutes(3)
+        );
+        latestInside.ReviewGroupId = "range_attempts_group";
+        latestInside.Title = "latest attempt inside range";
+
+        var after = Review(
+            organizationId,
+            critical: 200,
+            createdAtUtc: range.EndExclusiveUtc.AddMilliseconds(1)
+        );
+        after.ReviewGroupId = "range_attempts_group";
+        after.Title = "later attempt outside range";
+
+        await SeedReviewsAsync(before, firstInside, latestInside, after);
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var groups = await store.ListFindingReviewGroupsAsync(
+            organizationId,
+            range,
+            FindingSeverity.Critical,
+            cursorCreatedAtUtc: null,
+            cursorId: null,
+            limit: 10,
+            CancellationToken.None
+        );
+
+        await Assert.That(groups.Count).IsEqualTo(1);
+        await Assert.That(groups[0].ReviewId).IsEqualTo(latestInside.Id);
+        await Assert.That(groups[0].Title).IsEqualTo("latest attempt inside range");
+        await Assert.That(groups[0].GroupCriticalFindings).IsEqualTo(5L);
     }
 
     [Test]
@@ -96,7 +433,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var series = await store.GetSeriesAsync(
             "org_q_a",
             "zeeq_tool_call_counter",
-            MetricWindow.H1,
+            OneHourRange,
             MetricSeriesGroup.None,
             new MetricSeriesFilters(),
             CancellationToken.None
@@ -119,7 +456,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var series = await store.GetSeriesAsync(
             "org_q_group",
             "zeeq_tool_call_counter",
-            MetricWindow.H1,
+            OneHourRange,
             MetricSeriesGroup.Tool,
             new MetricSeriesFilters(),
             CancellationToken.None
@@ -149,7 +486,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var series = await store.GetSeriesAsync(
             "org_q_model",
             "zeeq_agent_token_usage",
-            MetricWindow.H1,
+            OneHourRange,
             MetricSeriesGroup.Model,
             new MetricSeriesFilters(),
             CancellationToken.None
@@ -183,7 +520,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var series = await store.GetTwoDimensionalSeriesAsync(
             "org_q_model_user",
             "zeeq_agent_token_usage",
-            MetricWindow.H1,
+            OneHourRange,
             MetricSeriesGroup.Model,
             MetricSeriesGroup.User,
             new MetricSeriesFilters(),
@@ -255,7 +592,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var series = await store.GetSeriesAsync(
             org,
             "zeeq_agent_token_usage",
-            MetricWindow.H1,
+            OneHourRange,
             MetricSeriesGroup.User,
             new MetricSeriesFilters(),
             CancellationToken.None
@@ -300,7 +637,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var series = await store.GetSeriesAsync(
             org,
             "zeeq_agent_token_usage",
-            MetricWindow.H1,
+            OneHourRange,
             MetricSeriesGroup.User,
             new MetricSeriesFilters(),
             CancellationToken.None
@@ -346,7 +683,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var series = await store.GetSeriesAsync(
             org,
             "zeeq_agent_token_usage",
-            MetricWindow.H1,
+            OneHourRange,
             MetricSeriesGroup.User,
             new MetricSeriesFilters(),
             CancellationToken.None
@@ -389,7 +726,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var canonicalSeries = await store.GetSeriesAsync(
             org,
             "zeeq_agent_token_usage",
-            MetricWindow.H1,
+            OneHourRange,
             MetricSeriesGroup.None,
             new MetricSeriesFilters(Users: ["member-filter@company.com"]),
             CancellationToken.None
@@ -397,7 +734,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var rawAliasSeries = await store.GetSeriesAsync(
             org,
             "zeeq_agent_token_usage",
-            MetricWindow.H1,
+            OneHourRange,
             MetricSeriesGroup.None,
             new MetricSeriesFilters(Users: ["personal-filter@example.com"]),
             CancellationToken.None
@@ -433,7 +770,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var canonicalSeries = await store.GetTwoDimensionalSeriesAsync(
             org,
             "zeeq_agent_token_usage",
-            MetricWindow.H1,
+            OneHourRange,
             MetricSeriesGroup.Model,
             MetricSeriesGroup.User,
             new MetricSeriesFilters(Users: ["member-2d@company.com"]),
@@ -442,7 +779,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var rawAliasSeries = await store.GetTwoDimensionalSeriesAsync(
             org,
             "zeeq_agent_token_usage",
-            MetricWindow.H1,
+            OneHourRange,
             MetricSeriesGroup.Model,
             MetricSeriesGroup.User,
             new MetricSeriesFilters(Users: ["personal-2d@example.com"]),
@@ -469,7 +806,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var series = await store.GetSeriesAsync(
             "org_q_filter",
             "zeeq_tool_call_counter",
-            MetricWindow.H1,
+            OneHourRange,
             MetricSeriesGroup.None,
             new MetricSeriesFilters(Users: ["a@x.com", "b@x.com"]),
             CancellationToken.None
@@ -521,7 +858,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var series = await store.GetSeriesAsync(
             org,
             "zeeq_agent_token_usage",
-            MetricWindow.H1,
+            OneHourRange,
             MetricSeriesGroup.None,
             new MetricSeriesFilters(
                 Users: ["member-mixed@company.com", "direct-mixed@example.com"]
@@ -544,7 +881,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var series = await store.GetSeriesAsync(
             "org_q_nomatch",
             "zeeq_tool_call_counter",
-            MetricWindow.H1,
+            OneHourRange,
             MetricSeriesGroup.None,
             new MetricSeriesFilters(Users: ["nobody@nowhere.example"]),
             CancellationToken.None
@@ -588,7 +925,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var store = new PostgresMetricsQueryStore(_context);
         var canonicalItems = await store.GetPromptLeaderboardAsync(
             org,
-            MetricWindow.H1,
+            OneHourRange,
             users: ["member-prompt@company.com"],
             library: null,
             top: 10,
@@ -596,7 +933,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         );
         var rawAliasItems = await store.GetPromptLeaderboardAsync(
             org,
-            MetricWindow.H1,
+            OneHourRange,
             users: ["personal-prompt@example.com"],
             library: null,
             top: 10,
@@ -623,7 +960,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var points = await store.GetPercentileSeriesAsync(
             "org_q_pct",
             "zeeq_review_duration_ms",
-            MetricWindow.H1,
+            OneHourRange,
             repositoryId: null,
             facet: null,
             CancellationToken.None
@@ -649,7 +986,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var items = await store.GetLeaderboardAsync(
             "org_q_lb",
             ["zeeq_section_read_counter", "zeeq_snippet_read_counter"],
-            MetricWindow.H1,
+            OneHourRange,
             library: null,
             top: 10,
             CancellationToken.None
@@ -684,7 +1021,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var items = await store.GetSectionLeaderboardAsync(
             "org_q_slb",
             ["zeeq_section_read_counter", "zeeq_snippet_read_counter"],
-            MetricWindow.H1,
+            OneHourRange,
             library: null,
             top: 10,
             CancellationToken.None
@@ -731,7 +1068,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var canonicalItems = await store.GetLeaderboardAsync(
             org,
             ["zeeq_section_read_counter"],
-            MetricWindow.H1,
+            OneHourRange,
             library: null,
             top: 10,
             CancellationToken.None,
@@ -740,7 +1077,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var rawAliasItems = await store.GetLeaderboardAsync(
             org,
             ["zeeq_section_read_counter"],
-            MetricWindow.H1,
+            OneHourRange,
             library: null,
             top: 10,
             CancellationToken.None,
@@ -791,7 +1128,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var canonicalItems = await store.GetSectionLeaderboardAsync(
             org,
             ["zeeq_section_read_counter"],
-            MetricWindow.H1,
+            OneHourRange,
             library: null,
             top: 10,
             CancellationToken.None,
@@ -800,7 +1137,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var rawAliasItems = await store.GetSectionLeaderboardAsync(
             org,
             ["zeeq_section_read_counter"],
-            MetricWindow.H1,
+            OneHourRange,
             library: null,
             top: 10,
             CancellationToken.None,
@@ -877,7 +1214,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var store = new PostgresMetricsQueryStore(_context);
         var globalItems = await store.GetPromptLeaderboardAsync(
             "org_q_prompt_lb",
-            MetricWindow.H1,
+            OneHourRange,
             users: ["alice@example.com"],
             library: null,
             top: 10,
@@ -895,7 +1232,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
 
         var backendItems = await store.GetPromptLeaderboardAsync(
             "org_q_prompt_lb",
-            MetricWindow.H1,
+            OneHourRange,
             users: ["alice@example.com"],
             library: "backend",
             top: 10,
@@ -920,7 +1257,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var store = new PostgresMetricsQueryStore(_context);
         var series = await store.GetReviewVolumeSeriesAsync(
             "org_q_rv",
-            MetricWindow.H1,
+            OneHourRange,
             repositoryIds: null,
             authorLogins: null,
             requestOrigin: null,
@@ -955,7 +1292,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var store = new PostgresMetricsQueryStore(_context);
         var series = await store.GetReviewFindingsSeriesAsync(
             "org_q_rf",
-            MetricWindow.H1,
+            OneHourRange,
             repositoryIds: null,
             authorLogins: null,
             ReviewFindingsGroup.Repo,
@@ -985,7 +1322,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var store = new PostgresMetricsQueryStore(_context);
         var groups = await store.ListFindingReviewGroupsAsync(
             org,
-            MetricWindow.H1,
+            OneHourRange,
             FindingSeverity.Critical,
             cursorCreatedAtUtc: null,
             cursorId: null,
@@ -1016,7 +1353,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var store = new PostgresMetricsQueryStore(_context);
         var groups = await store.ListFindingReviewGroupsAsync(
             org,
-            MetricWindow.H1,
+            OneHourRange,
             FindingSeverity.Critical,
             cursorCreatedAtUtc: null,
             cursorId: null,
@@ -1043,7 +1380,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var store = new PostgresMetricsQueryStore(_context);
         var series = await store.GetReviewVolumeSeriesAsync(
             org,
-            MetricWindow.H1,
+            OneHourRange,
             repositoryIds: null,
             authorLogins: null,
             requestOrigin: null,
@@ -1069,7 +1406,7 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         var store = new PostgresMetricsQueryStore(_context);
         var overview = await store.GetOverviewAsync(
             "org_q_ov",
-            MetricWindow.H1,
+            OneHourRange,
             CancellationToken.None
         );
 
@@ -1164,6 +1501,43 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
             CreatedAtUtc = Now,
         };
 
+    private static MetricEvent ScatterMetric(string org, double value, double tokens) =>
+        new()
+        {
+            OrganizationId = org,
+            MetricType = "zeeq_review_duration_ms",
+            MetricValue = value,
+            Tags = new()
+            {
+                ["tokens"] = tokens.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            },
+            CreatedAtUtc = Now,
+        };
+
+    private static MetricEvent LeaderboardMetric(
+        string org,
+        string metricType,
+        double value,
+        string? heading = null
+    ) =>
+        new()
+        {
+            OrganizationId = org,
+            MetricType = metricType,
+            MetricValue = value,
+            Library = "zeeq-app",
+            Tags = heading is null
+                ? new() { ["path"] = "/range/document.md" }
+                : new() { ["path"] = "/range/section.md", ["heading"] = heading },
+            CreatedAtUtc = Now,
+        };
+
+    private static MetricEvent At(MetricEvent metric, DateTimeOffset createdAtUtc)
+    {
+        metric.CreatedAtUtc = createdAtUtc;
+        return metric;
+    }
+
     private static MetricEvent AgentMetric(
         string org,
         string metricType,
@@ -1250,12 +1624,13 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
         CodeReviewRequestOrigin origin = CodeReviewRequestOrigin.RepositoryWebhook,
         int critical = 0,
         int major = 0,
-        string authorLogin = "octocat"
+        string authorLogin = "octocat",
+        DateTimeOffset? createdAtUtc = null
     ) =>
         new()
         {
             Id = $"cr_{Guid.CreateVersion7():N}",
-            CreatedAtUtc = Now,
+            CreatedAtUtc = createdAtUtc ?? Now,
             UpdatedAtUtc = Now,
             OrganizationId = org,
             RepositoryId = "repo_q",
