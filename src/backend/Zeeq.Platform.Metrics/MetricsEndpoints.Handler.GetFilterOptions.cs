@@ -1,5 +1,5 @@
-using Zeeq.Core.Models;
 using Microsoft.Extensions.Caching.Hybrid;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.Metrics;
 

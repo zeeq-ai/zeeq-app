@@ -22,12 +22,10 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     /// <inheritdoc />
     public async Task<ReviewCostMetrics> GetReviewCostMetricsAsync(
         string organizationId,
-        MetricWindow window,
+        MetricQueryRange range,
         CancellationToken cancellationToken
     )
     {
-        var range = window.ToRange();
-        var windowStart = DateTimeOffset.UtcNow - range.Span;
         const string metricType = "zeeq_review_cost_usd";
 
         FormattableString reviewsSql = $"""
@@ -39,7 +37,8 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             FROM zeeq.zeeq_metric_events
             WHERE organization_id = {organizationId}
               AND metric_type = {metricType}
-              AND created_at_utc >= {windowStart}
+              AND created_at_utc >= {range.StartUtc}
+              AND created_at_utc < {range.EndExclusiveUtc}
               AND tags ? 'review_id'
               AND tags ? 'view_token'
             ORDER BY created_at_utc DESC, tags->>'review_id' DESC
@@ -47,13 +46,14 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             """;
 
         FormattableString authorsSql = $"""
-            SELECT date_bin({range.Bucket}, created_at_utc, {windowStart}) AS bucket,
+            SELECT date_bin({range.Bucket}, created_at_utc, {range.StartUtc}) AS bucket,
                    COALESCE(tags->>'author_login', 'Unknown') AS series_key,
                    SUM(metric_value) AS value
             FROM zeeq.zeeq_metric_events
             WHERE organization_id = {organizationId}
               AND metric_type = {metricType}
-              AND created_at_utc >= {windowStart}
+              AND created_at_utc >= {range.StartUtc}
+              AND created_at_utc < {range.EndExclusiveUtc}
             GROUP BY 1, 2
             ORDER BY 1
             """;
@@ -166,14 +166,12 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     public async Task<IReadOnlyList<MetricSeriesPoint>> GetSeriesAsync(
         string organizationId,
         string metricType,
-        MetricWindow window,
+        MetricQueryRange range,
         MetricSeriesGroup groupBy,
         MetricSeriesFilters filters,
         CancellationToken cancellationToken
     )
     {
-        var range = window.ToRange();
-        var windowStart = DateTimeOffset.UtcNow - range.Span;
         var users = filters.Users ?? [];
         var tools = filters.Tools ?? [];
         var libraries = filters.Libraries ?? [];
@@ -209,6 +207,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             WHERE metric.organization_id = {2}
               AND metric.metric_type = {3}
               AND metric.created_at_utc >= {1}
+              AND metric.created_at_utc < {8}
               AND (cardinality({4}) = 0 OR {{NormalizedMetricUserEmailSql}} = ANY({7}))
               AND (cardinality({5}) = 0 OR metric.tool_name = ANY({5}))
               AND (cardinality({6}) = 0 OR metric.library = ANY({6}))
@@ -219,13 +218,14 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         var sql = FormattableStringFactory.Create(
             format,
             range.Bucket,
-            windowStart,
+            range.StartUtc,
             organizationId,
             metricType,
             users,
             tools,
             libraries,
-            resolvedUserKeys
+            resolvedUserKeys,
+            range.EndExclusiveUtc
         );
 
         return await db
@@ -238,15 +238,13 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     public async Task<IReadOnlyList<MetricTwoDimensionalSeriesPoint>> GetTwoDimensionalSeriesAsync(
         string organizationId,
         string metricType,
-        MetricWindow window,
+        MetricQueryRange range,
         MetricSeriesGroup primaryGroupBy,
         MetricSeriesGroup secondaryGroupBy,
         MetricSeriesFilters filters,
         CancellationToken cancellationToken
     )
     {
-        var range = window.ToRange();
-        var windowStart = DateTimeOffset.UtcNow - range.Span;
         var users = filters.Users ?? [];
         var tools = filters.Tools ?? [];
         var libraries = filters.Libraries ?? [];
@@ -276,6 +274,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             WHERE metric.organization_id = {2}
               AND metric.metric_type = {3}
               AND metric.created_at_utc >= {1}
+              AND metric.created_at_utc < {8}
               AND (cardinality({4}) = 0 OR {{NormalizedMetricUserEmailSql}} = ANY({7}))
               AND (cardinality({5}) = 0 OR metric.tool_name = ANY({5}))
               AND (cardinality({6}) = 0 OR metric.library = ANY({6}))
@@ -286,13 +285,14 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         var sql = FormattableStringFactory.Create(
             format,
             range.Bucket,
-            windowStart,
+            range.StartUtc,
             organizationId,
             metricType,
             users,
             tools,
             libraries,
-            resolvedUserKeys
+            resolvedUserKeys,
+            range.EndExclusiveUtc
         );
 
         return await db
@@ -305,24 +305,22 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     public async Task<IReadOnlyList<MetricPercentilePoint>> GetPercentileSeriesAsync(
         string organizationId,
         string metricType,
-        MetricWindow window,
+        MetricQueryRange range,
         string? repositoryId,
         string? facet,
         CancellationToken cancellationToken
     )
     {
-        var range = window.ToRange();
-        var windowStart = DateTimeOffset.UtcNow - range.Span;
-
         FormattableString sql = $"""
-            SELECT date_bin({range.Bucket}, created_at_utc, {windowStart}) AS bucket,
+            SELECT date_bin({range.Bucket}, created_at_utc, {range.StartUtc}) AS bucket,
                    percentile_cont(0.50) WITHIN GROUP (ORDER BY metric_value) AS p50,
                    percentile_cont(0.95) WITHIN GROUP (ORDER BY metric_value) AS p95,
                    percentile_cont(0.99) WITHIN GROUP (ORDER BY metric_value) AS p99
             FROM zeeq.zeeq_metric_events
             WHERE organization_id = {organizationId}
               AND metric_type = {metricType}
-              AND created_at_utc >= {windowStart}
+              AND created_at_utc >= {range.StartUtc}
+              AND created_at_utc < {range.EndExclusiveUtc}
               AND ({repositoryId}::text IS NULL OR repository_id = {repositoryId}::text)
               AND ({facet}::text IS NULL OR facet = {facet}::text)
             GROUP BY 1
@@ -339,16 +337,13 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     public async Task<IReadOnlyList<MetricScatterPoint>> GetScatterSampleAsync(
         string organizationId,
         string metricType,
-        MetricWindow window,
+        MetricQueryRange range,
         string? repositoryId,
         string? facet,
         int limit,
         CancellationToken cancellationToken
     )
     {
-        var range = window.ToRange();
-        var windowStart = DateTimeOffset.UtcNow - range.Span;
-
         FormattableString sql = $"""
             SELECT created_at_utc,
                    metric_value,
@@ -356,7 +351,8 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             FROM zeeq.zeeq_metric_events
             WHERE organization_id = {organizationId}
               AND metric_type = {metricType}
-              AND created_at_utc >= {windowStart}
+              AND created_at_utc >= {range.StartUtc}
+              AND created_at_utc < {range.EndExclusiveUtc}
               AND ({repositoryId}::text IS NULL OR repository_id = {repositoryId}::text)
               AND ({facet}::text IS NULL OR facet = {facet}::text)
             ORDER BY created_at_utc DESC
@@ -373,15 +369,13 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     public async Task<IReadOnlyList<MetricLeaderboardItem>> GetLeaderboardAsync(
         string organizationId,
         string[] metricTypes,
-        MetricWindow window,
+        MetricQueryRange range,
         string? library,
         int top,
         CancellationToken cancellationToken,
         string[]? users = null
     )
     {
-        var range = window.ToRange();
-        var windowStart = DateTimeOffset.UtcNow - range.Span;
         var userFilter = users ?? [];
         var resolvedUserKeys = await ResolveNormalizedUserFilterKeysAsync(
             organizationId,
@@ -398,7 +392,8 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             FROM zeeq.zeeq_metric_events
             WHERE organization_id = {organizationId}
               AND metric_type = ANY({metricTypes})
-              AND created_at_utc >= {windowStart}
+              AND created_at_utc >= {range.StartUtc}
+              AND created_at_utc < {range.EndExclusiveUtc}
               AND tags->>'path' IS NOT NULL
               AND ({library}::text IS NULL OR library = {library}::text)
               AND (cardinality({userFilter}) = 0 OR lower(btrim(user_email)) = ANY({resolvedUserKeys}))
@@ -417,15 +412,13 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     public async Task<IReadOnlyList<MetricLeaderboardItem>> GetSectionLeaderboardAsync(
         string organizationId,
         string[] metricTypes,
-        MetricWindow window,
+        MetricQueryRange range,
         string? library,
         int top,
         CancellationToken cancellationToken,
         string[]? users = null
     )
     {
-        var range = window.ToRange();
-        var windowStart = DateTimeOffset.UtcNow - range.Span;
         var userFilter = users ?? [];
         var resolvedUserKeys = await ResolveNormalizedUserFilterKeysAsync(
             organizationId,
@@ -445,7 +438,8 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             FROM zeeq.zeeq_metric_events
             WHERE organization_id = {organizationId}
               AND metric_type = ANY({metricTypes})
-              AND created_at_utc >= {windowStart}
+              AND created_at_utc >= {range.StartUtc}
+              AND created_at_utc < {range.EndExclusiveUtc}
               AND tags->>'path' IS NOT NULL
               AND tags->>'heading' IS NOT NULL
               AND ({library}::text IS NULL OR library = {library}::text)
@@ -464,15 +458,13 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     /// <inheritdoc />
     public async Task<IReadOnlyList<MetricLeaderboardItem>> GetPromptLeaderboardAsync(
         string organizationId,
-        MetricWindow window,
+        MetricQueryRange range,
         string[]? users,
         string? library,
         int top,
         CancellationToken cancellationToken
     )
     {
-        var range = window.ToRange();
-        var windowStart = DateTimeOffset.UtcNow - range.Span;
         var userFilter = users ?? [];
         var resolvedUserKeys = await ResolveNormalizedUserFilterKeysAsync(
             organizationId,
@@ -497,6 +489,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             WHERE metric.organization_id = {0}
               AND metric.metric_type = 'zeeq_prompt_get_counter'
               AND metric.created_at_utc >= {1}
+              AND metric.created_at_utc < {6}
               AND metric.tags->>'document_path' IS NOT NULL
               AND (cardinality({2}) = 0 OR {{NormalizedMetricUserEmailSql}} = ANY({5}))
               AND ({3}::text IS NULL OR metric.library = {3}::text)
@@ -508,11 +501,12 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         var sql = FormattableStringFactory.Create(
             format,
             organizationId,
-            windowStart,
+            range.StartUtc,
             userFilter,
             library,
             top,
-            resolvedUserKeys
+            resolvedUserKeys,
+            range.EndExclusiveUtc
         );
 
         return await db
@@ -524,7 +518,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     /// <inheritdoc />
     public async Task<IReadOnlyList<ReviewVolumePoint>> GetReviewVolumeSeriesAsync(
         string organizationId,
-        MetricWindow window,
+        MetricQueryRange range,
         string[]? repositoryIds,
         string[]? authorLogins,
         CodeReviewRequestOrigin? requestOrigin,
@@ -532,8 +526,6 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         CancellationToken cancellationToken
     )
     {
-        var range = window.ToRange();
-        var windowStart = DateTimeOffset.UtcNow - range.Span;
         var repos = repositoryIds ?? [];
         var authors = authorLogins ?? [];
         var origin = requestOrigin?.ToString();
@@ -553,6 +545,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             FROM zeeq.code_review_records
             WHERE organization_id = {2}
               AND created_at_utc >= {1}
+              AND created_at_utc < {6}
               AND (cardinality({3}) = 0 OR repository_id = ANY({3}))
               AND (cardinality({4}) = 0 OR author_login = ANY({4}))
               AND ({5}::text IS NULL OR request_origin = {5}::text)
@@ -563,11 +556,12 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         var sql = FormattableStringFactory.Create(
             format,
             range.Bucket,
-            windowStart,
+            range.StartUtc,
             organizationId,
             repos,
             authors,
-            origin
+            origin,
+            range.EndExclusiveUtc
         );
 
         var points = await db
@@ -589,15 +583,13 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     /// <inheritdoc />
     public async Task<IReadOnlyList<ReviewFindingsPoint>> GetReviewFindingsSeriesAsync(
         string organizationId,
-        MetricWindow window,
+        MetricQueryRange range,
         string[]? repositoryIds,
         string[]? authorLogins,
         ReviewFindingsGroup groupBy,
         CancellationToken cancellationToken
     )
     {
-        var range = window.ToRange();
-        var windowStart = DateTimeOffset.UtcNow - range.Span;
         var repos = repositoryIds ?? [];
         var authors = authorLogins ?? [];
 
@@ -620,6 +612,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             FROM zeeq.code_review_records
             WHERE organization_id = {2}
               AND created_at_utc >= {1}
+              AND created_at_utc < {5}
               AND (cardinality({3}) = 0 OR repository_id = ANY({3}))
               AND (cardinality({4}) = 0 OR author_login = ANY({4}))
             GROUP BY 1, 2
@@ -629,10 +622,11 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         var sql = FormattableStringFactory.Create(
             format,
             range.Bucket,
-            windowStart,
+            range.StartUtc,
             organizationId,
             repos,
-            authors
+            authors,
+            range.EndExclusiveUtc
         );
 
         var points = await db
@@ -654,13 +648,10 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     /// <inheritdoc />
     public async Task<MetricsOverview> GetOverviewAsync(
         string organizationId,
-        MetricWindow window,
+        MetricQueryRange range,
         CancellationToken cancellationToken
     )
     {
-        var range = window.ToRange();
-        var windowStart = DateTimeOffset.UtcNow - range.Span;
-
         FormattableString metricSql = $"""
             SELECT
               COALESCE(
@@ -682,7 +673,8 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
               )::double precision AS review_duration_ms
             FROM zeeq.zeeq_metric_events
             WHERE organization_id = {organizationId}
-              AND created_at_utc >= {windowStart}
+              AND created_at_utc >= {range.StartUtc}
+              AND created_at_utc < {range.EndExclusiveUtc}
             """;
 
         var metricRow = await db
@@ -696,7 +688,8 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
                    COALESCE(SUM(major_findings), 0) AS major_findings
             FROM zeeq.code_review_records
             WHERE organization_id = {organizationId}
-              AND created_at_utc >= {windowStart}
+              AND created_at_utc >= {range.StartUtc}
+              AND created_at_utc < {range.EndExclusiveUtc}
             """;
 
         var reviewRow = await db
@@ -727,15 +720,10 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     /// selected "latest" row is deterministic even when two attempts in the same group share a
     /// timestamp — without it, <c>rn = 1</c> could pick either row on different executions.
     /// <para>
-    /// The window bound (<c>created_at_utc &gt;= windowStart</c>, applied inside the CTE before either
-    /// window function runs) is one-sided — there is no upper bound besides "now" — matching
-    /// <see cref="GetOverviewAsync"/>'s same query shape. This means a group can never have its true
-    /// latest attempt fall outside the window while an earlier attempt falls inside: the true latest
-    /// (by definition the max <c>created_at_utc</c> across the whole group) is always
-    /// &gt;= any single in-window row's timestamp, so if any row qualifies, the true latest also
-    /// qualifies and is present in the scanned set. <c>rn = 1</c> therefore always lands on the actual
-    /// latest attempt, never a stale earlier one — the CTE's window filter and the dedup step can't
-    /// disagree the way they could with a two-sided (start-and-end) window.
+    /// Both UTC bounds are applied inside the CTE before sums and ranking. Identity fields
+    /// therefore come from the latest attempt within the selected interval, while severity totals
+    /// sum every attempt within that interval. A later attempt outside a historical interval must
+    /// not erase its historical findings or change reconciliation with the overview totals.
     /// </para>
     /// <para>
     /// Both windows run over the same <c>organization_id + created_at_utc</c>-bounded set already used
@@ -749,7 +737,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
     /// </remarks>
     public async Task<IReadOnlyList<FindingReviewGroup>> ListFindingReviewGroupsAsync(
         string organizationId,
-        MetricWindow window,
+        MetricQueryRange range,
         FindingSeverity severity,
         DateTimeOffset? cursorCreatedAtUtc,
         string? cursorId,
@@ -764,8 +752,6 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             );
         }
 
-        var range = window.ToRange();
-        var windowStart = DateTimeOffset.UtcNow - range.Span;
         var hasCursor = cursorCreatedAtUtc.HasValue;
 
         // Exhaustive by construction: the handler rejects any FindingSeverity outside this closed
@@ -798,6 +784,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
                 FROM zeeq.code_review_records
                 WHERE organization_id = {0}
                   AND created_at_utc >= {1}
+                  AND created_at_utc < {6}
             )
             SELECT
                 windowed.review_id,
@@ -834,11 +821,12 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
         var sql = FormattableStringFactory.Create(
             format,
             organizationId,
-            windowStart,
+            range.StartUtc,
             hasCursor,
             cursorCreatedAtUtc ?? DateTimeOffset.UnixEpoch,
             cursorId ?? "",
-            limit
+            limit,
+            range.EndExclusiveUtc
         );
 
         var rows = await db

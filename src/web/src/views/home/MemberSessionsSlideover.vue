@@ -3,7 +3,7 @@
   <USlideover
     v-model:open="open"
     :title="title"
-    description="Recent agent conversations, newest first."
+    description="Recent agent conversations, newest first · independent of reporting period."
     side="right"
     :ui="{ content: 'max-w-2xl', body: 'p-0 sm:p-0' }"
     @after:leave="onAfterLeave"

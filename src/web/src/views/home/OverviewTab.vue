@@ -12,7 +12,7 @@
       v-if="!loading && !overview"
       icon="i-hugeicons-chart-01"
       title="No activity yet"
-      description="Metrics appear here once tools, reads, and reviews are recorded for this window."
+      description="No telemetry returned for this period. Metrics appear here once tools, reads, and reviews are recorded."
     />
 
     <template v-else>
@@ -55,19 +55,22 @@
       <FindingReviewsSlideover
         v-model:open="slideoverOpen"
         :initial-severity="initialSeverity"
-        :parent-window="window"
+        :parent-period="period"
+        :recent-ranges="recentRanges"
+        :today-utc="todayUtc"
         :items="findingReviewItems"
         :next-cursor="findingReviewNextCursor"
         :loading-by-severity="findingReviewsLoading"
         :loading-more-by-severity="findingReviewsLoadingMore"
         @load="
-          (severity, windowToken) =>
-            emits('loadFindingReviews', severity, windowToken)
+          (severity, findingsPeriod) =>
+            emits('loadFindingReviews', severity, findingsPeriod)
         "
         @load-more="
-          (severity, windowToken) =>
-            emits('loadMoreFindingReviews', severity, windowToken)
+          (severity, findingsPeriod) =>
+            emits('loadMoreFindingReviews', severity, findingsPeriod)
         "
+        @range-used="(range) => emits('rangeUsed', range)"
       />
 
       <!-- User + tool multi-select filters scope all four tool-call panels below. -->
@@ -157,11 +160,12 @@ import {
   type MetricsOverview,
   type MetricSeriesPoint,
 } from "@/api/generated";
-import {
-  metricWindowRangeMs,
-  toMetricNumber,
-  type MetricWindowToken,
-} from "@/stores/metrics-store";
+import { toMetricNumber } from "@/stores/metrics-store";
+import type {
+  MetricChartDomain,
+  MetricDateRange,
+  MetricPeriod,
+} from "@/stores/metric-period";
 import MetricChart from "./MetricChart.vue";
 import FindingReviewsSlideover from "./FindingReviewsSlideover.vue";
 import {
@@ -191,8 +195,14 @@ const props = defineProps<{
   tools: string[];
   /** Tool filter options ({ label, value: tool }). */
   toolItems: { label: string; value: string }[];
-  /** Shared dashboard window; fills empty buckets so the x-axis reflects the true cadence. */
-  window: MetricWindowToken;
+  /** Resolved chart domain for the reporting period: explicit bounds, bucket width and UTC mode. */
+  domain: MetricChartDomain;
+  /** Applied reporting period; the findings drill-down inherits it and may override it locally. */
+  period: MetricPeriod;
+  /** Recent custom ranges offered by the drill-down's own selector. */
+  recentRanges: MetricDateRange[];
+  /** UTC "today" (yyyy-MM-dd) for the drill-down's calendar. */
+  todayUtc: string;
   /** Findings drill-down pages, keyed by severity — see the metrics store action's comment. */
   findingReviewItems: Record<FindingSeverity, FindingReviewListItemResponse[]>;
   /** Next-page cursor per severity, or null when that severity's list is exhausted. */
@@ -206,11 +216,10 @@ const props = defineProps<{
 const emits = defineEmits<{
   "update:users": [value: string[]];
   "update:tools": [value: string[]];
-  loadFindingReviews: [severity: FindingSeverity, window: MetricWindowToken];
-  loadMoreFindingReviews: [
-    severity: FindingSeverity,
-    window: MetricWindowToken,
-  ];
+  loadFindingReviews: [severity: FindingSeverity, period: MetricPeriod];
+  loadMoreFindingReviews: [severity: FindingSeverity, period: MetricPeriod];
+  /** A custom range was applied in the drill-down; the root records it in the shared history. */
+  rangeUsed: [range: MetricDateRange];
 }>();
 
 /** Whether the findings drill-down slideover is open. */
@@ -310,7 +319,7 @@ function pivot(
     (point) => point.bucket,
     (point) => (point.seriesKey ? seriesKeyLabel(point.seriesKey) : null),
     (point) => toMetricNumber(point.value),
-    metricWindowRangeMs(props.window),
+    props.domain,
   );
 }
 

@@ -1,5 +1,4 @@
 import { defineStore, acceptHMRUpdate } from "pinia";
-import { useStorage } from "@vueuse/core";
 import {
   Metrics,
   metricSeriesGroupEnum,
@@ -16,69 +15,34 @@ import {
   type MetricTwoDimensionalSeriesPoint,
   type MetricsOverview,
   type MetricsRepositoryOption,
+  type ReviewFindingsGroup,
   type ReviewFindingsPoint,
   type ReviewCostMetrics,
   type ReviewVolumeGroup,
   type ReviewVolumePoint,
 } from "@/api/generated";
 import { useAppStore } from "@/stores/app-store";
+import { throwFirstRejection, unwrapSettled } from "@/utils/settled";
+import {
+  isBucketOutsidePeriod,
+  metricPeriodKey,
+  metricPeriodQuery,
+  resolveChartDomain,
+  type MetricPeriod,
+  type MetricPeriodQuery,
+} from "@/stores/metric-period";
+import { sharedMetricPeriodState } from "@/stores/metric-period-state";
 
-/**
- * Fixed window tokens accepted by every metrics route (server `[AllowedValues]`).
- * Ordered shortest→longest so the selector reads naturally.
- */
-export const metricWindowTokens = [
-  "15m",
-  "30m",
-  "1h",
-  "4h",
-  "12h",
-  "24h",
-  "72h",
-  "7d",
-  "14d",
-  "30d",
-] as const;
-export type MetricWindowToken = (typeof metricWindowTokens)[number];
-
-/** Look-back span and fixed bucket width, in milliseconds, for a window token. */
-export type MetricWindowRangeMs = { spanMs: number; bucketMs: number };
-
-const minuteMs = 60_000;
-const hourMs = 60 * minuteMs;
-const dayMs = 24 * hourMs;
-
-/**
- * Client mirror of the backend's `MetricWindowExtensions.ToRange()`
- * (`Zeeq.Core.Models/Metrics/MetricWindow.cs`) — keep in sync. Used to fill
- * in empty buckets on the client (the API only returns buckets that have at
- * least one point), so the x-axis shows the true bucket cadence instead of
- * collapsing empty stretches away.
- */
-const metricWindowRangesMs: Record<MetricWindowToken, MetricWindowRangeMs> = {
-  "15m": { spanMs: 15 * minuteMs, bucketMs: 1 * minuteMs },
-  "30m": { spanMs: 30 * minuteMs, bucketMs: 2 * minuteMs },
-  "1h": { spanMs: 1 * hourMs, bucketMs: 5 * minuteMs },
-  "4h": { spanMs: 4 * hourMs, bucketMs: 15 * minuteMs },
-  "12h": { spanMs: 12 * hourMs, bucketMs: 30 * minuteMs },
-  "24h": { spanMs: 24 * hourMs, bucketMs: 1 * hourMs },
-  "72h": { spanMs: 72 * hourMs, bucketMs: 2 * hourMs },
-  "7d": { spanMs: 7 * dayMs, bucketMs: 6 * hourMs },
-  "14d": { spanMs: 14 * dayMs, bucketMs: 12 * hourMs },
-  "30d": { spanMs: 30 * dayMs, bucketMs: 1 * dayMs },
-};
-
-/** Resolves the look-back span and bucket width (ms) for a window token. */
-export function metricWindowRangeMs(
-  token: MetricWindowToken,
-): MetricWindowRangeMs {
-  return metricWindowRangesMs[token];
-}
-export const defaultMetricWindow: MetricWindowToken = "24h";
-export const sharedMetricWindow = useStorage<MetricWindowToken>(
-  "zeeq:metrics-window",
+// The period model lives in metric-period.ts; re-exported here so existing
+// importers of the window tokens/ranges keep a single stable entry point.
+export {
   defaultMetricWindow,
-);
+  metricWindowItems,
+  metricWindowRangeMs,
+  metricWindowTokens,
+  type MetricWindowRangeMs,
+  type MetricWindowToken,
+} from "@/stores/metric-period";
 
 /** Counter metric types backing the bucketed series panels (UI-1, UI-2, UI-6). */
 export const counterMetricType = {
@@ -101,40 +65,44 @@ export const histogramMetricType = {
 export type HistogramMetricType =
   (typeof histogramMetricType)[keyof typeof histogramMetricType];
 
-/** Human labels for the window selector, keyed by token. */
-const windowLabels: Record<MetricWindowToken, string> = {
-  "15m": "Last 15 minutes",
-  "30m": "Last 30 minutes",
-  "1h": "Last hour",
-  "4h": "Last 4 hours",
-  "12h": "Last 12 hours",
-  "24h": "Last 24 hours",
-  "72h": "Last 72 hours",
-  "7d": "Last 7 days",
-  "14d": "Last 14 days",
-  "30d": "Last 30 days",
+/** Scope for a request: stale once its generation/identity has been invalidated. */
+type RequestScope = { isCurrent: () => boolean };
+
+/** Snapshot of the applied period taken when a load starts; every panel in a batch reads this. */
+type PeriodRequest = RequestScope & {
+  period: MetricPeriod;
+  query: MetricPeriodQuery;
 };
 
-/** Ready-made `{ label, value }` items for a Nuxt UI select. */
-export const metricWindowItems = metricWindowTokens.map((token) => ({
-  label: windowLabels[token],
-  value: token,
-}));
+const outOfPeriodMessage =
+  "The server returned telemetry outside the selected or elapsed period.";
+
+/** Identity of the first findings page / cursor chain: org + severity are keyed separately. */
+type FindingsIdentity = string;
 
 /**
  * Store for the home-page metrics dashboard (API tag `Metrics`).
  *
- * `Home.vue` is the only consumer: it drives the shared window + per-tab filters,
- * calls the load actions for whichever panels the active tab shows, and pushes
- * the raw DTO arrays into child panels as props. Numeric fields arrive as
+ * `Home.vue` is the only consumer: it drives the shared reporting period + per-tab
+ * filters, calls the load actions for whichever panels the active tab shows, and
+ * pushes the raw DTO arrays into child panels as props. Numeric fields arrive as
  * `number | string` (int64/double JSON), so panels coerce with `toMetricNumber`
  * and wrap bucket timestamps with `new Date(...)` when building view models.
+ *
+ * Staleness model: every period/org/filter change bumps a *generation*. Each load action
+ * snapshots the period + generation up front (`beginRequest`) and every write
+ * (data, error, loading) is gated on it, so a slow response for an old period can
+ * never populate a newly labeled one. A later request for the same panel key
+ * also supersedes an earlier one. Panel data is cleared on a generation change
+ * and `isLoading` reports true until the first load for the new period starts, so
+ * old numbers are never shown under the new label and loading wins over "empty".
  */
 export const useMetricsStore = defineStore("metrics-store", () => {
   const appStore = useAppStore();
 
-  // Shared window across metrics surfaces.
-  const window = sharedMetricWindow;
+  // Shared period state (in-memory applied period + persisted preset/history).
+  const { period, recentRanges, applyPeriod, recordRecentRange } =
+    sharedMetricPeriodState;
 
   // Filters are scoped per tab: MCP uses users/tools, Knowledge uses a single
   // library, Code Reviews uses repos/authors/origin, Performance uses facet/repo.
@@ -180,11 +148,7 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     [],
   );
   const agentCostUsdSeries = ref<MetricSeriesPoint[]>([]);
-  const reviewCostMetrics = ref<ReviewCostMetrics>({
-    reviews: [],
-    byAuthor: [],
-    hasMoreReviews: false,
-  });
+  const reviewCostMetrics = ref<ReviewCostMetrics>(emptyReviewCostMetrics());
   const percentilesByMetric = ref<Record<string, MetricPercentilePoint[]>>({});
   const scatterByMetric = ref<Record<string, MetricScatterPoint[]>>({});
 
@@ -197,7 +161,9 @@ export const useMetricsStore = defineStore("metrics-store", () => {
   const myToolCallByToolSeries = ref<MetricSeriesPoint[]>([]);
 
   // Findings drill-down list (Critical/Major stat-card slideover), keyed by severity so both
-  // severities can hold independent pages/cursors without one clearing the other.
+  // severities can hold independent pages/cursors without one clearing the other. The
+  // slideover has its own period override, so these are keyed by (org, severity, period)
+  // identity rather than cleared by the dashboard period.
   const findingReviewItems = ref<
     Record<FindingSeverity, FindingReviewListItemResponse[]>
   >({ Critical: [], Major: [] });
@@ -205,14 +171,14 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     Critical: null,
     Major: null,
   });
-
-  // A loaded page/cursor is only valid for the window it was fetched under — clear both when
-  // the shared window changes so a still-open slideover can't mix rows across windows or send
-  // loadMoreFindingReviews a cursor scoped to the window it no longer matches.
-  watch(window, () => {
-    findingReviewItems.value = { Critical: [], Major: [] };
-    findingReviewNextCursor.value = { Critical: null, Major: null };
-  });
+  const findingIdentity: Record<FindingSeverity, FindingsIdentity | null> = {
+    Critical: null,
+    Major: null,
+  };
+  const findingSequence: Record<FindingSeverity, number> = {
+    Critical: 0,
+    Major: 0,
+  };
 
   // Filter option lists, populated once from the filter-options endpoint and
   // used to build the per-tab dropdowns (values sourced from the data itself).
@@ -221,9 +187,21 @@ export const useMetricsStore = defineStore("metrics-store", () => {
   const filterOptionRepositories = ref<MetricsRepositoryOption[]>([]);
   const filterOptionAuthors = ref<string[]>([]);
 
-  // Per-panel loading flags keyed by a stable panel id; single last-error string.
+  // Per-panel loading flags and errors keyed by a stable panel id.
   const loading = ref<Record<string, boolean>>({});
-  const error = ref<string | null>(null);
+  const errors = ref<Record<string, string>>({});
+
+  /** Bumped on every period/org change; requests started under an older value are stale. */
+  let generation = 0;
+  /** Latest request sequence per panel key, so a newer request supersedes an older one. */
+  const latestRequest = new Map<string, number>();
+  /** True from a period/org/filter change until the first load for the new generation starts. */
+  const awaitingPeriodLoad = ref(false);
+  /**
+   * Initializes at load start and advances after each accepted response. The effective end
+   * is therefore evaluated at response/render time, allowing an in-flight bucket to elapse.
+   */
+  const domainNowMs = ref(Date.now());
 
   const activeOrganizationId = computed(
     () =>
@@ -231,95 +209,293 @@ export const useMetricsStore = defineStore("metrics-store", () => {
   );
   const anyLoading = computed(() => Object.values(loading.value).some(Boolean));
 
+  /** Chart x-axis domain for the applied period (explicit bounds, bucket and UTC mode). */
+  const chartDomain = computed(() =>
+    resolveChartDomain(period.value, domainNowMs.value),
+  );
+
+  /**
+   * Root alert text derived from the panels whose *current* load failed. Clearing or
+   * succeeding one panel never erases another panel's failure.
+   */
+  const error = computed<string | null>(() => {
+    const messages = Object.values(errors.value);
+    if (messages.length === 0) {
+      return null;
+    }
+    return messages.length === 1
+      ? messages[0]
+      : `${messages[0]} (${messages.length} panels could not be loaded.)`;
+  });
+
+  /**
+   * Invalidates everything loaded or in flight for the previous period/org: stale
+   * writes are dropped, panel data/loading/errors reset, and `isLoading` reports
+   * true until the next load begins so the old numbers are never shown.
+   */
+  function invalidatePeriodData() {
+    generation++;
+    clearPanelData();
+    loading.value = {};
+    errors.value = {};
+    awaitingPeriodLoad.value = true;
+  }
+
+  // Runs synchronously on the change itself — not on the next flush — so a response that
+  // lands between the change and the reload can never be written under the new label.
+  watch(period, invalidatePeriodData, { flush: "sync" });
+
+  // A filter change queues a (possibly delayed) reload exactly like a period change, so it
+  // invalidates immediately too: an in-flight response fetched under the old filters must
+  // not paint — and old-filter numbers must not stay on screen — while the reload waits.
+  // This conservatively clears every tab; Home's UTabs unmounts inactive panels and reloads
+  // them on return, so inactive-tab data is not promised as a cache.
+  watch(
+    [
+      filterUsers,
+      filterTools,
+      filterRepositoryIds,
+      filterAuthorLogins,
+      filterOrigin,
+      knowledgeLibrary,
+      promptFilterUsers,
+      promptLibrary,
+      performanceFacet,
+      performanceRepositoryId,
+      reviewVolumeGroup,
+    ],
+    invalidatePeriodData,
+    { flush: "sync" },
+  );
+
+  // Findings pages/cursors are scoped to an org; drop them (and any pending page) on change.
+  watch(
+    activeOrganizationId,
+    () => {
+      invalidatePeriodData();
+      for (const severity of findingSeverities) {
+        findingSequence[severity]++;
+        findingIdentity[severity] = null;
+      }
+      findingReviewItems.value = { Critical: [], Major: [] };
+      findingReviewNextCursor.value = { Critical: null, Major: null };
+    },
+    { flush: "sync" },
+  );
+
+  /** Resets every period-scoped panel to its empty state (filters and findings are kept). */
+  function clearPanelData() {
+    overview.value = null;
+    toolCallSeries.value = [];
+    userAgentSeries.value = [];
+    toolCallByToolSeries.value = [];
+    documentReadSeries.value = [];
+    sectionReadSeries.value = [];
+    snippetReadSeries.value = [];
+    leaderboard.value = [];
+    sectionLeaderboard.value = [];
+    snippetLeaderboard.value = [];
+    promptGetByUserSeries.value = [];
+    promptGetByLibrarySeries.value = [];
+    promptGetByUserAgentSeries.value = [];
+    promptLeaderboard.value = [];
+    reviewVolume.value = [];
+    reviewFindingsByRepo.value = [];
+    reviewFindingsByOrigin.value = [];
+    agentTokenByModelSeries.value = [];
+    agentTokenByUserSeries.value = [];
+    agentTokenByModelUserSeries.value = [];
+    agentCostUsdSeries.value = [];
+    reviewCostMetrics.value = emptyReviewCostMetrics();
+    percentilesByMetric.value = {};
+    scatterByMetric.value = {};
+    myLeaderboard.value = [];
+    mySectionLeaderboard.value = [];
+    mySnippetLeaderboard.value = [];
+    myAgentTokenByModelSeries.value = [];
+    myToolCallByToolSeries.value = [];
+  }
+
+  /**
+   * Starts a period-scoped load: snapshots the applied period and generation so every
+   * panel in the batch queries (and may write) under one consistent identity. Every
+   * period action calls this first, even ones that return early, so `isLoading`
+   * never stays pinned by a batch that has nothing to fetch.
+   */
+  function beginRequest(): PeriodRequest {
+    // Home invokes every sibling action synchronously before Promise.allSettled awaits; the
+    // coalescer starts its trailing batch only after all siblings settle. So this clears the
+    // placeholder for a new batch, never for an old sibling resuming after an await.
+    awaitingPeriodLoad.value = false;
+    domainNowMs.value = Date.now();
+    const snapshot = period.value;
+    const requestGeneration = generation;
+    return {
+      period: snapshot,
+      query: metricPeriodQuery(snapshot),
+      isCurrent: () => requestGeneration === generation,
+    };
+  }
+
   /** Loads the headline stat-card numbers (UI-0). */
   async function loadOverview() {
+    const request = beginRequest();
     const orgId = requireOrganizationId();
-    await run("overview", async () => {
-      overview.value = await Metrics.getMetricsOverview(orgId, {
-        window: window.value,
-      });
-    });
+    await run(
+      "overview",
+      request,
+      () => Metrics.getMetricsOverview(orgId, { ...request.query }),
+      (data) => {
+        overview.value = data;
+      },
+    );
   }
 
   /** Loads the distinct filter option lists once (users/tools/repositories/authors). */
   async function loadFilterOptions() {
     const orgId = requireOrganizationId();
-    await run("filterOptions", async () => {
-      const options = await Metrics.getMetricsFilterOptions(orgId);
-      filterOptionUsers.value = options.users;
-      filterOptionTools.value = options.tools;
-      filterOptionRepositories.value = options.repositories;
-      filterOptionAuthors.value = options.authors;
-    });
+    await run(
+      "filterOptions",
+      orgScope(orgId),
+      () => Metrics.getMetricsFilterOptions(orgId),
+      (options) => {
+        filterOptionUsers.value = options.users;
+        filterOptionTools.value = options.tools;
+        filterOptionRepositories.value = options.repositories;
+        filterOptionAuthors.value = options.authors;
+      },
+    );
   }
 
   /** Loads the MCP tool-call series grouped by user for the top-N stacked area (UI-1). */
   async function loadToolCallSeries() {
-    toolCallSeries.value = await loadSeries(
+    const request = beginRequest();
+    const orgId = requireOrganizationId();
+    const filters = mcpFilters();
+    await run(
       "toolCallSeries",
-      counterMetricType.toolCall,
-      metricSeriesGroupEnum.User,
-      mcpFilters(),
+      request,
+      () =>
+        fetchSeries(
+          request,
+          orgId,
+          counterMetricType.toolCall,
+          metricSeriesGroupEnum.User,
+          filters,
+        ),
+      (points) => {
+        toolCallSeries.value = points;
+      },
     );
   }
 
   /** Loads the connecting-agent series grouped by user-agent (UI-2). */
   async function loadUserAgentSeries() {
-    userAgentSeries.value = await loadSeries(
+    const request = beginRequest();
+    const orgId = requireOrganizationId();
+    const filters = mcpFilters();
+    await run(
       "userAgentSeries",
-      counterMetricType.userAgent,
-      metricSeriesGroupEnum.UserAgent,
-      mcpFilters(),
+      request,
+      () =>
+        fetchSeries(
+          request,
+          orgId,
+          counterMetricType.userAgent,
+          metricSeriesGroupEnum.UserAgent,
+          filters,
+        ),
+      (points) => {
+        userAgentSeries.value = points;
+      },
     );
   }
 
   /** Loads the MCP tool-call series grouped by tool name for the tool-mix donut. */
   async function loadToolCallByToolSeries() {
-    toolCallByToolSeries.value = await loadSeries(
+    const request = beginRequest();
+    const orgId = requireOrganizationId();
+    const filters = mcpFilters();
+    await run(
       "toolCallByToolSeries",
-      counterMetricType.toolCall,
-      metricSeriesGroupEnum.Tool,
-      mcpFilters(),
+      request,
+      () =>
+        fetchSeries(
+          request,
+          orgId,
+          counterMetricType.toolCall,
+          metricSeriesGroupEnum.Tool,
+          filters,
+        ),
+      (points) => {
+        toolCallByToolSeries.value = points;
+      },
     );
   }
 
-  /** Loads document/section/snippet read series grouped by library (UI-6). */
+  /**
+   * Loads document/section/snippet read series grouped by library (UI-6). The three
+   * counters are one panel group (`knowledgeReads`): fetched together, settled
+   * together and committed atomically so the chart never renders 1–2 of 3 series.
+   */
   async function loadKnowledgeSeries() {
+    const request = beginRequest();
+    const orgId = requireOrganizationId();
     const libraries = knowledgeLibraryFilter();
-    const [documents, sections, snippets] = await Promise.all([
-      loadSeries(
-        "documentReadSeries",
-        counterMetricType.documentRead,
-        metricSeriesGroupEnum.Library,
-        { libraries },
-      ),
-      loadSeries(
-        "sectionReadSeries",
-        counterMetricType.sectionRead,
-        metricSeriesGroupEnum.Library,
-        { libraries },
-      ),
-      loadSeries(
-        "snippetReadSeries",
-        counterMetricType.snippetRead,
-        metricSeriesGroupEnum.Library,
-        { libraries },
-      ),
-    ]);
-    documentReadSeries.value = documents;
-    sectionReadSeries.value = sections;
-    snippetReadSeries.value = snippets;
+    await run(
+      "knowledgeReads",
+      request,
+      async () => {
+        const [documents, sections, snippets] = await Promise.allSettled([
+          fetchSeries(
+            request,
+            orgId,
+            counterMetricType.documentRead,
+            metricSeriesGroupEnum.Library,
+            { libraries },
+          ),
+          fetchSeries(
+            request,
+            orgId,
+            counterMetricType.sectionRead,
+            metricSeriesGroupEnum.Library,
+            { libraries },
+          ),
+          fetchSeries(
+            request,
+            orgId,
+            counterMetricType.snippetRead,
+            metricSeriesGroupEnum.Library,
+            { libraries },
+          ),
+        ]);
+        return {
+          documents: unwrapSettled(documents),
+          sections: unwrapSettled(sections),
+          snippets: unwrapSettled(snippets),
+        };
+      },
+      (data) => {
+        documentReadSeries.value = data.documents;
+        sectionReadSeries.value = data.sections;
+        snippetReadSeries.value = data.snippets;
+      },
+    );
   }
 
   /** Loads the top-N most-read paths (UI-7), scoped to the selected library. */
   async function loadLeaderboard() {
+    const request = beginRequest();
     const orgId = requireOrganizationId();
-    await run("leaderboard", async () => {
-      leaderboard.value = await Metrics.getMetricLeaderboard(orgId, {
-        window: window.value,
-        library: knowledgeLibrary.value ?? undefined,
-      });
-    });
+    const library = knowledgeLibrary.value ?? undefined;
+    await run(
+      "leaderboard",
+      request,
+      () => Metrics.getMetricLeaderboard(orgId, { ...request.query, library }),
+      (items) => {
+        leaderboard.value = items;
+      },
+    );
   }
 
   /**
@@ -332,22 +508,38 @@ export const useMetricsStore = defineStore("metrics-store", () => {
    * for "the explanation" and "the code sample" into one row.
    */
   async function loadSectionLeaderboard() {
+    const request = beginRequest();
     const orgId = requireOrganizationId();
     const library = knowledgeLibrary.value ?? undefined;
-    await Promise.all([
-      run("sectionLeaderboard", async () => {
-        sectionLeaderboard.value = await Metrics.getMetricSectionLeaderboard(
-          orgId,
-          { window: window.value, kind: "section", library },
-        );
-      }),
-      run("snippetLeaderboard", async () => {
-        snippetLeaderboard.value = await Metrics.getMetricSectionLeaderboard(
-          orgId,
-          { window: window.value, kind: "code", library },
-        );
-      }),
+    const results = await Promise.allSettled([
+      run(
+        "sectionLeaderboard",
+        request,
+        () =>
+          Metrics.getMetricSectionLeaderboard(orgId, {
+            ...request.query,
+            kind: "section",
+            library,
+          }),
+        (items) => {
+          sectionLeaderboard.value = items;
+        },
+      ),
+      run(
+        "snippetLeaderboard",
+        request,
+        () =>
+          Metrics.getMetricSectionLeaderboard(orgId, {
+            ...request.query,
+            kind: "code",
+            library,
+          }),
+        (items) => {
+          snippetLeaderboard.value = items;
+        },
+      ),
     ]);
+    throwFirstRejection(results);
   }
 
   /**
@@ -358,66 +550,116 @@ export const useMetricsStore = defineStore("metrics-store", () => {
    * unfiltered `users: []` request that would return everyone's data.
    */
   async function loadMyKnowledgeLeaderboards() {
+    const request = beginRequest();
     const orgId = requireOrganizationId();
     const email = currentUserEmail();
     if (!email) {
-      myLeaderboard.value = [];
-      mySectionLeaderboard.value = [];
-      mySnippetLeaderboard.value = [];
+      if (request.isCurrent()) {
+        myLeaderboard.value = [];
+        mySectionLeaderboard.value = [];
+        mySnippetLeaderboard.value = [];
+      }
       return;
     }
 
-    await Promise.all([
-      run("myLeaderboard", async () => {
-        myLeaderboard.value = await Metrics.getMetricLeaderboard(orgId, {
-          window: window.value,
-          users: [email],
-        });
-      }),
-      run("mySectionLeaderboard", async () => {
-        mySectionLeaderboard.value = await Metrics.getMetricSectionLeaderboard(
-          orgId,
-          { window: window.value, kind: "section", users: [email] },
-        );
-      }),
-      run("mySnippetLeaderboard", async () => {
-        mySnippetLeaderboard.value = await Metrics.getMetricSectionLeaderboard(
-          orgId,
-          { window: window.value, kind: "code", users: [email] },
-        );
-      }),
+    const results = await Promise.allSettled([
+      run(
+        "myLeaderboard",
+        request,
+        () =>
+          Metrics.getMetricLeaderboard(orgId, {
+            ...request.query,
+            users: [email],
+          }),
+        (items) => {
+          myLeaderboard.value = items;
+        },
+      ),
+      run(
+        "mySectionLeaderboard",
+        request,
+        () =>
+          Metrics.getMetricSectionLeaderboard(orgId, {
+            ...request.query,
+            kind: "section",
+            users: [email],
+          }),
+        (items) => {
+          mySectionLeaderboard.value = items;
+        },
+      ),
+      run(
+        "mySnippetLeaderboard",
+        request,
+        () =>
+          Metrics.getMetricSectionLeaderboard(orgId, {
+            ...request.query,
+            kind: "code",
+            users: [email],
+          }),
+        (items) => {
+          mySnippetLeaderboard.value = items;
+        },
+      ),
     ]);
+    throwFirstRejection(results);
   }
 
   /** Loads the "Me" tab's token-usage-by-model series, scoped to the signed-in user. */
   async function loadMyAgentTokenByModelSeries() {
+    const request = beginRequest();
     const email = currentUserEmail();
     if (!email) {
-      myAgentTokenByModelSeries.value = [];
+      if (request.isCurrent()) {
+        myAgentTokenByModelSeries.value = [];
+      }
       return;
     }
 
-    myAgentTokenByModelSeries.value = await loadSeries(
+    const orgId = requireOrganizationId();
+    await run(
       "myAgentTokenByModelSeries",
-      histogramMetricType.agentTokenUsage,
-      metricSeriesGroupEnum.Model,
-      { users: [email] },
+      request,
+      () =>
+        fetchSeries(
+          request,
+          orgId,
+          histogramMetricType.agentTokenUsage,
+          metricSeriesGroupEnum.Model,
+          { users: [email] },
+        ),
+      (points) => {
+        myAgentTokenByModelSeries.value = points;
+      },
     );
   }
 
   /** Loads the "Me" tab's tool-usage-by-tool-name series, scoped to the signed-in user. */
   async function loadMyToolCallByToolSeries() {
+    const request = beginRequest();
     const email = currentUserEmail();
     if (!email) {
-      myToolCallByToolSeries.value = [];
+      if (request.isCurrent()) {
+        myToolCallByToolSeries.value = [];
+      }
       return;
     }
 
-    myToolCallByToolSeries.value = await loadSeries(
+    const orgId = requireOrganizationId();
+    await run(
       "myToolCallByToolSeries",
-      counterMetricType.toolCall,
-      metricSeriesGroupEnum.Tool,
-      { users: [email] },
+      request,
+      () =>
+        fetchSeries(
+          request,
+          orgId,
+          counterMetricType.toolCall,
+          metricSeriesGroupEnum.Tool,
+          { users: [email] },
+        ),
+      (points) => {
+        myToolCallByToolSeries.value = points;
+      },
     );
   }
 
@@ -426,69 +668,134 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     return appStore.user?.email ?? null;
   }
 
-  /** Loads successful dynamic prompt gets by user, library, and client/agent. */
+  /**
+   * Loads successful dynamic prompt gets by user, library, and client/agent as one panel
+   * group (`promptUsage`) committed atomically.
+   */
   async function loadPromptUsageSeries() {
+    const request = beginRequest();
+    const orgId = requireOrganizationId();
     const users = emptyToUndefined(promptFilterUsers.value);
     const libraries = promptLibraryFilter();
-    const [byUser, byLibrary, byUserAgent] = await Promise.all([
-      loadSeries(
-        "promptGetByUserSeries",
-        counterMetricType.promptGet,
-        metricSeriesGroupEnum.User,
-        { users, libraries },
-      ),
-      loadSeries(
-        "promptGetByLibrarySeries",
-        counterMetricType.promptGet,
-        metricSeriesGroupEnum.Library,
-        { users, libraries },
-      ),
-      loadSeries(
-        "promptGetByUserAgentSeries",
-        counterMetricType.promptGet,
-        metricSeriesGroupEnum.UserAgent,
-        { users, libraries },
-      ),
-    ]);
-    promptGetByUserSeries.value = byUser;
-    promptGetByLibrarySeries.value = byLibrary;
-    promptGetByUserAgentSeries.value = byUserAgent;
+    await run(
+      "promptUsage",
+      request,
+      async () => {
+        const [byUser, byLibrary, byUserAgent] = await Promise.allSettled([
+          fetchSeries(
+            request,
+            orgId,
+            counterMetricType.promptGet,
+            metricSeriesGroupEnum.User,
+            { users, libraries },
+          ),
+          fetchSeries(
+            request,
+            orgId,
+            counterMetricType.promptGet,
+            metricSeriesGroupEnum.Library,
+            { users, libraries },
+          ),
+          fetchSeries(
+            request,
+            orgId,
+            counterMetricType.promptGet,
+            metricSeriesGroupEnum.UserAgent,
+            { users, libraries },
+          ),
+        ]);
+        return {
+          byUser: unwrapSettled(byUser),
+          byLibrary: unwrapSettled(byLibrary),
+          byUserAgent: unwrapSettled(byUserAgent),
+        };
+      },
+      (data) => {
+        promptGetByUserSeries.value = data.byUser;
+        promptGetByLibrarySeries.value = data.byLibrary;
+        promptGetByUserAgentSeries.value = data.byUserAgent;
+      },
+    );
   }
 
   /** Loads the top-N successfully retrieved dynamic prompts. */
   async function loadPromptLeaderboard() {
+    const request = beginRequest();
     const orgId = requireOrganizationId();
-    await run("promptLeaderboard", async () => {
-      promptLeaderboard.value = await Metrics.getPromptLeaderboard(orgId, {
-        window: window.value,
-        users: emptyToUndefined(promptFilterUsers.value),
-        library: promptLibrary.value ?? undefined,
-      });
-    });
+    const users = emptyToUndefined(promptFilterUsers.value);
+    const library = promptLibrary.value ?? undefined;
+    await run(
+      "promptLeaderboard",
+      request,
+      () =>
+        Metrics.getPromptLeaderboard(orgId, {
+          ...request.query,
+          users,
+          library,
+        }),
+      (items) => {
+        promptLeaderboard.value = items;
+      },
+    );
   }
 
   /** Loads bucketed review volume for the reviews tab (UI-4/UI-5). */
   async function loadReviewVolume() {
+    const request = beginRequest();
     const orgId = requireOrganizationId();
-    await run("reviewVolume", async () => {
-      reviewVolume.value = await Metrics.getReviewVolume(orgId, {
-        window: window.value,
-        groupBy: reviewVolumeGroup.value,
-        repositoryIds: emptyToUndefined(filterRepositoryIds.value),
-        authorLogins: emptyToUndefined(filterAuthorLogins.value),
-        origin: filterOrigin.value,
-      });
-    });
+    const groupBy = reviewVolumeGroup.value;
+    const repositoryIds = emptyToUndefined(filterRepositoryIds.value);
+    const authorLogins = emptyToUndefined(filterAuthorLogins.value);
+    const origin = filterOrigin.value;
+    await run(
+      "reviewVolume",
+      request,
+      async () =>
+        withinPeriod(
+          await Metrics.getReviewVolume(orgId, {
+            ...request.query,
+            groupBy,
+            repositoryIds,
+            authorLogins,
+            origin,
+          }),
+          (point) => point.bucket,
+          request,
+        ),
+      (points) => {
+        reviewVolume.value = points;
+      },
+    );
   }
 
   /** Loads review-level costs and bucketed author totals for Review Throughput. */
   async function loadReviewCosts() {
+    const request = beginRequest();
     const orgId = requireOrganizationId();
-    await run("reviewCostMetrics", async () => {
-      reviewCostMetrics.value = await Metrics.getReviewCosts(orgId, {
-        window: window.value,
-      });
-    });
+    await run(
+      "reviewCostMetrics",
+      request,
+      async () => {
+        const costs = await Metrics.getReviewCosts(orgId, { ...request.query });
+        const responseNowMs = Date.now();
+        withinPeriod(
+          costs.byAuthor,
+          (point) => point.bucket,
+          request,
+          responseNowMs,
+        );
+        withinPeriod(
+          costs.reviews,
+          (sample) => sample.createdAtUtc,
+          request,
+          responseNowMs,
+        );
+        return costs;
+      },
+      (costs) => {
+        reviewCostMetrics.value = costs;
+      },
+    );
   }
 
   /**
@@ -497,201 +804,297 @@ export const useMetricsStore = defineStore("metrics-store", () => {
    * rather than behind a single toggleable dimension.
    */
   async function loadReviewFindings() {
+    const request = beginRequest();
     const orgId = requireOrganizationId();
-    const repos = emptyToUndefined(filterRepositoryIds.value);
-    const authors = emptyToUndefined(filterAuthorLogins.value);
-    await Promise.all([
-      run("reviewFindingsByRepo", async () => {
-        reviewFindingsByRepo.value = await Metrics.getReviewFindings(orgId, {
-          window: window.value,
-          groupBy: reviewFindingsGroupEnum.Repo,
-          repositoryIds: repos,
-          authorLogins: authors,
-        });
-      }),
-      run("reviewFindingsByOrigin", async () => {
-        reviewFindingsByOrigin.value = await Metrics.getReviewFindings(orgId, {
-          window: window.value,
-          groupBy: reviewFindingsGroupEnum.Origin,
-          repositoryIds: repos,
-          authorLogins: authors,
-        });
-      }),
+    const repositoryIds = emptyToUndefined(filterRepositoryIds.value);
+    const authorLogins = emptyToUndefined(filterAuthorLogins.value);
+    const fetchFindings = async (groupBy: ReviewFindingsGroup) =>
+      withinPeriod(
+        await Metrics.getReviewFindings(orgId, {
+          ...request.query,
+          groupBy,
+          repositoryIds,
+          authorLogins,
+        }),
+        (point) => point.bucket,
+        request,
+      );
+    const results = await Promise.allSettled([
+      run(
+        "reviewFindingsByRepo",
+        request,
+        () => fetchFindings(reviewFindingsGroupEnum.Repo),
+        (points) => {
+          reviewFindingsByRepo.value = points;
+        },
+      ),
+      run(
+        "reviewFindingsByOrigin",
+        request,
+        () => fetchFindings(reviewFindingsGroupEnum.Origin),
+        (points) => {
+          reviewFindingsByOrigin.value = points;
+        },
+      ),
     ]);
+    throwFirstRejection(results);
   }
 
   /**
    * Loads the first page of the findings drill-down list for a severity (the Critical/Major
    * stat-card slideover), replacing any previously loaded page for that severity. The slideover
    * has its own period selector that defaults to but does not back-propagate into the shared
-   * dashboard `window`, so callers pass the window explicitly rather than this action reading
-   * the store's `window` ref.
+   * dashboard period, so callers pass the period explicitly rather than this action reading
+   * the store's `period` ref. Starting a first page invalidates any pending page/"load more"
+   * for the severity and resets its cursor.
    */
   async function loadFindingReviews(
     severity: FindingSeverity,
-    windowToken: MetricWindowToken,
+    findingsPeriod: MetricPeriod,
   ) {
     const orgId = requireOrganizationId();
-    await run(`findingReviews:${severity}`, async () => {
-      const page = await Metrics.listFindingReviews(orgId, {
-        window: windowToken,
-        severity,
-      });
-      findingReviewItems.value = {
-        ...findingReviewItems.value,
-        [severity]: page.items,
-      };
-      findingReviewNextCursor.value = {
-        ...findingReviewNextCursor.value,
-        [severity]: page.nextCursor ?? null,
-      };
-    });
+    const identity = findingsIdentity(orgId, findingsPeriod);
+    const sequence = ++findingSequence[severity];
+    findingIdentity[severity] = identity;
+    findingReviewItems.value = { ...findingReviewItems.value, [severity]: [] };
+    findingReviewNextCursor.value = {
+      ...findingReviewNextCursor.value,
+      [severity]: null,
+    };
+    // A pending "load more" for the previous chain is now stale (its scope sequence no
+    // longer matches), so its own `finally` will never clear its flag: reset that key's
+    // loading/error here and supersede it, or the new chain's cursor would appear
+    // permanently loading and an old error would survive the reload.
+    const moreKey = `findingReviews:${severity}:more`;
+    latestRequest.set(moreKey, (latestRequest.get(moreKey) ?? 0) + 1);
+    loading.value = { ...loading.value, [moreKey]: false };
+    clearError(moreKey);
+    await run(
+      `findingReviews:${severity}`,
+      findingScope(severity, identity, sequence),
+      () =>
+        Metrics.listFindingReviews(orgId, {
+          ...metricPeriodQuery(findingsPeriod),
+          severity,
+        }),
+      (page) => {
+        findingReviewItems.value = {
+          ...findingReviewItems.value,
+          [severity]: page.items,
+        };
+        findingReviewNextCursor.value = {
+          ...findingReviewNextCursor.value,
+          [severity]: page.nextCursor ?? null,
+        };
+      },
+    );
   }
 
   /**
    * Appends the next page for a severity using its stored cursor. No-op when there is no next
-   * page (the slideover hides the "Load more" control in that case, but this guards direct
-   * calls). `windowToken` must match the window the current page/cursor was fetched under — see
-   * {@link loadFindingReviews}.
+   * page, or when `findingsPeriod` is not the period the current page/cursor was fetched under
+   * (a cursor is only valid for its own org/severity/period). A first-page reload that lands
+   * while this is pending discards it.
    */
   async function loadMoreFindingReviews(
     severity: FindingSeverity,
-    windowToken: MetricWindowToken,
+    findingsPeriod: MetricPeriod,
   ) {
     const cursor = findingReviewNextCursor.value[severity];
     if (!cursor) {
       return;
     }
     const orgId = requireOrganizationId();
-    await run(`findingReviews:${severity}:more`, async () => {
-      const page = await Metrics.listFindingReviews(orgId, {
-        window: windowToken,
-        severity,
-        cursor,
-      });
-      findingReviewItems.value = {
-        ...findingReviewItems.value,
-        [severity]: [...findingReviewItems.value[severity], ...page.items],
-      };
-      findingReviewNextCursor.value = {
-        ...findingReviewNextCursor.value,
-        [severity]: page.nextCursor ?? null,
-      };
-    });
+    const identity = findingsIdentity(orgId, findingsPeriod);
+    if (findingIdentity[severity] !== identity) {
+      return;
+    }
+    const sequence = findingSequence[severity];
+    await run(
+      `findingReviews:${severity}:more`,
+      findingScope(severity, identity, sequence),
+      () =>
+        Metrics.listFindingReviews(orgId, {
+          ...metricPeriodQuery(findingsPeriod),
+          severity,
+          cursor,
+        }),
+      (page) => {
+        findingReviewItems.value = {
+          ...findingReviewItems.value,
+          [severity]: [...findingReviewItems.value[severity], ...page.items],
+        };
+        findingReviewNextCursor.value = {
+          ...findingReviewNextCursor.value,
+          [severity]: page.nextCursor ?? null,
+        };
+      },
+    );
   }
 
   /**
-   * Loads the first agent telemetry panels backed by existing emitters:
-   * token usage split by model/user, plus aggregate USD cost over time.
+   * Loads the agent telemetry panels backed by existing emitters (token usage split by
+   * model/user, plus aggregate USD cost over time) as one panel group (`agentUsage`).
    */
   async function loadAgentUsageSeries() {
-    const [tokensByModel, tokensByUser, tokensByModelUser, costUsd] =
-      await Promise.all([
-        loadSeries(
-          "agentTokenByModelSeries",
-          histogramMetricType.agentTokenUsage,
-          metricSeriesGroupEnum.Model,
-          {},
-        ),
-        loadSeries(
-          "agentTokenByUserSeries",
-          histogramMetricType.agentTokenUsage,
-          metricSeriesGroupEnum.User,
-          {},
-        ),
-        loadTwoDimensionalSeries(
-          "agentTokenByModelUserSeries",
-          histogramMetricType.agentTokenUsage,
-          metricSeriesGroupEnum.Model,
-          metricSeriesGroupEnum.User,
-          {},
-        ),
-        loadSeries(
-          "agentCostUsdSeries",
-          histogramMetricType.agentCostUsd,
-          metricSeriesGroupEnum.User,
-          {},
-        ),
-      ]);
-    agentTokenByModelSeries.value = tokensByModel;
-    agentTokenByUserSeries.value = tokensByUser;
-    agentTokenByModelUserSeries.value = tokensByModelUser;
-    agentCostUsdSeries.value = costUsd;
+    const request = beginRequest();
+    const orgId = requireOrganizationId();
+    await run(
+      "agentUsage",
+      request,
+      async () => {
+        const [tokensByModel, tokensByUser, tokensByModelUser, costUsd] =
+          await Promise.allSettled([
+            fetchSeries(
+              request,
+              orgId,
+              histogramMetricType.agentTokenUsage,
+              metricSeriesGroupEnum.Model,
+              {},
+            ),
+            fetchSeries(
+              request,
+              orgId,
+              histogramMetricType.agentTokenUsage,
+              metricSeriesGroupEnum.User,
+              {},
+            ),
+            fetchTwoDimensionalSeries(
+              request,
+              orgId,
+              histogramMetricType.agentTokenUsage,
+              metricSeriesGroupEnum.Model,
+              metricSeriesGroupEnum.User,
+            ),
+            fetchSeries(
+              request,
+              orgId,
+              histogramMetricType.agentCostUsd,
+              metricSeriesGroupEnum.User,
+              {},
+            ),
+          ]);
+        return {
+          tokensByModel: unwrapSettled(tokensByModel),
+          tokensByUser: unwrapSettled(tokensByUser),
+          tokensByModelUser: unwrapSettled(tokensByModelUser),
+          costUsd: unwrapSettled(costUsd),
+        };
+      },
+      (data) => {
+        agentTokenByModelSeries.value = data.tokensByModel;
+        agentTokenByUserSeries.value = data.tokensByUser;
+        agentTokenByModelUserSeries.value = data.tokensByModelUser;
+        agentCostUsdSeries.value = data.costUsd;
+      },
+    );
   }
 
   /** Loads per-bucket p50/p95/p99 for a histogram metric (UI-8/UI-9). */
   async function loadPercentiles(metricType: HistogramMetricType) {
+    const request = beginRequest();
     const orgId = requireOrganizationId();
-    await run(`percentiles:${metricType}`, async () => {
-      const points = await Metrics.getMetricPercentiles(orgId, metricType, {
-        window: window.value,
-        repositoryId: performanceRepositoryId.value,
-        facet: performanceFacet.value,
-      });
-      percentilesByMetric.value = {
-        ...percentilesByMetric.value,
-        [metricType]: points,
-      };
-    });
+    const repositoryId = performanceRepositoryId.value;
+    const facet = performanceFacet.value;
+    await run(
+      `percentiles:${metricType}`,
+      request,
+      async () =>
+        withinPeriod(
+          await Metrics.getMetricPercentiles(orgId, metricType, {
+            ...request.query,
+            repositoryId,
+            facet,
+          }),
+          (point) => point.bucket,
+          request,
+        ),
+      (points) => {
+        percentilesByMetric.value = {
+          ...percentilesByMetric.value,
+          [metricType]: points,
+        };
+      },
+    );
   }
 
   /** Loads recent raw samples for a duration-vs-tokens scatter (UI-8/UI-9). */
   async function loadScatter(metricType: HistogramMetricType) {
+    const request = beginRequest();
     const orgId = requireOrganizationId();
-    await run(`scatter:${metricType}`, async () => {
-      const points = await Metrics.getMetricScatter(orgId, metricType, {
-        window: window.value,
-        repositoryId: performanceRepositoryId.value,
-        facet: performanceFacet.value,
-      });
-      scatterByMetric.value = {
-        ...scatterByMetric.value,
-        [metricType]: points,
-      };
-    });
+    const repositoryId = performanceRepositoryId.value;
+    const facet = performanceFacet.value;
+    await run(
+      `scatter:${metricType}`,
+      request,
+      async () =>
+        withinPeriod(
+          await Metrics.getMetricScatter(orgId, metricType, {
+            ...request.query,
+            repositoryId,
+            facet,
+          }),
+          (point) => point.createdAtUtc,
+          request,
+        ),
+      (points) => {
+        scatterByMetric.value = {
+          ...scatterByMetric.value,
+          [metricType]: points,
+        };
+      },
+    );
   }
 
-  /** Shared loader for the counter series panels; callers pass only their tab's filters. */
-  async function loadSeries(
-    key: string,
+  /** Counter/histogram series fetch, validated to lie inside the selected period. */
+  async function fetchSeries(
+    request: PeriodRequest,
+    orgId: string,
     metricType: string,
     groupBy: MetricSeriesGroup,
     filters: { users?: string[]; tools?: string[]; libraries?: string[] },
   ): Promise<MetricSeriesPoint[]> {
-    const orgId = requireOrganizationId();
-    let points: MetricSeriesPoint[] = [];
-    await run(key, async () => {
-      points = await Metrics.getMetricSeries(orgId, metricType, {
-        window: window.value,
-        groupBy,
-        users: filters.users,
-        tools: filters.tools,
-        libraries: filters.libraries,
-      });
+    const points = await Metrics.getMetricSeries(orgId, metricType, {
+      ...request.query,
+      groupBy,
+      users: filters.users,
+      tools: filters.tools,
+      libraries: filters.libraries,
     });
-    return points;
+    return withinPeriod(points, (point) => point.bucket, request);
   }
 
-  /** Shared loader for bucketed series grouped by two dimensions. */
-  async function loadTwoDimensionalSeries(
-    key: string,
+  /** Bucketed series grouped by two dimensions, validated to lie inside the selected period. */
+  async function fetchTwoDimensionalSeries(
+    request: PeriodRequest,
+    orgId: string,
     metricType: string,
     primaryGroupBy: MetricSeriesGroup,
     secondaryGroupBy: MetricSeriesGroup,
-    filters: { users?: string[]; tools?: string[]; libraries?: string[] },
   ): Promise<MetricTwoDimensionalSeriesPoint[]> {
-    const orgId = requireOrganizationId();
-    let points: MetricTwoDimensionalSeriesPoint[] = [];
-    await run(key, async () => {
-      points = await Metrics.getMetricTwoDimensionalSeries(orgId, metricType, {
-        window: window.value,
-        primaryGroupBy,
-        secondaryGroupBy,
-        users: filters.users,
-        tools: filters.tools,
-        libraries: filters.libraries,
-      });
-    });
+    const points = await Metrics.getMetricTwoDimensionalSeries(
+      orgId,
+      metricType,
+      { ...request.query, primaryGroupBy, secondaryGroupBy },
+    );
+    return withinPeriod(points, (point) => point.bucket, request);
+  }
+
+  /**
+   * Fails the panel (rather than silently dropping points and showing partial totals as
+   * complete) when the server returns a bucket outside selected dates or the elapsed
+   * range at response time. The response clock preserves buckets that elapsed in flight.
+   */
+  function withinPeriod<T>(
+    points: T[],
+    dateOf: (point: T) => Date,
+    request: PeriodRequest,
+    responseNowMs = Date.now(),
+  ): T[] {
+    const domain = resolveChartDomain(request.period, responseNowMs);
+    if (points.some((point) => isBucketOutsidePeriod(dateOf(point), domain))) {
+      throw new Error(outOfPeriodMessage);
+    }
     return points;
   }
 
@@ -713,9 +1116,12 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     return promptLibrary.value ? [promptLibrary.value] : undefined;
   }
 
-  /** True while the named panel is in flight. */
+  /**
+   * True while the named panel is in flight — or while the period just changed and the
+   * reload has not started yet, so panels show loading instead of empty/old data.
+   */
   function isLoading(key: string): boolean {
-    return loading.value[key] === true;
+    return awaitingPeriodLoad.value || loading.value[key] === true;
   }
 
   function requireOrganizationId(): string {
@@ -725,22 +1131,80 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     return activeOrganizationId.value;
   }
 
-  /** Wraps a panel load with its loading flag and shared error capture. */
-  async function run(key: string, action: () => Promise<void>) {
+  /** Scope bound only to the organization (filter options, which ignore the period). */
+  function orgScope(orgId: string): RequestScope {
+    return { isCurrent: () => activeOrganizationId.value === orgId };
+  }
+
+  /** Scope bound to a findings page chain: org + severity + period identity and first-page sequence. */
+  function findingScope(
+    severity: FindingSeverity,
+    identity: FindingsIdentity,
+    sequence: number,
+  ): RequestScope {
+    return {
+      isCurrent: () =>
+        findingSequence[severity] === sequence &&
+        findingIdentity[severity] === identity,
+    };
+  }
+
+  /**
+   * Runs one panel load: sets that panel's loading flag, fetches, and commits only if the
+   * request is still current *and* is the latest for its key. Stale outcomes — data, errors
+   * and loading resets alike — are dropped. A current failure records a per-panel error and
+   * rethrows so batch callers can tell the refresh failed.
+   */
+  async function run<T>(
+    key: string,
+    scope: RequestScope,
+    fetch: () => Promise<T>,
+    commit: (data: T) => void,
+  ): Promise<void> {
+    const sequence = (latestRequest.get(key) ?? 0) + 1;
+    latestRequest.set(key, sequence);
+    const isLatest = () =>
+      scope.isCurrent() && latestRequest.get(key) === sequence;
+
     loading.value = { ...loading.value, [key]: true };
-    error.value = null;
+    clearError(key);
     try {
-      await action();
+      const data = await fetch();
+      if (isLatest()) {
+        commit(data);
+        // Advance the chart clock past the response: a range that includes today may legitimately
+        // return a bucket newer than the clock captured when the request started (e.g. across
+        // an hour boundary). The selected range itself never moves.
+        domainNowMs.value = Math.max(domainNowMs.value, Date.now());
+      }
     } catch (err: unknown) {
-      error.value = errorMessage(err, "Could not load metrics.");
-      throw err;
+      if (isLatest()) {
+        errors.value = {
+          ...errors.value,
+          [key]: errorMessage(err, "Could not load metrics."),
+        };
+        throw err;
+      }
     } finally {
-      loading.value = { ...loading.value, [key]: false };
+      if (isLatest()) {
+        loading.value = { ...loading.value, [key]: false };
+      }
+    }
+  }
+
+  function clearError(key: string) {
+    if (key in errors.value) {
+      const { [key]: _cleared, ...remaining } = errors.value;
+      errors.value = remaining;
     }
   }
 
   return {
-    window,
+    period,
+    recentRanges,
+    applyPeriod,
+    recordRecentRange,
+    chartDomain,
     filterUsers,
     filterTools,
     filterRepositoryIds,
@@ -788,6 +1252,7 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     filterOptionRepositories,
     filterOptionAuthors,
     loading,
+    errors,
     error,
     activeOrganizationId,
     anyLoading,
@@ -815,6 +1280,17 @@ export const useMetricsStore = defineStore("metrics-store", () => {
     loadMyToolCallByToolSeries,
   };
 });
+
+const findingSeverities: FindingSeverity[] = ["Critical", "Major"];
+
+function emptyReviewCostMetrics(): ReviewCostMetrics {
+  return { reviews: [], byAuthor: [], hasMoreReviews: false };
+}
+
+/** Findings page chains are valid only for one org + period (severity keys the chain itself). */
+function findingsIdentity(orgId: string, period: MetricPeriod): string {
+  return `${orgId}|${metricPeriodKey(period)}`;
+}
 
 /** Coerces an int64/double JSON field (`number | string`) to a finite number. */
 export function toMetricNumber(value: number | string | null): number {

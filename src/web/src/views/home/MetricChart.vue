@@ -2,12 +2,24 @@
   <!--
   Single sized root so ECharts has explicit dimensions and native pointer
   events (used by the dashboard's pause-on-interact) fall through to it.
-  Renders the `empty` slot instead of the chart when a panel has no data.
+  Renders the `empty` slot instead of the chart when a panel has no data — but
+  loading takes precedence: a panel that is (re)loading with nothing to show
+  (first load, or data cleared by a period/filter change) shows a loading state,
+  never "empty", so missing data is not presented as proven zero activity.
   -->
   <div class="w-full" :style="{ height }">
-    <slot v-if="empty" name="empty">
+    <div
+      v-if="loading && empty"
+      role="status"
+      class="flex h-full items-center justify-center gap-2 text-sm text-dimmed"
+    >
+      <UIcon name="i-hugeicons-loading-03" class="size-4 animate-spin" />
+      Loading…
+    </div>
+
+    <slot v-else-if="empty" name="empty">
       <div class="flex h-full items-center justify-center text-sm text-dimmed">
-        No data for this window.
+        No telemetry returned for this period.
       </div>
     </slot>
 
@@ -49,7 +61,7 @@ const props = withDefaults(
   defineProps<{
     /** Fully-built ECharts option; panels compute this from store DTOs. */
     option: EChartsOption;
-    /** Shows the ECharts spinner overlay while the backing panel loads. */
+    /** Panel is loading: spinner overlay on first paint, or a loading state when there is nothing to show. */
     loading?: boolean;
     /** Renders the empty slot instead of the chart. */
     empty?: boolean;

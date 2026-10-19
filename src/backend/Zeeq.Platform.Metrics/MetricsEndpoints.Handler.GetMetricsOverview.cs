@@ -1,5 +1,5 @@
-using Zeeq.Core.Models;
 using Microsoft.Extensions.Caching.Hybrid;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.Metrics;
 
@@ -11,21 +11,31 @@ public sealed class GetMetricsOverviewHandler(IMetricsQueryStore store, HybridCa
     public async Task<Results<Ok<MetricsOverview>, BadRequest<MetricsEndpointError>>> HandleAsync(
         string organizationId,
         string? window,
+        string? startDate,
+        string? endDate,
         CancellationToken cancellationToken
     )
     {
-        if (!MetricWindowQuery.TryParse(window, out var parsedWindow))
+        if (
+            !MetricRangeQuery.TryResolve(
+                window,
+                startDate,
+                endDate,
+                DateTimeOffset.UtcNow,
+                out var range,
+                out var rangeIdentity,
+                out var rangeError
+            )
+        )
         {
-            return TypedResults.BadRequest(
-                new MetricsEndpointError("invalid_window", $"Unknown window '{window}'.")
-            );
+            return TypedResults.BadRequest(rangeError);
         }
 
-        var key = MetricsEndpointCache.Key(organizationId, "overview", parsedWindow.ToString());
+        var key = MetricsEndpointCache.Key(organizationId, "overview", rangeIdentity);
 
         var result = await cache.GetOrCreateAsync(
             key,
-            async token => await store.GetOverviewAsync(organizationId, parsedWindow, token),
+            async token => await store.GetOverviewAsync(organizationId, range, token),
             MetricsEndpointCache.Options,
             cancellationToken: cancellationToken
         );

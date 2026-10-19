@@ -1,6 +1,10 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Options;
+using Zeeq.Core.Common;
 using Zeeq.Core.Models;
+using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Platform.Metrics.Tests;
 
@@ -23,6 +27,8 @@ public sealed class MetricsEndpointHandlerTests
             "org_a",
             "not_a_real_metric",
             "1h",
+            null,
+            null,
             MetricSeriesGroup.None,
             null,
             null,
@@ -47,6 +53,8 @@ public sealed class MetricsEndpointHandlerTests
             "org_a",
             "zeeq_tool_call_counter",
             "not_a_window",
+            null,
+            null,
             MetricSeriesGroup.None,
             null,
             null,
@@ -72,6 +80,8 @@ public sealed class MetricsEndpointHandlerTests
             "org_a",
             "zeeq_tool_call_counter",
             "1h",
+            null,
+            null,
             MetricSeriesGroup.Tool,
             null,
             null,
@@ -101,6 +111,8 @@ public sealed class MetricsEndpointHandlerTests
             "org_a",
             "zeeq_agent_token_usage",
             "1h",
+            null,
+            null,
             MetricSeriesGroup.Model,
             null,
             null,
@@ -127,6 +139,8 @@ public sealed class MetricsEndpointHandlerTests
             "org_a",
             "zeeq_agent_token_usage",
             "1h",
+            null,
+            null,
             MetricSeriesGroup.Model,
             MetricSeriesGroup.User,
             null,
@@ -155,6 +169,8 @@ public sealed class MetricsEndpointHandlerTests
             "org_a",
             "zeeq_agent_token_usage",
             "1h",
+            null,
+            null,
             MetricSeriesGroup.Model,
             MetricSeriesGroup.None,
             null,
@@ -180,6 +196,8 @@ public sealed class MetricsEndpointHandlerTests
             "org_a",
             "zeeq_agent_token_usage",
             "1h",
+            null,
+            null,
             MetricSeriesGroup.Model,
             (MetricSeriesGroup)999,
             null,
@@ -205,6 +223,8 @@ public sealed class MetricsEndpointHandlerTests
             "org_a",
             "zeeq_agent_token_usage",
             "1h",
+            null,
+            null,
             MetricSeriesGroup.Model,
             MetricSeriesGroup.Model,
             null,
@@ -231,6 +251,8 @@ public sealed class MetricsEndpointHandlerTests
             "org_a",
             "zeeq_tool_call_counter",
             "1h",
+            null,
+            null,
             MetricSeriesGroup.None,
             null,
             null,
@@ -241,6 +263,8 @@ public sealed class MetricsEndpointHandlerTests
             "org_b",
             "zeeq_tool_call_counter",
             "1h",
+            null,
+            null,
             MetricSeriesGroup.None,
             null,
             null,
@@ -250,6 +274,118 @@ public sealed class MetricsEndpointHandlerTests
 
         await Assert.That(store.SeriesOrganizations).Contains("org_a");
         await Assert.That(store.SeriesOrganizations).Contains("org_b");
+    }
+
+    [Test]
+    public async Task GetMetricSeries_AbsoluteDates_AreForwardedAndKeyedByExactRange()
+    {
+        var store = new FakeMetricsQueryStore();
+        var handler = new GetMetricSeriesHandler(store, new MetricsTestHybridCache());
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var start = today.AddDays(-2);
+        var startText = start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var endText = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        for (var i = 0; i < 2; i++)
+        {
+            await handler.HandleAsync(
+                "org_a",
+                "zeeq_tool_call_counter",
+                null,
+                startText,
+                endText,
+                MetricSeriesGroup.None,
+                null,
+                null,
+                null,
+                CancellationToken.None
+            );
+        }
+
+        await Assert.That(store.SeriesRanges.Count).IsEqualTo(1);
+        await Assert
+            .That(store.SeriesRanges[0].StartUtc)
+            .IsEqualTo(new DateTimeOffset(start, TimeOnly.MinValue, TimeSpan.Zero));
+        await Assert
+            .That(store.SeriesRanges[0].EndExclusiveUtc)
+            .IsLessThanOrEqualTo(
+                new DateTimeOffset(today.AddDays(1), TimeOnly.MinValue, TimeSpan.Zero)
+            );
+        await Assert.That(store.SeriesRanges[0].Bucket).IsEqualTo(TimeSpan.FromHours(2));
+
+        await handler.HandleAsync(
+            "org_a",
+            "zeeq_tool_call_counter",
+            null,
+            today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            endText,
+            MetricSeriesGroup.None,
+            null,
+            null,
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(store.SeriesRanges.Count).IsEqualTo(2);
+        await Assert
+            .That(store.SeriesRanges[1].StartUtc)
+            .IsEqualTo(new DateTimeOffset(today, TimeOnly.MinValue, TimeSpan.Zero));
+        await Assert.That(store.SeriesRanges[1].Bucket).IsEqualTo(TimeSpan.FromHours(1));
+    }
+
+    [Test]
+    public async Task ListFindingReviews_UsesBoundedPageSizeAndLegacyCursorForPageTwo()
+    {
+        var first = FindingGroup("review_3", DateTimeOffset.UtcNow.AddMinutes(-1));
+        var second = FindingGroup("review_2", DateTimeOffset.UtcNow.AddMinutes(-2));
+        var third = FindingGroup("review_1", DateTimeOffset.UtcNow.AddMinutes(-3));
+        var store = new FakeMetricsQueryStore { FindingReviewGroups = [first, second, third] };
+        var handler = new ListFindingReviewsHandler(store, CreateLinkFactory());
+
+        var firstPage = await handler.HandleAsync(
+            "org_a",
+            "24h",
+            null,
+            null,
+            FindingSeverity.Critical,
+            cursor: null,
+            limit: 2,
+            CancellationToken.None
+        );
+
+        var firstPageResponse = firstPage.Result as Ok<FindingReviewListResponse>;
+        await Assert.That(firstPageResponse).IsNotNull();
+        await Assert.That(firstPageResponse!.Value!.Items.Count).IsEqualTo(2);
+        await Assert.That(firstPageResponse.Value.Items[1].ReviewId).IsEqualTo(second.ReviewId);
+        await Assert.That(firstPageResponse.Value.NextCursor).IsNotNull();
+        await Assert.That(store.FindingReviewQueries[0].Limit).IsEqualTo(3);
+
+        var cursor = firstPageResponse.Value.NextCursor!;
+        await Assert
+            .That(ReviewFindingsListCursor.TryDecode(cursor, out var cursorDate, out var cursorId))
+            .IsTrue();
+        await Assert.That(cursorDate).IsEqualTo(second.ReviewCreatedAtUtc);
+        await Assert.That(cursorId).IsEqualTo(second.ReviewId);
+
+        var secondPage = await handler.HandleAsync(
+            "org_a",
+            "24h",
+            null,
+            null,
+            FindingSeverity.Critical,
+            cursor,
+            2,
+            CancellationToken.None
+        );
+
+        var secondPageResponse = secondPage.Result as Ok<FindingReviewListResponse>;
+        await Assert.That(secondPageResponse).IsNotNull();
+        await Assert.That(secondPageResponse!.Value!.Items.Count).IsEqualTo(1);
+        await Assert.That(secondPageResponse.Value.Items[0].ReviewId).IsEqualTo(third.ReviewId);
+        await Assert.That(secondPageResponse.Value.NextCursor).IsNull();
+        await Assert.That(store.FindingReviewQueries[1].CursorCreatedAtUtc).IsEqualTo(cursorDate);
+        await Assert.That(store.FindingReviewQueries[1].CursorId).IsEqualTo(cursorId);
+        await Assert.That(store.FindingReviewQueries[1].Limit).IsEqualTo(3);
     }
 
     [Test]
@@ -266,6 +402,8 @@ public sealed class MetricsEndpointHandlerTests
             "1h",
             null,
             null,
+            null,
+            null,
             CancellationToken.None
         );
 
@@ -273,6 +411,29 @@ public sealed class MetricsEndpointHandlerTests
         await Assert.That(badRequest).IsNotNull();
         await Assert.That(badRequest!.Value!.Code).IsEqualTo("unknown_metric_type");
     }
+
+    private static CodeReviewRequestLinkFactory CreateLinkFactory() =>
+        new(
+            Options.Create(new AppSettings()),
+            new CodeReviewRequestTokenProtector(
+                new CodeReviewSettings { ReviewRequestLinkEncryptionKey = "unit-test-key" }
+            )
+        );
+
+    private static FindingReviewGroup FindingGroup(string reviewId, DateTimeOffset createdAtUtc) =>
+        new(
+            reviewId,
+            createdAtUtc,
+            "Test title",
+            "acme/repo",
+            1,
+            "octocat",
+            CodeReviewRequestOrigin.RepositoryWebhook,
+            null,
+            null,
+            1,
+            0
+        );
 
     [Test]
     public async Task GetMetricsOverview_InvalidWindow_Returns400()
@@ -282,7 +443,13 @@ public sealed class MetricsEndpointHandlerTests
             new MetricsTestHybridCache()
         );
 
-        var result = await handler.HandleAsync("org_a", "bogus", CancellationToken.None);
+        var result = await handler.HandleAsync(
+            "org_a",
+            "bogus",
+            null,
+            null,
+            CancellationToken.None
+        );
 
         var badRequest = result.Result as BadRequest<MetricsEndpointError>;
         await Assert.That(badRequest).IsNotNull();
@@ -298,7 +465,7 @@ public sealed class MetricsEndpointHandlerTests
         };
         var handler = new GetMetricsOverviewHandler(store, new MetricsTestHybridCache());
 
-        var result = await handler.HandleAsync("org_a", "24h", CancellationToken.None);
+        var result = await handler.HandleAsync("org_a", "24h", null, null, CancellationToken.None);
 
         var ok = result.Result as Ok<MetricsOverview>;
         await Assert.That(ok).IsNotNull();
@@ -318,6 +485,8 @@ public sealed class MetricsEndpointHandlerTests
         var result = await handler.HandleAsync(
             "org_a",
             "1h",
+            null,
+            null,
             ["alice@example.com"],
             "backend",
             10,
@@ -344,6 +513,8 @@ public sealed class MetricsEndpointHandlerTests
         var result = await handler.HandleAsync(
             "org_a",
             "1h",
+            null,
+            null,
             "backend",
             10,
             ["alice@example.com"],
@@ -365,6 +536,8 @@ public sealed class MetricsEndpointHandlerTests
         var result = await handler.HandleAsync(
             "org_a",
             "1h",
+            null,
+            null,
             "section",
             "backend",
             10,
@@ -392,6 +565,8 @@ public sealed class MetricsEndpointHandlerTests
             null,
             null,
             null,
+            null,
+            null,
             CancellationToken.None
         );
 
@@ -411,6 +586,8 @@ public sealed class MetricsEndpointHandlerTests
         var result = await handler.HandleAsync(
             "org_a",
             "bogus",
+            null,
+            null,
             null,
             null,
             null,
@@ -449,7 +626,7 @@ public sealed class MetricsEndpointHandlerTests
     {
         public Task<ReviewCostMetrics> GetReviewCostMetricsAsync(
             string organizationId,
-            MetricWindow window,
+            MetricQueryRange range,
             CancellationToken cancellationToken
         ) => Task.FromResult<ReviewCostMetrics>(new([], [], false));
 
@@ -460,6 +637,7 @@ public sealed class MetricsEndpointHandlerTests
         public MetricLeaderboardItem[] SectionLeaderboard { get; init; } = [];
         public MetricsOverview Overview { get; init; } = new(0, 0, 0, 0, 0, 0);
         public List<string> SeriesOrganizations { get; } = [];
+        public List<MetricQueryRange> SeriesRanges { get; } = [];
         public List<string> TwoDimensionalSeriesOrganizations { get; } = [];
         public List<string> PromptLeaderboardOrganizations { get; } = [];
         public string[]? PromptLeaderboardUsers { get; private set; }
@@ -469,20 +647,21 @@ public sealed class MetricsEndpointHandlerTests
         public Task<IReadOnlyList<MetricSeriesPoint>> GetSeriesAsync(
             string organizationId,
             string metricType,
-            MetricWindow window,
+            MetricQueryRange range,
             MetricSeriesGroup groupBy,
             MetricSeriesFilters filters,
             CancellationToken cancellationToken
         )
         {
             SeriesOrganizations.Add(organizationId);
+            SeriesRanges.Add(range);
             return Task.FromResult<IReadOnlyList<MetricSeriesPoint>>(Series);
         }
 
         public Task<IReadOnlyList<MetricTwoDimensionalSeriesPoint>> GetTwoDimensionalSeriesAsync(
             string organizationId,
             string metricType,
-            MetricWindow window,
+            MetricQueryRange range,
             MetricSeriesGroup primaryGroupBy,
             MetricSeriesGroup secondaryGroupBy,
             MetricSeriesFilters filters,
@@ -498,7 +677,7 @@ public sealed class MetricsEndpointHandlerTests
         public Task<IReadOnlyList<MetricPercentilePoint>> GetPercentileSeriesAsync(
             string organizationId,
             string metricType,
-            MetricWindow window,
+            MetricQueryRange range,
             string? repositoryId,
             string? facet,
             CancellationToken cancellationToken
@@ -507,7 +686,7 @@ public sealed class MetricsEndpointHandlerTests
         public Task<IReadOnlyList<MetricScatterPoint>> GetScatterSampleAsync(
             string organizationId,
             string metricType,
-            MetricWindow window,
+            MetricQueryRange range,
             string? repositoryId,
             string? facet,
             int limit,
@@ -517,7 +696,7 @@ public sealed class MetricsEndpointHandlerTests
         public Task<IReadOnlyList<MetricLeaderboardItem>> GetLeaderboardAsync(
             string organizationId,
             string[] metricTypes,
-            MetricWindow window,
+            MetricQueryRange range,
             string? library,
             int top,
             CancellationToken cancellationToken,
@@ -531,7 +710,7 @@ public sealed class MetricsEndpointHandlerTests
         public Task<IReadOnlyList<MetricLeaderboardItem>> GetSectionLeaderboardAsync(
             string organizationId,
             string[] metricTypes,
-            MetricWindow window,
+            MetricQueryRange range,
             string? library,
             int top,
             CancellationToken cancellationToken,
@@ -544,7 +723,7 @@ public sealed class MetricsEndpointHandlerTests
 
         public Task<IReadOnlyList<MetricLeaderboardItem>> GetPromptLeaderboardAsync(
             string organizationId,
-            MetricWindow window,
+            MetricQueryRange range,
             string[]? users,
             string? library,
             int top,
@@ -558,7 +737,7 @@ public sealed class MetricsEndpointHandlerTests
 
         public Task<IReadOnlyList<ReviewVolumePoint>> GetReviewVolumeSeriesAsync(
             string organizationId,
-            MetricWindow window,
+            MetricQueryRange range,
             string[]? repositoryIds,
             string[]? authorLogins,
             CodeReviewRequestOrigin? requestOrigin,
@@ -568,7 +747,7 @@ public sealed class MetricsEndpointHandlerTests
 
         public Task<IReadOnlyList<ReviewFindingsPoint>> GetReviewFindingsSeriesAsync(
             string organizationId,
-            MetricWindow window,
+            MetricQueryRange range,
             string[]? repositoryIds,
             string[]? authorLogins,
             ReviewFindingsGroup groupBy,
@@ -577,7 +756,7 @@ public sealed class MetricsEndpointHandlerTests
 
         public Task<MetricsOverview> GetOverviewAsync(
             string organizationId,
-            MetricWindow window,
+            MetricQueryRange range,
             CancellationToken cancellationToken
         ) => Task.FromResult(Overview);
 
@@ -594,15 +773,46 @@ public sealed class MetricsEndpointHandlerTests
         }
 
         public IReadOnlyList<FindingReviewGroup> FindingReviewGroups { get; init; } = [];
+        public List<FindingReviewQuery> FindingReviewQueries { get; } = [];
 
         public Task<IReadOnlyList<FindingReviewGroup>> ListFindingReviewGroupsAsync(
             string organizationId,
-            MetricWindow window,
+            MetricQueryRange range,
             FindingSeverity severity,
             DateTimeOffset? cursorCreatedAtUtc,
             string? cursorId,
             int limit,
             CancellationToken cancellationToken
-        ) => Task.FromResult(FindingReviewGroups);
+        )
+        {
+            FindingReviewQueries.Add(
+                new(organizationId, range, severity, cursorCreatedAtUtc, cursorId, limit)
+            );
+            IReadOnlyList<FindingReviewGroup> afterCursor = FindingReviewGroups;
+            if (cursorCreatedAtUtc is { } afterDate && cursorId is not null)
+            {
+                afterCursor = FindingReviewGroups
+                    .Where(group =>
+                        group.ReviewCreatedAtUtc < afterDate
+                        || (
+                            group.ReviewCreatedAtUtc == afterDate
+                            && string.CompareOrdinal(group.ReviewId, cursorId) < 0
+                        )
+                    )
+                    .ToArray();
+            }
+            return Task.FromResult<IReadOnlyList<FindingReviewGroup>>(
+                afterCursor.Take(limit).ToArray()
+            );
+        }
+
+        public sealed record FindingReviewQuery(
+            string OrganizationId,
+            MetricQueryRange Range,
+            FindingSeverity Severity,
+            DateTimeOffset? CursorCreatedAtUtc,
+            string? CursorId,
+            int Limit
+        );
     }
 }

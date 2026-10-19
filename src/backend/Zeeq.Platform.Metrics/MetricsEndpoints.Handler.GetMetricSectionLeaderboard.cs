@@ -1,5 +1,5 @@
-using Zeeq.Core.Models;
 using Microsoft.Extensions.Caching.Hybrid;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.Metrics;
 
@@ -20,6 +20,8 @@ public sealed class GetMetricSectionLeaderboardHandler(IMetricsQueryStore store,
     > HandleAsync(
         string organizationId,
         string? window,
+        string? startDate,
+        string? endDate,
         string kind,
         string? library,
         int? top,
@@ -27,11 +29,19 @@ public sealed class GetMetricSectionLeaderboardHandler(IMetricsQueryStore store,
         CancellationToken cancellationToken
     )
     {
-        if (!MetricWindowQuery.TryParse(window, out var parsedWindow))
+        if (
+            !MetricRangeQuery.TryResolve(
+                window,
+                startDate,
+                endDate,
+                DateTimeOffset.UtcNow,
+                out var range,
+                out var rangeIdentity,
+                out var rangeError
+            )
+        )
         {
-            return TypedResults.BadRequest(
-                new MetricsEndpointError("invalid_window", $"Unknown window '{window}'.")
-            );
+            return TypedResults.BadRequest(rangeError);
         }
 
         var metricTypes = kind switch
@@ -56,7 +66,7 @@ public sealed class GetMetricSectionLeaderboardHandler(IMetricsQueryStore store,
             organizationId,
             "leaderboard.sections",
             kind,
-            parsedWindow.ToString(),
+            rangeIdentity,
             library,
             boundedTop.ToString(),
             MetricsEndpointCache.Join(users)
@@ -69,7 +79,7 @@ public sealed class GetMetricSectionLeaderboardHandler(IMetricsQueryStore store,
                     await store.GetSectionLeaderboardAsync(
                         organizationId,
                         metricTypes,
-                        parsedWindow,
+                        range,
                         library,
                         boundedTop,
                         token,

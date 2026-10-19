@@ -1,5 +1,5 @@
-using Zeeq.Core.Models;
 using Microsoft.Extensions.Caching.Hybrid;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.Metrics;
 
@@ -13,23 +13,33 @@ public sealed class GetReviewFindingsHandler(IMetricsQueryStore store, HybridCac
     > HandleAsync(
         string organizationId,
         string? window,
+        string? startDate,
+        string? endDate,
         string[]? repositoryIds,
         string[]? authorLogins,
         ReviewFindingsGroup groupBy,
         CancellationToken cancellationToken
     )
     {
-        if (!MetricWindowQuery.TryParse(window, out var parsedWindow))
+        if (
+            !MetricRangeQuery.TryResolve(
+                window,
+                startDate,
+                endDate,
+                DateTimeOffset.UtcNow,
+                out var range,
+                out var rangeIdentity,
+                out var rangeError
+            )
+        )
         {
-            return TypedResults.BadRequest(
-                new MetricsEndpointError("invalid_window", $"Unknown window '{window}'.")
-            );
+            return TypedResults.BadRequest(rangeError);
         }
 
         var key = MetricsEndpointCache.Key(
             organizationId,
             "reviews.findings",
-            parsedWindow.ToString(),
+            rangeIdentity,
             groupBy.ToString(),
             MetricsEndpointCache.Join(repositoryIds),
             MetricsEndpointCache.Join(authorLogins)
@@ -41,7 +51,7 @@ public sealed class GetReviewFindingsHandler(IMetricsQueryStore store, HybridCac
                 (
                     await store.GetReviewFindingsSeriesAsync(
                         organizationId,
-                        parsedWindow,
+                        range,
                         repositoryIds,
                         authorLogins,
                         groupBy,

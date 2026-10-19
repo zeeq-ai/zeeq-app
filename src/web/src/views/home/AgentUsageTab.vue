@@ -183,12 +183,8 @@ import type {
   MetricSeriesPoint,
   MetricTwoDimensionalSeriesPoint,
 } from "@/api/generated";
-import {
-  formatMetricMillions,
-  metricWindowRangeMs,
-  toMetricNumber,
-  type MetricWindowToken,
-} from "@/stores/metrics-store";
+import { formatMetricMillions, toMetricNumber } from "@/stores/metrics-store";
+import type { MetricChartDomain } from "@/stores/metric-period";
 import MetricChart from "./MetricChart.vue";
 import MemberSessionsSlideover from "./MemberSessionsSlideover.vue";
 import { pivotByBucket, timeSeriesOption } from "./chart-options";
@@ -207,7 +203,7 @@ const props = defineProps<{
   memberConversations: AgentConversationListItemDto[];
   loadingMemberConversations: boolean;
   memberConversationsError: string | null;
-  window: MetricWindowToken;
+  domain: MetricChartDomain;
 }>();
 
 const emits = defineEmits<{
@@ -384,7 +380,7 @@ function pivotAgentSeries(
     (point) => point.bucket,
     (point) => seriesKeyLabel(point.seriesKey ?? null),
     (point) => toMetricNumber(point.value),
-    metricWindowRangeMs(props.window),
+    props.domain,
   );
 }
 
@@ -398,7 +394,7 @@ function pivotAgentTwoDimensionalSeries(
     (point) =>
       modelUserLabel(point.primarySeriesKey ?? null, point.secondarySeriesKey),
     (point) => toMetricNumber(point.value),
-    metricWindowRangeMs(props.window),
+    props.domain,
   );
 }
 

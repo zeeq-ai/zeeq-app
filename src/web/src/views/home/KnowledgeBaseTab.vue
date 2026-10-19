@@ -78,11 +78,8 @@
 
 <script setup lang="ts">
 import type { MetricLeaderboardItem, MetricSeriesPoint } from "@/api/generated";
-import {
-  metricWindowRangeMs,
-  toMetricNumber,
-  type MetricWindowToken,
-} from "@/stores/metrics-store";
+import { toMetricNumber } from "@/stores/metrics-store";
+import type { MetricChartDomain } from "@/stores/metric-period";
 import MetricChart from "./MetricChart.vue";
 import {
   leaderboardBarOption,
@@ -105,8 +102,8 @@ const props = defineProps<{
   library: string;
   /** Library options ({ label, value }) including the leading "All" entry. */
   libraryItems: { label: string; value: string }[];
-  /** Shared dashboard window; fills empty buckets so the x-axis reflects the true cadence. */
-  window: MetricWindowToken;
+  /** Resolved chart domain for the reporting period: explicit bounds, bucket width and UTC mode. */
+  domain: MetricChartDomain;
 }>();
 
 const emits = defineEmits<{
@@ -131,7 +128,7 @@ const readsOption = computed(() =>
       (point) => point.bucket,
       (point) => point.seriesKey,
       (point) => toMetricNumber(point.value),
-      metricWindowRangeMs(props.window),
+      props.domain,
     ),
     { maxSeries: 50 },
   ),
