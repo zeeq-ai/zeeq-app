@@ -35,7 +35,9 @@
         ref="calendarButton"
         icon="i-hugeicons-calendar-03"
         color="neutral"
-        :variant="period.mode === 'absolute' ? 'soft' : 'outline'"
+        variant="subtle"
+        size="lg"
+        square
         aria-label="Choose a custom date range (UTC)"
         class="shrink-0"
       />

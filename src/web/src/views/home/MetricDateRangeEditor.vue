@@ -45,6 +45,8 @@
       v-model="calendarRange"
       v-model:placeholder="placeholder"
       range
+      size="xs"
+      variant="subtle"
       :number-of-months="monthCount"
       :max-value="todayDate"
       :is-date-disabled="isDateDisabled"
