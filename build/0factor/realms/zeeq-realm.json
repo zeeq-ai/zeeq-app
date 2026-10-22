@@ -1,0 +1,90 @@
+{
+  "realm": "zeeq",
+  "enabled": true,
+  "registrationAllowed": true,
+  "lenient": false,
+  "clients": [
+    {
+      "clientId": "mcp-openiddict-local",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://zeeq-web.localhost:8095/auth/callback/mock",
+        "http://localhost:8096/auth/callback/mock"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    }
+  ],
+  "users": [
+    {
+      "id": "johndoe",
+      "username": "johndoe",
+      "email": "johndoe@e2e.example.test",
+      "firstName": "Legacy Mock",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "pinned": true,
+      "agentNotes": "Synthetic legacy mock account. Keeps the existing local provider subject mapping stable."
+    },
+    {
+      "id": "e2e-alice-owner",
+      "username": "alice@e2e.example.test",
+      "email": "alice@e2e.example.test",
+      "firstName": "Alice",
+      "lastName": "Owner",
+      "enabled": true,
+      "emailVerified": true,
+      "pinned": true,
+      "agentNotes": "Owner in Alpha; org member in Beta; Alpha Engineering team admin."
+    },
+    {
+      "id": "e2e-bob-multi",
+      "username": "bob@e2e.example.test",
+      "email": "bob@e2e.example.test",
+      "firstName": "Bob",
+      "lastName": "Multi",
+      "enabled": true,
+      "emailVerified": true,
+      "pinned": true,
+      "agentNotes": "Alpha org member and Engineering team member; Beta org admin and Beta root-team admin."
+    },
+    {
+      "id": "e2e-cara-research",
+      "username": "cara@e2e.example.test",
+      "email": "cara@e2e.example.test",
+      "firstName": "Cara",
+      "lastName": "Research",
+      "enabled": true,
+      "emailVerified": true,
+      "pinned": true,
+      "agentNotes": "Alpha org member and Research team member; no Beta membership."
+    },
+    {
+      "id": "e2e-dana-invitee",
+      "username": "dana@e2e.example.test",
+      "email": "dana@e2e.example.test",
+      "firstName": "Dana",
+      "lastName": "Invitee",
+      "enabled": true,
+      "emailVerified": true,
+      "pinned": true,
+      "agentNotes": "Alpha invitee before first Zeeq login; app membership is created by the invite flow."
+    },
+    {
+      "id": "e2e-erin-outsider",
+      "username": "erin@e2e.example.test",
+      "email": "erin@e2e.example.test",
+      "firstName": "Erin",
+      "lastName": "Outsider",
+      "enabled": true,
+      "emailVerified": true,
+      "pinned": true,
+      "agentNotes": "Beta org and team member only; no Alpha membership."
+    }
+  ]
+}

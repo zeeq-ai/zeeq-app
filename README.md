@@ -26,6 +26,8 @@ For local setup see: <https://zeeq.ai/docs/managing-zeeq/local-development>
 
 Start the local stack with `mise run up` (GCP Pub/Sub) or `mise run up aws` ([Floci](https://github.com/floci-io/floci) AWS emulator). Stop it with `mise run down`.
 
+For local sign-in without external provider credentials, use the [0factor development users](build/0factor/README.md).
+
 ---
 
 ## Self hosted setup

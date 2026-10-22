@@ -12,7 +12,8 @@ on:
   pull_request:
     paths:
       - src/backend/**
-      - host/Zeeq.AspireHost.csproj
+      - host/**
+      - build/0factor/**
       - global.json
       - .config/dotnet-tools.json
       - .config/mise.toml
@@ -76,6 +77,11 @@ jobs:
       # from runtime integration-test failures.
       - name: Build tests
         run: dotnet build --no-restore --nologo -warnaserror
+
+      # File-based C# apps are not included in the solution build. Compile the
+      # manual fixture seeder without executing it or mutating any database.
+      - name: Build 0factor fixture seeder
+        run: dotnet build build/0factor/seed.cs
 
       # Run every TUnit test in the solution. PostgreSQL integration tests use
       # Testcontainers rather than a shared service database so migrations and
