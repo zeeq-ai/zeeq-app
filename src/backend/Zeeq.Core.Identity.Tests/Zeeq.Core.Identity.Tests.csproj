@@ -10,6 +10,13 @@
     <PackageReference Include="TUnit" />
   </ItemGroup>
   <ItemGroup>
+    <None
+      Include="../../../build/0factor/realms/zeeq-realm.json"
+      Link="0factor/zeeq-realm.json"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Zeeq.Core.Identity\Zeeq.Core.Identity.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Models\Zeeq.Core.Models.csproj" />
     <ProjectReference Include="..\Zeeq.Data.Postgres\Zeeq.Data.Postgres.csproj" />

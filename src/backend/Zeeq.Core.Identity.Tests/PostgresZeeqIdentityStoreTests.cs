@@ -44,6 +44,86 @@ public sealed class PostgresZeeqIdentityStoreTests(PgDatabaseFixture postgres)
         await Assert.That(organization.DisabledAtUtc).IsNull();
     }
 
+    /// <summary>
+    /// Verifies the legacy provider-subject key resolves an existing local account and context.
+    ///
+    /// dotnet run --project src/backend/Zeeq.Core.Identity.Tests --output detailed --disable-logo --treenode-filter "/*/*/PostgresZeeqIdentityStoreTests/*ExistingLegacyMockIdentity*"
+    /// </summary>
+    [Test]
+    public async Task EnsureUserAsync_ExistingLegacyMockIdentity_ResolvesItsLocalUserAndContext()
+    {
+        const string subject = "johndoe";
+        var now = DateTimeOffset.UtcNow;
+
+        // Seed the same persisted key an upgraded local database carries before
+        // 0factor starts issuing tokens. This proves lookup continuity without
+        // using a first call to create the identity under test.
+        await TestBiome.Start(_context, out var seed).BuildAsync();
+        seed.Owner.Email = null;
+        seed.Owner.EmailVerified = false;
+        _context.ExternalUserIdentities.Add(
+            new ExternalUserIdentity
+            {
+                UserId = seed.Owner.Id,
+                Provider = "mock",
+                ProviderSubject = subject,
+                Email = null,
+                EmailVerified = false,
+                DisplayName = null,
+                FirstSeenAtUtc = now,
+                LastSeenAtUtc = now,
+            }
+        );
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var context = await CreateStore()
+            .EnsureUserAsync(
+                "mock",
+                subject,
+                "Legacy Mock User",
+                "johndoe@e2e.example.test",
+                null,
+                CancellationToken.None
+            );
+
+        var linkedIdentities = await _context.ExternalUserIdentities.CountAsync(identity =>
+            identity.Provider == "mock" && identity.ProviderSubject == subject
+        );
+        var userIdentities = await _context.ExternalUserIdentities.CountAsync(identity =>
+            identity.UserId == seed.Owner.Id
+        );
+        var localUsers = await _context.Users.CountAsync(user => user.Id == seed.Owner.Id);
+        var orgMemberships = await _context.OrganizationMemberships.CountAsync(membership =>
+            membership.OrganizationId == seed.Organization.Id && membership.UserId == seed.Owner.Id
+        );
+        var rootTeamMemberships = await _context.TeamMemberships.CountAsync(membership =>
+            membership.OrganizationId == seed.Organization.Id
+            && membership.TeamId == seed.RootTeam.Id
+            && membership.UserId == seed.Owner.Id
+        );
+        var ownedOrganizations = await _context.Organizations.CountAsync(organization =>
+            organization.CreatedByUserId == seed.Owner.Id
+        );
+        var ownedTeams = await _context.Teams.CountAsync(team =>
+            team.CreatedByUserId == seed.Owner.Id
+        );
+
+        // The existing local account contract is keyed by provider + subject even
+        // though the upstream issuer changed from the former mock server to 0factor.
+        await Assert.That(context).IsNotNull();
+        await Assert.That(context!.UserId).IsEqualTo(seed.Owner.Id);
+        await Assert.That(context.OrganizationId).IsEqualTo(seed.Organization.Id);
+        await Assert.That(context.TeamId).IsEqualTo(seed.RootTeam.Id);
+        await Assert.That(linkedIdentities).IsEqualTo(1);
+        await Assert.That(userIdentities).IsEqualTo(1);
+        await Assert.That(localUsers).IsEqualTo(1);
+        await Assert.That(orgMemberships).IsEqualTo(1);
+        await Assert.That(rootTeamMemberships).IsEqualTo(1);
+        await Assert.That(ownedOrganizations).IsEqualTo(1);
+        await Assert.That(ownedTeams).IsEqualTo(1);
+    }
+
     [Test]
     public async Task EnsureUserAsync_ActivationKeysEnabled_CreatesInactiveOrganization()
     {

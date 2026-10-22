@@ -305,11 +305,43 @@ var inspector = builder
     )
     .WithParentRelationship(frontend);
 
-// Add a local OAuth2 server for testing
-// See: https://github.com/axa-group/oauth2-mock-server
-var oauth2 = builder
-    .AddExecutable("oauth2-mock-server", "npx", ".", ["oauth2-mock-server", "-p", "9321"])
+// Add a local OIDC provider for deterministic development and auth testing.
+// The package pins the matching c4l3b/0factor image tag; the fixed, unproxied
+// port keeps the browser and backend on the same host-reachable issuer.
+var mockOidc = builder
+    .AddZeroFactor("mock-oidc", port: 9321)
+    .WithoutHttpsCertificate()
+    .WithRealmImport("../build/0factor/realms")
+    .WithDataVolume("zeeq-0factor-data")
     .WithParentRelationship(frontend);
+
+// Resolve the provider issuer from the actual host endpoint and wait for its
+// health check before the backend starts discovery or token exchanges.
+backend
+    .WaitFor(mockOidc)
+    .WithEnvironment("AppSettings__Auth__MockProviderIssuer", mockOidc.GetIssuer("zeeq"));
+
+// Seed deterministic auth e2e fixtures only when explicitly started from the
+// Aspire dashboard. Keep this resource local-development-only; it must never
+// mutate shared or production data as part of normal AppHost startup.
+if (
+    string.Equals(
+        builder.Environment.EnvironmentName,
+        "Development",
+        StringComparison.OrdinalIgnoreCase
+    )
+)
+{
+#pragma warning disable ASPIRECSHARPAPPS001
+    builder
+        .AddCSharpApp("auth-e2e-fixtures", "../build/0factor/seed.cs")
+        .WithReference(postgresdb, connectionName: "zeeq")
+        .WaitFor(backend)
+        .WithEnvironment("DOTNET_ENVIRONMENT", builder.Environment.EnvironmentName)
+        .WithExplicitStart()
+        .WithParentRelationship(mockOidc);
+#pragma warning restore ASPIRECSHARPAPPS001
+}
 
 // Add glider MCP server (need HTTP for Codex...)
 // See: https://glidermcp.com/

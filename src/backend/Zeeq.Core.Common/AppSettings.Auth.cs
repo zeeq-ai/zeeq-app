@@ -56,13 +56,14 @@ public sealed record AuthSettings
     public string FrontendBaseUri { get; set; } = "http://mcp-app.localhost:8090";
 
     /// <summary>
-    /// Issuer URI for the local OAuth2 mock provider used by Aspire development.
+    /// Realm issuer URI for the local 0factor provider used by Aspire development.
     /// </summary>
     /// <remarks>
     /// This is not the app's local OpenIddict issuer. It is the external IdP that
-    /// simulates Google/O365-style human authentication for local testing.
+    /// simulates Google/O365-style human authentication for local testing. Include
+    /// the realm path because 0factor exposes discovery under each realm.
     /// </remarks>
-    public string MockProviderIssuer { get; set; } = "http://localhost:9322";
+    public string MockProviderIssuer { get; set; } = "http://localhost:9321/realms/zeeq";
 
     /// <summary>
     /// Stable provider key for the local mock external IdP.
@@ -89,9 +90,10 @@ public sealed record AuthSettings
     /// <remarks>
     /// The mock provider can callback directly to the app. Other providers, such as
     /// Google, use <see cref="ProviderAuthSettings.ServerCallbackUri" /> because their
-    /// callback host requirements differ from the local mock flow.
+    /// callback host requirements differ from the local mock flow. This fallback
+    /// uses the local OAuth callback listener registered in the 0factor realm.
     /// </remarks>
-    public string MockCallbackUri { get; set; } = "http://localhost:8091/auth/callback/mock";
+    public string MockCallbackUri { get; set; } = "http://localhost:8096/auth/callback/mock";
 
     /// <summary>
     /// Maximum age for one-time external-login state and PKCE verifier records.
