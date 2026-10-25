@@ -5,7 +5,11 @@ using Zeeq.Core.Security;
 
 namespace Zeeq.Platform.Storage.Aws;
 
-/// <summary>Registers AWS KMS when configured, including decryption after a provider switch; credentials come from the SDK credential chain.</summary>
+/// <summary>Registers AWS KMS encryption and decryption for a configured key.</summary>
+/// <remarks>
+/// Credentials come from the SDK credential chain. Retain the key configuration when switching
+/// providers so existing AWS ciphertext can still be decrypted. Without a key, no AWS client is registered.
+/// </remarks>
 public static class AwsKmsDataEncryption
 {
     extension(IServiceCollection services)
