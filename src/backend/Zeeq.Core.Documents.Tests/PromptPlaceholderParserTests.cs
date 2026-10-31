@@ -440,6 +440,10 @@ public sealed class PromptPlaceholderParserTests
     }
 
     [Test]
+    // The generated Regex shares one cached runner across threads. A concurrent test may
+    // borrow it between warmup and measurement, forcing an unrelated runner allocation.
+    // Measure the warmed, uncontended substitution path without weakening its allocation bound.
+    [NotInParallel]
     public async Task Substitute_SubstitutingCall_HasBoundedAllocations()
     {
         var content = string.Concat(
