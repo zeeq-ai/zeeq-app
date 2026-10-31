@@ -34,6 +34,18 @@ public sealed record AuthSettings
     public string Issuer { get; set; } = "http://localhost:8091";
 
     /// <summary>
+    /// Optional literal-loopback token URL advertised during local development.
+    /// </summary>
+    /// <remarks>
+    /// Some MCP clients permit HTTP token exchange on localhost but reject
+    /// *.localhost. The existing local callback proxy reaches the same server,
+    /// so only token discovery needs this override. Keep the issuer, resource,
+    /// and browser authorization origin unchanged to preserve cookies and the
+    /// organization picker. Configuration outside Development is rejected.
+    /// </remarks>
+    public string? DevelopmentTokenEndpoint { get; set; }
+
+    /// <summary>
     /// OAuth resource identifier for the MCP endpoint protected by this server.
     /// </summary>
     /// <remarks>
