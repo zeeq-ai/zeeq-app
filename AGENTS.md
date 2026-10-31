@@ -42,7 +42,13 @@ Use `library = zeeq-app`.  It does not have the full upstream content.
 
 ## Additional Tools
 
+### Paseo
+
+Paseo <https://paseo.sh/llms.txt> is a harness orchestration control plane.  When operating_environment indicates Paseo, use it and use its tools to manage and collaborate as a team.
+
 ### Playwright MCP
+
+(✅ PREFER Paseo Browser when operating_environment indicates Paseo)
 
 Use Playwright via MCP to get access to an **authenticated** browser session (the `node_repl` is not a substitute).
 
@@ -64,11 +70,6 @@ Pause and ask to connect to an authenticated session if needed; if the applicati
 - Use the Aspire CLI `aspire resource zeeq-server rebuild` to rebuild without stopping the full stack
 - Avoid stopping and starting the full Aspire runtime because it is better for it to run in the foreground; ask for help if needed
 - Read `zeeq://devtools/aspire-cli-mcp-yarp-config.md` for cheatsheet
-
-### Glider MCP
-
-- Semantic understanding of C# using Roslyn analyzer
-- Use this when traversing code, analyzing dependencies, making bulk edits, get C# file outline, checking for analyzer warnings in .NET and C# code in `src/backend/**`
 
 ### psql
 
