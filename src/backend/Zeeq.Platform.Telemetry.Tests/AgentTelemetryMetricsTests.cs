@@ -1,6 +1,7 @@
 using System.Diagnostics.Metrics;
 using Zeeq.Core.Common;
 using Zeeq.Core.Models;
+using Zeeq.Platform.Telemetry.Adapters.ClaudeCode;
 using Zeeq.Platform.Telemetry.Processing;
 
 namespace Zeeq.Platform.Telemetry.Tests;
@@ -142,8 +143,7 @@ public sealed class AgentTelemetryMetricsTests
     [Test]
     public async Task RecordEvent_SkipsHousekeepingEvents()
     {
-        // Guards that title generation, progress messages, and other housekeeping events do not
-        // inflate user-facing prompt, tool, token, or cost metrics.
+        // Housekeeping prompts do not inflate user-facing activity counts.
         var conversation = Conversation(ownerEmail: "agent@example.com", createdById: "user_123");
         var measurements = Capture(() =>
             AgentTelemetryMetrics.RecordEvent(
@@ -161,6 +161,121 @@ public sealed class AgentTelemetryMetricsTests
         );
 
         await Assert.That(measurements).IsEmpty();
+    }
+
+    [Test]
+    public async Task RecordEvent_HousekeepingCompletionRetainsBillingButNotActivity()
+    {
+        var conversation = Conversation(ownerEmail: "agent@example.com", createdById: "user_123");
+        var measurements = Capture(() =>
+        {
+            foreach (
+                var type in new[]
+                {
+                    AgentSessionEventType.Prompt,
+                    AgentSessionEventType.ToolResult,
+                    AgentSessionEventType.Completion,
+                }
+            )
+                AgentTelemetryMetrics.RecordEvent(
+                    conversation,
+                    new AgentSessionEvent
+                    {
+                        Id = "evt_" + type,
+                        OrganizationId = "org_123",
+                        ConversationId = "conversation_123",
+                        OccurredAtUtc = DateTimeOffset.UtcNow,
+                        EventType = type,
+                        IsHousekeeping = true,
+                        InputTokens = 101,
+                        OutputTokens = 7,
+                        CostUsd = 0.0123m,
+                        CostUnitsRaw = 987,
+                        CostSource = AgentSessionEventCostSource.ReportedUsd,
+                    }
+                );
+        });
+        await Assert
+            .That(
+                measurements.Any(m =>
+                    m.InstrumentName == AgentTelemetryMetrics.PromptCounterName
+                    || m.InstrumentName == AgentTelemetryMetrics.ToolCallCounterName
+                )
+            )
+            .IsFalse();
+        var tokens = measurements
+            .Where(m => m.InstrumentName == AgentTelemetryMetrics.TokenUsageHistogramName)
+            .ToArray();
+        await Assert.That(tokens.Length).IsEqualTo(2);
+        await Assert.That(tokens.Single(m => m.Tags["token_kind"] == "input").Value).IsEqualTo(101);
+        await Assert.That(tokens.Single(m => m.Tags["token_kind"] == "output").Value).IsEqualTo(7);
+        await Assert
+            .That(
+                measurements
+                    .Single(m => m.InstrumentName == AgentTelemetryMetrics.CostUsdHistogramName)
+                    .Value
+            )
+            .IsEqualTo(0.0123);
+        await Assert
+            .That(
+                measurements
+                    .Single(m =>
+                        m.InstrumentName == AgentTelemetryMetrics.CostUnitsRawHistogramName
+                    )
+                    .Value
+            )
+            .IsEqualTo(987);
+    }
+
+    [Test]
+    public async Task ClaudeSdkCompletion_EmitsReportedTokenAndCostMetrics()
+    {
+        var ctx = ClaudeCodeAdapterTests.LogCtx(
+            "claude_code.api_request",
+            attrs:
+            [
+                ("session.id", "sdk-session"),
+                ("query_source", "sdk"),
+                ("input_tokens", "70058"),
+                ("output_tokens", "87"),
+                ("cost_usd", "0.1461462"),
+                ("model", "claude-test"),
+            ]
+        );
+        var evt = new ClaudeCodeTelemetryAdapter().Adapt(ctx).Event!;
+        var conversation = Conversation("agent@example.com", "user_123");
+        conversation.Harness = "claude-code";
+        var measurements = Capture(() =>
+            AgentTelemetryMetrics.RecordEvent(
+                conversation,
+                new AgentSessionEvent
+                {
+                    Id = "sdk-event",
+                    OrganizationId = "org_123",
+                    ConversationId = "sdk-session",
+                    OccurredAtUtc = DateTimeOffset.UtcNow,
+                    EventType = evt.EventType,
+                    Model = evt.Model,
+                    InputTokens = evt.InputTokens,
+                    OutputTokens = evt.OutputTokens,
+                    CostUsd = evt.CostUsd,
+                    CostSource = evt.CostSource,
+                    IsHousekeeping = evt.IsHousekeeping,
+                }
+            )
+        );
+        var tokens = measurements
+            .Where(m => m.InstrumentName == AgentTelemetryMetrics.TokenUsageHistogramName)
+            .ToArray();
+        await Assert
+            .That(tokens.Single(m => m.Tags["token_kind"] == "input").Value)
+            .IsEqualTo(70058);
+        await Assert.That(tokens.Single(m => m.Tags["token_kind"] == "output").Value).IsEqualTo(87);
+        var cost = measurements.Single(m =>
+            m.InstrumentName == AgentTelemetryMetrics.CostUsdHistogramName
+        );
+        await Assert.That(cost.Value).IsEqualTo(0.1461462);
+        await Assert.That(cost.Tags["harness"]).IsEqualTo("claude-code");
     }
 
     private static AgentConversation Conversation(string? ownerEmail, string? createdById) =>

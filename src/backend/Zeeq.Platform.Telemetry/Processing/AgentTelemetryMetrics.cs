@@ -26,13 +26,13 @@ public static class AgentTelemetryMetrics
     /// <summary>Counts non-housekeeping tool execution results.</summary>
     public const string ToolCallCounterName = "zeeq_agent_tool_call_counter";
 
-    /// <summary>Records non-housekeeping completion token counts by token kind.</summary>
+    /// <summary>Records accepted completion token counts by token kind.</summary>
     public const string TokenUsageHistogramName = "zeeq_agent_token_usage";
 
-    /// <summary>Records non-housekeeping completion costs in USD.</summary>
+    /// <summary>Records accepted completion costs in USD.</summary>
     public const string CostUsdHistogramName = "zeeq_agent_cost_usd";
 
-    /// <summary>Records non-housekeeping completion costs in provider-native raw billing units.</summary>
+    /// <summary>Records accepted completion costs in provider-native raw billing units.</summary>
     public const string CostUnitsRawHistogramName = "zeeq_agent_cost_units_raw";
 
     /// <summary>Counts newly created pull-request to conversation links.</summary>
@@ -42,15 +42,17 @@ public static class AgentTelemetryMetrics
     public const string ConversationRollupBackfillCounterName =
         "zeeq_agent_conversation_rollup_backfill_counter";
 
-    private static readonly Counter<int> SessionCounter =
-        ZeeqTelemetry.Metrics.CreateCounter<int>(SessionCounterName);
+    private static readonly Counter<int> SessionCounter = ZeeqTelemetry.Metrics.CreateCounter<int>(
+        SessionCounterName
+    );
 
     private static readonly Counter<int> PromptCounter = ZeeqTelemetry.Metrics.CreateCounter<int>(
         PromptCounterName
     );
 
-    private static readonly Counter<int> ToolCallCounter =
-        ZeeqTelemetry.Metrics.CreateCounter<int>(ToolCallCounterName);
+    private static readonly Counter<int> ToolCallCounter = ZeeqTelemetry.Metrics.CreateCounter<int>(
+        ToolCallCounterName
+    );
 
     private static readonly Histogram<int> TokenUsageHistogram =
         ZeeqTelemetry.Metrics.CreateHistogram<int>(TokenUsageHistogramName);
@@ -77,13 +79,18 @@ public static class AgentTelemetryMetrics
     }
 
     /// <summary>
-    /// Emits metrics for non-housekeeping session events after their domain write succeeds.
+    /// Emits activity and billing metrics after the event's domain write succeeds.
     /// </summary>
     /// <param name="conversation">Conversation context used for organization, harness, and user tags.</param>
     /// <param name="sessionEvent">The event persisted for the conversation.</param>
     public static void RecordEvent(AgentConversation conversation, AgentSessionEvent sessionEvent)
     {
-        if (sessionEvent.IsHousekeeping)
+        // Auxiliary completions still consume tokens and incur cost. Housekeeping affects
+        // activity counts, not billing; the caller supplies only newly persisted events.
+        if (
+            sessionEvent.IsHousekeeping
+            && sessionEvent.EventType != AgentSessionEventType.Completion
+        )
         {
             return;
         }

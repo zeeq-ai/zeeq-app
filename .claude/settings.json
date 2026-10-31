@@ -1,5 +1,6 @@
 {
   "permissions": {
     "allow": ["Playwright", "Aspire", "Zeeq"]
-  }
+  },
+  "otelHeadersHelper": ".claude/zeeq-otel-headers.sh"
 }

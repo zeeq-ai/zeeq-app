@@ -262,13 +262,10 @@ public sealed class ClaudeCodeTelemetryAdapter : AgentTelemetryAdapterBase, ITel
         );
     }
 
-    /// <summary>
-    /// Marks non-main-thread query sources as housekeeping. <c>generate_session_title</c>
-    /// and similar side-calls should not become the starting prompt or contribute to
-    /// housekeeping-excluding rollups.
-    /// </summary>
+    // query_source describes the raw event, not the native metrics' main/subagent/auxiliary
+    // categories. SDK and unknown sources may be real work; suppress only a verified side call.
     private static bool IsHousekeepingQuerySource(string? source) =>
-        source is not null && source is not "repl_main_thread";
+        source is "generate_session_title";
 
     private static decimal? ReadCostUsd(TelemetryLogRecordContext record)
     {
