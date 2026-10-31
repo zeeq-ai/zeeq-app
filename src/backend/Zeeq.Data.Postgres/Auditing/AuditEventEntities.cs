@@ -4,13 +4,15 @@
 namespace Zeeq.Data.Postgres.Auditing;
 
 /// <summary>
-/// Immutable fact about a tenant-owned change. Partitioned monthly by <see cref="OccurredAtUtc"/>.
+/// Appended fact about a tenant-owned change. Partitioned monthly by <see cref="OccurredAtUtc"/>.
 /// </summary>
 /// <remarks>
 /// Deliberately has no foreign keys: the subject or actor may later be deleted or renamed, and
 /// history must keep the event-time labels. Snapshot columns are jsonb and must only be selected
 /// by the detail query. The system table keeps the same envelope but is a separate,
-/// non-inheriting model so a tenant query can never reach a global fact.
+/// non-inheriting model so querying the tenant DbSet does not also query global facts through EF
+/// inheritance. Separate tables reduce accidental mixing; they do not replace authorization.
+/// Append-only is an application convention, not a database-owner tamper-proof guarantee.
 /// </remarks>
 public class OrganizationAuditEvent
 {
@@ -20,7 +22,7 @@ public class OrganizationAuditEvent
     public string? TeamId { get; set; }
     public string? OrganizationLabel { get; set; }
 
-    /// <summary>True when the same canonical event is also listed in the system view.</summary>
+    /// <summary>True when the same canonical event is also listed in the system view, without a duplicate system row.</summary>
     public bool SurfaceInSystem { get; set; }
 
     public string EventType { get; set; } = null!;
@@ -41,6 +43,7 @@ public class OrganizationAuditEvent
     public string? ActorInitiatedByUserId { get; set; }
 
     /// <summary>Storage/snapshot format version; bump when the recorded shape changes.</summary>
+    /// <remarks>Retained rows keep their original shape; readers must not assume every historical payload uses today's schema.</remarks>
     public int SchemaVersion { get; set; } = 1;
 
     public Guid OperationId { get; set; }
@@ -58,7 +61,12 @@ public class OrganizationAuditEvent
     public string? AfterSnapshot { get; set; }
 }
 
-/// <summary>Immutable fact about a global (non-tenant) change. Partitioned monthly by <see cref="OccurredAtUtc"/>.</summary>
+/// <summary>Appended fact about a global (non-tenant) change. Partitioned monthly by <see cref="OccurredAtUtc"/>.</summary>
+/// <remarks>
+/// There is no nullable/sentinel organization owner here. Use this stream for global subjects,
+/// not merely because an actor is a system administrator. A shared envelope does not imply EF
+/// inheritance or shared tenant query paths; lifecycle and access boundaries stay explicit.
+/// </remarks>
 public class SystemAuditEvent
 {
     public Guid Id { get; set; }
@@ -82,6 +90,7 @@ public class SystemAuditEvent
     public string? ActorInitiatedByUserId { get; set; }
 
     /// <summary>Storage/snapshot format version; bump when the recorded shape changes.</summary>
+    /// <remarks>Keep older retained payloads readable when a producer changes its snapshot schema.</remarks>
     public int SchemaVersion { get; set; } = 1;
 
     public Guid OperationId { get; set; }

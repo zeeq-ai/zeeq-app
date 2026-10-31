@@ -3,7 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <!-- Contract records are self-describing; summaries live on the types that carry rules. -->
+    <!-- XML comments carry audit semantics; CS1591 is not the enforcement mechanism for their completeness. -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 </Project>

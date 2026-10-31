@@ -9,6 +9,7 @@ export type AuditHistoryArea =
 
 export type AuditHistoryEntry = {
   id: string;
+  /** Keep the exact API value for detail keys and ordering; Date would round microseconds to milliseconds. */
   occurredAtUtc: string;
   actorLabel: string;
   actorKind: string;
@@ -46,6 +47,7 @@ export type AuditHistoryDocumentSnapshot = {
   content: string;
 };
 
+/** Browser rendering budget only; full snapshots remain available for copy/download above it. */
 export const maxInlineAuditDiffCharacters = 200_000;
 
 /** Prevents large snapshots from mounting the in-browser syntax diff viewer. */
@@ -115,6 +117,8 @@ export function groupAuditEntriesByUtcDay(
 }
 
 /** Groups only loaded sync facts with a source reference that verifies the operation id. */
+// A request operation can contain fallback facts unrelated to a durable sync run. Even verified
+// children are only the loaded subset; their count is not a completed run manifest or final status.
 export function groupAuditFeedEntries(
   entries: AuditHistoryEntry[],
   operationStates: Record<string, AuditHistoryOperationState>,

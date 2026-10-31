@@ -13,6 +13,9 @@ namespace Zeeq.Data.Postgres.Auditing;
 /// A store constructed without DI may fall back to
 /// <c>new PostgresAuditTrailWriter(db, new AuditActorContext())</c>, which records under an
 /// explicit background actor; it never silently drops events.
+/// Capture is explicit so producers can select semantic actions and safe fields. An EF interceptor
+/// would miss set-based SQL/cascade semantics and cannot supply the producer's locked preimage.
+/// This writer does not verify that a mutation occurred or suppress no-ops; the producer owns both.
 /// </remarks>
 internal sealed class PostgresAuditTrailWriter(
     PostgresDbContext db,
@@ -30,6 +33,8 @@ internal sealed class PostgresAuditTrailWriter(
         Validate(change);
 
         var actor = change.ActorOverride ?? actors.Current;
+        // Ownership selects this table; actor authority only selects the extra system view.
+        // Reuse this canonical row instead of duplicating every sysadmin action in both streams.
         var row = new OrganizationAuditEvent
         {
             OrganizationId = organizationId,

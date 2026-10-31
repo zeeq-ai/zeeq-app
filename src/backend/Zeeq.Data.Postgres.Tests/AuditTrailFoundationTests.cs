@@ -574,16 +574,96 @@ public sealed class AuditTrailFoundationTests(PgDatabaseFixture postgres)
     }
 
     [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task SystemDetail_PreservesFeedMetadataAndBothSnapshots(bool systemOwned)
+    {
+        // Both global and surfaced tenant detail paths compose the shared metadata expression.
+        // Verify the materialized API shape, including scope-specific and optional actor fields.
+        var context = new AuditActorContext
+        {
+            Current = new AuditActor(
+                AuditActorKinds.SystemAdmin,
+                "projection_admin",
+                "Audit operator",
+                AuditChannels.SystemConsole,
+                ResponsibleUserId: "projection_owner",
+                CredentialId: "projection_credential",
+                CredentialName: "Operator credential",
+                InitiatedByUserId: "projection_requester"
+            ),
+        };
+        var before = new AuditSnapshot
+        {
+            Fields = new Dictionary<string, string?> { ["active"] = "false" },
+        };
+        var after = new AuditSnapshot
+        {
+            Fields = new Dictionary<string, string?> { ["active"] = "true" },
+        };
+        var change = Change(after: after) with
+        {
+            OrganizationLabel = "Projection organization",
+            Before = before,
+            ChangedFields = ["active"],
+            SourceReference = "projection:test",
+            BeforeHash = "before-fingerprint",
+            AfterHash = "after-fingerprint",
+            Outcome = "applied",
+        };
+        var writer = Writer(context);
+        if (systemOwned)
+        {
+            writer.AppendSystem(change);
+        }
+        else
+        {
+            writer.AppendOrganization("org_projection", "team_projection", change);
+        }
+        await _context.SaveChangesAsync();
+
+        var entry = (await Reader().ListSystemAsync(new(), default)).Entries.Single();
+        var detail = await Reader().GetSystemEventAsync(entry.Id, entry.OccurredAtUtc, default);
+
+        await Assert.That(detail).IsNotNull();
+        await Assert
+            .That(System.Text.Json.JsonSerializer.Serialize(detail!.Event))
+            .IsEqualTo(System.Text.Json.JsonSerializer.Serialize(entry));
+        await Assert
+            .That(detail.Event.Scope)
+            .IsEqualTo(systemOwned ? AuditScope.System : AuditScope.Organization);
+        await Assert
+            .That(detail.Event.OrganizationId)
+            .IsEqualTo(systemOwned ? null : "org_projection");
+        await Assert.That(detail.Event.TeamId).IsEqualTo(systemOwned ? null : "team_projection");
+        await Assert.That(detail.Event.Actor.CredentialId).IsEqualTo("projection_credential");
+        await Assert.That(detail.Before!.Fields["active"]).IsEqualTo("false");
+        await Assert.That(detail.After!.Fields["active"]).IsEqualTo("true");
+    }
+
+    [Test]
     public async Task Feeds_NeverSelectSnapshotColumns_OnlyDetailDoes()
     {
         // Snapshots can be large (document content); only the detail query may read their values.
         var big = new AuditSnapshot { Content = new string('x', 200_000) };
-        Writer().AppendOrganization("org_sql", null, Change(after: big));
-        Writer().AppendSystem(Change(after: big));
+        var writer = Writer(
+            new AuditActorContext
+            {
+                Current = new AuditActor(
+                    AuditActorKinds.SystemAdmin,
+                    "sql_admin",
+                    "SQL operator",
+                    AuditChannels.SystemConsole
+                ),
+            }
+        );
+        writer.AppendOrganization("org_sql", null, Change(after: big));
+        writer.AppendSystem(Change(after: big));
         await _context.SaveChangesAsync();
         var stored = await _context
             .OrganizationAuditEvents.AsNoTracking()
             .SingleAsync(e => e.OrganizationId == "org_sql");
+        var global = await _context.SystemAuditEvents.AsNoTracking().SingleAsync();
 
         var capture = new SqlCapture();
         await using var probe = new PostgresDbContext(
@@ -617,6 +697,8 @@ public sealed class AuditTrailFoundationTests(PgDatabaseFixture postgres)
             stored.OccurredAtUtc,
             default
         );
+        await reader.GetSystemEventAsync(global.Id, global.OccurredAtUtc, default);
+        await reader.GetSystemEventAsync(stored.Id, stored.OccurredAtUtc, default);
         var detailSql = capture.Statements.ToList();
 
         await Assert.That(page.Entries.Single().HasSnapshots).IsTrue();
@@ -633,9 +715,12 @@ public sealed class AuditTrailFoundationTests(PgDatabaseFixture postgres)
                 .That(withoutNullChecks.Contains("_snapshot", StringComparison.Ordinal))
                 .IsFalse();
         }
-        await Assert
-            .That(detailSql.Single().Contains("after_snapshot", StringComparison.Ordinal))
-            .IsTrue();
+        // One tenant lookup, one global lookup, and global-miss + tenant-hit for the surfaced row.
+        await Assert.That(detailSql.Count).IsEqualTo(4);
+        foreach (var sql in detailSql)
+        {
+            await Assert.That(sql.Contains("after_snapshot", StringComparison.Ordinal)).IsTrue();
+        }
     }
 
     [Test]

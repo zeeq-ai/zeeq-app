@@ -5,6 +5,11 @@ using System.Text;
 namespace Zeeq.Data.Postgres.Auditing;
 
 /// <summary>Opaque keyset position (<c>occurred_at_utc</c>, <c>id</c>) ordered newest first.</summary>
+/// <remarks>
+/// Timestamp alone is not unique during bulk writes. Keep its full precision and the UUID tie-break
+/// so page boundaries use the same order as SQL. Encoding hides transport details only: this is
+/// neither a signed access token nor a frozen result set; every page still needs current scope checks.
+/// </remarks>
 internal readonly record struct AuditHistoryCursor(DateTimeOffset OccurredAtUtc, Guid Id)
 {
     public string Encode() =>

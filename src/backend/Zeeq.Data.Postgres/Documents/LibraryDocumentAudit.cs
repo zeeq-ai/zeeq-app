@@ -9,7 +9,9 @@ namespace Zeeq.Data.Postgres.Documents;
 /// <remarks>
 /// Local (hand-authored) documents record full before/after snapshots so an editor can compare,
 /// copy, or download either side. Synchronized documents record facts only — hashes, sizes, and
-/// source references — because the source system already holds their history. Operational fields
+/// source references — upstream history is outside this store's recovery contract. A source link
+/// does not guarantee that the provider retains old text or that the reader can still access it.
+/// Operational fields
 /// (processing status, token counts, timestamps, sync stamps) are never snapshotted.
 /// </remarks>
 internal static class LibraryDocumentAudit
@@ -143,6 +145,8 @@ internal static class LibraryDocumentAudit
         : externalId is not null ? $"external-id:{externalId}"
         : "sync";
 
+    // Only the current trusted run identifies separately committed child facts. A document's
+    // old sync stamp or a fallback request ID must not imply membership in the run now deleting it.
     internal static Guid? SyncOperationId(string? syncRunId) =>
         syncRunId is not null
         && syncRunId.StartsWith("run_", StringComparison.Ordinal)
