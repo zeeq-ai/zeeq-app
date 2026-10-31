@@ -7,6 +7,7 @@ using Zeeq.Core.Llm;
 using Zeeq.Core.Security;
 using Zeeq.Integrations.GitHub;
 using Zeeq.Integrations.Notion;
+using Zeeq.Platform.Auditing;
 using Zeeq.Platform.CodeReviews;
 using Zeeq.Platform.Dispatch.Process;
 using Zeeq.Platform.Documents;
@@ -111,6 +112,8 @@ builder
     // in both hosts: web and worker are both metric producers. The batch consumer runs
     // only where the messaging role includes Consumer.
     .AddZeeqMetrics()
+    // Claims-based audit actor resolution; must follow AddZeeqData (replaces its background default).
+    .AddZeeqAuditing()
     .AddTelemetryIngest(appSettings.Telemetry)
     .AddZeeqEndpoints()
     .AddValidation();

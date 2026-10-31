@@ -71,6 +71,206 @@
         }
       }
     },
+    "/api/v1/admin/audit/history": {
+      "get": {
+        "tags": [
+          "AuditHistory"
+        ],
+        "summary": "List metadata-only system audit history entries.",
+        "operationId": "ListSystemAuditHistory",
+        "parameters": [
+          {
+            "name": "ChangeType",
+            "in": "query",
+            "description": "Restrict to one coarse change type.",
+            "schema": {
+              "$ref": "#/components/schemas/AuditChangeType"
+            }
+          },
+          {
+            "name": "Area",
+            "in": "query",
+            "description": "Restrict to one product area.",
+            "schema": {
+              "$ref": "#/components/schemas/AuditArea"
+            }
+          },
+          {
+            "name": "ActorId",
+            "in": "query",
+            "description": "Restrict to one actor id (user, credential, or service).",
+            "schema": {
+              "maxLength": 256,
+              "type": "string"
+            }
+          },
+          {
+            "name": "SubjectType",
+            "in": "query",
+            "description": "Restrict to one subject type, for example `document`.",
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "SubjectId",
+            "in": "query",
+            "description": "Restrict to one subject id; combine with `subjectType`.",
+            "schema": {
+              "maxLength": 256,
+              "type": "string"
+            }
+          },
+          {
+            "name": "LibraryId",
+            "in": "query",
+            "description": "Restrict to events of one library (parent of document subjects).",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "name": "OperationId",
+            "in": "query",
+            "description": "Restrict to the events written by one operation.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "FromUtc",
+            "in": "query",
+            "description": "Inclusive lower time bound; defaults to 90 days ago unless `allTime` is set.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "ToUtc",
+            "in": "query",
+            "description": "Inclusive upper time bound.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "AllTime",
+            "in": "query",
+            "description": "Removes the default last-90-days lower bound. Cannot be combined with `fromUtc`.",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Cursor",
+            "in": "query",
+            "description": "Opaque continuation cursor from a previous page.",
+            "schema": {
+              "maxLength": 256,
+              "type": "string"
+            }
+          },
+          {
+            "name": "Limit",
+            "in": "query",
+            "description": "Page size, 1 to 200 (default 50).",
+            "required": true,
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditHistoryPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/audit/history/{eventId}": {
+      "get": {
+        "tags": [
+          "AuditHistory"
+        ],
+        "summary": "Get one system audit event with its before and after snapshots.",
+        "operationId": "GetSystemAuditHistoryEvent",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "occurredAtUtc",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEventDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/public-sources/{publicSourceId}/ingest-run": {
       "post": {
         "tags": [
@@ -1396,6 +1596,209 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GitHubRepositoryManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audit/history": {
+      "get": {
+        "tags": [
+          "AuditHistory"
+        ],
+        "summary": "List metadata-only audit history entries for the active organization.",
+        "operationId": "ListAuditHistory",
+        "parameters": [
+          {
+            "name": "ChangeType",
+            "in": "query",
+            "description": "Restrict to one coarse change type.",
+            "schema": {
+              "$ref": "#/components/schemas/AuditChangeType"
+            }
+          },
+          {
+            "name": "Area",
+            "in": "query",
+            "description": "Restrict to one product area.",
+            "schema": {
+              "$ref": "#/components/schemas/AuditArea"
+            }
+          },
+          {
+            "name": "ActorId",
+            "in": "query",
+            "description": "Restrict to one actor id (user, credential, or service).",
+            "schema": {
+              "maxLength": 256,
+              "type": "string"
+            }
+          },
+          {
+            "name": "SubjectType",
+            "in": "query",
+            "description": "Restrict to one subject type, for example `document`.",
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "SubjectId",
+            "in": "query",
+            "description": "Restrict to one subject id; combine with `subjectType`.",
+            "schema": {
+              "maxLength": 256,
+              "type": "string"
+            }
+          },
+          {
+            "name": "LibraryId",
+            "in": "query",
+            "description": "Restrict to events of one library (parent of document subjects).",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "name": "OperationId",
+            "in": "query",
+            "description": "Restrict to the events written by one operation.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "FromUtc",
+            "in": "query",
+            "description": "Inclusive lower time bound; defaults to 90 days ago unless `allTime` is set.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "ToUtc",
+            "in": "query",
+            "description": "Inclusive upper time bound.",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "AllTime",
+            "in": "query",
+            "description": "Removes the default last-90-days lower bound. Cannot be combined with `fromUtc`.",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "Cursor",
+            "in": "query",
+            "description": "Opaque continuation cursor from a previous page.",
+            "schema": {
+              "maxLength": 256,
+              "type": "string"
+            }
+          },
+          {
+            "name": "Limit",
+            "in": "query",
+            "description": "Page size, 1 to 200 (default 50).",
+            "required": true,
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditHistoryPage"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audit/history/{eventId}": {
+      "get": {
+        "tags": [
+          "AuditHistory"
+        ],
+        "summary": "Get one audit event with its before and after snapshots.",
+        "operationId": "GetAuditHistoryEvent",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "occurredAtUtc",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEventDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
                 }
               }
             }
@@ -8087,6 +8490,280 @@
         },
         "description": "Response returned after imported events are accepted for telemetry processing."
       },
+      "AuditActor": {
+        "required": [
+          "kind",
+          "id",
+          "displayName",
+          "channel"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "responsibleUserId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "credentialId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "credentialName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "initiatedByUserId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "description": "Trusted execution identity, with human ownership and credential identity kept separate."
+      },
+      "AuditArea": {
+        "enum": [
+          "Content",
+          "ReviewConfiguration",
+          "Settings",
+          "Security"
+        ],
+        "description": "Product areas whose durable changes can be recorded."
+      },
+      "AuditChangeType": {
+        "enum": [
+          "Added",
+          "Edited",
+          "Deleted"
+        ],
+        "description": "Coarse change categories used by the history filter."
+      },
+      "AuditEventDetail": {
+        "required": [
+          "event",
+          "before",
+          "after"
+        ],
+        "type": "object",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/AuditEventSummary"
+          },
+          "before": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AuditSnapshot"
+              }
+            ]
+          },
+          "after": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AuditSnapshot"
+              }
+            ]
+          }
+        },
+        "description": "Lazy event detail, returned only after current authorization succeeds."
+      },
+      "AuditEventSummary": {
+        "required": [
+          "id",
+          "occurredAtUtc",
+          "scope",
+          "eventType",
+          "changeType",
+          "area",
+          "subjectType",
+          "subjectId",
+          "subjectLabel",
+          "actor",
+          "operationId"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "occurredAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AuditScope"
+          },
+          "organizationId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "organizationLabel": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "teamId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "changeType": {
+            "$ref": "#/components/schemas/AuditChangeType"
+          },
+          "area": {
+            "$ref": "#/components/schemas/AuditArea"
+          },
+          "subjectType": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectLabel": {
+            "type": "string"
+          },
+          "libraryId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "actor": {
+            "$ref": "#/components/schemas/AuditActor"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "changedFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sourceReference": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "beforeHash": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "afterHash": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "outcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "hasSnapshots": {
+            "type": "boolean"
+          }
+        },
+        "description": "Metadata-only event projection. Snapshot content must never be loaded for this shape."
+      },
+      "AuditHistoryPage": {
+        "required": [
+          "entries",
+          "nextCursor",
+          "coverage"
+        ],
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEventSummary"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "coverage": {
+            "type": "string"
+          }
+        },
+        "description": "A page of entries with an opaque continuation cursor and honest capture scope."
+      },
+      "AuditScope": {
+        "enum": [
+          "Organization",
+          "System"
+        ],
+        "description": "The ownership scope of the changed object, independently of its actor."
+      },
+      "AuditSnapshot": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "content": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "description": "Independently readable, explicitly allowlisted state. Never project secrets or operational fields.\nContent is available only for local documents; synchronized content uses source references instead."
+      },
       "BypassCheckRunResponse": {
         "required": [
           "pullRequestNumber",
@@ -14724,6 +15401,9 @@
   "tags": [
     {
       "name": "Admin"
+    },
+    {
+      "name": "AuditHistory"
     },
     {
       "name": "Ingest"

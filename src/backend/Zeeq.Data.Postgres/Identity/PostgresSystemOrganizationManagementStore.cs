@@ -1,13 +1,25 @@
 using Microsoft.EntityFrameworkCore;
+using Zeeq.Core.Auditing;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
+using Zeeq.Data.Postgres.Auditing;
 
 namespace Zeeq.Data.Postgres.Identity;
 
 /// <inheritdoc cref="ISystemOrganizationManagementStore" />
-internal sealed class PostgresSystemOrganizationManagementStore(PostgresDbContext db)
-    : ISystemOrganizationManagementStore
+/// <remarks>
+/// Admin-state changes append one organization audit fact in the same transaction as the update.
+/// <paramref name="auditWriter"/> is resolved from DI at runtime; direct construction (tests)
+/// falls back to a real writer so audit capture is never silently disabled.
+/// </remarks>
+internal sealed class PostgresSystemOrganizationManagementStore(
+    PostgresDbContext db,
+    IAuditTrailWriter? auditWriter = null
+) : ISystemOrganizationManagementStore
 {
+    private readonly IAuditTrailWriter audit =
+        auditWriter ?? new PostgresAuditTrailWriter(db, new AuditActorContext());
+
     /// <inheritdoc />
     public async Task<SystemOrganizationPage<SystemOrganizationSummary>> ListOrganizationsAsync(
         int page,
@@ -169,53 +181,135 @@ internal sealed class PostgresSystemOrganizationManagementStore(PostgresDbContex
         string orgId,
         bool? active,
         OrganizationTier? tier,
+        AuditActor? actor,
         CancellationToken ct
     )
     {
-        await using var tx = db.Database.CurrentTransaction is null
-            ? await db.Database.BeginTransactionAsync(ct)
-            : null;
-        var organization = await db
-            .Organizations.TagWithOperationCallSite("system_org.update_state")
-            .SingleOrDefaultAsync(organization => organization.Id == orgId, ct);
+        return await AuditMutationCheckpoint.RunAsync<SystemOrganizationDetails?>(
+            db,
+            async () =>
+            {
+                // NOTE: FOR UPDATE makes the recorded "before" state the committed one even when two
+                // admins change the same organization at once.
+                var locked = (
+                    await db
+                        .Organizations.FromSql(
+                            $"SELECT * FROM zeeq.core_organizations WHERE id = {orgId} FOR UPDATE"
+                        )
+                        .AsNoTracking()
+                        .TagWithOperationCallSite("system_org.update_state")
+                        .ToArrayAsync(ct)
+                ).SingleOrDefault();
 
-        if (organization is null)
-        {
-            return null;
-        }
+                if (locked is null)
+                {
+                    return null;
+                }
 
-        var now = DateTimeOffset.UtcNow;
-        var currentlyActive =
-            organization.ActivatedAtUtc is not null && organization.DisabledAtUtc is null;
-        if (active is true && !currentlyActive)
-        {
-            organization.ActivatedAtUtc = now;
-            organization.DisabledAtUtc = null;
-        }
-        else if (active is false && currentlyActive)
-        {
-            organization.ActivatedAtUtc = null;
-            organization.DisabledAtUtc = now;
-        }
+                // A context may already track an older copy. Refresh the admin-state properties from
+                // the locked row. ReloadAsync cannot be used here because Organization has owned JSON
+                // properties that EF's scalar reload does not correctly materialize.
+                var entry = db
+                    .ChangeTracker.Entries<Organization>()
+                    .FirstOrDefault(candidate => candidate.Entity.Id == orgId);
+                Organization organization;
+                if (entry is null)
+                {
+                    db.Organizations.Attach(locked);
+                    organization = locked;
+                }
+                else
+                {
+                    organization = entry.Entity;
+                    entry.Property(row => row.ActivatedAtUtc).CurrentValue = locked.ActivatedAtUtc;
+                    entry.Property(row => row.ActivatedAtUtc).OriginalValue = locked.ActivatedAtUtc;
+                    entry.Property(row => row.DisabledAtUtc).CurrentValue = locked.DisabledAtUtc;
+                    entry.Property(row => row.DisabledAtUtc).OriginalValue = locked.DisabledAtUtc;
+                    entry.Property(row => row.Tier).CurrentValue = locked.Tier;
+                    entry.Property(row => row.Tier).OriginalValue = locked.Tier;
+                    entry.Property(row => row.UpdatedAtUtc).CurrentValue = locked.UpdatedAtUtc;
+                    entry.Property(row => row.UpdatedAtUtc).OriginalValue = locked.UpdatedAtUtc;
+                }
 
-        if (tier is { } requestedTier)
-        {
-            organization.Tier = requestedTier;
-        }
+                var now = DateTimeOffset.UtcNow;
+                var beforeActive =
+                    organization.ActivatedAtUtc is not null && organization.DisabledAtUtc is null;
+                var beforeTier = organization.Tier;
+                if (active is true && !beforeActive)
+                {
+                    organization.ActivatedAtUtc = now;
+                    organization.DisabledAtUtc = null;
+                }
+                else if (active is false && beforeActive)
+                {
+                    organization.ActivatedAtUtc = null;
+                    organization.DisabledAtUtc = now;
+                }
 
-        organization.UpdatedAtUtc = now;
-        await db.SaveChangesAsync(ct);
-        if (tx is not null)
-        {
-            await tx.CommitAsync(ct);
-        }
+                if (tier is { } requestedTier)
+                {
+                    organization.Tier = requestedTier;
+                }
 
-        // NOTE: The final read intentionally uses the same DbContext because
-        // FindOrganizationAsync projects scalar values through AsNoTracking()
-        // into OrganizationRow; it does not return the tracked Organization
-        // entity mutated above.
-        return await FindOrganizationAsync(orgId, ct);
+                var afterActive =
+                    organization.ActivatedAtUtc is not null && organization.DisabledAtUtc is null;
+                var changedFields = new List<string>(2);
+                if (afterActive != beforeActive)
+                {
+                    changedFields.Add("active");
+                }
+
+                if (organization.Tier != beforeTier)
+                {
+                    changedFields.Add("tier");
+                }
+
+                // Actual no-op (repeat activate, same tier): nothing changed, so record nothing and leave
+                // UpdatedAtUtc alone.
+                if (changedFields.Count > 0)
+                {
+                    organization.UpdatedAtUtc = now;
+                    audit.AppendOrganization(
+                        organization.Id,
+                        teamId: null,
+                        new AuditChange
+                        {
+                            EventType = "organization.admin_state_changed",
+                            ChangeType = AuditChangeType.Edited,
+                            Area = AuditArea.Settings,
+                            SubjectType = "organization",
+                            SubjectId = organization.Id,
+                            SubjectLabel = locked.DisplayName,
+                            OrganizationLabel = locked.DisplayName,
+                            Before = AdminStateSnapshot(beforeActive, beforeTier),
+                            After = AdminStateSnapshot(afterActive, organization.Tier),
+                            ChangedFields = changedFields,
+                            ActorOverride = actor,
+                        }
+                    );
+                }
+
+                await db.SaveChangesAsync(ct);
+
+                // NOTE: The final read intentionally uses the same DbContext because
+                // FindOrganizationAsync projects scalar values through AsNoTracking()
+                // into OrganizationRow; it does not return the tracked Organization
+                // entity mutated above.
+                return await FindOrganizationAsync(orgId, ct);
+            },
+            ct
+        );
     }
+
+    private static AuditSnapshot AdminStateSnapshot(bool active, OrganizationTier tier) =>
+        new()
+        {
+            Fields = new Dictionary<string, string?>
+            {
+                ["active"] = active ? "true" : "false",
+                ["tier"] = tier.ToString(),
+            },
+        };
 
     private static IQueryable<Organization> ApplyOrganizationMatch(
         IQueryable<Organization> query,

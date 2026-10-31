@@ -32,6 +32,11 @@ const links: NavigationMenuItem[][] = [
       icon: "i-hugeicons-shield-key",
       to: "/system/activation-keys",
     },
+    {
+      label: "History",
+      icon: "i-hugeicons-time-02",
+      to: "/system/history",
+    },
   ],
 ];
 </script>

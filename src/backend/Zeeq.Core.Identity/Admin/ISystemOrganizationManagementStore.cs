@@ -1,3 +1,4 @@
+using Zeeq.Core.Auditing;
 using Zeeq.Core.Models;
 
 namespace Zeeq.Core.Identity;
@@ -41,10 +42,16 @@ public interface ISystemOrganizationManagementStore
     /// <summary>
     /// Applies system-admin activation and tier updates, then returns fresh details.
     /// </summary>
+    /// <remarks>
+    /// The change and its audit fact commit in one transaction. Repeating the current state
+    /// writes neither. <paramref name="actor"/> overrides the ambient audit actor so the
+    /// system-admin route can identify the administrator explicitly.
+    /// </remarks>
     Task<SystemOrganizationDetails?> UpdateOrganizationAdminStateAsync(
         string orgId,
         bool? active,
         OrganizationTier? tier,
+        AuditActor? actor,
         CancellationToken ct
     );
 }

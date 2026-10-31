@@ -1,7 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using NpgsqlTypes;
+using Zeeq.Core.Auditing;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
+using Zeeq.Data.Postgres.Auditing;
 
 namespace Zeeq.Data.Postgres.Documents;
 
@@ -22,12 +25,23 @@ namespace Zeeq.Data.Postgres.Documents;
 /// same <c>!ForCodeReviewExecution || (!ExcludedFromCodeReviews &amp;&amp; AsScopedSkill == None)</c>
 /// predicate, or excluded documents leak back into review results.
 /// </para>
+/// <para>
+/// Every document mutation records its audit fact on the same <see cref="PostgresDbContext"/> and
+/// persists it with the mutation in one transaction. The preimage is read from the database under
+/// <c>FOR UPDATE</c>, never from a caller-mutated entity, and actual no-ops record nothing.
+/// <paramref name="auditWriter"/> is resolved from DI at runtime; direct construction (tests)
+/// falls back to a real writer so audit capture is never silently disabled.
+/// </para>
 /// </remarks>
-internal sealed class PostgresLibraryDocumentStore(
+internal sealed partial class PostgresLibraryDocumentStore(
     PostgresDbContext db,
-    DocumentSearchScope searchScope
+    DocumentSearchScope searchScope,
+    IAuditTrailWriter? auditWriter = null
 ) : ILibraryDocumentStore
 {
+    private readonly IAuditTrailWriter audit =
+        auditWriter ?? new PostgresAuditTrailWriter(db, new AuditActorContext());
+
     private static readonly float[] SearchWeights = [0.1f, 0.2f, 0.4f, 1.0f];
 
     // Flag 4 normalizes for match density; flag 32 (rank/(rank+1)) bounds the score to [0, 1) so it
@@ -642,48 +656,242 @@ internal sealed class PostgresLibraryDocumentStore(
     }
 
     /// <inheritdoc />
-    public async Task<LibraryDocument> UpsertDocumentAsync(
+    public Task<LibraryDocument> UpsertDocumentAsync(
+        LibraryDocument document,
+        CancellationToken ct
+    ) => RunDocumentMutationAsync(() => UpsertDocumentAsyncCore(document, ct), document, ct);
+
+    /// <inheritdoc />
+    public async Task DeleteDocumentAsync(
+        string organizationId,
+        string libraryId,
+        string path,
+        CancellationToken ct
+    ) =>
+        await RunDocumentMutationAsync(
+            async () =>
+            {
+                await DeleteDocumentAsyncCore(organizationId, libraryId, path, ct);
+                return true;
+            },
+            null,
+            ct
+        );
+
+    /// <inheritdoc />
+    public async Task DeleteDocumentByExternalIdAsync(
+        string organizationId,
+        string libraryId,
+        string sourceExternalId,
+        CancellationToken ct
+    ) =>
+        await RunDocumentMutationAsync(
+            async () =>
+            {
+                await DeleteDocumentByExternalIdAsyncCore(
+                    organizationId,
+                    libraryId,
+                    sourceExternalId,
+                    ct
+                );
+                return true;
+            },
+            null,
+            ct
+        );
+
+    /// <inheritdoc />
+    public Task<LibraryDocument?> SetCodeReviewExclusionAsync(
+        string organizationId,
+        string libraryId,
+        string documentId,
+        bool excluded,
+        CancellationToken ct
+    ) =>
+        RunDocumentMutationAsync(
+            () =>
+                SetCodeReviewExclusionAsyncCore(
+                    organizationId,
+                    libraryId,
+                    documentId,
+                    excluded,
+                    ct
+                ),
+            null,
+            ct
+        );
+
+    /// <inheritdoc />
+    public Task<LibraryDocument?> SetScopedSkillAsync(
+        string organizationId,
+        string libraryId,
+        string documentId,
+        LibraryDocumentScopedSkill scopedSkill,
+        CancellationToken ct
+    ) =>
+        RunDocumentMutationAsync(
+            () => SetScopedSkillAsyncCore(organizationId, libraryId, documentId, scopedSkill, ct),
+            null,
+            ct
+        );
+
+    /// <inheritdoc />
+    public Task<LibraryDocument?> MoveDocumentAsync(
+        string organizationId,
+        string libraryId,
+        string fromPath,
+        string toPath,
+        CancellationToken ct
+    ) =>
+        RunDocumentMutationAsync(
+            () => MoveDocumentAsyncCore(organizationId, libraryId, fromPath, toPath, ct),
+            null,
+            ct
+        );
+
+    private async Task<LibraryDocument> UpsertDocumentAsyncCore(
         LibraryDocument document,
         CancellationToken ct
     )
     {
-        var existing = await db
-            .LibraryDocuments.TagWithOperationCallSite(
-                "documents.library_document.upsert_find_existing"
-            )
-            .SingleOrDefaultAsync(
-                row =>
-                    row.OrganizationId == document.OrganizationId
-                    && row.LibraryId == document.LibraryId
-                    && row.Path == document.Path,
-                ct
-            );
+        await using var transaction = await BeginOwnedTransactionAsync(ct);
+        if (!await LockLibraryKeyShareAsync(document.OrganizationId, document.LibraryId, ct))
+            throw new InvalidOperationException("Library does not exist.");
 
-        if (existing is null)
+        // NOTE: The write service may already have mutated its own copy of this document before it
+        // calls the store, so the "before" state comes from the locked database row, not from
+        // anything the caller holds. Locking also serializes concurrent edits of the same path.
+        var locked = await LockByPathAsync(
+            document.OrganizationId,
+            document.LibraryId,
+            document.Path,
+            ct
+        );
+
+        if (locked is null)
         {
+            var sourced = await IsSourcedAsync(document, ct);
+            audit.AppendOrganization(
+                document.OrganizationId,
+                document.TeamId,
+                LibraryDocumentAudit.Local(
+                    LibraryDocumentAudit.Created,
+                    AuditChangeType.Added,
+                    AuditArea.Content,
+                    document,
+                    document.Path,
+                    before: null,
+                    after: SnapshotForAudit(document, sourced),
+                    changedFields: [],
+                    beforeHash: null,
+                    afterHash: document.ContentHash
+                )
+            );
             db.LibraryDocuments.Add(document);
             await db.SaveChangesAsync(ct);
+            await CommitAsync(transaction, ct);
             return document;
         }
 
-        existing.Title = document.Title;
-        existing.TitleNormalized = document.TitleNormalized;
-        existing.ParsedSkillName = document.ParsedSkillName;
-        existing.ParsedSkillDescription = document.ParsedSkillDescription;
-        existing.Keywords = document.Keywords;
-        existing.Headings = document.Headings;
-        existing.Content = document.Content;
-        existing.ProcessingStatus = document.ProcessingStatus;
-        existing.TokenCount = document.TokenCount;
-        existing.ContentHash = document.ContentHash;
-        existing.UpdatedAt = document.UpdatedAt;
+        RememberDocumentPreimage(locked);
+        var contentChanged = !string.Equals(
+            locked.Content,
+            document.Content,
+            StringComparison.Ordinal
+        );
+        var titleChanged = !string.Equals(locked.Title, document.Title, StringComparison.Ordinal);
+        // The caller can pass the tracked entity itself. Reloading it to obtain the current
+        // database state must not discard the values that the caller asked us to write.
+        var requested = (
+            document.Title,
+            document.TitleNormalized,
+            document.ParsedSkillName,
+            document.ParsedSkillDescription,
+            document.Keywords,
+            document.Headings,
+            document.Content,
+            document.ProcessingStatus,
+            document.TokenCount,
+            document.ContentHash,
+            document.UpdatedAt
+        );
+        var existing = await TrackLockedAsync(locked, ct);
+        var sourcedUpdate = await IsSourcedAsync(locked, ct);
+        var beforeSnapshot = SnapshotForAudit(locked, sourcedUpdate);
+        var beforeHash = locked.ContentHash;
+        var changedFields = new List<string>(2);
+        if (contentChanged)
+        {
+            changedFields.Add("content");
+        }
 
+        if (titleChanged)
+        {
+            changedFields.Add("title");
+        }
+
+        existing.Title = requested.Title;
+        existing.TitleNormalized = requested.TitleNormalized;
+        existing.ParsedSkillName = requested.ParsedSkillName;
+        existing.ParsedSkillDescription = requested.ParsedSkillDescription;
+        existing.Keywords = requested.Keywords;
+        existing.Headings = requested.Headings;
+        existing.Content = requested.Content;
+        existing.ProcessingStatus = requested.ProcessingStatus;
+        existing.TokenCount = requested.TokenCount;
+        existing.ContentHash = requested.ContentHash;
+        existing.UpdatedAt = requested.UpdatedAt;
+
+        // Parsing or indexing metadata can change without an audit-worthy content change.
+        // Persist those fields while keeping the history free of empty content events.
+        if (!contentChanged && !titleChanged)
+        {
+            await db.SaveChangesAsync(ct);
+            await CommitAsync(transaction, ct);
+            return existing;
+        }
+
+        audit.AppendOrganization(
+            existing.OrganizationId,
+            existing.TeamId,
+            LibraryDocumentAudit.Local(
+                LibraryDocumentAudit.Updated,
+                AuditChangeType.Edited,
+                AuditArea.Content,
+                existing,
+                existing.Path,
+                beforeSnapshot,
+                SnapshotForAudit(existing, sourcedUpdate),
+                changedFields,
+                beforeHash,
+                existing.ContentHash
+            )
+        );
         await db.SaveChangesAsync(ct);
+        await CommitAsync(transaction, ct);
         return existing;
     }
 
     /// <inheritdoc />
-    public async Task<LibraryDocumentUpsertResult> UpsertSyncedDocumentAsync(
+    public Task<LibraryDocumentUpsertResult> UpsertSyncedDocumentAsync(
+        LibraryDocument document,
+        CancellationToken ct
+    ) => RunDocumentMutationAsync(() => UpsertSyncedDocumentAsyncCore(document, ct), document, ct);
+
+    private async Task<LibraryDocumentUpsertResult> UpsertSyncedDocumentAsyncCore(
+        LibraryDocument document,
+        CancellationToken ct
+    )
+    {
+        await using var transaction = await BeginOwnedTransactionAsync(ct);
+        if (!await LockLibraryKeyShareAsync(document.OrganizationId, document.LibraryId, ct))
+            throw new InvalidOperationException("Library does not exist.");
+        var result = await UpsertSyncedCoreAsync(document, ct);
+        await CommitAsync(transaction, ct);
+        return result;
+    }
+
+    private async Task<LibraryDocumentUpsertResult> UpsertSyncedCoreAsync(
         LibraryDocument document,
         CancellationToken ct
     )
@@ -697,29 +905,33 @@ internal sealed class PostgresLibraryDocumentStore(
             return await UpsertSyncedExternalDocumentAsync(document, ct);
         }
 
-        var byPath = await db
-            .LibraryDocuments.TagWithOperationCallSite(
-                "documents.library_document.upsert_synced_find_by_path"
-            )
-            .SingleOrDefaultAsync(
-                row =>
-                    row.OrganizationId == document.OrganizationId
-                    && row.LibraryId == document.LibraryId
-                    && row.Path == document.Path,
-                ct
-            );
+        var lockedByPath = await LockByPathAsync(
+            document.OrganizationId,
+            document.LibraryId,
+            document.Path,
+            ct
+        );
 
-        if (byPath is not null)
+        if (lockedByPath is not null)
         {
-            if (byPath.ContentHash == document.ContentHash)
+            RememberDocumentPreimage(lockedByPath);
+            var byPath = await TrackLockedAsync(lockedByPath, ct);
+            if (lockedByPath.ContentHash == document.ContentHash)
             {
                 // Content unchanged — re-stamp only. UpdatedAt intentionally does not
-                // advance so unrelated observers do not see spurious churn.
+                // advance so unrelated observers do not see spurious churn. No audit fact:
+                // nothing about the document changed.
                 byPath.SyncRunId = document.SyncRunId;
                 await db.SaveChangesAsync(ct);
                 return new(byPath, DocumentUpsertKind.Unchanged);
             }
 
+            var beforeFacts = LibraryDocumentAudit.SyncFacts(
+                lockedByPath.Path,
+                lockedByPath.Content.Length,
+                null
+            );
+            var beforeHash = lockedByPath.ContentHash;
             byPath.Content = document.Content;
             byPath.ContentHash = document.ContentHash;
             byPath.Title = document.Title;
@@ -732,6 +944,16 @@ internal sealed class PostgresLibraryDocumentStore(
             byPath.ProcessingStatus = document.ProcessingStatus;
             byPath.SyncRunId = document.SyncRunId;
             byPath.UpdatedAt = document.UpdatedAt;
+            AppendSync(
+                AuditChangeType.Edited,
+                byPath,
+                byPath.Path,
+                beforeFacts,
+                LibraryDocumentAudit.SyncFacts(byPath.Path, byPath.Content.Length, null),
+                ["content"],
+                beforeHash,
+                byPath.ContentHash
+            );
             await db.SaveChangesAsync(ct);
             return new(byPath, DocumentUpsertKind.Updated);
         }
@@ -740,31 +962,49 @@ internal sealed class PostgresLibraryDocumentStore(
         // content_hash is not unique per library, so Take(2) instead of
         // SingleOrDefaultAsync lets an ambiguous match fall through to Added
         // rather than throwing or guessing which row moved.
-        var hashMatches = await db
-            .LibraryDocuments.TagWithOperationCallSite(
-                "documents.library_document.upsert_synced_find_by_hash"
-            )
-            .Where(row =>
-                row.OrganizationId == document.OrganizationId
-                && row.LibraryId == document.LibraryId
-                && row.ContentHash == document.ContentHash
-            )
-            .Take(2)
-            .ToListAsync(ct);
+        var hashMatches = await LockByContentHashAsync(
+            document.OrganizationId,
+            document.LibraryId,
+            document.ContentHash,
+            ct
+        );
 
-        if (hashMatches.Count == 1)
+        if (hashMatches.Length == 1)
         {
-            var byHash = hashMatches[0];
+            var lockedByHash = hashMatches[0];
+            RememberDocumentPreimage(lockedByHash);
+            var byHash = await TrackLockedAsync(lockedByHash, ct);
+            var oldPath = lockedByHash.Path;
             byHash.PreviousPaths = byHash.PreviousPaths.Contains(byHash.Path)
                 ? byHash.PreviousPaths
                 : [.. byHash.PreviousPaths, byHash.Path];
             byHash.Path = document.Path;
             byHash.SyncRunId = document.SyncRunId;
             byHash.UpdatedAt = document.UpdatedAt;
+            AppendSync(
+                AuditChangeType.Edited,
+                byHash,
+                byHash.Path,
+                LibraryDocumentAudit.SyncFacts(oldPath, byHash.Content.Length, null),
+                LibraryDocumentAudit.SyncFacts(byHash.Path, byHash.Content.Length, null),
+                ["path"],
+                byHash.ContentHash,
+                byHash.ContentHash
+            );
             await db.SaveChangesAsync(ct);
             return new(byHash, DocumentUpsertKind.Moved);
         }
 
+        AppendSync(
+            AuditChangeType.Added,
+            document,
+            document.Path,
+            before: null,
+            LibraryDocumentAudit.SyncFacts(document.Path, document.Content.Length, null),
+            [],
+            null,
+            document.ContentHash
+        );
         db.LibraryDocuments.Add(document);
         await db.SaveChangesAsync(ct);
         return new(document, DocumentUpsertKind.Added);
@@ -775,32 +1015,45 @@ internal sealed class PostgresLibraryDocumentStore(
         CancellationToken ct
     )
     {
-        var existing = await db
-            .LibraryDocuments.TagWithOperationCallSite(
-                "documents.library_document.upsert_synced_find_by_external_id"
-            )
-            .SingleOrDefaultAsync(
-                row =>
-                    row.OrganizationId == document.OrganizationId
-                    && row.LibraryId == document.LibraryId
-                    && row.SourceExternalId == document.SourceExternalId,
-                ct
-            );
+        var lockedExisting = await LockByExternalIdAsync(
+            document.OrganizationId,
+            document.LibraryId,
+            document.SourceExternalId!,
+            ct
+        );
 
-        if (existing is null)
+        if (lockedExisting is null)
         {
+            AppendSync(
+                AuditChangeType.Added,
+                document,
+                document.Path,
+                before: null,
+                LibraryDocumentAudit.SyncFacts(
+                    document.Path,
+                    document.Content.Length,
+                    document.SourceExternalId
+                ),
+                [],
+                null,
+                document.ContentHash
+            );
             db.LibraryDocuments.Add(document);
             await db.SaveChangesAsync(ct);
             return new(document, DocumentUpsertKind.Added);
         }
 
-        var moved = existing.Path != document.Path;
+        RememberDocumentPreimage(lockedExisting);
+        var existing = await TrackLockedAsync(lockedExisting, ct);
+        var oldPath = lockedExisting.Path;
+        var moved = oldPath != document.Path;
+        var contentChanged = lockedExisting.ContentHash != document.ContentHash;
         if (moved)
         {
             existing.RenameTo(document.Path);
         }
 
-        if (existing.ContentHash == document.ContentHash && !moved)
+        if (!contentChanged && !moved)
         {
             // Content and path unchanged — re-stamp only.
             existing.SyncRunId = document.SyncRunId;
@@ -808,6 +1061,8 @@ internal sealed class PostgresLibraryDocumentStore(
             return new(existing, DocumentUpsertKind.Unchanged);
         }
 
+        var beforeHash = lockedExisting.ContentHash;
+        var beforeLength = lockedExisting.Content.Length;
         existing.Content = document.Content;
         existing.ContentHash = document.ContentHash;
         existing.Title = document.Title;
@@ -820,9 +1075,61 @@ internal sealed class PostgresLibraryDocumentStore(
         existing.ProcessingStatus = document.ProcessingStatus;
         existing.SyncRunId = document.SyncRunId;
         existing.UpdatedAt = document.UpdatedAt;
+
+        var changedFields = new List<string>(2);
+        if (moved)
+        {
+            changedFields.Add("path");
+        }
+
+        if (contentChanged)
+        {
+            changedFields.Add("content");
+        }
+
+        AppendSync(
+            AuditChangeType.Edited,
+            existing,
+            existing.Path,
+            LibraryDocumentAudit.SyncFacts(oldPath, beforeLength, existing.SourceExternalId),
+            LibraryDocumentAudit.SyncFacts(
+                existing.Path,
+                existing.Content.Length,
+                existing.SourceExternalId
+            ),
+            changedFields,
+            beforeHash,
+            existing.ContentHash
+        );
         await db.SaveChangesAsync(ct);
         return new(existing, moved ? DocumentUpsertKind.Moved : DocumentUpsertKind.Updated);
     }
+
+    private void AppendSync(
+        AuditChangeType changeType,
+        LibraryDocument subject,
+        string subjectPath,
+        AuditSnapshot? before,
+        AuditSnapshot? after,
+        IReadOnlyList<string> changedFields,
+        string? beforeHash,
+        string? afterHash
+    ) =>
+        audit.AppendOrganization(
+            subject.OrganizationId,
+            subject.TeamId,
+            LibraryDocumentAudit.Sync(
+                changeType,
+                subject,
+                subjectPath,
+                subject.SyncRunId,
+                before,
+                after,
+                changedFields,
+                beforeHash,
+                afterHash
+            )
+        );
 
     /// <inheritdoc />
     public Task<LibraryDocument?> GetByExternalIdAsync(
@@ -849,20 +1156,175 @@ internal sealed class PostgresLibraryDocumentStore(
         string libraryId,
         string currentSyncRunId,
         CancellationToken ct
-    ) =>
-        await db
-            .LibraryDocuments.TagWithOperationCallSite(
-                "documents.library_document.delete_unstamped"
-            )
-            .Where(document =>
-                document.OrganizationId == organizationId
-                && document.LibraryId == libraryId
-                && document.SyncRunId != currentSyncRunId
-            )
-            .ExecuteDeleteAsync(ct);
+    )
+    {
+        var ambient = db.Database.CurrentTransaction;
+        // Save the caller's pending work before creating the sweep savepoint. Otherwise a batch's
+        // SaveChanges would mark that work unchanged even if a later batch rolls back its insert.
+        // This flush stays inside the caller's transaction; it does not commit the caller's work.
+        Zeeq.Data.Postgres.CodeReviews.RepositoryLinkGuard.RejectPending(db);
+        if (ambient is not null && db.ChangeTracker.HasChanges())
+        {
+            // Lock an existing parent before pending child writes. A new parent cannot be
+            // locked yet and cannot have competing committed child rows.
+            var isNew = db
+                .ChangeTracker.Entries<Library>()
+                .Any(entry =>
+                    entry.Entity.OrganizationId == organizationId
+                    && entry.Entity.Id == libraryId
+                    && entry.State == EntityState.Added
+                );
+            if (!isNew)
+                await LockLibraryKeyShareAsync(organizationId, libraryId, ct);
+            await db.SaveChangesAsync(ct);
+        }
+
+        await using var transaction = await BeginOwnedTransactionAsync(ct);
+        var savepoint = $"audit_sweep_{Guid.NewGuid():N}";
+        if (ambient is not null)
+        {
+            await ambient.CreateSavepointAsync(savepoint, ct);
+        }
+        var existingFacts = db
+            .ChangeTracker.Entries<OrganizationAuditEvent>()
+            .Select(entry => entry.Entity)
+            .ToHashSet();
+        try
+        {
+            if (!await LockLibraryKeyShareAsync(organizationId, libraryId, ct))
+            {
+                if (ambient is not null)
+                    await ambient.ReleaseSavepointAsync(savepoint, ct);
+                await CommitAsync(transaction, ct);
+                return 0;
+            }
+
+            // Hold the caller's transaction for the whole sweep, but keep each locked result and
+            // its newly tracked facts bounded. Waiting for locks (without SKIP LOCKED) ensures that
+            // a concurrent re-stamp is rechecked by PostgreSQL before a row can be deleted.
+            // Batching bounds client memory, not total lock duration or WAL. The ID cursor defines
+            // this pass; rows inserted behind it are not revisited as if this were a frozen snapshot.
+            const int batchSize = 200;
+            var totalDeleted = 0;
+            string? lastId = null;
+            while (true)
+            {
+                var candidates = await db
+                    .Database.SqlQuery<UnstampedDocumentRow>(
+                        $"""
+                        SELECT id, path, content_hash, team_id, source_external_id
+                        FROM zeeq.docs_library_documents
+                        WHERE organization_id = {organizationId}
+                          AND library_id = {libraryId}
+                          AND sync_run_id IS DISTINCT FROM {currentSyncRunId}
+                          AND ({lastId}::text IS NULL OR id > {lastId})
+                        ORDER BY id
+                        LIMIT {batchSize}
+                        FOR UPDATE
+                        """
+                    )
+                    .ToArrayAsync(ct);
+                if (candidates.Length == 0)
+                {
+                    break;
+                }
+
+                var ids = Array.ConvertAll(candidates, static candidate => candidate.Id);
+                totalDeleted += await db
+                    .LibraryDocuments.TagWithOperationCallSite(
+                        "documents.library_document.delete_unstamped"
+                    )
+                    .Where(document =>
+                        document.OrganizationId == organizationId
+                        && document.LibraryId == libraryId
+                        && ids.Contains(document.Id)
+                    )
+                    .ExecuteDeleteAsync(ct);
+
+                var previouslyTracked = db
+                    .ChangeTracker.Entries<OrganizationAuditEvent>()
+                    .Select(entry => entry.Entity)
+                    .ToHashSet();
+                foreach (var candidate in candidates)
+                {
+                    audit.AppendOrganization(
+                        organizationId,
+                        candidate.TeamId,
+                        new AuditChange
+                        {
+                            EventType = LibraryDocumentAudit.Synced,
+                            ChangeType = AuditChangeType.Deleted,
+                            Area = AuditArea.Content,
+                            SubjectType = "document",
+                            SubjectId = candidate.Id,
+                            SubjectLabel = candidate.Path,
+                            LibraryId = libraryId,
+                            Before = LibraryDocumentAudit.SyncFacts(
+                                candidate.Path,
+                                null,
+                                candidate.SourceExternalId
+                            ),
+                            BeforeHash = candidate.ContentHash,
+                            ActorOverride = AuditActor.Worker("Content sync"),
+                            OperationId = LibraryDocumentAudit.SyncOperationId(currentSyncRunId),
+                            SourceReference = LibraryDocumentAudit.SyncSourceReference(
+                                currentSyncRunId,
+                                candidate.SourceExternalId
+                            ),
+                        }
+                    );
+                }
+
+                var newFacts = db
+                    .ChangeTracker.Entries<OrganizationAuditEvent>()
+                    .Where(entry => !previouslyTracked.Contains(entry.Entity))
+                    .ToArray();
+                await db.SaveChangesAsync(ct);
+                foreach (var entry in newFacts)
+                {
+                    entry.State = EntityState.Detached;
+                }
+                lastId = candidates[^1].Id;
+            }
+
+            if (ambient is not null)
+            {
+                await ambient.ReleaseSavepointAsync(savepoint, ct);
+            }
+            await CommitAsync(transaction, ct);
+            return totalDeleted;
+        }
+        catch
+        {
+            try
+            {
+                if (ambient is not null)
+                {
+                    // A canceled request must still undo already-applied batches before the caller
+                    // catches the failure and continues using its transaction.
+                    await ambient.RollbackToSavepointAsync(savepoint, CancellationToken.None);
+                }
+            }
+            finally
+            {
+                // A writer may throw after attaching some facts in the current batch.
+                // Never detach entities that belonged to the caller before this sweep.
+                foreach (
+                    var entry in db
+                        .ChangeTracker.Entries<OrganizationAuditEvent>()
+                        .Where(entry => !existingFacts.Contains(entry.Entity))
+                        .ToArray()
+                )
+                {
+                    entry.State = EntityState.Detached;
+                }
+            }
+            throw;
+        }
+    }
 
     /// <inheritdoc />
-    public async Task DeleteDocumentAsync(
+    private async Task DeleteDocumentAsyncCore(
         string organizationId,
         string libraryId,
         string path,
@@ -870,52 +1332,84 @@ internal sealed class PostgresLibraryDocumentStore(
     )
     {
         var normalizedPath = NormalizeLookupPath(path);
-        var document = await db
-            .LibraryDocuments.TagWithOperationCallSite("documents.library_document.delete_find")
-            .SingleOrDefaultAsync(
-                row =>
-                    row.OrganizationId == organizationId
-                    && row.LibraryId == libraryId
-                    && row.Path == normalizedPath,
-                ct
-            );
+        await using var transaction = await BeginOwnedTransactionAsync(ct);
+        if (!await LockLibraryKeyShareAsync(organizationId, libraryId, ct))
+            return;
+        var locked = await LockByPathAsync(organizationId, libraryId, normalizedPath, ct);
 
-        if (document is null)
+        if (locked is null)
         {
             return;
         }
 
+        RememberDocumentPreimage(locked);
+        var sourced = await IsSourcedAsync(locked, ct);
+        var document = await TrackLockedAsync(locked, ct);
+        audit.AppendOrganization(
+            organizationId,
+            locked.TeamId,
+            LibraryDocumentAudit.Local(
+                LibraryDocumentAudit.Deleted,
+                AuditChangeType.Deleted,
+                AuditArea.Content,
+                locked,
+                locked.Path,
+                before: SnapshotForAudit(locked, sourced),
+                after: null,
+                changedFields: [],
+                beforeHash: locked.ContentHash,
+                afterHash: null
+            )
+        );
         db.LibraryDocuments.Remove(document);
         await db.SaveChangesAsync(ct);
+        await CommitAsync(transaction, ct);
     }
 
     /// <inheritdoc />
-    public async Task DeleteDocumentByExternalIdAsync(
+    private async Task DeleteDocumentByExternalIdAsyncCore(
         string organizationId,
         string libraryId,
         string sourceExternalId,
         CancellationToken ct
     )
     {
-        var document = await db
-            .LibraryDocuments.TagWithOperationCallSite(
-                "documents.library_document.delete_by_external_id_find"
-            )
-            .SingleOrDefaultAsync(
-                row =>
-                    row.OrganizationId == organizationId
-                    && row.LibraryId == libraryId
-                    && row.SourceExternalId == sourceExternalId,
-                ct
-            );
+        await using var transaction = await BeginOwnedTransactionAsync(ct);
+        if (!await LockLibraryKeyShareAsync(organizationId, libraryId, ct))
+            return;
+        var locked = await LockByExternalIdAsync(organizationId, libraryId, sourceExternalId, ct);
 
-        if (document is null)
+        if (locked is null)
         {
             return;
         }
 
+        RememberDocumentPreimage(locked);
+        var document = await TrackLockedAsync(locked, ct);
+
+        // Synchronized document: record content-free facts only.
+        audit.AppendOrganization(
+            organizationId,
+            locked.TeamId,
+            LibraryDocumentAudit.Sync(
+                AuditChangeType.Deleted,
+                locked,
+                locked.Path,
+                syncRunId: null,
+                before: LibraryDocumentAudit.SyncFacts(
+                    locked.Path,
+                    characterCount: null,
+                    sourceExternalId
+                ),
+                after: null,
+                changedFields: [],
+                beforeHash: locked.ContentHash,
+                afterHash: null
+            )
+        );
         db.LibraryDocuments.Remove(document);
         await db.SaveChangesAsync(ct);
+        await CommitAsync(transaction, ct);
     }
 
     /// <inheritdoc />
@@ -1279,7 +1773,7 @@ internal sealed class PostgresLibraryDocumentStore(
     private static string ReverseString(string value) => new([.. value.Reverse()]);
 
     /// <inheritdoc />
-    public async Task<LibraryDocument?> SetCodeReviewExclusionAsync(
+    private async Task<LibraryDocument?> SetCodeReviewExclusionAsyncCore(
         string organizationId,
         string libraryId,
         string documentId,
@@ -1290,13 +1784,51 @@ internal sealed class PostgresLibraryDocumentStore(
         // The API resolves the loaded document by stable id before calling this mutation.
         // Keep the update keyed on that identity instead of re-running path/suffix/alias
         // resolution; the toggle applies to the specific document currently open in the editor.
-        var document = await GetByIdAsync(organizationId, libraryId, documentId, ct);
+        await using var transaction = await BeginOwnedTransactionAsync(ct);
+        if (!await LockLibraryKeyShareAsync(organizationId, libraryId, ct))
+            return null;
+        var document = await LockByIdAsync(organizationId, libraryId, documentId, ct);
         if (document is null)
         {
             return null;
         }
 
+        RememberDocumentPreimage(document);
+        if (document.ExcludedFromCodeReviews == excluded)
+        {
+            // Idempotent repeat: no write, no timestamp churn, no audit fact.
+            await CommitAsync(transaction, ct);
+            return document;
+        }
+
         var now = DateTimeOffset.UtcNow;
+        var sourced = await IsSourcedAsync(document, ct);
+        var before = SnapshotForAudit(document, sourced);
+        var after = SnapshotForAudit(
+            document.Path,
+            document.Title,
+            document.Content,
+            excluded,
+            document.AsScopedSkill,
+            document.SourceExternalId,
+            sourced
+        );
+        audit.AppendOrganization(
+            organizationId,
+            document.TeamId,
+            LibraryDocumentAudit.Local(
+                LibraryDocumentAudit.ReviewExclusionChanged,
+                AuditChangeType.Edited,
+                AuditArea.ReviewConfiguration,
+                document,
+                document.Path,
+                before,
+                after,
+                ["excludedFromCodeReviews"],
+                document.ContentHash,
+                document.ContentHash
+            )
+        );
 
         await db
             .LibraryDocuments.TagWithOperationCallSite(
@@ -1314,6 +1846,8 @@ internal sealed class PostgresLibraryDocumentStore(
                         .SetProperty(row => row.UpdatedAt, now),
                 ct
             );
+        await db.SaveChangesAsync(ct);
+        await CommitAsync(transaction, ct);
 
         document.ExcludedFromCodeReviews = excluded;
         document.UpdatedAt = now;
@@ -1322,7 +1856,7 @@ internal sealed class PostgresLibraryDocumentStore(
     }
 
     /// <inheritdoc />
-    public async Task<LibraryDocument?> SetScopedSkillAsync(
+    private async Task<LibraryDocument?> SetScopedSkillAsyncCore(
         string organizationId,
         string libraryId,
         string documentId,
@@ -1330,13 +1864,51 @@ internal sealed class PostgresLibraryDocumentStore(
         CancellationToken ct
     )
     {
-        var document = await GetByIdAsync(organizationId, libraryId, documentId, ct);
+        await using var transaction = await BeginOwnedTransactionAsync(ct);
+        if (!await LockLibraryKeyShareAsync(organizationId, libraryId, ct))
+            return null;
+        var document = await LockByIdAsync(organizationId, libraryId, documentId, ct);
         if (document is null)
         {
             return null;
         }
 
+        RememberDocumentPreimage(document);
+        if (document.AsScopedSkill == scopedSkill)
+        {
+            await CommitAsync(transaction, ct);
+            return document;
+        }
+
         var now = DateTimeOffset.UtcNow;
+        var sourced = await IsSourcedAsync(document, ct);
+        var before = SnapshotForAudit(document, sourced);
+        var after = SnapshotForAudit(
+            document.Path,
+            document.Title,
+            document.Content,
+            document.ExcludedFromCodeReviews,
+            scopedSkill,
+            document.SourceExternalId,
+            sourced
+        );
+        audit.AppendOrganization(
+            organizationId,
+            document.TeamId,
+            LibraryDocumentAudit.Local(
+                LibraryDocumentAudit.SkillScopeChanged,
+                AuditChangeType.Edited,
+                AuditArea.Settings,
+                document,
+                document.Path,
+                before,
+                after,
+                ["scopedSkill"],
+                document.ContentHash,
+                document.ContentHash
+            )
+        );
+
         await db
             .LibraryDocuments.TagWithOperationCallSite(
                 "documents.library_document.set_scoped_skill"
@@ -1353,6 +1925,8 @@ internal sealed class PostgresLibraryDocumentStore(
                         .SetProperty(row => row.UpdatedAt, now),
                 ct
             );
+        await db.SaveChangesAsync(ct);
+        await CommitAsync(transaction, ct);
 
         document.AsScopedSkill = scopedSkill;
         document.UpdatedAt = now;
@@ -1360,7 +1934,7 @@ internal sealed class PostgresLibraryDocumentStore(
     }
 
     /// <inheritdoc />
-    public async Task<LibraryDocument?> MoveDocumentAsync(
+    private async Task<LibraryDocument?> MoveDocumentAsyncCore(
         string organizationId,
         string libraryId,
         string fromPath,
@@ -1370,21 +1944,34 @@ internal sealed class PostgresLibraryDocumentStore(
     {
         var normalizedTo = DocumentNormalizer.NormalizePath(toPath);
 
-        // Resolve the source via the same tiered walk used everywhere else.
-        var doc = await GetByPathAsync(organizationId, libraryId, fromPath, ct);
-        if (doc is null)
+        await using var transaction = await BeginOwnedTransactionAsync(ct);
+        if (!await LockLibraryKeyShareAsync(organizationId, libraryId, ct))
+            return null;
+
+        // Resolve the source via the same tiered walk used everywhere else, then lock the
+        // resolved row by id so the recorded old path is the committed one.
+        var resolved = await GetByPathAsync(organizationId, libraryId, fromPath, ct);
+        if (resolved is null)
         {
             return null;
         }
 
-        // NOTE: Idempotent no-op guard. `doc` is the *current* document regardless of whether the
+        var locked = await LockByIdAsync(organizationId, libraryId, resolved.Id, ct);
+        if (locked is null)
+        {
+            return null;
+        }
+
+        RememberDocumentPreimage(locked);
+        // NOTE: Idempotent no-op guard. `locked` is the *current* document regardless of whether the
         // caller passed its live path or an old alias, so comparing the resolved live path to the
         // target also short-circuits "rename an old alias back onto the live path" — the case a
         // reviewer flagged as a potential duplicate-alias append. Because we return here, the append
         // below never runs for that scenario, so PreviousPaths cannot accumulate the live path.
-        if (doc.Path == normalizedTo)
+        if (locked.Path == normalizedTo)
         {
-            return doc;
+            await CommitAsync(transaction, ct);
+            return locked;
         }
 
         // Target must be free: not a live path and not an existing alias of *another* doc (D-4).
@@ -1396,7 +1983,7 @@ internal sealed class PostgresLibraryDocumentStore(
                 d =>
                     d.OrganizationId == organizationId
                     && d.LibraryId == libraryId
-                    && d.Id != doc.Id
+                    && d.Id != locked.Id
                     && (d.Path == normalizedTo || d.PreviousPaths.Contains(normalizedTo)),
                 ct
             );
@@ -1406,10 +1993,229 @@ internal sealed class PostgresLibraryDocumentStore(
             throw new DuplicateDocumentPathException(normalizedTo);
         }
 
+        var sourced = await IsSourcedAsync(locked, ct);
+        var before = SnapshotForAudit(locked, sourced);
+        var doc = await TrackLockedAsync(locked, ct);
         doc.RenameTo(normalizedTo);
+        audit.AppendOrganization(
+            organizationId,
+            doc.TeamId,
+            LibraryDocumentAudit.Local(
+                LibraryDocumentAudit.Renamed,
+                AuditChangeType.Edited,
+                AuditArea.Content,
+                doc,
+                doc.Path,
+                before,
+                SnapshotForAudit(doc, sourced),
+                ["path"],
+                doc.ContentHash,
+                doc.ContentHash
+            )
+        );
         await db.SaveChangesAsync(ct);
+        await CommitAsync(transaction, ct);
 
         return doc;
+    }
+
+    // --- Audit support -----------------------------------------------------------------------
+
+    private async Task<bool> IsSourcedAsync(LibraryDocument document, CancellationToken ct) =>
+        document.SourceExternalId is not null
+        || document.SyncRunId is not null
+        || await db
+            .Libraries.AsNoTracking()
+            .Where(library =>
+                library.OrganizationId == document.OrganizationId
+                && library.Id == document.LibraryId
+            )
+            .Select(library => library.SourceKind != null || library.PublicSourceId != null)
+            .SingleAsync(ct);
+
+    private static AuditSnapshot SnapshotForAudit(LibraryDocument document, bool sourced) =>
+        SnapshotForAudit(
+            document.Path,
+            document.Title,
+            document.Content,
+            document.ExcludedFromCodeReviews,
+            document.AsScopedSkill,
+            document.SourceExternalId,
+            sourced
+        );
+
+    private static AuditSnapshot SnapshotForAudit(
+        string path,
+        string title,
+        string content,
+        bool excluded,
+        LibraryDocumentScopedSkill skill,
+        string? externalId,
+        bool sourced
+    ) =>
+        sourced
+            ? LibraryDocumentAudit.SyncFacts(path, content.Length, externalId) with
+            {
+                Fields = new Dictionary<string, string?>
+                {
+                    ["characterCount"] = content.Length.ToString(
+                        System.Globalization.CultureInfo.InvariantCulture
+                    ),
+                    ["externalId"] = externalId,
+                    ["excludedFromCodeReviews"] = excluded ? "true" : "false",
+                    ["scopedSkill"] = skill.ToString(),
+                },
+            }
+            : LibraryDocumentAudit.Snapshot(path, title, content, excluded, skill);
+
+    /// <summary>
+    /// Starts a transaction unless the caller already owns one, in which case the mutation and
+    /// its audit fact commit with the caller's unit of work.
+    /// </summary>
+    private async Task<IDbContextTransaction?> BeginOwnedTransactionAsync(CancellationToken ct) =>
+        db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
+
+    private static Task CommitAsync(IDbContextTransaction? transaction, CancellationToken ct) =>
+        transaction is null ? Task.CompletedTask : transaction.CommitAsync(ct);
+
+    // Every document mutation takes the parent lock first. KEY SHARE conflicts with library
+    // deletion but allows ordinary document writes and sync-state updates to proceed concurrently.
+    private async Task<bool> LockLibraryKeyShareAsync(
+        string organizationId,
+        string libraryId,
+        CancellationToken ct
+    ) =>
+        (
+            await db
+                .Database.SqlQuery<string>(
+                    $"""
+                    SELECT id AS "Value" FROM zeeq.docs_libraries
+                    WHERE organization_id = {organizationId} AND id = {libraryId} FOR KEY SHARE
+                    """
+                )
+                .ToArrayAsync(ct)
+        ).Length != 0;
+
+    private async Task<LibraryDocument?> LockByPathAsync(
+        string organizationId,
+        string libraryId,
+        string path,
+        CancellationToken ct
+    ) =>
+        (
+            await db
+                .LibraryDocuments.FromSql(
+                    $"""
+                    SELECT * FROM zeeq.docs_library_documents
+                    WHERE organization_id = {organizationId}
+                      AND library_id = {libraryId}
+                      AND path = {path}
+                    FOR UPDATE
+                    """
+                )
+                .AsNoTracking()
+                .TagWithOperationCallSite("documents.library_document.lock_by_path")
+                .ToArrayAsync(ct)
+        ).SingleOrDefault();
+
+    private async Task<LibraryDocument?> LockByIdAsync(
+        string organizationId,
+        string libraryId,
+        string documentId,
+        CancellationToken ct
+    ) =>
+        (
+            await db
+                .LibraryDocuments.FromSql(
+                    $"""
+                    SELECT * FROM zeeq.docs_library_documents
+                    WHERE organization_id = {organizationId}
+                      AND library_id = {libraryId}
+                      AND id = {documentId}
+                    FOR UPDATE
+                    """
+                )
+                .AsNoTracking()
+                .TagWithOperationCallSite("documents.library_document.lock_by_id")
+                .ToArrayAsync(ct)
+        ).SingleOrDefault();
+
+    private async Task<LibraryDocument?> LockByExternalIdAsync(
+        string organizationId,
+        string libraryId,
+        string sourceExternalId,
+        CancellationToken ct
+    ) =>
+        (
+            await db
+                .LibraryDocuments.FromSql(
+                    $"""
+                    SELECT * FROM zeeq.docs_library_documents
+                    WHERE organization_id = {organizationId}
+                      AND library_id = {libraryId}
+                      AND source_external_id = {sourceExternalId}
+                    FOR UPDATE
+                    """
+                )
+                .AsNoTracking()
+                .TagWithOperationCallSite("documents.library_document.lock_by_external_id")
+                .ToArrayAsync(ct)
+        ).SingleOrDefault();
+
+    private async Task<LibraryDocument[]> LockByContentHashAsync(
+        string organizationId,
+        string libraryId,
+        string? contentHash,
+        CancellationToken ct
+    ) =>
+        await db
+            .LibraryDocuments.FromSql(
+                $"""
+                SELECT * FROM zeeq.docs_library_documents
+                WHERE organization_id = {organizationId}
+                  AND library_id = {libraryId}
+                  AND content_hash = {contentHash}
+                LIMIT 2
+                FOR UPDATE
+                """
+            )
+            .AsNoTracking()
+            .TagWithOperationCallSite("documents.library_document.lock_by_content_hash")
+            .ToArrayAsync(ct);
+
+    /// <summary>
+    /// Starts tracking a row that was read (and locked) with <c>AsNoTracking</c>. When the context
+    /// already tracks the row, reloads it so a stale in-memory copy cannot hide a column change.
+    /// </summary>
+    private async Task<LibraryDocument> TrackLockedAsync(
+        LibraryDocument locked,
+        CancellationToken ct
+    )
+    {
+        var entry = db
+            .ChangeTracker.Entries<LibraryDocument>()
+            .FirstOrDefault(tracked =>
+                tracked.Entity.OrganizationId == locked.OrganizationId
+                && tracked.Entity.LibraryId == locked.LibraryId
+                && tracked.Entity.Id == locked.Id
+            );
+        if (entry is null)
+        {
+            db.LibraryDocuments.Attach(locked);
+            return locked;
+        }
+
+        await entry.ReloadAsync(ct);
+        return entry.Entity;
+    }
+
+    private sealed class UnstampedDocumentRow
+    {
+        public string Id { get; init; } = null!;
+        public string Path { get; init; } = null!;
+        public string? ContentHash { get; init; }
+        public string? TeamId { get; init; }
+        public string? SourceExternalId { get; init; }
     }
 
     private Task<LibraryDocument?> FindByExactPathAsync(

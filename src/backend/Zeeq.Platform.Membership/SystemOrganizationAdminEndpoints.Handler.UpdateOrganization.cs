@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using Zeeq.Core.Auditing;
 using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.Membership;
@@ -7,9 +8,15 @@ namespace Zeeq.Platform.Membership;
 /// <summary>
 /// Applies system-admin activation and tier changes to an organization.
 /// </summary>
+/// <remarks>
+/// The store records one organization audit fact atomically with the change. When
+/// <paramref name="actors"/> is available the fact is attributed to a <c>system_admin</c> actor
+/// (the ambient identity and credential details are kept; the channel is the system console); otherwise the store uses its ambient actor.
+/// </remarks>
 public sealed partial class UpdateSystemOrganizationHandler(
     ISystemOrganizationManagementStore store,
-    ILogger<UpdateSystemOrganizationHandler> log
+    ILogger<UpdateSystemOrganizationHandler> log,
+    IAuditActorAccessor? actors = null
 ) : IEndpointHandler
 {
     private static readonly ActivitySource ActivitySource = new(
@@ -61,14 +68,19 @@ public sealed partial class UpdateSystemOrganizationHandler(
         activity?.SetTag("system_org.active_requested", request.Active);
         activity?.SetTag("system_org.tier_requested", request.Tier);
 
-        // TODO: Durable audit history is a future addition. This version is
-        // intentionally log-only for system organization management mutations.
         LogUpdateRequested(log, adminUserId, orgId, request.Active, request.Tier);
 
         var organization = await store.UpdateOrganizationAdminStateAsync(
             orgId,
             request.Active,
             tierParse.Tier,
+            actors?.Current is { } actor
+                ? actor with
+                {
+                    Kind = AuditActorKinds.SystemAdmin,
+                    Channel = AuditChannels.SystemConsole,
+                }
+                : null,
             ct
         );
 

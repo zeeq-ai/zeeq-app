@@ -1,24 +1,59 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Zeeq.Core.Auditing;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
+using Zeeq.Data.Postgres.Auditing;
 
 namespace Zeeq.Data.Postgres.Identity;
 
 /// <inheritdoc cref="IOrganizationActivationKeyStore" />
-internal sealed class PostgresOrganizationActivationKeyStore(PostgresDbContext db)
-    : IOrganizationActivationKeyStore
+internal sealed class PostgresOrganizationActivationKeyStore(
+    PostgresDbContext db,
+    IAuditTrailWriter? auditWriter = null
+) : IOrganizationActivationKeyStore
 {
+    private readonly IAuditTrailWriter audit =
+        auditWriter ?? new PostgresAuditTrailWriter(db, new AuditActorContext());
+
     /// <inheritdoc />
     public async Task<OrganizationActivationKey> CreateKeyAsync(
         OrganizationActivationKey key,
         CancellationToken ct
     )
     {
-        db.OrganizationActivationKeys.Add(key);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            return await AuditMutationCheckpoint.RunAsync(
+                db,
+                async () =>
+                {
+                    db.OrganizationActivationKeys.Add(key);
+                    audit.AppendSystem(
+                        KeyChange(
+                            key,
+                            eventType: "activation_key.created",
+                            changeType: AuditChangeType.Added,
+                            beforeStatus: null,
+                            afterStatus: "Available"
+                        )
+                    );
+                    await db.SaveChangesAsync(ct);
 
-        return key;
+                    return key;
+                },
+                ct
+            );
+        }
+        catch
+        {
+            // The attempted create is rejected even if the caller pre-attached this key.
+            // Preserve unrelated Added entries, but do not replay this key without its fact.
+            var entry = db.Entry(key);
+            if (entry.State == EntityState.Added)
+                entry.State = EntityState.Detached;
+            throw;
+        }
     }
 
     /// <inheritdoc />
@@ -113,40 +148,80 @@ internal sealed class PostgresOrganizationActivationKeyStore(PostgresDbContext d
         CancellationToken ct
     )
     {
-        var now = DateTimeOffset.UtcNow;
-        var revoked = await db
-            .OrganizationActivationKeys.TagWithOperationCallSite("activation_keys.revoke")
-            .Where(key =>
-                key.Id == keyId && key.ActivatedAtUtc == null && key.DisabledAtUtc == null
-            )
-            .ExecuteUpdateAsync(
-                setters =>
-                    setters
-                        .SetProperty(key => key.DisabledAtUtc, now)
-                        .SetProperty(key => key.UpdatedAtUtc, now),
-                ct
-            );
-
-        if (revoked != 1)
-        {
-            return null;
-        }
-
-        var row = await (
-            from key in db
-                .OrganizationActivationKeys.TagWithOperationCallSite("activation_keys.revoke_read")
-                .AsNoTracking()
-            join user in db.Users.AsNoTracking() on key.CreatedByUserId equals user.Id into creators
-            from creator in creators.DefaultIfEmpty()
-            where key.Id == keyId
-            select new
+        return await AuditMutationCheckpoint.RunAsync<OrganizationActivationKeySummary?>(
+            db,
+            async () =>
             {
-                Key = key,
-                CreatedByDisplayName = creator == null ? key.CreatedByUserId : creator.DisplayName,
-            }
-        ).SingleAsync(ct);
+                var before = await db
+                    .OrganizationActivationKeys.FromSqlInterpolated(
+                        $"""
+                        SELECT * FROM zeeq.core_organization_activation_keys
+                        WHERE id = {keyId} AND activated_at_utc IS NULL AND disabled_at_utc IS NULL
+                        FOR UPDATE
+                        """
+                    )
+                    .TagWithOperationCallSite("activation_keys.revoke_preimage")
+                    .AsNoTracking()
+                    .SingleOrDefaultAsync(ct);
+                if (before is null)
+                {
+                    return null;
+                }
 
-        return ToSummary(row.Key, row.CreatedByDisplayName, now);
+                var now = DateTimeOffset.UtcNow;
+                var revoked = await db
+                    .OrganizationActivationKeys.TagWithOperationCallSite("activation_keys.revoke")
+                    .Where(key =>
+                        key.Id == keyId && key.ActivatedAtUtc == null && key.DisabledAtUtc == null
+                    )
+                    .ExecuteUpdateAsync(
+                        setters =>
+                            setters
+                                .SetProperty(key => key.DisabledAtUtc, now)
+                                .SetProperty(key => key.UpdatedAtUtc, now),
+                        ct
+                    );
+
+                if (revoked != 1)
+                {
+                    return null;
+                }
+
+                audit.AppendSystem(
+                    KeyChange(
+                        before,
+                        eventType: "activation_key.revoked",
+                        changeType: AuditChangeType.Edited,
+                        beforeStatus: before.ExpiresAtUtc <= now ? "Expired" : "Available",
+                        afterStatus: "Revoked"
+                    )
+                );
+                await db.SaveChangesAsync(ct);
+
+                var row = await (
+                    from key in db
+                        .OrganizationActivationKeys.TagWithOperationCallSite(
+                            "activation_keys.revoke_read"
+                        )
+                        .AsNoTracking()
+                    join user in db.Users.AsNoTracking()
+                        on key.CreatedByUserId equals user.Id
+                        into creators
+                    from creator in creators.DefaultIfEmpty()
+                    where key.Id == keyId
+                    select new
+                    {
+                        Key = key,
+                        CreatedByDisplayName = creator == null
+                            ? key.CreatedByUserId
+                            : creator.DisplayName,
+                    }
+                ).SingleAsync(ct);
+
+                return ToSummary(row.Key, row.CreatedByDisplayName, now);
+            },
+            ct
+        );
     }
 
     /// <summary>
@@ -190,9 +265,18 @@ internal sealed class PostgresOrganizationActivationKeyStore(PostgresDbContext d
         }
 
         var now = DateTimeOffset.UtcNow;
+        var operationId = Guid.CreateVersion7();
 
         try
         {
+            var organizationBefore = await db
+                .Organizations.FromSqlInterpolated(
+                    $"SELECT * FROM zeeq.core_organizations WHERE id = {organizationId} FOR UPDATE"
+                )
+                .TagWithOperationCallSite("activation_keys.consume_org_preimage")
+                .AsNoTracking()
+                .SingleOrDefaultAsync(ct);
+
             // Establish org eligibility before writing activation foreign keys to
             // the key row; missing org ids then return InvalidOrganization, not FK errors.
             var activated = await db
@@ -255,6 +339,50 @@ internal sealed class PostgresOrganizationActivationKeyStore(PostgresDbContext d
                 return OrganizationActivationExchangeResult.InvalidKey;
             }
 
+            var key = await db
+                .OrganizationActivationKeys.TagWithOperationCallSite(
+                    "activation_keys.consume_audit_metadata"
+                )
+                .AsNoTracking()
+                .SingleAsync(candidate => candidate.KeyHash == keyHash, ct);
+            audit.AppendSystem(
+                KeyChange(
+                    key,
+                    eventType: "activation_key.redeemed",
+                    changeType: AuditChangeType.Edited,
+                    beforeStatus: "Available",
+                    afterStatus: "Activated"
+                ) with
+                {
+                    OperationId = operationId,
+                }
+            );
+            audit.AppendOrganization(
+                organizationId: organizationId,
+                teamId: null,
+                change: new()
+                {
+                    EventType = "organization.activated",
+                    ChangeType = AuditChangeType.Edited,
+                    Area = AuditArea.Settings,
+                    SubjectType = "organization",
+                    SubjectId = organizationId,
+                    SubjectLabel = organizationBefore!.DisplayName ?? organizationId,
+                    OrganizationLabel = organizationBefore.DisplayName,
+                    OperationId = operationId,
+                    Before = new()
+                    {
+                        Fields = new Dictionary<string, string?> { ["Active"] = "false" },
+                    },
+                    After = new()
+                    {
+                        Fields = new Dictionary<string, string?> { ["Active"] = "true" },
+                    },
+                    ChangedFields = ["Active"],
+                }
+            );
+            await db.SaveChangesAsync(ct);
+
             // Both updates succeeded: either commit our transaction or release the
             // savepoint and leave final commit ownership with the ambient caller.
             if (transaction is not null)
@@ -276,11 +404,63 @@ internal sealed class PostgresOrganizationActivationKeyStore(PostgresDbContext d
                 savepointName,
                 CancellationToken.None
             );
+            // A savepoint rolls back SQL, but not the change tracker. Remove only this
+            // attempt's facts so a caller that continues cannot save a phantom redemption.
+            foreach (
+                var entry in db
+                    .ChangeTracker.Entries<OrganizationAuditEvent>()
+                    .Where(entry => entry.Entity.OperationId == operationId)
+                    .ToArray()
+            )
+            {
+                entry.State = EntityState.Detached;
+            }
+            foreach (
+                var entry in db
+                    .ChangeTracker.Entries<SystemAuditEvent>()
+                    .Where(entry => entry.Entity.OperationId == operationId)
+                    .ToArray()
+            )
+            {
+                entry.State = EntityState.Detached;
+            }
             throw;
         }
 
         return OrganizationActivationExchangeResult.Activated;
     }
+
+    private static AuditChange KeyChange(
+        OrganizationActivationKey key,
+        string eventType,
+        AuditChangeType changeType,
+        string? beforeStatus,
+        string afterStatus
+    ) =>
+        new()
+        {
+            EventType = eventType,
+            ChangeType = changeType,
+            Area = AuditArea.Security,
+            SubjectType = "activation_key",
+            SubjectId = key.Id,
+            // Notes are private free text and key hashes are secret-derived material.
+            // Neither is copied into the history envelope or snapshots.
+            SubjectLabel = key.Id,
+            Before = beforeStatus is null ? null : KeySnapshot(key, beforeStatus),
+            After = KeySnapshot(key, afterStatus),
+            ChangedFields = beforeStatus is null ? ["Status", "ExpiresAtUtc"] : ["Status"],
+        };
+
+    private static AuditSnapshot KeySnapshot(OrganizationActivationKey key, string status) =>
+        new()
+        {
+            Fields = new Dictionary<string, string?>
+            {
+                ["Status"] = status,
+                ["ExpiresAtUtc"] = key.ExpiresAtUtc.ToString("O"),
+            },
+        };
 
     private static async Task RollbackActivationAttemptAsync(
         IDbContextTransaction? transaction,

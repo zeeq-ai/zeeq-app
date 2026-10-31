@@ -8,6 +8,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Zeeq.Core.Auditing\Zeeq.Core.Auditing.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Models\Zeeq.Core.Models.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Common.AspNetCore\Zeeq.Core.Common.AspNetCore.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Identity\Zeeq.Core.Identity.csproj" />
