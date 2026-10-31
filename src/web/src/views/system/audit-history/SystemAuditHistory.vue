@@ -32,6 +32,7 @@
     @type-filter-change="historyStore.setTypeFilter"
     @area-filter-change="historyStore.setAreaFilter"
     @actor-filter-change="historyStore.setActorFilter"
+    @clear-filters="historyStore.clearFilters"
     @range-change="historyStore.setRange"
     @load-older="historyStore.loadOlder"
     @search-all-time="historyStore.searchAllTime"

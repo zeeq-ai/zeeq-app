@@ -127,6 +127,22 @@ export const useAuditHistoryStore = defineStore("audit-history-store", () => {
     return loadPage(false);
   }
 
+  async function clearFilters() {
+    if (
+      typeFilter.value === "all" &&
+      areaFilter.value === "all" &&
+      actorFilter.value === null
+    )
+      return;
+
+    typeFilter.value = "all";
+    areaFilter.value = "all";
+    actorFilter.value = null;
+    actorFilterLabel.value = null;
+    clearFeed();
+    return loadPage(false);
+  }
+
   async function toggleDetail(entryId: string) {
     if (expandedEntryId.value === entryId) {
       expandedEntryId.value = null;
@@ -344,6 +360,7 @@ export const useAuditHistoryStore = defineStore("audit-history-store", () => {
     setTypeFilter,
     setAreaFilter,
     setActorFilter,
+    clearFilters,
     toggleDetail,
     retryDetail,
     toggleOperation,

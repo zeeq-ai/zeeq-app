@@ -404,6 +404,7 @@
       @type-filter-change="auditHistoryStore.setTypeFilter"
       @area-filter-change="auditHistoryStore.setAreaFilter"
       @actor-filter-change="auditHistoryStore.setActorFilter"
+      @clear-filters="auditHistoryStore.clearFilters"
       @range-change="auditHistoryStore.setRange"
       @load-older="auditHistoryStore.loadOlder"
       @search-all-time="auditHistoryStore.searchAllTime"

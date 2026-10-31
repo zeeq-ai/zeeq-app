@@ -79,6 +79,34 @@ describe("useAuditHistoryStore", () => {
     expect(store.entries).toEqual([]);
   });
 
+  it("clears secondary filters in one request and preserves the date range", async () => {
+    apiMocks.listAuditHistory.mockResolvedValue(page([]));
+    const store = useAuditHistoryStore();
+    store.setContext({ scope: "organization", organizationId: "org-1" });
+    await store.setRange("all-time");
+    await store.setTypeFilter("deleted");
+    await store.setAreaFilter("Content");
+    await store.setActorFilter("actor-1", "Alice");
+    apiMocks.listAuditHistory.mockClear();
+
+    await store.clearFilters();
+
+    expect(store.range).toBe("all-time");
+    expect(store.typeFilter).toBe("all");
+    expect(store.areaFilter).toBe("all");
+    expect(store.actorFilter).toBeNull();
+    expect(store.actorFilterLabel).toBeNull();
+    expect(apiMocks.listAuditHistory).toHaveBeenCalledTimes(1);
+    expect(apiMocks.listAuditHistory.mock.calls[0]?.[0]).toMatchObject({
+      AllTime: true,
+      ChangeType: undefined,
+      Area: undefined,
+      ActorId: undefined,
+    });
+    await store.clearFilters();
+    expect(apiMocks.listAuditHistory).toHaveBeenCalledTimes(1);
+  });
+
   it("merges entries by exact timestamp then descending UUID", async () => {
     const firstId = "00000000-0000-0000-0000-000000000001";
     const tiedHigherId = "00000000-0000-0000-0000-000000000002";
