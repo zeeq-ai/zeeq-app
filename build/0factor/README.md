@@ -32,9 +32,16 @@ To select a different user reliably, sign out of Zeeq, then clear the 0factor re
 | Scopes / flow | `openid profile email` / authorization code with S256 PKCE |
 | Browser callback | `http://zeeq-web.localhost:8095/auth/callback/mock` |
 | Fallback callback | `http://localhost:8096/auth/callback/mock` |
+| Zeeq MCP token endpoint | `http://localhost:8096/connect/token` |
 | Persistent Docker volume | `zeeq-0factor-data` |
 
 0factor discovery is realm-scoped; the previous root URL `http://localhost:9321` is no longer the issuer. The imported client restricts redirects to the two callbacks above and disables password and client-credentials grants. Zeeq continues issuing its own app cookie and MCP tokens through OpenIddict. The provider is included only in the Development environment; production login providers do not change.
+
+### Claude Code and HTTP token exchange
+
+Some Claude Code versions reject HTTP token endpoints on `*.localhost`, while allowing exact loopback hosts. Local Zeeq therefore advertises `http://localhost:8096/connect/token` through `Auth:DevelopmentTokenEndpoint`. That existing YARP listener forwards to the same backend. The issuer, MCP resource, browser authorization endpoint, and web cookies remain on `zeeq-web.localhost:8095`; changing only the issuer would split the browser flow across hosts.
+
+This override is accepted only in Development and only for a literal-loopback HTTP `/connect/token` URL. Production continues to advertise its issuer-based HTTPS endpoint. After rebuilding `zeeq-server`, reconnect or re-authenticate the MCP client so it reloads discovery. No trusted local HTTPS certificate is needed.
 
 Zeeq resolves existing external identities by `(provider, provider_subject)`. Keeping `mock` and `johndoe` preserves the previous default mock account even though the issuer changes. Custom accounts need their exact previous subject in the import or the registration form's **User ID** field. Reusing an email with a new subject creates a separate account. No database migration is required.
 

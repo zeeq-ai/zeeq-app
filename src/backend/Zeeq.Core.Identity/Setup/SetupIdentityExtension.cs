@@ -30,6 +30,35 @@ public static class SetupIdentityExtension
     public const string CookieScheme = "zeeq_app_cookie";
     private const string SmartScheme = "zeeq_smart";
 
+    internal static Uri ResolveTokenEndpoint(AuthSettings settings, IHostEnvironment environment)
+    {
+        if (settings.DevelopmentTokenEndpoint is null)
+        {
+            return new Uri(settings.IssuerTrimmed + "/connect/token");
+        }
+
+        if (
+            !environment.IsDevelopment()
+            || !Uri.TryCreate(settings.DevelopmentTokenEndpoint, UriKind.Absolute, out var endpoint)
+            || endpoint.Scheme != Uri.UriSchemeHttp
+            || endpoint.Host is not ("localhost" or "127.0.0.1" or "[::1]" or "::1")
+            || endpoint.Port <= 0
+            || !string.IsNullOrEmpty(endpoint.UserInfo)
+            || !string.IsNullOrEmpty(endpoint.Query)
+            || !string.IsNullOrEmpty(endpoint.Fragment)
+            || endpoint.AbsolutePath != "/connect/token"
+        )
+        {
+            throw new InvalidOperationException(
+                "Auth:DevelopmentTokenEndpoint is allowed only in Development and must be an "
+                    + "absolute HTTP localhost, 127.0.0.1, or ::1 URL ending in /connect/token, "
+                    + "without credentials, query, or fragment."
+            );
+        }
+
+        return endpoint;
+    }
+
     /// <summary>
     /// Registers Zeeq identity, OpenIddict, external IdP login, and authorization services.
     /// </summary>
@@ -162,6 +191,9 @@ public static class SetupIdentityExtension
     )
         where TContext : DbContext
     {
+        // Resolve once at startup so an invalid development override cannot be
+        // discovered only after the user has completed browser authorization.
+        var tokenEndpoint = ResolveTokenEndpoint(authSettings, environment);
         services
             .AddOpenIddict()
             .AddCore(options => options.UseEntityFrameworkCore().UseDbContext<TContext>())
@@ -217,14 +249,13 @@ public static class SetupIdentityExtension
                             .UseInlineHandler(context =>
                             {
                                 // OpenIddict routes are relative for ASP.NET matching behind
-                                // Aspire/YARP, but discovery must advertise the public issuer
-                                // origin that MCP clients will call.
+                                // Aspire/YARP. Keep interactive authorization on the web
+                                // origin; token exchange can use the dev-only loopback proxy
+                                // without changing the issuer or moving browser cookies.
                                 context.AuthorizationEndpoint = new Uri(
                                     authSettings.IssuerTrimmed + "/connect/authorize"
                                 );
-                                context.TokenEndpoint = new Uri(
-                                    authSettings.IssuerTrimmed + "/connect/token"
-                                );
+                                context.TokenEndpoint = tokenEndpoint;
                                 context.JsonWebKeySetEndpoint = new Uri(
                                     authSettings.IssuerTrimmed + "/.well-known/jwks"
                                 );
