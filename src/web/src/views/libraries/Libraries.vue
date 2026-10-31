@@ -11,16 +11,28 @@
     body-class="gap-0 sm:gap-0 overflow-hidden p-0 sm:p-0"
   >
     <template #toolbar>
-      <LibrarySelector
-        :libraries="libraries"
-        :active-library-name="activeLibraryName"
-        :loading="loadingLibraries"
-        :show-test="!!activeLibraryName && documents.length > 0"
-        @select="onSelectLibrary"
-        @add="openLibraryForm(null)"
-        @edit="openLibraryForm"
-        @test="openSearch"
-      />
+      <div class="flex min-w-0 flex-1 items-center gap-2">
+        <LibrarySelector
+          class="min-w-0 flex-1"
+          :libraries="libraries"
+          :active-library-name="activeLibraryName"
+          :loading="loadingLibraries"
+          :show-test="!!activeLibraryName && documents.length > 0"
+          @select="onSelectLibrary"
+          @add="openLibraryForm(null)"
+          @edit="openLibraryForm"
+          @test="openSearch"
+        />
+        <UButton
+          v-if="activeLibraryName"
+          label="History"
+          icon="i-hugeicons-time-02"
+          color="neutral"
+          variant="outline"
+          size="sm"
+          @click="openLibraryHistory"
+        />
+      </div>
     </template>
 
     <!-- Two-column split: tree (left) + editor (right), edge-to-edge -->
@@ -262,6 +274,25 @@
                 />
               </UTooltip>
 
+              <UTooltip
+                v-if="selectedDocumentForActions"
+                text="History"
+                :content="{ side: 'left' }"
+                :delay-duration="0"
+              >
+                <UButton
+                  :label="state === 'expanded' ? 'History' : undefined"
+                  icon="i-hugeicons-time-02"
+                  size="md"
+                  color="neutral"
+                  variant="ghost"
+                  :block="state === 'expanded'"
+                  :ui="editorActionButtonUi(state)"
+                  aria-label="Document history"
+                  @click="openDocumentHistory"
+                />
+              </UTooltip>
+
               <div class="mt-auto flex flex-col gap-2">
                 <div
                   v-if="selectedDocumentForActions"
@@ -340,6 +371,44 @@
       @confirm="onConfirmSave"
     />
 
+    <AuditHistoryFeed
+      v-model:open="historyOpen"
+      :scope="historyScope"
+      :scope-label="historyScopeLabel"
+      :show-scope-badge="false"
+      :title="historyTitle"
+      :description="historyDescription"
+      :range="historyRange"
+      :entries="historyEntries"
+      :total-count="null"
+      :has-more="historyHasMore"
+      :loading="historyLoading"
+      :error="historyError"
+      :type-filter="historyTypeFilter"
+      :area-filter="historyAreaFilter"
+      :actor-filter="historyActorFilter"
+      :actor-filter-label="historyActorFilterLabel"
+      :coverage-label="historyCoverage"
+      :capture-note="historyCaptureNote"
+      :expanded-entry-id="historyExpandedEntryId"
+      :detail="historyDetail"
+      :detail-loading="historyDetailLoading"
+      :detail-error="historyDetailError"
+      :expanded-operation-id="historyExpandedOperationId"
+      :operation-states="historyOperationStates"
+      @retry="auditHistoryStore.retry"
+      @retry-detail="auditHistoryStore.retryDetail"
+      @toggle-detail="auditHistoryStore.toggleDetail"
+      @toggle-operation="auditHistoryStore.toggleOperation"
+      @load-operation="auditHistoryStore.loadOperation"
+      @type-filter-change="auditHistoryStore.setTypeFilter"
+      @area-filter-change="auditHistoryStore.setAreaFilter"
+      @actor-filter-change="auditHistoryStore.setActorFilter"
+      @range-change="auditHistoryStore.setRange"
+      @load-older="auditHistoryStore.loadOlder"
+      @search-all-time="auditHistoryStore.searchAllTime"
+    />
+
     <!-- "Test" search: Documents (D-1: each row carries its own library name),
     Sections, and Code modes -->
     <DocumentSearchPanel
@@ -396,6 +465,11 @@ import { storeToRefs } from "pinia";
 import { useClipboard, useIntervalFn, useStorage } from "@vueuse/core";
 import { useLibraryStore } from "@/stores/library-store";
 import {
+  useAuditHistoryStore,
+  type AuditHistoryContext,
+} from "@/stores/audit-history-store";
+import { shouldCloseAuditHistoryForContextChange } from "@/stores/audit-history-query";
+import {
   shouldReloadLibraryMetricsOnUtcRollover,
   useLibraryMetricsStore,
 } from "@/stores/library-metrics-store";
@@ -420,6 +494,8 @@ import LibraryMetricsPanel from "./LibraryMetricsPanel.vue";
 import { useUtcToday } from "@/views/home/useUtcToday";
 import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 import { toGitHubWebUrl } from "@/utils/githubUrl";
+import AuditHistoryFeed from "@/components/audit/AuditHistoryFeed.vue";
+import { useAppStore } from "@/stores/app-store";
 
 type DocumentEditorPanelInstance = InstanceType<typeof DocumentEditorPanel>;
 type ReviewDiffDrawerInstance = InstanceType<typeof ReviewDiffDrawer>;
@@ -427,6 +503,8 @@ type ReviewDiffDrawerInstance = InstanceType<typeof ReviewDiffDrawer>;
 const toast = useToast();
 const { copy } = useClipboard({ legacy: true });
 const store = useLibraryStore();
+const appStore = useAppStore();
+const auditHistoryStore = useAuditHistoryStore();
 const libraryMetricsStore = useLibraryMetricsStore();
 const githubStore = useGitHubSettingsStore();
 const route = useRoute();
@@ -435,6 +513,7 @@ const router = useRouter();
 const {
   libraries,
   activeLibraryName,
+  activeLibrary,
   documents,
   loadedDocument,
   searchResults,
@@ -448,6 +527,101 @@ const {
   loadingParsePreview,
   documentPaths,
 } = storeToRefs(store);
+
+const {
+  range: historyRange,
+  entries: historyEntries,
+  hasMore: historyHasMore,
+  loading: historyLoading,
+  error: historyError,
+  typeFilter: historyTypeFilter,
+  areaFilter: historyAreaFilter,
+  actorFilter: historyActorFilter,
+  actorFilterLabel: historyActorFilterLabel,
+  coverage: historyCoverage,
+  expandedEntryId: historyExpandedEntryId,
+  detail: historyDetail,
+  detailLoading: historyDetailLoading,
+  detailError: historyDetailError,
+  expandedOperationId: historyExpandedOperationId,
+  operationStates: historyOperationStates,
+} = storeToRefs(auditHistoryStore);
+const historyOpen = ref(false);
+const historyScope = ref<"document" | "organization">("organization");
+const historyTitle = computed(() =>
+  historyScope.value === "document"
+    ? "Document history"
+    : `${activeLibrary.value?.name ?? "Library"} history`,
+);
+const historyScopeLabel = computed(() =>
+  historyScope.value === "document"
+    ? "Document"
+    : (activeLibrary.value?.name ?? "Library"),
+);
+const historyDescription = computed(() =>
+  historyScope.value === "document"
+    ? `Recorded changes for this document in ${activeLibrary.value?.name ?? "the current library"}.`
+    : `Recorded changes in ${activeLibrary.value?.name ?? "the current library"}.`,
+);
+const historyCaptureNote = computed(() =>
+  historyCoverage.value
+    ? { title: "Capture coverage", description: historyCoverage.value }
+    : null,
+);
+
+function openLibraryHistory() {
+  const library = activeLibrary.value;
+  if (!library) return;
+  historyScope.value = "organization";
+  auditHistoryStore.setContext({
+    scope: "organization",
+    organizationId: appStore.user?.organizationId,
+    libraryId: library.id,
+    libraryLabels: Object.fromEntries(
+      libraries.value.map(({ id, name }) => [id, name]),
+    ),
+  });
+  historyOpen.value = true;
+  void auditHistoryStore.loadInitial();
+}
+
+function openDocumentHistory() {
+  const library = activeLibrary.value;
+  const document = selectedDocumentForActions.value;
+  if (!library || !document) return;
+  historyScope.value = "document";
+  auditHistoryStore.setContext({
+    scope: "document",
+    organizationId: appStore.user?.organizationId,
+    subjectType: "document",
+    subjectId: document.id,
+    libraryId: library.id,
+    libraryLabels: Object.fromEntries(
+      libraries.value.map(({ id, name }) => [id, name]),
+    ),
+  });
+  historyOpen.value = true;
+  void auditHistoryStore.loadInitial();
+}
+
+function currentLibraryHistoryContext(): AuditHistoryContext {
+  const library = activeLibrary.value;
+  const context: AuditHistoryContext = {
+    scope: historyScope.value,
+    organizationId: appStore.user?.organizationId,
+    libraryId: library?.id ?? null,
+    libraryLabels: Object.fromEntries(
+      libraries.value.map(({ id, name }) => [id, name]),
+    ),
+  };
+
+  if (historyScope.value === "document") {
+    context.subjectType = "document";
+    context.subjectId = selectedDocumentForActions.value?.id ?? null;
+  }
+
+  return context;
+}
 
 const {
   period: libraryMetricsPeriod,
@@ -635,6 +809,31 @@ const editorHasUnsavedChanges = computed(
  */
 const selectedDocumentForActions = computed(() =>
   selectedFolderPath.value ? null : loadedDocument.value,
+);
+
+watch(
+  [
+    () => appStore.user?.organizationId,
+    () => activeLibrary.value?.id ?? null,
+    () => selectedDocumentForActions.value?.id ?? null,
+  ],
+  () => {
+    const nextContext = currentLibraryHistoryContext();
+    if (
+      !shouldCloseAuditHistoryForContextChange(
+        historyOpen.value,
+        auditHistoryStore.context,
+        nextContext,
+      )
+    ) {
+      return;
+    }
+
+    historyOpen.value = false;
+    // setContext clears entries, cursors, detail, and pending request generations.
+    auditHistoryStore.setContext(nextContext);
+  },
+  { flush: "sync" },
 );
 
 /**

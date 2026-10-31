@@ -22,7 +22,7 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("zeeq")
-                .HasAnnotation("ProductVersion", "10.0.10")
+                .HasAnnotation("ProductVersion", "10.0.13")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "btree_gin");
@@ -3882,6 +3882,347 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                         .HasDatabaseName("ix_auth_user_tokens_organization_id_team_id_owner_user_id");
 
                     b.ToTable("auth_user_tokens", "zeeq");
+                });
+
+            modelBuilder.Entity("Zeeq.Data.Postgres.Auditing.OrganizationAuditEvent", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("organization_id");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ActorChannel")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("actor_channel");
+
+                    b.Property<string>("ActorCredentialId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("actor_credential_id");
+
+                    b.Property<string>("ActorCredentialName")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("actor_credential_name");
+
+                    b.Property<string>("ActorDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("actor_display_name");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("actor_id");
+
+                    b.Property<string>("ActorInitiatedByUserId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("actor_initiated_by_user_id");
+
+                    b.Property<string>("ActorKind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("actor_kind");
+
+                    b.Property<string>("ActorResponsibleUserId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("actor_responsible_user_id");
+
+                    b.Property<string>("AfterHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("after_hash");
+
+                    b.Property<string>("AfterSnapshot")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("after_snapshot");
+
+                    b.Property<string>("Area")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("area");
+
+                    b.Property<string>("BeforeHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("before_hash");
+
+                    b.Property<string>("BeforeSnapshot")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("before_snapshot");
+
+                    b.Property<string>("ChangeType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("change_type");
+
+                    b.PrimitiveCollection<string[]>("ChangedFields")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("changed_fields");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("event_type");
+
+                    b.Property<string>("LibraryId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("library_id");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operation_id");
+
+                    b.Property<string>("OrganizationLabel")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("organization_label");
+
+                    b.Property<string>("Outcome")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("outcome");
+
+                    b.Property<string>("RequestId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("request_id");
+
+                    b.Property<int>("SchemaVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("schema_version");
+
+                    b.Property<string>("SourceReference")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("source_reference");
+
+                    b.Property<string>("SubjectId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("subject_id");
+
+                    b.Property<string>("SubjectLabel")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("subject_label");
+
+                    b.Property<string>("SubjectType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("subject_type");
+
+                    b.Property<bool>("SurfaceInSystem")
+                        .HasColumnType("boolean")
+                        .HasColumnName("surface_in_system");
+
+                    b.Property<string>("TeamId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("team_id");
+
+                    b.HasKey("OrganizationId", "OccurredAtUtc", "Id")
+                        .HasName("pk_organization_audit_events");
+
+                    b.HasIndex("OccurredAtUtc", "Id")
+                        .HasDatabaseName("ix_organization_audit_events_system_surface")
+                        .HasFilter("surface_in_system");
+
+                    b.HasIndex("OrganizationId", "OperationId", "OccurredAtUtc")
+                        .HasDatabaseName("ix_organization_audit_events_organization_id_operation_id_occu");
+
+                    b.HasIndex("OrganizationId", "LibraryId", "OccurredAtUtc", "Id")
+                        .HasDatabaseName("ix_organization_audit_events_organization_id_library_id_occurr");
+
+                    b.HasIndex("OrganizationId", "SubjectType", "SubjectId", "OccurredAtUtc", "Id")
+                        .HasDatabaseName("ix_organization_audit_events_organization_id_subject_type_subj");
+
+                    b.ToTable("organization_audit_events", "zeeq");
+                });
+
+            modelBuilder.Entity("Zeeq.Data.Postgres.Auditing.SystemAuditEvent", b =>
+                {
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ActorChannel")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("actor_channel");
+
+                    b.Property<string>("ActorCredentialId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("actor_credential_id");
+
+                    b.Property<string>("ActorCredentialName")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("actor_credential_name");
+
+                    b.Property<string>("ActorDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("actor_display_name");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("actor_id");
+
+                    b.Property<string>("ActorInitiatedByUserId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("actor_initiated_by_user_id");
+
+                    b.Property<string>("ActorKind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("actor_kind");
+
+                    b.Property<string>("ActorResponsibleUserId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("actor_responsible_user_id");
+
+                    b.Property<string>("AfterHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("after_hash");
+
+                    b.Property<string>("AfterSnapshot")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("after_snapshot");
+
+                    b.Property<string>("Area")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("area");
+
+                    b.Property<string>("BeforeHash")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("before_hash");
+
+                    b.Property<string>("BeforeSnapshot")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("before_snapshot");
+
+                    b.Property<string>("ChangeType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("change_type");
+
+                    b.PrimitiveCollection<string[]>("ChangedFields")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("changed_fields");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("event_type");
+
+                    b.Property<string>("LibraryId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("library_id");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operation_id");
+
+                    b.Property<string>("OrganizationLabel")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("organization_label");
+
+                    b.Property<string>("Outcome")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("outcome");
+
+                    b.Property<string>("RequestId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("request_id");
+
+                    b.Property<int>("SchemaVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("schema_version");
+
+                    b.Property<string>("SourceReference")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("source_reference");
+
+                    b.Property<string>("SubjectId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("subject_id");
+
+                    b.Property<string>("SubjectLabel")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("subject_label");
+
+                    b.Property<string>("SubjectType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("subject_type");
+
+                    b.HasKey("OccurredAtUtc", "Id")
+                        .HasName("pk_system_audit_events");
+
+                    b.HasIndex("OperationId", "OccurredAtUtc")
+                        .HasDatabaseName("ix_system_audit_events_operation_id_occurred_at_utc");
+
+                    b.HasIndex("SubjectType", "SubjectId", "OccurredAtUtc", "Id")
+                        .HasDatabaseName("ix_system_audit_events_subject_type_subject_id_occurred_at_utc");
+
+                    b.ToTable("system_audit_events", "zeeq");
                 });
 
             modelBuilder.Entity("Zeeq.Data.Postgres.PostgresStorageObject", b =>

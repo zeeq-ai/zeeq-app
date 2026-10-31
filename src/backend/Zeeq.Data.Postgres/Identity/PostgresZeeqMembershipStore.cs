@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Zeeq.Core.Auditing;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
+using Zeeq.Data.Postgres.Auditing;
 
 namespace Zeeq.Data.Postgres.Identity;
 
@@ -11,8 +13,13 @@ namespace Zeeq.Data.Postgres.Identity;
 /// All read methods use <c>AsNoTracking()</c>; write methods use
 /// <c>ExecuteUpdateAsync</c> for targeted, non-materializing mutations.
 /// </remarks>
-internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqMembershipStore
+internal sealed class PostgresZeeqMembershipStore(
+    PostgresDbContext db,
+    IAuditTrailWriter? auditWriter = null
+) : IZeeqMembershipStore
 {
+    private readonly IAuditTrailWriter audit =
+        auditWriter ?? new PostgresAuditTrailWriter(db, new AuditActorContext());
     private const string AutoInviteSameDomainIndexName =
         "ix_core_organizations_auto_invite_same_domain";
 
@@ -392,8 +399,8 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
 
     /// <inheritdoc />
     /// <remarks>
-    /// Updates the role via ExecuteUpdateAsync — no materialization needed.
-    /// Caller must validate the role value before invoking.
+    /// Locks the preimage and writes the semantic role change in the same transaction.
+    /// The caller validates the requested role before invoking.
     /// </remarks>
     public async Task UpdateMemberRoleAsync(
         string orgId,
@@ -402,16 +409,40 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
         CancellationToken ct
     )
     {
-        await db
-            .OrganizationMemberships.TagWithOperationCallSite(
-                "membership.organization_membership.update_role"
-            )
-            .Where(m =>
-                m.OrganizationId == orgId
-                && m.UserId == userId
-                && m.Status == MembershipStatus.Active
-            )
-            .ExecuteUpdateAsync(setters => setters.SetProperty(m => m.Role, newRole), ct);
+        await AuditMutationCheckpoint.RunAsync(
+            db,
+            async () =>
+            {
+                var membership = await FindActiveMembershipForAuditAsync(orgId, userId, ct);
+                if (membership is null || membership.Role == newRole)
+                {
+                    return true;
+                }
+
+                await db
+                    .OrganizationMemberships.TagWithOperationCallSite(
+                        "membership.organization_membership.update_role"
+                    )
+                    .Where(m =>
+                        m.OrganizationId == orgId
+                        && m.UserId == userId
+                        && m.Status == MembershipStatus.Active
+                    )
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(m => m.Role, newRole), ct);
+
+                await AppendMembershipChangeAsync(
+                    membership,
+                    eventType: "membership.role_changed",
+                    changeType: AuditChangeType.Edited,
+                    resultingRole: newRole,
+                    resultingStatus: MembershipStatus.Active,
+                    ct: ct
+                );
+                await db.SaveChangesAsync(ct);
+                return true;
+            },
+            ct
+        );
     }
 
     /// <inheritdoc />
@@ -421,24 +452,7 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
     /// </remarks>
     public async Task RemoveMemberAsync(string orgId, string userId, CancellationToken ct)
     {
-        var now = DateTimeOffset.UtcNow;
-        await db
-            .OrganizationMemberships.TagWithOperationCallSite(
-                "membership.organization_membership.remove_member"
-            )
-            .Where(m =>
-                m.OrganizationId == orgId
-                && m.UserId == userId
-                && m.Status == MembershipStatus.Active
-            )
-            .ExecuteUpdateAsync(
-                setters =>
-                    setters
-                        .SetProperty(m => m.Status, MembershipStatus.Disabled)
-                        .SetProperty(m => m.DisabledAtUtc, now)
-                        .SetProperty(m => m.IsDefault, false),
-                ct
-            );
+        await DisableMembershipWithAuditAsync(orgId, userId, "membership.removed", ct);
     }
 
     /// <inheritdoc />
@@ -449,24 +463,127 @@ internal sealed class PostgresZeeqMembershipStore(PostgresDbContext db) : IZeeqM
     /// </remarks>
     public async Task LeaveOrganizationAsync(string orgId, string userId, CancellationToken ct)
     {
-        var now = DateTimeOffset.UtcNow;
-        await db
-            .OrganizationMemberships.TagWithOperationCallSite(
-                "membership.organization_membership.leave_organization"
+        await DisableMembershipWithAuditAsync(orgId, userId, "membership.left", ct);
+    }
+
+    private async Task DisableMembershipWithAuditAsync(
+        string orgId,
+        string userId,
+        string eventType,
+        CancellationToken ct
+    )
+    {
+        await AuditMutationCheckpoint.RunAsync(
+            db,
+            async () =>
+            {
+                var membership = await FindActiveMembershipForAuditAsync(orgId, userId, ct);
+                if (membership is null)
+                {
+                    return true;
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                await db
+                    .OrganizationMemberships.TagWithOperationCallSite(
+                        "membership.organization_membership.leave_organization"
+                    )
+                    .Where(m =>
+                        m.OrganizationId == orgId
+                        && m.UserId == userId
+                        && m.Status == MembershipStatus.Active
+                    )
+                    .ExecuteUpdateAsync(
+                        setters =>
+                            setters
+                                .SetProperty(m => m.Status, MembershipStatus.Disabled)
+                                .SetProperty(m => m.DisabledAtUtc, now)
+                                .SetProperty(m => m.IsDefault, false),
+                        ct
+                    );
+
+                await AppendMembershipChangeAsync(
+                    membership,
+                    eventType: eventType,
+                    changeType: AuditChangeType.Deleted,
+                    resultingRole: membership.Role,
+                    resultingStatus: MembershipStatus.Disabled,
+                    ct: ct
+                );
+                await db.SaveChangesAsync(ct);
+                return true;
+            },
+            ct
+        );
+    }
+
+    private Task<OrganizationMembership?> FindActiveMembershipForAuditAsync(
+        string orgId,
+        string userId,
+        CancellationToken ct
+    ) =>
+        db
+            .OrganizationMemberships.FromSqlInterpolated(
+                $"""
+                SELECT * FROM zeeq.core_organization_memberships
+                WHERE organization_id = {orgId} AND user_id = {userId} AND status = 'Active'
+                FOR UPDATE
+                """
             )
-            .Where(m =>
-                m.OrganizationId == orgId
-                && m.UserId == userId
-                && m.Status == MembershipStatus.Active
+            .TagWithOperationCallSite("membership.organization_membership.audit_preimage")
+            .AsNoTracking()
+            .SingleOrDefaultAsync(ct);
+
+    private async Task AppendMembershipChangeAsync(
+        OrganizationMembership before,
+        string eventType,
+        AuditChangeType changeType,
+        string resultingRole,
+        MembershipStatus resultingStatus,
+        CancellationToken ct
+    )
+    {
+        var subjectLabel = await db
+            .Users.TagWithOperationCallSite(
+                "membership.organization_membership.audit_subject_label"
             )
-            .ExecuteUpdateAsync(
-                setters =>
-                    setters
-                        .SetProperty(m => m.Status, MembershipStatus.Disabled)
-                        .SetProperty(m => m.DisabledAtUtc, now)
-                        .SetProperty(m => m.IsDefault, false),
-                ct
-            );
+            .AsNoTracking()
+            .Where(user => user.Id == before.UserId)
+            .Select(user => user.DisplayName)
+            .SingleOrDefaultAsync(ct);
+
+        audit.AppendOrganization(
+            organizationId: before.OrganizationId,
+            teamId: null,
+            change: new()
+            {
+                EventType = eventType,
+                ChangeType = changeType,
+                Area = AuditArea.Security,
+                SubjectType = "membership",
+                SubjectId = before.Id,
+                SubjectLabel = subjectLabel ?? before.UserId ?? before.Id,
+                Before = new()
+                {
+                    Fields = new Dictionary<string, string?>
+                    {
+                        ["UserId"] = before.UserId,
+                        ["Role"] = before.Role,
+                        ["Status"] = before.Status.ToString(),
+                    },
+                },
+                After = new()
+                {
+                    Fields = new Dictionary<string, string?>
+                    {
+                        ["UserId"] = before.UserId,
+                        ["Role"] = resultingRole,
+                        ["Status"] = resultingStatus.ToString(),
+                    },
+                },
+                ChangedFields = before.Role != resultingRole ? ["Role"] : ["Status"],
+            }
+        );
     }
 
     /// <inheritdoc />

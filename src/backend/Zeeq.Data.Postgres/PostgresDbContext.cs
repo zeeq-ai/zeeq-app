@@ -4,6 +4,7 @@ using Zeeq.Core.Carts;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Snippets;
 using Zeeq.Core.Models;
+using Zeeq.Data.Postgres.Auditing;
 
 namespace Zeeq.Data.Postgres;
 
@@ -223,6 +224,16 @@ public class PostgresDbContext(DbContextOptions<PostgresDbContext> options)
     /// </summary>
     public DbSet<ExternalPendingContentSyncRow> ExternalPendingContentSyncs =>
         Set<ExternalPendingContentSyncRow>();
+
+    /// <summary>
+    /// Immutable tenant-owned audit events (partitioned monthly by <c>occurred_at_utc</c>).
+    /// </summary>
+    public DbSet<OrganizationAuditEvent> OrganizationAuditEvents => Set<OrganizationAuditEvent>();
+
+    /// <summary>
+    /// Immutable global audit events (partitioned monthly by <c>occurred_at_utc</c>).
+    /// </summary>
+    public DbSet<SystemAuditEvent> SystemAuditEvents => Set<SystemAuditEvent>();
 
     /// <summary>
     /// Local Postgres-backed object storage rows.

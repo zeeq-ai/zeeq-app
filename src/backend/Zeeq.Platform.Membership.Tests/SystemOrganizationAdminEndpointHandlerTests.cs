@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging.Abstractions;
+using Zeeq.Core.Auditing;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
 
@@ -177,6 +178,40 @@ public sealed class SystemOrganizationAdminEndpointHandlerTests
     }
 
     [Test]
+    public async Task UpdateSystemOrganizationHandler_WithAuditActor_PassesSystemAdminActorToStore()
+    {
+        var store = new TestSystemOrganizationManagementStore();
+        store.Details["org_1"] = TestOrganizationDetails("org_1");
+        var actors = new AuditActorContext
+        {
+            Current = new AuditActor(
+                "user",
+                "admin_1",
+                "Alice",
+                "Web",
+                ResponsibleUserId: "admin_1"
+            ),
+        };
+        var handler = new UpdateSystemOrganizationHandler(
+            store,
+            NullLogger<UpdateSystemOrganizationHandler>.Instance,
+            actors
+        );
+
+        await handler.HandleAsync(
+            "org_1",
+            new UpdateSystemOrganizationRequest { Active = true },
+            MembershipTestClaims.TestUser("admin_1"),
+            CancellationToken.None
+        );
+
+        await Assert.That(store.LastUpdateActor).IsNotNull();
+        await Assert.That(store.LastUpdateActor!.Kind).IsEqualTo("system_admin");
+        await Assert.That(store.LastUpdateActor.Id).IsEqualTo("admin_1");
+        await Assert.That(store.LastUpdateActor.Channel).IsEqualTo(AuditChannels.SystemConsole);
+    }
+
+    [Test]
     public async Task UpdateSystemOrganizationHandler_ActiveOnly_LeavesTierUnchanged()
     {
         var store = new TestSystemOrganizationManagementStore();
@@ -342,6 +377,7 @@ public sealed class SystemOrganizationAdminEndpointHandlerTests
         public string? LastListMembersOrgId { get; private set; }
         public bool? LastUpdateActive { get; private set; }
         public OrganizationTier? LastUpdateTier { get; private set; }
+        public AuditActor? LastUpdateActor { get; private set; }
 
         public Task<SystemOrganizationPage<SystemOrganizationSummary>> ListOrganizationsAsync(
             int page,
@@ -376,9 +412,11 @@ public sealed class SystemOrganizationAdminEndpointHandlerTests
             string orgId,
             bool? active,
             OrganizationTier? tier,
+            AuditActor? actor,
             CancellationToken ct
         )
         {
+            LastUpdateActor = actor;
             LastUpdateActive = active;
             LastUpdateTier = tier;
 

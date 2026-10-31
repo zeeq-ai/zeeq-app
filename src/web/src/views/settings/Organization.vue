@@ -9,6 +9,14 @@
     >
       <div class="flex w-fit gap-2 lg:ms-auto">
         <UButton
+          v-if="canManageOrganization"
+          label="History"
+          icon="i-hugeicons-time-02"
+          color="neutral"
+          variant="outline"
+          @click="openOrganizationHistory"
+        />
+        <UButton
           label="New organization"
           icon="i-hugeicons-plus-sign"
           color="neutral"
@@ -85,6 +93,43 @@
         </div>
       </template>
     </USlideover>
+
+    <AuditHistoryFeed
+      v-model:open="historyOpen"
+      scope="organization"
+      :scope-label="historyScopeLabel"
+      :title="historyTitle"
+      :description="historyDescription"
+      :range="historyRange"
+      :entries="historyEntries"
+      :total-count="null"
+      :has-more="historyHasMore"
+      :loading="historyLoading"
+      :error="historyError"
+      :type-filter="historyTypeFilter"
+      :area-filter="historyAreaFilter"
+      :actor-filter="historyActorFilter"
+      :actor-filter-label="historyActorFilterLabel"
+      :coverage-label="historyCoverage"
+      :capture-note="historyCaptureNote"
+      :expanded-entry-id="historyExpandedEntryId"
+      :detail="historyDetail"
+      :detail-loading="historyDetailLoading"
+      :detail-error="historyDetailError"
+      :expanded-operation-id="historyExpandedOperationId"
+      :operation-states="historyOperationStates"
+      @retry="auditHistoryStore.retry"
+      @retry-detail="auditHistoryStore.retryDetail"
+      @toggle-detail="auditHistoryStore.toggleDetail"
+      @toggle-operation="auditHistoryStore.toggleOperation"
+      @load-operation="auditHistoryStore.loadOperation"
+      @type-filter-change="auditHistoryStore.setTypeFilter"
+      @area-filter-change="auditHistoryStore.setAreaFilter"
+      @actor-filter-change="auditHistoryStore.setActorFilter"
+      @range-change="auditHistoryStore.setRange"
+      @load-older="auditHistoryStore.loadOlder"
+      @search-all-time="auditHistoryStore.searchAllTime"
+    />
   </div>
 </template>
 
@@ -94,6 +139,9 @@ import { storeToRefs } from "pinia";
 import OrganizationForm from "./components/OrganizationForm.vue";
 import SameDomainOnboardingSettings from "./components/SameDomainOnboardingSettings.vue";
 import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
+import { useAuditHistoryStore } from "@/stores/audit-history-store";
+import AuditHistoryFeed from "@/components/audit/AuditHistoryFeed.vue";
+import { Libraries } from "@/api/generated";
 import type { CreateOrganizationRequest } from "@/api/generated/types/CreateOrganizationRequest";
 import type { SameDomainOnboardingRole } from "@/stores/organization-settings-store";
 
@@ -101,11 +149,94 @@ const toast = useToast();
 const settingsStore = useOrganizationSettingsStore();
 const { organization, saving, canManageOrganization } =
   storeToRefs(settingsStore);
+const auditHistoryStore = useAuditHistoryStore();
+const {
+  range: historyRange,
+  entries: historyEntries,
+  hasMore: historyHasMore,
+  loading: historyLoading,
+  error: historyError,
+  typeFilter: historyTypeFilter,
+  areaFilter: historyAreaFilter,
+  actorFilter: historyActorFilter,
+  actorFilterLabel: historyActorFilterLabel,
+  coverage: historyCoverage,
+  expandedEntryId: historyExpandedEntryId,
+  detail: historyDetail,
+  detailLoading: historyDetailLoading,
+  detailError: historyDetailError,
+  expandedOperationId: historyExpandedOperationId,
+  operationStates: historyOperationStates,
+} = storeToRefs(auditHistoryStore);
+const historyOpen = ref(false);
+const currentOrganization = computed(() =>
+  organization.value?.id === settingsStore.currentOrganizationId
+    ? organization.value
+    : null,
+);
+const historyScopeLabel = computed(
+  () => currentOrganization.value?.displayName ?? "Organization",
+);
+const historyTitle = computed(() =>
+  currentOrganization.value?.displayName
+    ? `History · ${currentOrganization.value.displayName}`
+    : "Organization history",
+);
+const historyDescription = computed(() =>
+  currentOrganization.value?.displayName
+    ? `Recorded changes for ${currentOrganization.value.displayName}.`
+    : "Recorded changes in this organization.",
+);
+const historyCaptureNote = computed(() =>
+  historyCoverage.value
+    ? {
+        title: "Capture coverage",
+        description: historyCoverage.value,
+      }
+    : null,
+);
 const formRef = ref<InstanceType<typeof OrganizationForm> | null>(null);
 const newOrganizationFormRef = ref<InstanceType<
   typeof OrganizationForm
 > | null>(null);
 const newOrganizationOpen = ref(false);
+let libraryLookupRequestId = 0;
+
+async function openOrganizationHistory() {
+  const organizationId = settingsStore.currentOrganizationId;
+  if (!canManageOrganization.value || !organizationId) return;
+  const requestId = ++libraryLookupRequestId;
+  if (organization.value?.id !== organizationId) {
+    try {
+      await settingsStore.loadCurrentOrganization();
+    } catch {
+      // The history title falls back until the current organization loads.
+    }
+  }
+  if (settingsStore.currentOrganizationId !== organizationId) return;
+  const baseContext = { scope: "organization" as const, organizationId };
+  auditHistoryStore.setContext({ ...baseContext, libraryLabels: {} });
+  historyOpen.value = true;
+  void auditHistoryStore.loadInitial();
+  try {
+    const libraries = await Libraries.listLibraries(organizationId);
+    if (
+      requestId !== libraryLookupRequestId ||
+      settingsStore.currentOrganizationId !== organizationId ||
+      !historyOpen.value
+    ) {
+      return;
+    }
+    auditHistoryStore.setContext({
+      ...baseContext,
+      libraryLabels: Object.fromEntries(
+        libraries.map(({ id, name }) => [id, name]),
+      ),
+    });
+  } catch {
+    // History stays available with stable library ID labels if this lookup fails.
+  }
+}
 
 /**
  * Loads organization details when entering the settings route directly.
@@ -119,6 +250,21 @@ onMounted(async () => {
     );
   }
 });
+
+watch(
+  () => settingsStore.currentOrganizationId,
+  (organizationId, previousOrganizationId) => {
+    if (organizationId === previousOrganizationId || !historyOpen.value) return;
+    libraryLookupRequestId++;
+    historyOpen.value = false;
+    if (organizationId) {
+      auditHistoryStore.setContext({
+        scope: "organization",
+        organizationId,
+      });
+    }
+  },
+);
 
 /** Saves organization metadata through the feature store. */
 async function saveOrganization(request: CreateOrganizationRequest) {

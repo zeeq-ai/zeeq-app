@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Zeeq.Core.Auditing;
 using Zeeq.Core.Carts;
 using Zeeq.Core.Common;
 using Zeeq.Core.Common.Storage;
@@ -12,6 +13,7 @@ using Zeeq.Core.Identity;
 using Zeeq.Core.Llm;
 using Zeeq.Core.Models;
 using Zeeq.Core.Security;
+using Zeeq.Data.Postgres.Auditing;
 using Zeeq.Data.Postgres.Carts;
 using Zeeq.Data.Postgres.CodeReviews;
 using Zeeq.Data.Postgres.Documents;
@@ -108,6 +110,15 @@ public static class PostgresSetupExtension
             services.AddScoped<IPullRequestRecordStore, PostgresPullRequestRecordStore>();
             services.AddScoped<IPullRequestLookupStore, PostgresPullRequestLookupStore>();
             services.AddScoped<ICodeReviewRecordStore, PostgresCodeReviewRecordStore>();
+            // Audit: the writer attaches events to the same scoped DbContext as the stores. The
+            // explicit actor context is the background default; web hosts replace the accessor
+            // with the claims-based resolver (AddZeeqAuditing).
+            services.TryAddScoped<AuditActorContext>();
+            services.TryAddScoped<IAuditActorAccessor>(serviceProvider =>
+                serviceProvider.GetRequiredService<AuditActorContext>()
+            );
+            services.AddScoped<IAuditTrailWriter, PostgresAuditTrailWriter>();
+            services.AddScoped<IAuditTrailReader, PostgresAuditTrailReader>();
             services.AddScoped<IMetricEventStore, PostgresMetricEventStore>();
             services.AddScoped<ITelemetryRawRequestStore, PostgresTelemetryRawRequestStore>();
             services.AddScoped<IAgentTelemetryDomainStore, PostgresAgentTelemetryDomainStore>();

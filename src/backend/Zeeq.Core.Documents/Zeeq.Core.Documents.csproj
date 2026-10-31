@@ -15,6 +15,7 @@
     <PackageReference Include="Tiktoken" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Zeeq.Core.Auditing\Zeeq.Core.Auditing.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Common\Zeeq.Core.Common.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Documents.Parsing\Zeeq.Core.Documents.Parsing.csproj" />
     <ProjectReference Include="..\Zeeq.Core.Llm\Zeeq.Core.Llm.csproj" />

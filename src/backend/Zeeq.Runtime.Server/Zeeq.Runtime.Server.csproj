@@ -53,6 +53,7 @@
     <ProjectReference Include="..\Zeeq.Mcp\Zeeq.Mcp.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Membership\Zeeq.Platform.Membership.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Carts\Zeeq.Platform.Carts.csproj" />
+    <ProjectReference Include="..\Zeeq.Platform.Auditing\Zeeq.Platform.Auditing.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Dispatch.Process\Zeeq.Platform.Dispatch.Process.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Documents\Zeeq.Platform.Documents.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.Ingest\Zeeq.Platform.Ingest.csproj" />

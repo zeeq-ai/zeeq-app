@@ -172,6 +172,13 @@ export const routes: Array<RouteRecordRaw> = [
               import("@/views/system/activation-keys/SystemActivationKeys.vue"),
             meta: { title: "Activation Keys", requiresSystemAdmin: true },
           },
+          {
+            path: "history",
+            name: "SystemAuditHistory",
+            component: () =>
+              import("@/views/system/audit-history/SystemAuditHistory.vue"),
+            meta: { title: "System History", requiresSystemAdmin: true },
+          },
         ],
       },
       {
