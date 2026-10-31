@@ -9,57 +9,25 @@
   >
     <template #body>
       <div class="flex h-full min-h-0 flex-col">
-        <div
-          class="flex flex-wrap items-center justify-between gap-3 border-b border-default px-5 py-3 sm:px-6"
-        >
-          <div class="flex items-center gap-2 text-sm">
-            <span class="font-medium text-highlighted">
-              {{ totalCount ?? entries.length }} entries
-            </span>
-            <UBadge
-              v-if="showScopeBadge"
-              :label="scopeLabel"
-              color="neutral"
-              variant="subtle"
-              size="sm"
-            />
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <USelect
-              :model-value="typeFilter"
-              :items="typeOptions"
-              value-key="value"
-              aria-label="Filter history by change type"
-              class="w-36"
-              @update:model-value="onTypeFilterChange"
-            />
-            <USelect
-              v-if="scope !== 'document'"
-              :model-value="areaFilter"
-              :items="areaOptions"
-              value-key="value"
-              aria-label="Filter history by area"
-              class="w-40"
-              @update:model-value="onAreaFilterChange"
-            />
-            <USelect
-              :model-value="actorFilter ?? 'all'"
-              :items="actorOptions"
-              value-key="value"
-              aria-label="Filter history by actor"
-              class="w-40"
-              @update:model-value="onActorFilterChange"
-            />
-            <USelect
-              :model-value="range"
-              :items="rangeOptions"
-              value-key="value"
-              aria-label="Filter history by date range"
-              class="w-40"
-              @update:model-value="onRangeChange"
-            />
-          </div>
-        </div>
+        <AuditHistoryFilters
+          :scope
+          :scope-label
+          :show-scope-badge="showScopeBadge"
+          :range
+          :entries
+          :total-count
+          :type-filter
+          :area-filter
+          :actor-filter
+          :actor-filter-label
+          @type-filter-change="emits('typeFilterChange', $event)"
+          @area-filter-change="emits('areaFilterChange', $event)"
+          @actor-filter-change="
+            (id, label) => emits('actorFilterChange', id, label)
+          "
+          @range-change="emits('rangeChange', $event)"
+          @clear-filters="emits('clearFilters')"
+        />
 
         <div v-if="captureNote" class="mt-4 px-5 sm:px-6">
           <UAlert
@@ -298,6 +266,7 @@ import type {
   AuditHistoryScope,
 } from "./audit-history-types";
 import AuditHistoryEventRow from "./AuditHistoryEventRow.vue";
+import AuditHistoryFilters from "./AuditHistoryFilters.vue";
 import AuditHistoryLibraryDeletion from "./AuditHistoryLibraryDeletion.vue";
 import AuditHistorySyncRun from "./AuditHistorySyncRun.vue";
 import {
@@ -346,41 +315,10 @@ const emits = defineEmits<{
   areaFilterChange: [area: AuditHistoryArea | "all"];
   actorFilterChange: [actorId: string | null, actorLabel: string | null];
   rangeChange: [range: AuditHistoryRange];
+  clearFilters: [];
   loadOlder: [];
   searchAllTime: [];
 }>();
-
-const typeOptions = [
-  { label: "All types", value: "all" },
-  { label: "Added", value: "added" },
-  { label: "Edited", value: "edited" },
-  { label: "Deleted", value: "deleted" },
-];
-const areaOptions = [
-  { label: "All areas", value: "all" },
-  { label: "Content", value: "Content" },
-  { label: "Review config", value: "ReviewConfiguration" },
-  { label: "Settings", value: "Settings" },
-  { label: "Security", value: "Security" },
-];
-const rangeOptions = [
-  { label: "Last 90 days", value: "90-days" },
-  { label: "All time", value: "all-time" },
-];
-const actorOptions = computed(() => {
-  const actors = new Map<string, string>();
-  for (const entry of props.entries) {
-    if (!actors.has(entry.actorId)) actors.set(entry.actorId, entry.actorLabel);
-  }
-  if (props.actorFilter && !actors.has(props.actorFilter)) {
-    actors.set(props.actorFilter, props.actorFilterLabel ?? "Selected actor");
-  }
-
-  return [
-    { label: "All actors", value: "all" },
-    ...[...actors.entries()].map(([value, label]) => ({ label, value })),
-  ];
-});
 
 const title = computed(() => props.title ?? "History");
 const showScopeBadge = computed(() => props.showScopeBadge ?? true);
@@ -430,42 +368,4 @@ const rangeStatusLabel = computed(() => {
     ? "No more entries in the last 90 days."
     : "All loaded entries are shown.";
 });
-
-function onTypeFilterChange(value: string) {
-  if (
-    value === "all" ||
-    value === "added" ||
-    value === "edited" ||
-    value === "deleted"
-  ) {
-    emits("typeFilterChange", value);
-  }
-}
-
-function onAreaFilterChange(value: string) {
-  if (
-    value === "all" ||
-    value === "Content" ||
-    value === "ReviewConfiguration" ||
-    value === "Settings" ||
-    value === "Security"
-  ) {
-    emits("areaFilterChange", value);
-  }
-}
-
-function onActorFilterChange(value: string) {
-  if (value === "all") {
-    emits("actorFilterChange", null, null);
-    return;
-  }
-  const actor = actorOptions.value.find((option) => option.value === value);
-  emits("actorFilterChange", value, actor?.label ?? null);
-}
-
-function onRangeChange(value: string) {
-  if (value === "90-days" || value === "all-time") {
-    emits("rangeChange", value);
-  }
-}
 </script>
