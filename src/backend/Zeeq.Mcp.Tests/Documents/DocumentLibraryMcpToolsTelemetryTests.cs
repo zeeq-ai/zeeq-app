@@ -386,6 +386,12 @@ public sealed class DocumentLibraryMcpToolsTelemetryTests
     /// </remarks>
     private sealed class TestLibraryStore : ILibraryDocumentStore
     {
+        public async Task<Zeeq.Core.Documents.Library?> TryUpdateLibraryAsync(
+            Zeeq.Core.Documents.Library library,
+            bool requestFullResync,
+            CancellationToken ct
+        ) => await UpdateLibraryAsync(library, ct);
+
         public List<Library> Libraries { get; } = [];
         public Dictionary<string, LibraryDocument> Documents { get; } = [];
         public List<LibraryDocumentMatch> Matches { get; } = [];

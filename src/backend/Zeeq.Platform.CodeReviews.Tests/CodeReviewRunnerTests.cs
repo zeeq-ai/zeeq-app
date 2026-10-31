@@ -510,6 +510,34 @@ public sealed class CodeReviewRunnerTests
 
     private sealed class TestCodeRepositoryStore : ICodeRepositoryStore
     {
+        public Task<Zeeq.Core.Models.CodeRepository?> UpdateSettingsWithLibrariesAsync(
+            string organizationId,
+            string repositoryId,
+            Zeeq.Platform.CodeReviews.RepositorySettingsPatch patch,
+            string[]? libraryIds,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<Zeeq.Core.Models.CodeRepository> UpsertWithLibrariesAsync(
+            Zeeq.Core.Models.CodeRepository repository,
+            string[]? libraryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task<Zeeq.Core.Models.CodeRepository?> ReplaceRepositoryLibrariesAsync(
+            string organizationId,
+            string repositoryId,
+            string[] libraryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task ReplaceLibraryRepositoriesAsync(
+            string organizationId,
+            string libraryId,
+            string[] repositoryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
         public CodeRepository Repository { get; set; } = null!;
 
         public Task<CodeRepository?> FindActiveAsync(
@@ -729,6 +757,12 @@ public sealed class CodeReviewRunnerTests
 
     private sealed class TestLibraryDocumentStore : ILibraryDocumentStore
     {
+        public async Task<Zeeq.Core.Documents.Library?> TryUpdateLibraryAsync(
+            Zeeq.Core.Documents.Library library,
+            bool requestFullResync,
+            CancellationToken ct
+        ) => await UpdateLibraryAsync(library, ct);
+
         public IReadOnlyList<Library> Libraries { get; set; } = [];
 
         public Task<Library?> GetLibraryAsync(

@@ -80,10 +80,26 @@
             Organization · {{ entry.organizationLabel }}
           </span>
           <span
-            v-if="entry.libraryLabel && !timeline"
+            v-if="entry.eventType === 'library.deleted' && !timeline"
+            class="mt-1 block break-all font-mono text-xs text-muted"
+          >
+            Library ID · {{ entry.subjectId }}
+          </span>
+          <span
+            v-else-if="(entry.libraryLabel && !timeline) || libraryContextLabel"
             class="mt-1 block break-words text-xs text-muted"
           >
-            Library (current name) · {{ entry.libraryLabel }}
+            <template v-if="libraryContextLabel">
+              Library at deletion · {{ libraryContextLabel }}
+            </template>
+            <template v-else>
+              {{
+                entry.libraryLabelIsCurrent
+                  ? "Library (current name)"
+                  : "Library ID"
+              }}
+              · {{ entry.libraryLabel }}
+            </template>
           </span>
         </span>
       </span>
@@ -196,6 +212,7 @@ const props = defineProps<{
   detailError: string | null;
   showDate?: boolean;
   timeline?: boolean;
+  libraryContextLabel?: string | null;
 }>();
 
 const emits = defineEmits<{
@@ -207,7 +224,7 @@ const detailPanelId = computed(() => `audit-detail-${props.entry.id}`);
 const detailHeadingId = computed(() => `${detailPanelId.value}-heading`);
 const rowAriaLabel = computed(
   () =>
-    `${props.entry.actorLabel} ${props.entry.actionLabel} ${props.entry.subjectLabel}, ${typeLabel.value}, ${props.entry.actorChannelLabel}, ${props.entry.areaLabel}, ${fullDateTimeLabel.value}. ${props.expanded ? "Hide" : "Show"} details.`,
+    `${props.entry.actorLabel} ${props.entry.actionLabel} ${props.entry.subjectLabel}${props.entry.eventType === "library.deleted" ? `, library ID ${props.entry.subjectId}` : ""}, ${typeLabel.value}, ${props.entry.actorChannelLabel}, ${props.entry.areaLabel}, ${fullDateTimeLabel.value}. ${props.expanded ? "Hide" : "Show"} details.`,
 );
 const timelineDateTimeLabel = computed(() =>
   formatAuditTimelineDateTime(props.entry.occurredAtUtc),

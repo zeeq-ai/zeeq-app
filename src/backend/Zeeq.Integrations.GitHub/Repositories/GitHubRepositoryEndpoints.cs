@@ -87,6 +87,7 @@ public sealed class GitHubRepositoryEndpoints : IEndpoint
             .Produces<GitHubConfiguredRepositoryResponse>()
             .Produces<GitHubRepositoryManagementError>(StatusCodes.Status400BadRequest)
             .Produces<GitHubRepositoryManagementError>(StatusCodes.Status404NotFound)
+            .Produces<GitHubRepositoryManagementError>(StatusCodes.Status409Conflict)
             .WithSummary("Update repository library mapping.")
             .WithDescription(
                 """
@@ -223,6 +224,10 @@ public sealed class GitHubRepositoryEndpoints : IEndpoint
             )
             .RequireActiveOrganization()
             .WithName("CreateGitHubRepositoryMapping")
+            .Produces<GitHubConfiguredRepositoryResponse>(StatusCodes.Status201Created)
+            .Produces<GitHubRepositoryManagementError>(StatusCodes.Status400BadRequest)
+            .Produces<GitHubRepositoryManagementError>(StatusCodes.Status404NotFound)
+            .Produces<GitHubRepositoryManagementError>(StatusCodes.Status409Conflict)
             .WithSummary("Register a repository.")
             .WithDescription(
                 """
@@ -276,6 +281,10 @@ public sealed class GitHubRepositoryEndpoints : IEndpoint
             )
             .RequireActiveOrganization()
             .WithName("UpdateGitHubRepositoryMapping")
+            .Produces<GitHubConfiguredRepositoryResponse>()
+            .Produces<GitHubRepositoryManagementError>(StatusCodes.Status400BadRequest)
+            .Produces<GitHubRepositoryManagementError>(StatusCodes.Status404NotFound)
+            .Produces<GitHubRepositoryManagementError>(StatusCodes.Status409Conflict)
             .WithSummary("Update repository settings.")
             .WithDescription(
                 """

@@ -3,6 +3,8 @@ import {
   canCompareAuditSnapshotsInline,
   formatAuditTime,
   formatAuditTimelineDateTime,
+  formatAuditCoverage,
+  getAuditHistoryGroupPage,
   groupAuditFeedEntries,
   groupAuditEntriesByUtcDay,
   maxInlineAuditDiffCharacters,
@@ -16,6 +18,8 @@ function entry(
   eventType = "document.updated",
   operationId: string | null = null,
   verifiedSyncRunId: string | null = null,
+  subjectType = "document",
+  subjectId = id,
 ): AuditHistoryEntry {
   return {
     id,
@@ -26,6 +30,8 @@ function entry(
     actorChannelLabel: "via Web",
     actionLabel: "edited",
     eventType,
+    subjectType,
+    subjectId,
     subjectLabel: "review.md",
     areaLabel: "Content",
     area: "Content",
@@ -88,6 +94,37 @@ describe("audit history display helpers", () => {
     expect(formatAuditTimelineDateTime("not-a-date", "en-US")).toBe(
       "Unknown time",
     );
+  });
+
+  it("states current capture coverage without overstating source sync history", () => {
+    expect(
+      formatAuditCoverage(
+        "partial: direct document changes, library lifecycle and repository-library mappings, public-source registration, organization administration, membership and activation keys; other configuration and external actions are not yet recorded.",
+      ),
+    ).toContain(
+      "Public-source registration does not include historical synced document content.",
+    );
+    expect(formatAuditCoverage("unknown future coverage")).toBe(
+      "unknown future coverage",
+    );
+  });
+
+  it("pages large loaded groups in bounded windows and clamps page navigation", () => {
+    const loadedChildren = Array.from({ length: 123 }, (_, index) => index + 1);
+    const firstPage = getAuditHistoryGroupPage(loadedChildren, 0);
+    const secondPage = getAuditHistoryGroupPage(loadedChildren, 1);
+    const finalPage = getAuditHistoryGroupPage(loadedChildren, 2);
+    const pastEnd = getAuditHistoryGroupPage(loadedChildren, 99, 200);
+
+    expect(firstPage).toMatchObject({ start: 1, end: 50, total: 123 });
+    expect(firstPage.items).toHaveLength(50);
+    expect(secondPage).toMatchObject({ start: 51, end: 100, page: 1 });
+    expect(secondPage.items).toHaveLength(50);
+    expect(finalPage).toMatchObject({ start: 101, end: 123, page: 2 });
+    expect(finalPage.items).toHaveLength(23);
+    expect(pastEnd).toMatchObject({ start: 101, end: 123, page: 2 });
+    expect(pastEnd.items).toHaveLength(23);
+    expect(pastEnd.pageSize).toBe(50);
   });
 
   it("groups only loaded document sync facts with a verified run reference", () => {
@@ -182,5 +219,84 @@ describe("audit history display helpers", () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.kind).toBe("sync-run");
     expect(items[0]?.kind === "sync-run" && items[0].entries).toHaveLength(2);
+  });
+
+  it("groups deletion children only under a matching library deletion parent", () => {
+    const operationId = "00112233-4455-6677-8899-aabbccddeeff";
+    const parent = entry(
+      "deleted-library-event",
+      "2026-10-31T01:05:00.123456Z",
+      "library.deleted",
+      operationId,
+      null,
+      "library",
+      "library-1",
+    );
+    parent.libraryId = "library-1";
+    const deletedDocument = entry(
+      "deleted-document",
+      "2026-10-31T01:05:00.123455Z",
+      "document.deleted",
+      operationId,
+      null,
+      "document",
+    );
+    deletedDocument.libraryId = "library-1";
+    const mapping = entry(
+      "removed-mapping",
+      "2026-10-31T01:05:00.123454Z",
+      "repository.library_mapping_changed",
+      operationId,
+      null,
+      "repository",
+    );
+    mapping.libraryId = "library-1";
+    const unrelated = entry(
+      "other-library-document",
+      "2026-10-31T01:05:00.123453Z",
+      "document.deleted",
+      operationId,
+      null,
+      "document",
+    );
+    unrelated.libraryId = "library-2";
+
+    const items = groupAuditFeedEntries(
+      [parent, deletedDocument, mapping, unrelated],
+      {},
+    );
+
+    expect(items.map((item) => item.kind)).toEqual([
+      "library-deletion",
+      "event",
+    ]);
+    const deletion = items[0];
+    expect(deletion?.kind === "library-deletion" && deletion.parent.id).toBe(
+      parent.id,
+    );
+    expect(
+      deletion?.kind === "library-deletion" &&
+        deletion.children.map(({ id }) => id),
+    ).toEqual([deletedDocument.id, mapping.id]);
+    expect(items[0]?.occurredAtUtc).toBe(parent.occurredAtUtc);
+  });
+
+  it("does not group operation-linked deletes without a valid library parent", () => {
+    const operationId = "00112233-4455-6677-8899-aabbccddeeff";
+    const child = entry(
+      "deleted-document",
+      "2026-10-31T01:05:00Z",
+      "document.deleted",
+      operationId,
+      null,
+      "document",
+    );
+    child.libraryId = "library-1";
+
+    const items = groupAuditFeedEntries([child], {});
+
+    expect(items).toEqual([
+      expect.objectContaining({ kind: "event", entry: child }),
+    ]);
   });
 });

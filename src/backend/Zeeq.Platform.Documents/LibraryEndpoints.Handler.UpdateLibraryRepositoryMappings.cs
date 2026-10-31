@@ -57,23 +57,22 @@ public sealed class UpdateLibraryRepositoryMappingsHandler(
 
         var requestedSet = request.RepositoryIds.ToHashSet(StringComparer.Ordinal);
 
-        foreach (var repo in configuredRepos)
+        try
         {
-            var hasLibrary = repo.LibraryIds.Contains(library.Id, StringComparer.Ordinal);
-            var shouldHave = requestedSet.Contains(repo.Id);
-
-            if (hasLibrary == shouldHave)
-            {
-                continue;
-            }
-
-            var updatedIds = shouldHave
-                ? [.. repo.LibraryIds, library.Id]
-                : repo.LibraryIds.Where(id => id != library.Id).ToArray();
-
-            repo.LibraryIds = updatedIds;
-            repo.UpdatedAtUtc = DateTimeOffset.UtcNow;
-            await repositories.UpsertAsync(repo, ct);
+            await repositories.ReplaceLibraryRepositoriesAsync(
+                orgId,
+                library.Id,
+                [.. requestedSet],
+                ct
+            );
+        }
+        catch (KeyNotFoundException)
+        {
+            return TypedResults.NotFound();
+        }
+        catch (ArgumentException ex)
+        {
+            return TypedResults.BadRequest(new LibraryError(ex.Message));
         }
 
         return TypedResults.Ok(

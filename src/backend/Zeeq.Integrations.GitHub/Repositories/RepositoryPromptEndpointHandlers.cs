@@ -511,13 +511,30 @@ public sealed class UpdateRepositoryLibrariesHandler(
             }
         }
 
-        // The loaded entity is round-tripped with only LibraryIds touched, so Enabled, DisplayName,
-        // and TeamId carry through unchanged — that preservation is what keeps this route safe for
-        // non-admin members, and it is pinned by a test.
-        repository.LibraryIds = libraryIds;
-        repository.UpdatedAtUtc = DateTimeOffset.UtcNow;
-
-        var saved = await repositories.UpsertAsync(repository, cancellationToken);
+        // The mapping-only write leaves settings untouched, including newer changes made after
+        // the initial lookup. This keeps the member-accessible route from overwriting admin settings.
+        CodeRepository? saved;
+        try
+        {
+            saved = await repositories.ReplaceRepositoryLibrariesAsync(
+                organizationId,
+                repositoryId,
+                libraryIds,
+                cancellationToken
+            );
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new GitHubRepositoryManagementError(ex.Message));
+        }
+        catch (LibraryMappingConflictException ex)
+        {
+            return Results.Conflict(new GitHubRepositoryManagementError(ex.Message));
+        }
+        if (saved is null)
+            return Results.NotFound(
+                new GitHubRepositoryManagementError("Repository mapping was not found.")
+            );
 
         return Results.Ok(GitHubRepositoryEndpointSupport.ToResponse(saved));
     }

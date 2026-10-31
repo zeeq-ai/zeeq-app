@@ -237,6 +237,12 @@ public sealed class UpdateLibraryRepositoryMappingsHandlerTests
     private sealed class TestLibraryDocumentStore(IReadOnlyList<Library>? seed = null)
         : ILibraryDocumentStore
     {
+        public async Task<Zeeq.Core.Documents.Library?> TryUpdateLibraryAsync(
+            Zeeq.Core.Documents.Library library,
+            bool requestFullResync,
+            CancellationToken ct
+        ) => await UpdateLibraryAsync(library, ct);
+
         private readonly List<Library> _libraries = seed?.ToList() ?? [];
 
         public Task<Library?> GetLibraryAsync(
@@ -372,8 +378,53 @@ public sealed class UpdateLibraryRepositoryMappingsHandlerTests
     private sealed class TestCodeRepositoryStore(IReadOnlyList<CodeRepository>? seed = null)
         : ICodeRepositoryStore
     {
+        public Task<Zeeq.Core.Models.CodeRepository?> UpdateSettingsWithLibrariesAsync(
+            string organizationId,
+            string repositoryId,
+            Zeeq.Platform.CodeReviews.RepositorySettingsPatch patch,
+            string[]? libraryIds,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<Zeeq.Core.Models.CodeRepository> UpsertWithLibrariesAsync(
+            Zeeq.Core.Models.CodeRepository repository,
+            string[]? libraryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task<Zeeq.Core.Models.CodeRepository?> ReplaceRepositoryLibrariesAsync(
+            string organizationId,
+            string repositoryId,
+            string[] libraryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
         private readonly List<CodeRepository> _repos = seed?.ToList() ?? [];
         public List<string> UpsertedIds { get; } = [];
+
+        public Task ReplaceLibraryRepositoriesAsync(
+            string organizationId,
+            string libraryId,
+            string[] repositoryIds,
+            CancellationToken cancellationToken
+        )
+        {
+            foreach (
+                var repo in _repos.Where(r =>
+                    r.OrganizationId == organizationId && r.DisabledAtUtc is null
+                )
+            )
+            {
+                var mapped = repositoryIds.Contains(repo.Id);
+                if (repo.LibraryIds.Contains(libraryId) == mapped)
+                    continue;
+                repo.LibraryIds = mapped
+                    ? [.. repo.LibraryIds, libraryId]
+                    : repo.LibraryIds.Where(id => id != libraryId).ToArray();
+                UpsertedIds.Add(repo.Id);
+            }
+            return Task.CompletedTask;
+        }
 
         public Task<IReadOnlyList<CodeRepository>> ListConfiguredForOrganizationAsync(
             string organizationId,

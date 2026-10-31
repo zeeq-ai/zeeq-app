@@ -217,7 +217,23 @@ public sealed class CreateGitHubRepositoryMappingHandler(
             UpdatedAtUtc = now,
         };
 
-        var saved = await repositories.UpsertAsync(repository, cancellationToken);
+        CodeRepository saved;
+        try
+        {
+            saved = await repositories.UpsertWithLibrariesAsync(
+                repository,
+                libraryIds,
+                cancellationToken
+            );
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new GitHubRepositoryManagementError(ex.Message));
+        }
+        catch (LibraryMappingConflictException ex)
+        {
+            return Results.Conflict(new GitHubRepositoryManagementError(ex.Message));
+        }
 
         return Results.Created(
             $"/api/v1/orgs/{Uri.EscapeDataString(organizationId)}/integrations/github/repositories/{Uri.EscapeDataString(saved.Id)}",
@@ -278,21 +294,36 @@ public sealed class UpdateGitHubRepositoryMappingHandler(
             }
         }
 
-        // null = keep existing; [] = clear; non-empty = replace
-        var effectiveLibraryIds = incomingLibraryIds ?? existing.LibraryIds ?? [];
-
-        existing.TeamId = GitHubRepositoryEndpointSupport.NormalizeOptional(request.TeamId);
-        existing.DisplayName = GitHubRepositoryEndpointSupport.DisplayNameOrDefault(
+        var patch = new RepositorySettingsPatch(
+            GitHubRepositoryEndpointSupport.NormalizeOptional(request.TeamId),
+            request.Enabled,
             request.DisplayName,
-            existing.DisplayName
+            request.VisibleInLibraryPicker
         );
-        existing.Enabled = request.Enabled;
-        existing.VisibleInLibraryPicker =
-            request.VisibleInLibraryPicker ?? existing.VisibleInLibraryPicker;
-        existing.LibraryIds = effectiveLibraryIds;
-        existing.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        CodeRepository? saved;
+        try
+        {
+            saved = await repositories.UpdateSettingsWithLibrariesAsync(
+                organizationId,
+                repositoryId,
+                patch,
+                incomingLibraryIds,
+                cancellationToken
+            );
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new GitHubRepositoryManagementError(ex.Message));
+        }
+        catch (LibraryMappingConflictException ex)
+        {
+            return Results.Conflict(new GitHubRepositoryManagementError(ex.Message));
+        }
 
-        var saved = await repositories.UpsertAsync(existing, cancellationToken);
+        if (saved is null)
+            return Results.NotFound(
+                new GitHubRepositoryManagementError("Repository mapping was not found.")
+            );
 
         return Results.Ok(GitHubRepositoryEndpointSupport.ToResponse(saved));
     }

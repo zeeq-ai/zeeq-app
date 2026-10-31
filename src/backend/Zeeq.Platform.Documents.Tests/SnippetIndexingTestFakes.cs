@@ -11,6 +11,12 @@ namespace Zeeq.Platform.Documents.Tests;
 internal sealed class FakeLibraryDocumentStore(IReadOnlyList<LibraryDocument> documents)
     : ILibraryDocumentStore
 {
+    public async Task<Zeeq.Core.Documents.Library?> TryUpdateLibraryAsync(
+        Zeeq.Core.Documents.Library library,
+        bool requestFullResync,
+        CancellationToken ct
+    ) => await UpdateLibraryAsync(library, ct);
+
     private readonly List<LibraryDocument> _documents = [.. documents];
 
     /// <summary>Terminal processing status recorded per document id.</summary>

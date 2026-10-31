@@ -125,6 +125,38 @@ public interface ICodeRepositoryStore
         CancellationToken cancellationToken
     );
 
+    /// <summary>Atomically upserts repository settings and replaces its library links. Null preserves links.</summary>
+    Task<Zeeq.Core.Models.CodeRepository> UpsertWithLibrariesAsync(
+        Zeeq.Core.Models.CodeRepository repository,
+        string[]? libraryIds,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Updates explicit management settings and optionally replaces links under the same lock.</summary>
+    Task<Zeeq.Core.Models.CodeRepository?> UpdateSettingsWithLibrariesAsync(
+        string organizationId,
+        string repositoryId,
+        RepositorySettingsPatch patch,
+        string[]? libraryIds,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Replaces one repository's library links without changing its settings.</summary>
+    Task<Zeeq.Core.Models.CodeRepository?> ReplaceRepositoryLibrariesAsync(
+        string organizationId,
+        string repositoryId,
+        string[] libraryIds,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Atomically replaces the repositories linked to one library.</summary>
+    Task ReplaceLibraryRepositoriesAsync(
+        string organizationId,
+        string libraryId,
+        string[] repositoryIds,
+        CancellationToken cancellationToken
+    );
+
     /// <summary>
     /// Soft-disables an active repository mapping inside an organization.
     /// </summary>
@@ -142,3 +174,15 @@ public interface ICodeRepositoryStore
         CancellationToken cancellationToken
     );
 }
+
+/// <summary>Requested repository management settings, applied against the locked current row.</summary>
+/// <param name="TeamId">The requested team ID; null clears the existing team.</param>
+/// <param name="Enabled">The requested enabled state; always applied.</param>
+/// <param name="DisplayName">Null or whitespace preserves the locked current name.</param>
+/// <param name="VisibleInLibraryPicker">Null preserves the locked current visibility.</param>
+public sealed record RepositorySettingsPatch(
+    string? TeamId,
+    bool Enabled,
+    string? DisplayName,
+    bool? VisibleInLibraryPicker
+);

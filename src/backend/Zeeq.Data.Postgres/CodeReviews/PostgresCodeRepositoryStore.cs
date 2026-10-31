@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Zeeq.Core.Auditing;
 using Zeeq.Core.Models;
+using Zeeq.Data.Postgres.Auditing;
+using Zeeq.Data.Postgres.Documents;
 using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Data.Postgres.CodeReviews;
@@ -13,8 +16,14 @@ namespace Zeeq.Data.Postgres.CodeReviews;
 /// review work. Webhook ingress uses this store to decide whether an incoming
 /// repository event should create queue work or be ignored as not configured.
 /// </remarks>
-internal sealed class PostgresCodeRepositoryStore(PostgresDbContext db) : ICodeRepositoryStore
+internal sealed partial class PostgresCodeRepositoryStore(
+    PostgresDbContext db,
+    IAuditTrailWriter? auditWriter = null
+) : ICodeRepositoryStore
 {
+    private readonly IAuditTrailWriter audit =
+        auditWriter ?? new PostgresAuditTrailWriter(db, new AuditActorContext());
+
     /// <summary>
     /// Finds an enabled, non-disabled repository mapping by provider identity.
     /// </summary>
@@ -195,6 +204,10 @@ internal sealed class PostgresCodeRepositoryStore(PostgresDbContext db) : ICodeR
 
         if (existing is null)
         {
+            if (repository.LibraryIds.Length != 0)
+                throw new InvalidOperationException(
+                    "Library mappings require UpsertWithLibrariesAsync."
+                );
             db.CodeRepositories.Add(repository);
             await db.SaveChangesAsync(cancellationToken);
             return repository;
@@ -206,7 +219,16 @@ internal sealed class PostgresCodeRepositoryStore(PostgresDbContext db) : ICodeR
         existing.DisplayName = repository.DisplayName;
         existing.Enabled = repository.Enabled;
         existing.VisibleInLibraryPicker = repository.VisibleInLibraryPicker;
-        existing.LibraryIds = repository.LibraryIds;
+        // A stale settings object must never recreate a deleted library association.
+        var storedLibraryIds = await db
+            .CodeRepositories.AsNoTracking()
+            .Where(row => row.OrganizationId == existing.OrganizationId && row.Id == existing.Id)
+            .Select(row => row.LibraryIds)
+            .SingleAsync(cancellationToken);
+        var links = db.Entry(existing).Property(row => row.LibraryIds);
+        links.CurrentValue = storedLibraryIds;
+        links.OriginalValue = storedLibraryIds;
+        links.IsModified = false;
         existing.ReviewConfiguration = repository.ReviewConfiguration;
         existing.UpdatedAtUtc = repository.UpdatedAtUtc;
 

@@ -72,6 +72,120 @@ describe("audit history API mappers", () => {
     expect(mismatchedRun.verifiedSyncRunId).toBeNull();
   });
 
+  it("formats library lifecycle configuration and committed deletion totals", () => {
+    const libraryEvent: AuditEventSummaryDto = {
+      ...event,
+      id: "library-delete-event",
+      eventType: "library.deleted",
+      changeType: "Deleted",
+      subjectType: "library",
+      subjectId: "library-1",
+      subjectLabel: "Research",
+      libraryId: "library-1",
+      changedFields: [
+        "name",
+        "description",
+        "includeFilters",
+        "excludeFilters",
+        "sourceKind",
+        "publicSourceId",
+        "documentCount",
+        "repositoryMappingCount",
+      ],
+    };
+    const row = mapAuditEventSummary(libraryEvent);
+    expect(row).toMatchObject({
+      subjectType: "library",
+      subjectId: "library-1",
+      subjectLabel: "Research",
+      actionLabel: "deleted library",
+    });
+
+    const detail = mapAuditEventDetail({
+      event: libraryEvent,
+      before: {
+        fields: {
+          name: "Research",
+          description: "Shared references",
+          includeFilters: '["docs/**", "guides/**"]',
+          excludeFilters: '["drafts/**"]',
+          sourceKind: "notion",
+          publicSourceId: "source-123",
+          documentCount: "17",
+          repositoryMappingCount: "2",
+        },
+      },
+    });
+
+    expect(detail.deletedLibrary).toEqual({
+      id: "library-1",
+      name: "Research",
+      documentCount: 17,
+      repositoryMappingCount: 2,
+    });
+    expect(detail.changes).toContainEqual({
+      label: "Include filters",
+      before: "docs/**, guides/**",
+      after: null,
+      sensitive: false,
+    });
+    expect(detail.changes).toContainEqual({
+      label: "Documents removed",
+      before: "17",
+      after: null,
+      sensitive: false,
+    });
+    expect(detail.changes).toContainEqual({
+      label: "Repository mappings removed",
+      before: "2",
+      after: null,
+      sensitive: false,
+    });
+  });
+
+  it("formats repository mapping changes as readable before and after values", () => {
+    const summary: AuditEventSummaryDto = {
+      ...event,
+      eventType: "repository.library_mapping_changed",
+      subjectType: "repository",
+      subjectId: "repository-1",
+      subjectLabel: "website",
+      changedFields: ["libraryId", "libraryName", "repositoryName", "mapped"],
+    };
+    const detail = mapAuditEventDetail({
+      event: summary,
+      before: {
+        fields: {
+          libraryId: "library-1",
+          libraryName: "Research",
+          repositoryName: "website",
+          mapped: "false",
+        },
+      },
+      after: {
+        fields: {
+          libraryId: "library-1",
+          libraryName: "Research",
+          repositoryName: "website",
+          mapped: "true",
+        },
+      },
+    });
+
+    expect(detail.changes).toContainEqual({
+      label: "Library mapping",
+      before: "Not mapped",
+      after: "Mapped",
+      sensitive: false,
+    });
+    expect(detail.changes.map((change) => change.label)).toEqual([
+      "Library ID",
+      "Library name",
+      "Repository",
+      "Library mapping",
+    ]);
+  });
+
   it("shows allowlisted scalar fields and local document snapshots only", () => {
     const detail = mapAuditEventDetail({
       event,

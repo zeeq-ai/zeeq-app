@@ -93,6 +93,13 @@ internal sealed class CachedLibraryDocumentStore(ILibraryDocumentStore inner, Hy
         inner.UpdateLibraryAsync(library, ct);
 
     /// <inheritdoc />
+    public Task<Library?> TryUpdateLibraryAsync(
+        Library library,
+        bool requestFullResync,
+        CancellationToken ct
+    ) => inner.TryUpdateLibraryAsync(library, requestFullResync, ct);
+
+    /// <inheritdoc />
     public Task DeleteLibraryAsync(string organizationId, string libraryId, CancellationToken ct) =>
         inner.DeleteLibraryAsync(organizationId, libraryId, ct);
 

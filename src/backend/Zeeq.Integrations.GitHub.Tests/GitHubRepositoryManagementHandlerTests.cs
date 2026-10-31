@@ -1171,7 +1171,70 @@ public sealed class GitHubRepositoryManagementHandlerTests
     private sealed class TestCodeRepositoryStore(IReadOnlyList<CodeRepository>? seed = null)
         : ICodeRepositoryStore
     {
+        public Task ReplaceLibraryRepositoriesAsync(
+            string organizationId,
+            string libraryId,
+            string[] repositoryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
         public List<CodeRepository> Repositories { get; } = seed?.ToList() ?? [];
+
+        public Task<CodeRepository?> UpdateSettingsWithLibrariesAsync(
+            string organizationId,
+            string repositoryId,
+            RepositorySettingsPatch patch,
+            string[]? libraryIds,
+            CancellationToken cancellationToken
+        )
+        {
+            var repo = Repositories.FirstOrDefault(r =>
+                r.OrganizationId == organizationId
+                && r.Id == repositoryId
+                && r.DisabledAtUtc is null
+            );
+            if (repo is not null)
+            {
+                repo.TeamId = patch.TeamId;
+                repo.Enabled = patch.Enabled;
+                if (!string.IsNullOrWhiteSpace(patch.DisplayName))
+                    repo.DisplayName = patch.DisplayName.Trim();
+                if (patch.VisibleInLibraryPicker is { } visible)
+                    repo.VisibleInLibraryPicker = visible;
+                if (libraryIds is not null)
+                    repo.LibraryIds = libraryIds;
+                repo.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            }
+            return Task.FromResult(repo);
+        }
+
+        public Task<CodeRepository> UpsertWithLibrariesAsync(
+            CodeRepository repository,
+            string[]? libraryIds,
+            CancellationToken cancellationToken
+        )
+        {
+            if (libraryIds is not null)
+                repository.LibraryIds = libraryIds;
+            return UpsertAsync(repository, cancellationToken);
+        }
+
+        public Task<CodeRepository?> ReplaceRepositoryLibrariesAsync(
+            string organizationId,
+            string repositoryId,
+            string[] libraryIds,
+            CancellationToken cancellationToken
+        )
+        {
+            var repository = Repositories.FirstOrDefault(row =>
+                row.OrganizationId == organizationId
+                && row.Id == repositoryId
+                && row.DisabledAtUtc is null
+            );
+            if (repository is not null)
+                repository.LibraryIds = libraryIds;
+            return Task.FromResult(repository);
+        }
 
         public Task<CodeRepository?> FindActiveAsync(
             string provider,
@@ -1305,6 +1368,12 @@ public sealed class GitHubRepositoryManagementHandlerTests
     private sealed class TestLibraryDocumentStore(IReadOnlyList<Library>? seed = null)
         : ILibraryDocumentStore
     {
+        public async Task<Zeeq.Core.Documents.Library?> TryUpdateLibraryAsync(
+            Zeeq.Core.Documents.Library library,
+            bool requestFullResync,
+            CancellationToken ct
+        ) => await UpdateLibraryAsync(library, ct);
+
         private readonly List<Library> _libraries = seed?.ToList() ?? [];
 
         public Task<IReadOnlyList<Library>> ListLibrariesAsync(

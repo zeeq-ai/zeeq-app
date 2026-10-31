@@ -298,6 +298,12 @@ public sealed class DocumentLibraryMcpToolsTests
     // normaliser semantics can be shared.
     private sealed class TestLibraryDocumentStore : ILibraryDocumentStore
     {
+        public async Task<Zeeq.Core.Documents.Library?> TryUpdateLibraryAsync(
+            Zeeq.Core.Documents.Library library,
+            bool requestFullResync,
+            CancellationToken ct
+        ) => await UpdateLibraryAsync(library, ct);
+
         public List<Library> Libraries { get; } = [];
 
         public List<LibraryDocument> Documents { get; } = [];

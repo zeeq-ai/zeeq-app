@@ -205,6 +205,12 @@ public sealed class SnippetEndpointHandlerTests
     // SearchAsync.
     private sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
     {
+        public async Task<Zeeq.Core.Documents.Library?> TryUpdateLibraryAsync(
+            Zeeq.Core.Documents.Library library,
+            bool requestFullResync,
+            CancellationToken ct
+        ) => await UpdateLibraryAsync(library, ct);
+
         public List<Library> Libraries { get; } = [];
 
         public Task<Library?> GetLibraryAsync(
