@@ -8500,40 +8500,48 @@
         "type": "object",
         "properties": {
           "kind": {
-            "type": "string"
+            "type": "string",
+            "description": "Identity/authority discriminator; see AuditActorKinds."
           },
           "id": {
-            "type": "string"
+            "type": "string",
+            "description": "Stable actor identity. Its namespace depends on Kind."
           },
           "displayName": {
-            "type": "string"
+            "type": "string",
+            "description": "Non-secret event-time label, retained if the actor is later renamed or deleted."
           },
           "channel": {
-            "type": "string"
+            "type": "string",
+            "description": "Execution channel, separate from who acted; see AuditChannels."
           },
           "responsibleUserId": {
             "type": [
               "null",
               "string"
-            ]
+            ],
+            "description": "Human owner of the credential, if known; ownership does not prove that person initiated this action."
           },
           "credentialId": {
             "type": [
               "null",
               "string"
-            ]
+            ],
+            "description": "Credential or user-token identifier, never its secret value."
           },
           "credentialName": {
             "type": [
               "null",
               "string"
-            ]
+            ],
+            "description": "Non-secret event-time credential label for readable attribution."
           },
           "initiatedByUserId": {
             "type": [
               "null",
               "string"
-            ]
+            ],
+            "description": "Explicitly known requester of delegated work; a requester is not the author of synced content."
           }
         },
         "description": "Trusted execution identity, with human ownership and credential identity kept separate."
@@ -8564,6 +8572,7 @@
         "type": "object",
         "properties": {
           "event": {
+            "description": "The same metadata identity used to select the event from its feed.",
             "$ref": "#/components/schemas/AuditEventSummary"
           },
           "before": {
@@ -8572,6 +8581,7 @@
                 "type": "null"
               },
               {
+                "description": "Captured state before the change, if applicable and recorded.",
                 "$ref": "#/components/schemas/AuditSnapshot"
               }
             ]
@@ -8582,6 +8592,7 @@
                 "type": "null"
               },
               {
+                "description": "Captured state after the change, if applicable and recorded.",
                 "$ref": "#/components/schemas/AuditSnapshot"
               }
             ]
@@ -8607,20 +8618,24 @@
         "properties": {
           "id": {
             "type": "string",
+            "description": "Event identity within its scope and timestamp; do not discard the other lookup key parts.",
             "format": "uuid"
           },
           "occurredAtUtc": {
             "type": "string",
+            "description": "Writer-assigned UTC record time, not transaction commit time or an earlier content-authored time.\nPreserve the exact feed value for detail lookup; JavaScript Date loses PostgreSQL microseconds.",
             "format": "date-time"
           },
           "scope": {
+            "description": "Ownership stream of the canonical event, including tenant events surfaced in the system view.",
             "$ref": "#/components/schemas/AuditScope"
           },
           "organizationId": {
             "type": [
               "null",
               "string"
-            ]
+            ],
+            "description": "Owning organization for tenant events; null for global events, never a tenant-query wildcard."
           },
           "organizationLabel": {
             "type": [
@@ -8632,7 +8647,8 @@
             "type": [
               "null",
               "string"
-            ]
+            ],
+            "description": "Event's team context; null denotes organization-shared scope, not unrestricted cross-tenant access."
           },
           "eventType": {
             "type": "string"
@@ -8659,10 +8675,12 @@
             ]
           },
           "actor": {
+            "description": "Attribution captured with the event; it is not the actor's current profile or permission set.",
             "$ref": "#/components/schemas/AuditActor"
           },
           "operationId": {
             "type": "string",
+            "description": "Correlation across facts, not proof that an operation is complete or that this page contains all its children.",
             "format": "uuid"
           },
           "changedFields": {
@@ -8696,7 +8714,8 @@
             ]
           },
           "hasSnapshots": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "At least one snapshot exists; content-free sync facts also qualify, so this does not promise recoverable text."
           }
         },
         "description": "Metadata-only event projection. Snapshot content must never be loaded for this shape."
@@ -8713,16 +8732,19 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AuditEventSummary"
-            }
+            },
+            "description": "Only the authorized metadata in this page, not the complete operation or run."
           },
           "nextCursor": {
             "type": [
               "null",
               "string"
-            ]
+            ],
+            "description": "Continuation position; null ends this filtered result, not all retained history."
           },
           "coverage": {
-            "type": "string"
+            "type": "string",
+            "description": "Producer coverage notice; an empty feed is not proof that no uncaptured action occurred."
           }
         },
         "description": "A page of entries with an opaque continuation cursor and honest capture scope."
@@ -8741,25 +8763,29 @@
             "type": [
               "null",
               "string"
-            ]
+            ],
+            "description": "Path on this side of the change, so a rename preserves both names."
           },
           "title": {
             "type": [
               "null",
               "string"
-            ]
+            ],
+            "description": "Allowlisted local-document title; synchronized-document facts omit it."
           },
           "content": {
             "type": [
               "null",
               "string"
-            ]
+            ],
+            "description": "Full local-document text for comparison and copy/download; null for synchronized facts."
           },
           "fields": {
             "type": "object",
             "additionalProperties": {
               "type": "string"
-            }
+            },
+            "description": "Allowlisted state with stable field names. Store readable values, not credential material,\nciphertext, or secret hashes. A null value is distinct from an uncaptured field."
           }
         },
         "description": "Independently readable, explicitly allowlisted state. Never project secrets or operational fields.\nContent is available only for local documents; synchronized content uses source references instead."

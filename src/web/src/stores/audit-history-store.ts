@@ -358,6 +358,8 @@ function compareAuditEntriesDescending(
   return leftId === rightId ? 0 : leftId > rightId ? -1 : 1;
 }
 
+// Match the server's timestamp/UUID keyset order. Parse whole seconds for timezone handling,
+// then compare fractional digits separately so sub-millisecond events do not collapse into ties.
 function compareAuditTimestampsDescending(left: string, right: string): number {
   const leftWholeSecond = Date.parse(
     left.replace(/\.\d+(?=(?:Z|[+-]\d{2}:?\d{2})?$)/i, ""),

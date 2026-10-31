@@ -10,6 +10,9 @@ namespace Zeeq.Data.Postgres.Auditing;
 /// <remarks>
 /// The name check is a backstop, not the allowlist: callers decide which fields are safe to record.
 /// Secrets, ciphertext, and secret hashes must never reach this type.
+/// The guard inspects field names, not arbitrary field values or local-document text. It cannot
+/// make wholesale entity serialization safe or act as a content redactor. Invalid or oversized
+/// snapshots fail the write instead of silently truncating evidence of the domain mutation.
 /// </remarks>
 internal static partial class AuditSnapshotSerializer
 {

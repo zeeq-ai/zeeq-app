@@ -9,8 +9,10 @@ namespace Zeeq.Data.Postgres.Auditing;
 /// <remarks>
 /// NOTE: The table is partitioned monthly (UTC) on <c>occurred_at_utc</c> by pg_partman; the
 /// hand-edited migration creates the partitioned parent, indexes, and partman config. Retention
-/// is intentionally NULL: partitions are never detached or dropped automatically. Every index
-/// leads with <c>organization_id</c> so single-tenant reads prune to that tenant's rows.
+/// is intentionally NULL: partitions are never detached or dropped automatically. Time predicates
+/// prune partitions; organization-leading keys/indexes bound tenant scans within them. The partial
+/// system-surface index is the exception: authorized cross-tenant reads must not scan every tenant.
+/// Partitioning bounds the recent working set, not the total retained index/storage size.
 /// </remarks>
 internal sealed class OrganizationAuditEventConfiguration
     : IEntityTypeConfiguration<OrganizationAuditEvent>
@@ -18,6 +20,8 @@ internal sealed class OrganizationAuditEventConfiguration
     public void Configure(EntityTypeBuilder<OrganizationAuditEvent> entity)
     {
         entity.ToTable("organization_audit_events");
+        // PostgreSQL requires partition keys in a partitioned-table primary key. Organization
+        // leads the tenant identity; timestamp is also required for an exact, prunable detail read.
         entity.HasKey(e => new
         {
             e.OrganizationId,
@@ -110,6 +114,9 @@ internal static class AuditEventColumns
         entity.Property<string?>("BeforeHash").HasMaxLength(128);
         entity.Property<string?>("AfterHash").HasMaxLength(128);
         entity.Property<string?>("Outcome").HasMaxLength(64);
+        // Headers and snapshots share retention, so a separate payload table buys no expiry
+        // boundary. Native TOAST handles large jsonb values; feeds must still project metadata
+        // explicitly to avoid fetching them. No payload GIN index is needed for timeline reads.
         entity.Property<string?>("BeforeSnapshot").HasColumnType("jsonb");
         entity.Property<string?>("AfterSnapshot").HasColumnType("jsonb");
     }

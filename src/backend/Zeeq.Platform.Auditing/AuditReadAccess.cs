@@ -25,6 +25,8 @@ public sealed record AuditReadScope(
 /// Owners and admins see all history of their own organization. Other members see only events of
 /// libraries they can currently access, so org-wide membership/security events and history of
 /// deleted libraries are not visible to them. Organization is never taken from request input.
+/// Historical actor roles and retained snapshots do not preserve a removed reader's access.
+/// This decision is shared by list and detail requests; hiding rows only in the UI is insufficient.
 /// </remarks>
 public class AuditReadAccess(IZeeqMembershipStore memberships, ILibraryDocumentStore libraries)
 {
