@@ -245,6 +245,128 @@ public sealed class PostgresAgentConversationQueryStoreIntegrationTests(PgDataba
     }
 
     [Test]
+    public async Task ListRecentAsync_ClaudeCodeRequiresNonHousekeepingWorkInSameOrganization()
+    {
+        await using var provider = CreateProvider(postgres.ConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAgentConversationQueryStore>();
+        var db = scope.ServiceProvider.GetRequiredService<PostgresDbContext>();
+        var orgId = $"org-{Guid.CreateVersion7():N}";
+        var otherOrgId = $"org-{Guid.CreateVersion7():N}";
+        const string subjectUserId = "user-a";
+        const string sessionId = "shared-session-id";
+        var startedAtUtc = DateTimeOffset.UtcNow;
+
+        var auxiliaryOnly = Conversation(orgId, sessionId, startedAtUtc);
+        auxiliaryOnly.CreatedById = subjectUserId;
+        auxiliaryOnly.Harness = "claude-code";
+        var otherOrganization = Conversation(otherOrgId, sessionId, startedAtUtc);
+        otherOrganization.CreatedById = subjectUserId;
+        otherOrganization.Harness = "claude-code";
+        var eventless = Conversation(orgId, "eventless-claude", startedAtUtc.AddSeconds(-1));
+        eventless.CreatedById = subjectUserId;
+        eventless.Harness = "claude-code";
+        var decisionOnly = Conversation(orgId, "decision-only-claude", startedAtUtc.AddSeconds(-2));
+        decisionOnly.CreatedById = subjectUserId;
+        decisionOnly.Harness = "claude-code";
+        var toolResultOnly = Conversation(orgId, "tool-result-only-claude", startedAtUtc.AddSeconds(-3));
+        toolResultOnly.CreatedById = subjectUserId;
+        toolResultOnly.Harness = "claude-code";
+        var completionOnly = Conversation(orgId, "completion-only-claude", startedAtUtc.AddSeconds(-4));
+        completionOnly.CreatedById = subjectUserId;
+        completionOnly.Harness = "claude-code";
+        var otherHarness = Conversation(orgId, "codex-session", startedAtUtc.AddSeconds(-1));
+        otherHarness.CreatedById = subjectUserId;
+        otherHarness.Harness = "codex";
+        db.AgentConversations.AddRange(
+            auxiliaryOnly,
+            otherOrganization,
+            eventless,
+            decisionOnly,
+            toolResultOnly,
+            completionOnly,
+            otherHarness
+        );
+        db.AgentSessionEvents.AddRange(
+            new AgentSessionEvent
+            {
+                Id = Guid.CreateVersion7().ToString("N"),
+                OrganizationId = orgId,
+                ConversationId = sessionId,
+                OccurredAtUtc = startedAtUtc.AddSeconds(1),
+                EventType = AgentSessionEventType.ToolDecision,
+            },
+            PromptEvent(otherOrgId, sessionId, startedAtUtc.AddSeconds(1), "other org work"),
+            new AgentSessionEvent
+            {
+                Id = Guid.CreateVersion7().ToString("N"),
+                OrganizationId = orgId,
+                ConversationId = decisionOnly.Id,
+                OccurredAtUtc = startedAtUtc.AddSeconds(1),
+                EventType = AgentSessionEventType.ToolDecision,
+            },
+            ToolResultEvent(orgId, toolResultOnly.Id, startedAtUtc.AddSeconds(1)),
+            CompletionEvent(
+                orgId,
+                completionOnly.Id,
+                startedAtUtc.AddSeconds(1),
+                inputTokens: 10,
+                outputTokens: 2,
+                costUsd: 1m
+            ),
+            new AgentSessionEvent
+            {
+                Id = Guid.CreateVersion7().ToString("N"),
+                OrganizationId = orgId,
+                ConversationId = sessionId,
+                OccurredAtUtc = startedAtUtc.AddSeconds(2),
+                EventType = AgentSessionEventType.Completion,
+                IsHousekeeping = true,
+                CostUsd = 1m,
+            }
+        );
+        await db.SaveChangesAsync();
+
+        var auxiliaryPage = await store.ListRecentAsync(
+            new AgentConversationStreamQuery(orgId, subjectUserId),
+            CancellationToken.None
+        );
+        await Assert
+            .That(auxiliaryPage.Items.Select(item => item.Id))
+            .IsEquivalentTo(["tool-result-only-claude", "completion-only-claude", "codex-session"]);
+        await Assert.That(await store.GetDetailAsync(orgId, sessionId, CancellationToken.None)).IsNotNull();
+
+        // A later real prompt makes the session visible even with no prompt text. The earlier
+        // auxiliary event arrived in a previous batch.
+        db.AgentSessionEvents.Add(
+            new AgentSessionEvent
+            {
+                Id = Guid.CreateVersion7().ToString("N"),
+                OrganizationId = orgId,
+                ConversationId = sessionId,
+                OccurredAtUtc = startedAtUtc.AddSeconds(3),
+                EventType = AgentSessionEventType.Prompt,
+            }
+        );
+        await db.SaveChangesAsync();
+
+        var workPage = await store.ListRecentAsync(
+            new AgentConversationStreamQuery(orgId, subjectUserId),
+            CancellationToken.None
+        );
+        await Assert
+            .That(workPage.Items.Select(item => item.Id))
+            .IsEquivalentTo(
+                [
+                    sessionId,
+                    "tool-result-only-claude",
+                    "completion-only-claude",
+                    "codex-session",
+                ]
+            );
+    }
+
+    [Test]
     public async Task GetDetailAsync_ReturnsPromptsAscendingAndCompletionUsageRowsOnly()
     {
         await using var provider = CreateProvider(postgres.ConnectionString);
@@ -534,7 +656,7 @@ public sealed class PostgresAgentConversationQueryStoreIntegrationTests(PgDataba
         {
             OrganizationId = organizationId,
             Id = id,
-            Harness = "claude-code",
+            Harness = "codex",
             StartedAtUtc = startedAtUtc,
             RollupVersion = AgentConversationRollupVersion.Current,
         };

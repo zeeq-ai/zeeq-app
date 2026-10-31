@@ -29,6 +29,10 @@ public interface IAgentConversationQueryStore
     /// work. A conversation with unknown cost (still recomputing, or genuinely no priced
     /// events yet) is never hidden by this filter. Detail links are unaffected —
     /// <see cref="GetDetailAsync"/> stays unscoped by cost.
+    /// For <c>claude-code</c> only, the inbox also requires at least one persisted, non-housekeeping
+    /// Prompt, ToolResult, or Completion event in the same organization and conversation. The
+    /// check uses all stored history, so auxiliary-only sessions become visible after real work
+    /// arrives. This visibility rule does not remove events or change detail access or billing.
     /// </remarks>
     Task<AgentConversationStreamPage> ListRecentAsync(
         AgentConversationStreamQuery query,

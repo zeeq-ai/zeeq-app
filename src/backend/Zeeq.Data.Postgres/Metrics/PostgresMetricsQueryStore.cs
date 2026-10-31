@@ -19,6 +19,17 @@ namespace Zeeq.Data.Postgres.Metrics;
 /// </remarks>
 internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetricsQueryStore
 {
+    // Token usage samples store overlapping totals and subsets. Input includes cached tokens,
+    // and output includes reasoning/tool tokens, so only the input/output dimensions are additive.
+    // Keep legacy samples without token_kind because they may be the only data for older events.
+    private const string AdditiveTokenUsageDimensionPredicate = """
+        (
+            metric.metric_type <> 'zeeq_agent_token_usage'
+            OR metric.tags->>'token_kind' IS NULL
+            OR metric.tags->>'token_kind' IN ('input', 'output')
+        )
+        """;
+
     /// <inheritdoc />
     public async Task<ReviewCostMetrics> GetReviewCostMetricsAsync(
         string organizationId,
@@ -206,6 +217,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
               ON alias_user.id = user_email_alias.user_id
             WHERE metric.organization_id = {2}
               AND metric.metric_type = {3}
+              AND {{AdditiveTokenUsageDimensionPredicate}}
               AND metric.created_at_utc >= {1}
               AND metric.created_at_utc < {8}
               AND (cardinality({4}) = 0 OR {{NormalizedMetricUserEmailSql}} = ANY({7}))
@@ -273,6 +285,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
               ON alias_user.id = user_email_alias.user_id
             WHERE metric.organization_id = {2}
               AND metric.metric_type = {3}
+              AND {{AdditiveTokenUsageDimensionPredicate}}
               AND metric.created_at_utc >= {1}
               AND metric.created_at_utc < {8}
               AND (cardinality({4}) = 0 OR {{NormalizedMetricUserEmailSql}} = ANY({7}))

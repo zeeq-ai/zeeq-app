@@ -101,6 +101,24 @@ internal sealed class PostgresAgentConversationQueryStore(PostgresDbContext db)
                 )
             );
 
+        // Claude Code sessions can contain title-generation and other auxiliary events before
+        // real work starts. Keep those rows for detail and billing, but list the conversation
+        // only after persisted history contains a non-housekeeping work event. Query the full
+        // event history so later work makes the session visible regardless of batch ordering.
+        rows = rows.Where(conversation =>
+            conversation.Harness != "claude-code"
+            || db.AgentSessionEvents.Any(sessionEvent =>
+                sessionEvent.OrganizationId == conversation.OrganizationId
+                && sessionEvent.ConversationId == conversation.Id
+                && !sessionEvent.IsHousekeeping
+                && (
+                    sessionEvent.EventType == AgentSessionEventType.Prompt
+                    || sessionEvent.EventType == AgentSessionEventType.ToolResult
+                    || sessionEvent.EventType == AgentSessionEventType.Completion
+                )
+            )
+        );
+
         if (query.MinimumCostUsd is { } requestedMinimumCostUsd)
         {
             var minimumCostUsd =

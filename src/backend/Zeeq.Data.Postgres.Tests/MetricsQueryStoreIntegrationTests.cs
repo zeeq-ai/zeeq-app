@@ -501,6 +501,77 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     }
 
     [Test]
+    public async Task TokenUsageSeries_ExcludesOverlappingDimensionsButKeepsLegacySamples()
+    {
+        const string organizationId = "org_token_dimensions";
+        var subsetMetrics = new[]
+        {
+            TokenMetric(organizationId, "zeeq_agent_token_usage", 100, "model-a", "a@x.com", "input"),
+            TokenMetric(organizationId, "zeeq_agent_token_usage", 25, "model-a", "a@x.com", "output"),
+            TokenMetric(organizationId, "zeeq_agent_token_usage", 80, "model-a", "a@x.com", "cached"),
+            TokenMetric(organizationId, "zeeq_agent_token_usage", 12, "model-a", "a@x.com", "reasoning"),
+            TokenMetric(organizationId, "zeeq_agent_token_usage", 7, "model-a", "a@x.com", "tool"),
+            AgentMetric(organizationId, "zeeq_agent_token_usage", 9, "model-a", "a@x.com"),
+            TokenMetric(organizationId, "zeeq_other_metric", 80, "model-a", "a@x.com", "cached"),
+        };
+        // Verify the same organization and time bounds still scope every metric query.
+        var outsideWindow = At(
+            TokenMetric(organizationId, "zeeq_agent_token_usage", 300, "model-a", "a@x.com", "input"),
+            OneHourRange.EndExclusiveUtc
+        );
+        var otherOrganization = TokenMetric(
+            "org_token_dimensions_other",
+            "zeeq_agent_token_usage",
+            500,
+            "model-a",
+            "a@x.com",
+            "input"
+        );
+        await SeedMetricsAsync([.. subsetMetrics, outsideWindow, otherOrganization]);
+
+        var store = new PostgresMetricsQueryStore(_context);
+        var singleDimension = await store.GetSeriesAsync(
+            organizationId,
+            "zeeq_agent_token_usage",
+            OneHourRange,
+            MetricSeriesGroup.Model,
+            new MetricSeriesFilters(),
+            CancellationToken.None
+        );
+        var twoDimensional = await store.GetTwoDimensionalSeriesAsync(
+            organizationId,
+            "zeeq_agent_token_usage",
+            OneHourRange,
+            MetricSeriesGroup.Model,
+            MetricSeriesGroup.User,
+            new MetricSeriesFilters(),
+            CancellationToken.None
+        );
+        var otherMetric = await store.GetSeriesAsync(
+            organizationId,
+            "zeeq_other_metric",
+            OneHourRange,
+            MetricSeriesGroup.Model,
+            new MetricSeriesFilters(),
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(singleDimension.Single(point => point.SeriesKey == "model-a").Value)
+            .IsEqualTo(134d);
+        await Assert
+            .That(
+                twoDimensional.Single(point =>
+                    point.PrimarySeriesKey == "model-a" && point.SecondarySeriesKey == "a@x.com"
+                ).Value
+            )
+            .IsEqualTo(134d);
+        await Assert
+            .That(otherMetric.Single(point => point.SeriesKey == "model-a").Value)
+            .IsEqualTo(80d);
+    }
+
+    [Test]
     public async Task GetTwoDimensionalSeries_GroupByModelAndUser_BucketsAndSums()
     {
         await SeedMetricsAsync(
@@ -1552,6 +1623,28 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
             MetricValue = value,
             UserEmail = user,
             Tags = new() { ["model"] = model },
+            CreatedAtUtc = Now,
+        };
+
+    private static MetricEvent TokenMetric(
+        string org,
+        string metricType,
+        double value,
+        string model,
+        string user,
+        string tokenKind
+    ) =>
+        new()
+        {
+            OrganizationId = org,
+            MetricType = metricType,
+            MetricValue = value,
+            UserEmail = user,
+            Tags = new()
+            {
+                ["model"] = model,
+                ["token_kind"] = tokenKind,
+            },
             CreatedAtUtc = Now,
         };
 

@@ -1,8 +1,8 @@
+using OpenTelemetry.Proto.Common.V1;
+using OpenTelemetry.Proto.Resource.V1;
 using Zeeq.Core.Models;
 using Zeeq.Platform.Telemetry.Adapters;
 using Zeeq.Platform.Telemetry.Adapters.ClaudeCode;
-using OpenTelemetry.Proto.Common.V1;
-using OpenTelemetry.Proto.Resource.V1;
 using OtlpLog = OpenTelemetry.Proto.Logs.V1;
 
 namespace Zeeq.Platform.Telemetry.Tests;
@@ -15,7 +15,7 @@ public sealed class ClaudeCodeAdapterTests
 {
     private static readonly string SessionId = "3645efe2-1d5e-46e5-805d-0f3ece932a35";
 
-    private static TelemetryLogRecordContext LogCtx(
+    internal static TelemetryLogRecordContext LogCtx(
         string body,
         string? serviceName = null,
         params (string Key, string Value)[] attrs
@@ -188,5 +188,42 @@ public sealed class ClaudeCodeAdapterTests
         var result = adapter.Adapt(ctx);
         await Assert.That(result.Event).IsNotNull();
         await Assert.That(result.Event!.IsHousekeeping).IsTrue();
+    }
+
+    [Test]
+    [Arguments("sdk")]
+    [Arguments("repl_main_thread")]
+    [Arguments("")]
+    [Arguments("unknown_future_source")]
+    [Arguments("subagent")]
+    public async Task Adapt_Completion_WorkSourcesRemainVisible(string source)
+    {
+        var ctx = LogCtx(
+            "claude_code.api_request",
+            attrs:
+            [
+                ("session.id", SessionId),
+                ("event.sequence", "7"),
+                ("query_source", source),
+                ("input_tokens", "70058"),
+                ("output_tokens", "87"),
+                ("cost_usd", "0.1461462"),
+            ]
+        );
+        var result = new ClaudeCodeTelemetryAdapter().Adapt(ctx);
+        await Assert.That(result.Event!.IsHousekeeping).IsFalse();
+        await Assert.That(result.Event.QuerySource).IsEqualTo(source.Length == 0 ? null : source);
+        await Assert.That(result.Event.InputTokens).IsEqualTo(70058);
+        await Assert.That(result.Event.OutputTokens).IsEqualTo(87);
+        await Assert.That(result.Event.CostUsd).IsEqualTo(0.1461462m);
+    }
+
+    [Test]
+    public async Task Adapt_Completion_MissingSourceIsWork()
+    {
+        var ctx = LogCtx("claude_code.api_request", attrs: [("session.id", SessionId)]);
+        var result = new ClaudeCodeTelemetryAdapter().Adapt(ctx);
+        await Assert.That(result.Event!.IsHousekeeping).IsFalse();
+        await Assert.That(result.Event.QuerySource).IsNull();
     }
 }

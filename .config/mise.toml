@@ -35,6 +35,16 @@ ZEEQ_OTEL_COLLECTOR_TELEMETRY_AUDIENCE = "https://app.zeeq.ai/mcp"
 CSQL_PROXY_INSTANCE_CONNECTION_NAME = "zeeq-ai-prod:us-central1:zeeq-pg-prod"
 PUBSUB_PROJECT_ID = "zeeq-dev-local"
 
+# Claude ignores telemetry enablement/export settings in repository settings.json files.
+# Supply them before launch; the bearer token stays in the developer's existing environment.
+CLAUDE_CODE_ENABLE_TELEMETRY = "{% if env.ZEEQ_OTEL_ACCESS_TOKEN is defined and env.ZEEQ_OTEL_ACCESS_TOKEN != '' %}1{% else %}0{% endif %}"
+OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
+OTEL_EXPORTER_OTLP_ENDPOINT = "https://otel.zeeq.ai"
+OTEL_LOGS_EXPORTER = "otlp"
+OTEL_METRICS_EXPORTER = "none"
+OTEL_LOG_USER_PROMPTS = "1"
+OTEL_LOG_TOOL_DETAILS = "1"
+
 [tasks.up]
 description = "Run the Aspire stack (pass aws for Floci; defaults to GCP Pub/Sub)"
 run = "aspire run --detach --non-interactive --"
