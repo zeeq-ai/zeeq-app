@@ -52,7 +52,7 @@ public sealed class UpdateLibraryHandler(
             request.RunFullResync && existing.SourceKind == RepositorySourceKind.Notion.ToString()
                 ? DateTimeOffset.UtcNow
                 : existing.NextFullResyncAt;
-        var updated = await store.UpdateLibraryAsync(
+        var updated = await store.TryUpdateLibraryAsync(
             new Library
             {
                 Id = existing.Id,
@@ -80,8 +80,14 @@ public sealed class UpdateLibraryHandler(
                 CreatedAt = existing.CreatedAt,
                 UpdatedAt = DateTimeOffset.UtcNow,
             },
+            request.RunFullResync,
             ct
         );
+
+        if (updated is null)
+        {
+            return TypedResults.NotFound();
+        }
 
         var sourcesById = await LibraryEndpointMapping.LoadPublicSourceAsync(
             publicSources,

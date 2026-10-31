@@ -30,7 +30,7 @@ public static class AuditCoverage
 {
     /// <summary>Returned in every page until broader capture is inventoried and verified.</summary>
     public const string FirstSlice =
-        "partial: local document changes, organization administration, membership and activation keys; other areas are not yet recorded";
+        "partial: direct document changes, library lifecycle and repository-library mappings, public-source registration, organization administration, membership and activation keys; other configuration and external actions are not yet recorded";
 }
 
 /// <summary>Bounds applied to audit writes and reads.</summary>

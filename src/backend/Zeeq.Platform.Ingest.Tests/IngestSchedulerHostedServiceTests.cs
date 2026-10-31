@@ -330,6 +330,12 @@ public sealed class IngestSchedulerHostedServiceTests
         IReadOnlyList<Library> dueNotionLibraries
     ) : ILibraryDocumentStore
     {
+        public async Task<Zeeq.Core.Documents.Library?> TryUpdateLibraryAsync(
+            Zeeq.Core.Documents.Library library,
+            bool requestFullResync,
+            CancellationToken ct
+        ) => await UpdateLibraryAsync(library, ct);
+
         public int? LastClaimLimit { get; private set; }
         public int? LastNotionClaimLimit { get; private set; }
         public DateTimeOffset? LastNotionClaimNow { get; private set; }

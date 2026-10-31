@@ -19,6 +19,13 @@ namespace Zeeq.Platform.Ingest.Diagnostics;
 /// </remarks>
 internal sealed partial class DryRunLibraryDocumentStore : ILibraryDocumentStore
 {
+    /// <inheritdoc />
+    public Task<Library?> TryUpdateLibraryAsync(
+        Library library,
+        bool requestFullResync,
+        CancellationToken ct
+    ) => throw new NotSupportedException();
+
     private readonly ILibraryDocumentStore _inner;
     private readonly ILogger<DryRunLibraryDocumentStore> _logger;
     private readonly Dictionary<

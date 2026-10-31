@@ -160,6 +160,12 @@ public sealed class CachedLibraryDocumentStoreTests
     private sealed class CountingLibraryDocumentStore(LibraryDocument? document)
         : ILibraryDocumentStore
     {
+        public async Task<Zeeq.Core.Documents.Library?> TryUpdateLibraryAsync(
+            Zeeq.Core.Documents.Library library,
+            bool requestFullResync,
+            CancellationToken ct
+        ) => await UpdateLibraryAsync(library, ct);
+
         private LibraryDocument? _document = document;
 
         public int PathLookupCount { get; private set; }

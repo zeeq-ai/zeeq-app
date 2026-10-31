@@ -28,6 +28,10 @@ export function formatAuditAction(
     "activation_key.created": "created activation key",
     "activation_key.revoked": "revoked activation key",
     "activation_key.redeemed": "redeemed activation key",
+    "library.created": "created library",
+    "library.updated": "updated library",
+    "library.deleted": "deleted library",
+    "repository.library_mapping_changed": "changed library mapping for",
   };
 
   return actions[eventType] ?? fallbackAction(changeType);
@@ -135,6 +139,10 @@ export function formatAuditSourceReference(
       return "Membership";
     case "activationkey":
       return "Activation key";
+    case "library":
+      return "Library";
+    case "repository":
+      return "Repository";
     default:
       return "Organization change";
   }

@@ -272,6 +272,34 @@ public sealed class CodeReviewManualRequestEndpointHandlerTests
 
     private sealed class TestCodeRepositoryStore : ICodeRepositoryStore
     {
+        public Task<Zeeq.Core.Models.CodeRepository?> UpdateSettingsWithLibrariesAsync(
+            string organizationId,
+            string repositoryId,
+            Zeeq.Platform.CodeReviews.RepositorySettingsPatch patch,
+            string[]? libraryIds,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<Zeeq.Core.Models.CodeRepository> UpsertWithLibrariesAsync(
+            Zeeq.Core.Models.CodeRepository repository,
+            string[]? libraryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task<Zeeq.Core.Models.CodeRepository?> ReplaceRepositoryLibrariesAsync(
+            string organizationId,
+            string repositoryId,
+            string[] libraryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task ReplaceLibraryRepositoriesAsync(
+            string organizationId,
+            string libraryId,
+            string[] repositoryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
         public CodeRepository? ActiveRepository { get; set; } =
             new()
             {

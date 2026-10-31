@@ -1,14 +1,30 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Zeeq.Core.Auditing;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
+using Zeeq.Data.Postgres.Auditing;
 
 namespace Zeeq.Data.Postgres.Documents;
 
 /// <summary>
 /// Postgres-backed store for public repository sources.
 /// </summary>
-internal sealed class PostgresDocsPublicSourceStore(PostgresDbContext db) : IDocsPublicSourceStore
+/// <remarks>
+/// Registration changes a global subject even when a tenant request initiates it. Record that
+/// fact in the system stream, not in every subscriber's organization history. Registration can
+/// commit before the subscribing library is created: its event proves source registration only,
+/// not successful subscription. The scoped operation ID links separately committed facts.
+/// Operational sync/lease stamps are intentionally outside this registration capture.
+/// </remarks>
+internal sealed class PostgresDocsPublicSourceStore(
+    PostgresDbContext db,
+    IAuditTrailWriter? auditWriter = null
+) : IDocsPublicSourceStore
 {
+    private readonly IAuditTrailWriter audit =
+        auditWriter ?? new PostgresAuditTrailWriter(db, new AuditActorContext());
+
     /// <inheritdoc />
     public Task<DocsPublicSource?> GetByIdAsync(string id, CancellationToken ct) =>
         db
@@ -34,9 +50,62 @@ internal sealed class PostgresDocsPublicSourceStore(PostgresDbContext db) : IDoc
     /// <inheritdoc />
     public async Task<DocsPublicSource> CreateAsync(DocsPublicSource source, CancellationToken ct)
     {
-        db.DocsPublicSources.Add(source);
-        await db.SaveChangesAsync(ct);
-        return source;
+        var existingFacts = db
+            .ChangeTracker.Entries<SystemAuditEvent>()
+            .Select(entry => entry.Entity)
+            .ToHashSet();
+        var addedSource = db.DocsPublicSources.Add(source);
+        try
+        {
+            audit.AppendSystem(
+                new AuditChange
+                {
+                    EventType = "public_source.created",
+                    ChangeType = AuditChangeType.Added,
+                    Area = AuditArea.Content,
+                    SubjectType = "public_source",
+                    SubjectId = source.Id,
+                    SubjectLabel = source.Name,
+                    SourceReference = $"public-source:{source.Id}",
+                    After = new AuditSnapshot
+                    {
+                        // URLs can contain credential material. Preserve source identity and safe
+                        // configuration without copying connection URLs or operational sync stamps.
+                        Fields = new Dictionary<string, string?>
+                        {
+                            ["name"] = source.Name,
+                            ["sourceKind"] = source.Kind.ToString(),
+                            ["includeFilters"] = JsonSerializer.Serialize(
+                                source.DefaultIncludeFilters
+                            ),
+                            ["excludeFilters"] = JsonSerializer.Serialize(
+                                source.DefaultExcludeFilters
+                            ),
+                        },
+                    },
+                }
+            );
+            // One SaveChanges transaction (or EF savepoint in the caller's transaction) writes
+            // registration and its fact together. Reusing a source performs no registration write.
+            await db.SaveChangesAsync(ct);
+            return source;
+        }
+        catch
+        {
+            // A failed insert or an audit writer that throws after attaching a fact must not leave
+            // phantom work for a caller that catches the failure and later saves this context.
+            addedSource.State = EntityState.Detached;
+            foreach (
+                var entry in db
+                    .ChangeTracker.Entries<SystemAuditEvent>()
+                    .Where(entry => !existingFacts.Contains(entry.Entity))
+                    .ToArray()
+            )
+            {
+                entry.State = EntityState.Detached;
+            }
+            throw;
+        }
     }
 
     /// <inheritdoc />

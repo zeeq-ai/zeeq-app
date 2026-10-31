@@ -24,9 +24,8 @@ namespace Zeeq.Data.Postgres.Documents;
 /// predicate, or excluded documents leak back into review results.
 /// </para>
 /// <para>
-/// Covered direct document writes and private-library sync mutations record their audit facts on
-/// the same <see cref="PostgresDbContext"/> as the mutation. Library lifecycle/cascade deletion and
-/// operational processing/lease stamps are not captured here. Capture is explicit, not an EF hook.
+/// Covered library and document writes record audit facts on the same <see cref="PostgresDbContext"/>
+/// as the mutation. Operational processing/lease stamps are not captured. Capture is explicit.
 /// For covered changes the preimage is read from the database under
 /// <c>FOR UPDATE</c>, never from a caller-mutated entity, and actual no-ops record nothing.
 /// <paramref name="auditWriter"/> is resolved from DI at runtime; direct construction (tests)
@@ -101,74 +100,6 @@ internal sealed partial class PostgresLibraryDocumentStore(
             .Libraries.TagWithOperationCallSite("documents.library.list_by_public_source")
             .Where(library => library.PublicSourceId == publicSourceId)
             .ToArrayAsync(ct);
-
-    /// <inheritdoc />
-    public async Task<Library> CreateLibraryAsync(Library library, CancellationToken ct)
-    {
-        db.Libraries.Add(library);
-        await db.SaveChangesAsync(ct);
-        return library;
-    }
-
-    /// <inheritdoc />
-    public async Task<Library> UpdateLibraryAsync(Library library, CancellationToken ct)
-    {
-        var existing = await db
-            .Libraries.TagWithOperationCallSite("documents.library.update_find")
-            .SingleAsync(
-                row => row.OrganizationId == library.OrganizationId && row.Id == library.Id,
-                ct
-            );
-
-        existing.Name = library.Name;
-        existing.Description = library.Description;
-        db.Entry(existing).Property(row => row.IncludeFilters).CurrentValue =
-            library.IncludeFilters;
-        db.Entry(existing).Property(row => row.ExcludeFilters).CurrentValue =
-            library.ExcludeFilters;
-        existing.UpdatedAt = library.UpdatedAt;
-
-        await db.SaveChangesAsync(ct);
-        return existing;
-    }
-
-    /// <inheritdoc />
-    public async Task DeleteLibraryAsync(
-        string organizationId,
-        string libraryId,
-        CancellationToken ct
-    )
-    {
-        var library = await db
-            .Libraries.TagWithOperationCallSite("documents.library.delete_find")
-            .SingleOrDefaultAsync(
-                row => row.OrganizationId == organizationId && row.Id == libraryId,
-                ct
-            );
-
-        if (library is null)
-        {
-            return;
-        }
-
-        // Strip this library id out of every repository that still maps to it,
-        // in the same SaveChangesAsync as the library delete (same DbContext, one
-        // implicit transaction).
-        var referencingRepositories = await db
-            .CodeRepositories.TagWithOperationCallSite(
-                "documents.library.delete_cascade_repositories"
-            )
-            .Where(r => r.OrganizationId == organizationId && r.LibraryIds.Contains(libraryId))
-            .ToListAsync(ct);
-
-        foreach (var repository in referencingRepositories)
-        {
-            repository.LibraryIds = repository.LibraryIds.Where(id => id != libraryId).ToArray();
-        }
-
-        db.Libraries.Remove(library);
-        await db.SaveChangesAsync(ct);
-    }
 
     /// <inheritdoc />
     public async Task<LibraryDocument?> GetByPathAsync(

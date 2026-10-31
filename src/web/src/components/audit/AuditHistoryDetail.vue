@@ -7,6 +7,40 @@
       </time>
     </p>
 
+    <section
+      v-if="detail.deletedLibrary"
+      class="rounded-md border border-default p-3"
+      aria-label="Deleted library summary"
+    >
+      <h3 class="font-medium text-highlighted">Deleted library</h3>
+      <dl class="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+        <div>
+          <dt class="text-muted">Name at deletion</dt>
+          <dd class="break-words text-default">
+            {{ detail.deletedLibrary.name }}
+          </dd>
+        </div>
+        <div>
+          <dt class="text-muted">Library ID</dt>
+          <dd class="break-all font-mono text-default">
+            {{ detail.deletedLibrary.id }}
+          </dd>
+        </div>
+        <div>
+          <dt class="text-muted">Documents removed</dt>
+          <dd class="text-default">
+            {{ detail.deletedLibrary.documentCount ?? "Not recorded" }}
+          </dd>
+        </div>
+        <div>
+          <dt class="text-muted">Repository mappings removed</dt>
+          <dd class="text-default">
+            {{ detail.deletedLibrary.repositoryMappingCount ?? "Not recorded" }}
+          </dd>
+        </div>
+      </dl>
+    </section>
+
     <section v-if="detail.sync" class="space-y-2" aria-label="Sync details">
       <p class="text-muted">
         Historical synced document content was not recorded.

@@ -534,6 +534,22 @@ public sealed class DocumentEndpointHandlerTests
     }
 
     [Test]
+    public async Task UpdateLibrary_DeletedAfterLookup_ReturnsNotFound()
+    {
+        var store = new TestLibraryDocumentStore { DeleteDuringUpdate = true };
+        store.Libraries.Add(TestLibrary());
+        var handler = new UpdateLibraryHandler(store, new NotSupportedPublicSourceStore());
+        var result = await handler.HandleAsync(
+            "org_123",
+            "kb",
+            new UpdateLibraryRequest { Name = "kb" },
+            TestUser(),
+            CancellationToken.None
+        );
+        await Assert.That(result.Result).IsTypeOf<NotFound>();
+    }
+
+    [Test]
     public async Task UpdateLibrary_WithMissingDescription_PreservesExistingDescription()
     {
         var store = new TestLibraryDocumentStore();
@@ -1868,6 +1884,8 @@ public sealed class DocumentEndpointHandlerTests
 
         public Exception? CreateLibraryException { get; init; }
 
+        public bool DeleteDuringUpdate { get; init; }
+
         public Task<Library?> GetLibraryAsync(
             string organizationId,
             string name,
@@ -1915,6 +1933,12 @@ public sealed class DocumentEndpointHandlerTests
 
             return Task.FromResult(library);
         }
+
+        public async Task<Library?> TryUpdateLibraryAsync(
+            Library library,
+            bool requestFullResync,
+            CancellationToken ct
+        ) => DeleteDuringUpdate ? null : await UpdateLibraryAsync(library, ct);
 
         public Task DeleteLibraryAsync(
             string organizationId,
@@ -2442,6 +2466,34 @@ public sealed class DocumentEndpointHandlerTests
 
     private sealed class TestCodeRepositoryStore : ICodeRepositoryStore
     {
+        public Task<Zeeq.Core.Models.CodeRepository?> UpdateSettingsWithLibrariesAsync(
+            string organizationId,
+            string repositoryId,
+            Zeeq.Platform.CodeReviews.RepositorySettingsPatch patch,
+            string[]? libraryIds,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<Zeeq.Core.Models.CodeRepository> UpsertWithLibrariesAsync(
+            Zeeq.Core.Models.CodeRepository repository,
+            string[]? libraryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task<Zeeq.Core.Models.CodeRepository?> ReplaceRepositoryLibrariesAsync(
+            string organizationId,
+            string repositoryId,
+            string[] libraryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task ReplaceLibraryRepositoriesAsync(
+            string organizationId,
+            string libraryId,
+            string[] repositoryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
         public List<CodeRepository> Repositories { get; } = [];
 
         public Task<CodeRepository?> FindActiveForOrganizationAsync(
@@ -2513,6 +2565,34 @@ public sealed class DocumentEndpointHandlerTests
 
     private sealed class NotSupportedCodeRepositoryStore : ICodeRepositoryStore
     {
+        public Task<Zeeq.Core.Models.CodeRepository?> UpdateSettingsWithLibrariesAsync(
+            string organizationId,
+            string repositoryId,
+            Zeeq.Platform.CodeReviews.RepositorySettingsPatch patch,
+            string[]? libraryIds,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
+
+        public Task<Zeeq.Core.Models.CodeRepository> UpsertWithLibrariesAsync(
+            Zeeq.Core.Models.CodeRepository repository,
+            string[]? libraryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task<Zeeq.Core.Models.CodeRepository?> ReplaceRepositoryLibrariesAsync(
+            string organizationId,
+            string repositoryId,
+            string[] libraryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
+        public Task ReplaceLibraryRepositoriesAsync(
+            string organizationId,
+            string libraryId,
+            string[] repositoryIds,
+            CancellationToken ct
+        ) => throw new NotSupportedException();
+
         public Task<CodeRepository?> FindActiveAsync(
             string provider,
             string ownerQualifiedName,

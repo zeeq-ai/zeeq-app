@@ -61,6 +61,10 @@ export const useAuditHistoryStore = defineStore("audit-history-store", () => {
     if (unchanged) {
       for (const entry of entries.value) {
         entry.libraryLabel = resolveLibraryLabel(entry.libraryId, next);
+        entry.libraryLabelIsCurrent = hasCurrentLibraryLabel(
+          entry.libraryId,
+          next,
+        );
       }
     }
 
@@ -269,8 +273,22 @@ export const useAuditHistoryStore = defineStore("audit-history-store", () => {
     return {
       ...entry,
       libraryId: event.libraryId ?? null,
-      libraryLabel: resolveLibraryLabel(event.libraryId, context.value),
+      libraryLabel:
+        event.eventType === "library.deleted"
+          ? null
+          : resolveLibraryLabel(event.libraryId, context.value),
+      libraryLabelIsCurrent: hasCurrentLibraryLabel(
+        event.libraryId,
+        context.value,
+      ),
     };
+  }
+
+  function hasCurrentLibraryLabel(
+    libraryId: string | null | undefined,
+    activeContext: AuditHistoryContext | null | undefined,
+  ) {
+    return !!(libraryId && activeContext?.libraryLabels?.[libraryId]);
   }
 
   function resolveLibraryLabel(

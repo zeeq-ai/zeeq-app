@@ -17,10 +17,13 @@ export type AuditHistoryEntry = {
   actorChannelLabel: string;
   actionLabel: string;
   eventType: string;
+  subjectType: string;
+  subjectId: string;
   subjectLabel: string;
   subjectPath?: string | null;
   libraryId?: string | null;
   libraryLabel?: string | null;
+  libraryLabelIsCurrent?: boolean;
   areaLabel: string;
   area: AuditHistoryArea | null;
   sourceLabel: string;
@@ -49,6 +52,30 @@ export type AuditHistoryDocumentSnapshot = {
 
 /** Browser rendering budget only; full snapshots remain available for copy/download above it. */
 export const maxInlineAuditDiffCharacters = 200_000;
+export const maxAuditHistoryGroupPageSize = 50;
+
+export function getAuditHistoryGroupPage<T>(
+  items: T[],
+  page: number,
+  requestedPageSize = maxAuditHistoryGroupPageSize,
+) {
+  const pageSize = Math.max(
+    1,
+    Math.min(Math.trunc(requestedPageSize) || 1, maxAuditHistoryGroupPageSize),
+  );
+  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
+  const safePage = Math.min(Math.max(Math.trunc(page) || 0, 0), pageCount - 1);
+  const offset = safePage * pageSize;
+  return {
+    items: items.slice(offset, offset + pageSize),
+    page: safePage,
+    pageCount,
+    pageSize,
+    start: items.length === 0 ? 0 : offset + 1,
+    end: Math.min(offset + pageSize, items.length),
+    total: items.length,
+  };
+}
 
 /** Prevents large snapshots from mounting the in-browser syntax diff viewer. */
 export function canCompareAuditSnapshotsInline(
@@ -65,6 +92,12 @@ export function canCompareAuditSnapshotsInline(
 export type AuditHistoryDetail = {
   recordedAtUtc: string;
   changes: AuditHistoryFieldChange[];
+  deletedLibrary?: {
+    id: string;
+    name: string;
+    documentCount: number | null;
+    repositoryMappingCount: number | null;
+  };
   beforeSnapshot?: AuditHistoryDocumentSnapshot | null;
   afterSnapshot?: AuditHistoryDocumentSnapshot | null;
   sync?: {
@@ -86,14 +119,50 @@ export type AuditHistoryOperationState = {
 };
 
 export type AuditHistoryFeedItem =
-  | { kind: "event"; key: string; entry: AuditHistoryEntry }
+  | {
+      kind: "event";
+      key: string;
+      sortId: string;
+      entry: AuditHistoryEntry;
+      occurredAtUtc: string;
+    }
   | {
       kind: "sync-run";
       key: string;
+      sortId: string;
       operationId: string;
       entries: AuditHistoryEntry[];
       operationState: AuditHistoryOperationState;
+      occurredAtUtc: string;
+    }
+  | {
+      kind: "library-deletion";
+      key: string;
+      sortId: string;
+      operationId: string;
+      parent: AuditHistoryEntry;
+      children: AuditHistoryEntry[];
+      operationState: AuditHistoryOperationState;
+      occurredAtUtc: string;
     };
+
+export type AuditHistoryFeedDayGroup = {
+  key: string;
+  label: string;
+  items: AuditHistoryFeedItem[];
+};
+
+/** Translates the current backend coverage key without claiming uncaptured classes. */
+export function formatAuditCoverage(coverage: string): string {
+  if (
+    coverage.startsWith(
+      "partial: direct document changes, library lifecycle and repository-library mappings",
+    )
+  ) {
+    return "History records direct document changes, library creation, updates and deletions, repository-library mapping changes, public-source registration in system history, organization administration, membership changes, and activation keys. Other configuration and external actions are not recorded yet. Public-source registration does not include historical synced document content.";
+  }
+  return coverage;
+}
 
 /** Groups entries by UTC date, which matches the audit partition boundary. */
 export function groupAuditEntriesByUtcDay(
@@ -129,7 +198,77 @@ export function groupAuditFeedEntries(
     Extract<AuditHistoryFeedItem, { kind: "sync-run" }>
   >();
 
+  const deletionParents = new Map<string, AuditHistoryEntry>();
   for (const entry of entries) {
+    if (
+      entry.eventType === "library.deleted" &&
+      entry.subjectType.toLowerCase() === "library" &&
+      entry.subjectId &&
+      entry.libraryId === entry.subjectId &&
+      entry.operationId
+    ) {
+      deletionParents.set(
+        getLibraryOperationKey(entry.operationId, entry.subjectId),
+        entry,
+      );
+    }
+  }
+
+  const linkedChildren = new Map<string, AuditHistoryEntry[]>();
+  for (const entry of entries) {
+    if (!isLibraryDeletionChild(entry)) continue;
+    const parentKey = getLibraryOperationKey(
+      entry.operationId!,
+      entry.libraryId!,
+    );
+    if (!deletionParents.has(parentKey)) continue;
+    const children = linkedChildren.get(parentKey) ?? [];
+    children.push(entry);
+    linkedChildren.set(parentKey, children);
+  }
+
+  const emittedDeletionGroups = new Set<string>();
+
+  for (const entry of entries) {
+    if (
+      entry.eventType === "library.deleted" &&
+      entry.subjectType.toLowerCase() === "library" &&
+      entry.subjectId &&
+      entry.libraryId === entry.subjectId &&
+      entry.operationId
+    ) {
+      const parentKey = getLibraryOperationKey(
+        entry.operationId,
+        entry.subjectId,
+      );
+      if (emittedDeletionGroups.has(parentKey)) continue;
+      emittedDeletionGroups.add(parentKey);
+      const children = linkedChildren.get(parentKey) ?? [];
+      items.push({
+        kind: "library-deletion",
+        key: `library-deletion-${parentKey}`,
+        sortId: entry.id,
+        operationId: entry.operationId,
+        parent: entry,
+        children,
+        operationState: operationStates[entry.operationId] ?? {
+          hasMore: true,
+          loading: false,
+          error: null,
+        },
+        occurredAtUtc: entry.occurredAtUtc,
+      });
+      continue;
+    }
+
+    if (isLibraryDeletionChild(entry)) {
+      const parentKey = getLibraryOperationKey(
+        entry.operationId!,
+        entry.libraryId!,
+      );
+      if (deletionParents.has(parentKey)) continue;
+    }
+
     const verifiedOperationId = getVerifiedSyncOperationId(entry);
 
     if (verifiedOperationId) {
@@ -141,8 +280,10 @@ export function groupAuditFeedEntries(
         const syncRun: Extract<AuditHistoryFeedItem, { kind: "sync-run" }> = {
           kind: "sync-run",
           key: `sync-${verifiedOperationId}`,
+          sortId: entry.id,
           operationId: entry.operationId!,
           entries: [entry],
+          occurredAtUtc: entry.occurredAtUtc,
           operationState: operationStates[entry.operationId!] ?? {
             hasMore: true,
             loading: false,
@@ -153,11 +294,105 @@ export function groupAuditFeedEntries(
         items.push(syncRun);
       }
     } else {
-      items.push({ kind: "event", key: entry.id, entry });
+      items.push({
+        kind: "event",
+        key: entry.id,
+        sortId: entry.id,
+        entry,
+        occurredAtUtc: entry.occurredAtUtc,
+      });
     }
   }
 
-  return items;
+  return items.sort((left, right) =>
+    compareAuditEntriesDescending(
+      { occurredAtUtc: left.occurredAtUtc, id: left.sortId },
+      { occurredAtUtc: right.occurredAtUtc, id: right.sortId },
+    ),
+  );
+}
+
+export function groupAuditFeedEntriesByUtcDay(
+  entries: AuditHistoryEntry[],
+  operationStates: Record<string, AuditHistoryOperationState>,
+  locale?: string,
+): AuditHistoryFeedDayGroup[] {
+  const groups = new Map<string, AuditHistoryFeedItem[]>();
+  for (const item of groupAuditFeedEntries(entries, operationStates)) {
+    const day = item.occurredAtUtc.slice(0, 10);
+    const dayItems = groups.get(day) ?? [];
+    dayItems.push(item);
+    groups.set(day, dayItems);
+  }
+
+  return [...groups.entries()].map(([key, items]) => ({
+    key,
+    label: formatUtcDay(key, locale),
+    items,
+  }));
+}
+
+function isLibraryDeletionChild(entry: AuditHistoryEntry): boolean {
+  return (
+    !!entry.operationId &&
+    !!entry.libraryId &&
+    ((entry.eventType === "document.deleted" &&
+      entry.subjectType.toLowerCase() === "document") ||
+      (entry.eventType === "repository.library_mapping_changed" &&
+        entry.subjectType.toLowerCase() === "repository"))
+  );
+}
+
+function getLibraryOperationKey(operationId: string, libraryId: string) {
+  return `${operationId.toLowerCase()}\u0000${libraryId.toLowerCase()}`;
+}
+
+function compareAuditEntriesDescending(
+  left: Pick<AuditHistoryEntry, "occurredAtUtc" | "id">,
+  right: Pick<AuditHistoryEntry, "occurredAtUtc" | "id">,
+): number {
+  const timestampOrder = compareAuditTimestampsDescending(
+    left.occurredAtUtc,
+    right.occurredAtUtc,
+  );
+  if (timestampOrder !== 0) return timestampOrder;
+  const leftId = left.id.toLowerCase();
+  const rightId = right.id.toLowerCase();
+  return leftId === rightId ? 0 : leftId > rightId ? -1 : 1;
+}
+
+function compareAuditTimestampsDescending(left: string, right: string): number {
+  const leftWholeSecond = Date.parse(
+    left.replace(/\.\d+(?=(?:Z|[+-]\d{2}:?\d{2})?$)/i, ""),
+  );
+  const rightWholeSecond = Date.parse(
+    right.replace(/\.\d+(?=(?:Z|[+-]\d{2}:?\d{2})?$)/i, ""),
+  );
+  if (
+    Number.isFinite(leftWholeSecond) &&
+    Number.isFinite(rightWholeSecond) &&
+    leftWholeSecond !== rightWholeSecond
+  ) {
+    return rightWholeSecond - leftWholeSecond;
+  }
+  if (leftWholeSecond !== rightWholeSecond) {
+    return left === right ? 0 : left > right ? -1 : 1;
+  }
+
+  const leftFraction = timestampFraction(left);
+  const rightFraction = timestampFraction(right);
+  const fractionLength = Math.max(leftFraction.length, rightFraction.length);
+  const normalizedLeft = leftFraction.padEnd(fractionLength, "0");
+  const normalizedRight = rightFraction.padEnd(fractionLength, "0");
+  return normalizedLeft === normalizedRight
+    ? 0
+    : normalizedLeft > normalizedRight
+      ? -1
+      : 1;
+}
+
+function timestampFraction(value: string): string {
+  return value.match(/\.(\d+)(?=(?:Z|[+-]\d{2}:?\d{2})?$)/i)?.[1] ?? "";
 }
 
 function getVerifiedSyncOperationId(entry: AuditHistoryEntry): string | null {

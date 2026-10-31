@@ -77,6 +77,17 @@ const safeFieldLabels: Record<string, string> = {
   skillscope: "Organization skill",
   expiresatutc: "Expiration date",
   slug: "Slug",
+  includefilters: "Include filters",
+  excludefilters: "Exclude filters",
+  sourcekind: "Source type",
+  publicsourceid: "Public source ID",
+  documentcount: "Documents removed",
+  repositorymappingcount: "Repository mappings removed",
+  libraryid: "Library ID",
+  libraryname: "Library name",
+  repositoryid: "Repository ID",
+  repositoryname: "Repository",
+  mapped: "Library mapping",
   charactercount: "Character count",
   externalid: "External ID",
 };
@@ -96,6 +107,8 @@ export function mapAuditEventSummary(
     actorChannelLabel: actor.channelLabel,
     actionLabel: formatAuditAction(event.eventType, type),
     eventType: event.eventType,
+    subjectType: event.subjectType,
+    subjectId: event.subjectId,
     subjectLabel: event.subjectLabel || "Unknown item",
     areaLabel: formatAuditArea(event.area),
     area: isAuditArea(event.area) ? event.area : null,
@@ -147,6 +160,34 @@ export function mapAuditEventDetail(
   detail: AuditEventDetailDto,
 ): AuditHistoryDetail {
   const recordedAtUtc = toIsoString(detail.event.occurredAtUtc);
+  const beforeValues = snapshotValues(detail.before);
+  const deletedLibrary =
+    detail.event.eventType === "library.deleted" &&
+    detail.event.subjectType.toLowerCase() === "library"
+      ? {
+          id: detail.event.subjectId,
+          name: detail.event.subjectLabel,
+          documentCount: toCount(beforeValues.documentcount),
+          repositoryMappingCount: toCount(beforeValues.repositorymappingcount),
+        }
+      : undefined;
+  const changedFields = [...(detail.event.changedFields ?? [])];
+  if (deletedLibrary) {
+    if (
+      !changedFields.some(
+        (field) => normalizeFieldName(field) === "documentcount",
+      )
+    ) {
+      changedFields.push("documentCount");
+    }
+    if (
+      !changedFields.some(
+        (field) => normalizeFieldName(field) === "repositorymappingcount",
+      )
+    ) {
+      changedFields.push("repositoryMappingCount");
+    }
+  }
   const isLocalDocument =
     isDocument(detail.event.subjectType) &&
     detail.event.eventType.startsWith("document.") &&
@@ -154,9 +195,10 @@ export function mapAuditEventDetail(
 
   return {
     recordedAtUtc,
+    ...(deletedLibrary ? { deletedLibrary } : {}),
     changes: mapFieldChanges(
-      detail.event.changedFields ?? [],
-      snapshotValues(detail.before),
+      changedFields,
+      beforeValues,
       snapshotValues(detail.after),
     ),
     beforeSnapshot: isLocalDocument
@@ -292,8 +334,34 @@ function formatFieldValue(field: string, value: string | null | undefined) {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
   }
+  if (field === "mapped") {
+    return value === "true"
+      ? "Mapped"
+      : value === "false"
+        ? "Not mapped"
+        : value;
+  }
+  if (field === "includefilters" || field === "excludefilters") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (
+        Array.isArray(parsed) &&
+        parsed.every((item) => typeof item === "string")
+      ) {
+        return parsed.length ? parsed.join(", ") : "None";
+      }
+    } catch {
+      // Keep the stored value visible if it is not a valid JSON string array.
+    }
+  }
 
   return value;
+}
+
+function toCount(value: string | null | undefined): number | null {
+  if (value == null || !/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 function normalizeFieldName(field: string): string {

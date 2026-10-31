@@ -86,8 +86,22 @@ public interface ILibraryDocumentStore : IIndexableDocumentStore<LibraryDocument
     Task<Library> UpdateLibraryAsync(Library library, CancellationToken ct);
 
     /// <summary>
+    /// Updates a library if it still exists and optionally schedules a Notion full resync.
+    /// </summary>
+    /// <remarks>The store applies the resync intent while holding the library lock, so an older
+    /// request cannot overwrite a newer operational schedule.</remarks>
+    Task<Library?> TryUpdateLibraryAsync(
+        Library library,
+        bool requestFullResync,
+        CancellationToken ct
+    );
+
+    /// <summary>
     /// Deletes a library and its documents.
     /// </summary>
+    /// <remarks>When called within an existing transaction, implementations may flush the caller's
+    /// pending work before the deletion savepoint. That work remains in the caller's transaction;
+    /// a failed deletion rolls back only the deletion, and never commits the caller's work.</remarks>
     Task DeleteLibraryAsync(string organizationId, string libraryId, CancellationToken ct);
 
     /// <summary>

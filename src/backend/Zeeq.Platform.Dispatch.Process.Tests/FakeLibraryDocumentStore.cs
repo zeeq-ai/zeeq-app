@@ -10,6 +10,12 @@ namespace Zeeq.Platform.Dispatch.Process.Tests;
 /// </summary>
 internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
 {
+    public async Task<Zeeq.Core.Documents.Library?> TryUpdateLibraryAsync(
+        Zeeq.Core.Documents.Library library,
+        bool requestFullResync,
+        CancellationToken ct
+    ) => await UpdateLibraryAsync(library, ct);
+
     public Task<Library?> GetLibraryAsync(
         string organizationId,
         string name,

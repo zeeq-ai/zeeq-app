@@ -64,7 +64,7 @@
         <div v-if="captureNote" class="mt-4 px-5 sm:px-6">
           <UAlert
             title="History coverage"
-            :description="formatCoverage(captureNote.description)"
+            :description="formatAuditCoverage(captureNote.description)"
             icon="i-hugeicons-information-circle"
             color="neutral"
             variant="subtle"
@@ -194,9 +194,27 @@
                   @retry-detail="emits('retryDetail', $event)"
                 />
                 <AuditHistorySyncRun
-                  v-else
+                  v-else-if="item.kind === 'sync-run'"
                   :operation-id="item.operationId"
                   :entries="item.entries"
+                  :expanded="expandedOperationId === item.operationId"
+                  :expanded-entry-id="expandedEntryId"
+                  :detail
+                  :detail-loading
+                  :detail-error
+                  :operation-has-more="item.operationState.hasMore"
+                  :operation-loading="item.operationState.loading"
+                  :operation-error="item.operationState.error ?? null"
+                  @toggle="emits('toggleOperation', $event)"
+                  @toggle-detail="emits('toggleDetail', $event)"
+                  @retry-detail="emits('retryDetail', $event)"
+                  @load-operation="emits('loadOperation', $event)"
+                />
+                <AuditHistoryLibraryDeletion
+                  v-else
+                  :operation-id="item.operationId"
+                  :parent="item.parent"
+                  :children="item.children"
                   :expanded="expandedOperationId === item.operationId"
                   :expanded-entry-id="expandedEntryId"
                   :detail
@@ -280,10 +298,11 @@ import type {
   AuditHistoryScope,
 } from "./audit-history-types";
 import AuditHistoryEventRow from "./AuditHistoryEventRow.vue";
+import AuditHistoryLibraryDeletion from "./AuditHistoryLibraryDeletion.vue";
 import AuditHistorySyncRun from "./AuditHistorySyncRun.vue";
 import {
-  groupAuditEntriesByUtcDay,
-  groupAuditFeedEntries,
+  formatAuditCoverage,
+  groupAuditFeedEntriesByUtcDay,
 } from "./audit-history-types";
 
 type AuditTimelineItem = TimelineItem & { entry: AuditHistoryEntry };
@@ -374,10 +393,7 @@ const filteredEntries = computed(() =>
     : props.entries.filter((entry) => entry.type === props.typeFilter),
 );
 const dayGroups = computed(() =>
-  groupAuditEntriesByUtcDay(filteredEntries.value).map((group) => ({
-    ...group,
-    items: groupAuditFeedEntries(group.entries, props.operationStates),
-  })),
+  groupAuditFeedEntriesByUtcDay(filteredEntries.value, props.operationStates),
 );
 const timelineItems = computed<AuditTimelineItem[]>(() =>
   filteredEntries.value.map((entry) => ({
@@ -402,12 +418,6 @@ function getTimelineEntry(item: unknown): AuditHistoryEntry {
 }
 function getTimelineIcon(item: unknown): string {
   return (item as AuditTimelineItem).icon;
-}
-function formatCoverage(coverage: string): string {
-  if (coverage.startsWith("partial: local document changes")) {
-    return "History currently includes local document edits, organization administration, membership changes, and activation keys. Other changes are not recorded yet.";
-  }
-  return coverage;
 }
 const emptyDescription = computed(() =>
   props.typeFilter === "all"
