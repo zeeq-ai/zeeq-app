@@ -519,7 +519,7 @@ public sealed partial class CodeReviewRunRequestedHandler(
             var reviewUrl = linkFactory.BuildSingleReviewLink(review, CodeReviewSingleViewMode.Pr);
             var body = $"""
                 > [!WARNING]
-                > Zeeq could not resolve the check run for this pull request. If a merge block is active, [view the review in Zeeq]({reviewUrl}) or bypass it by commenting `/bb bypass check`.
+                > Zeeq could not resolve the check run for this pull request. If a merge block is active, [view the review in Zeeq]({reviewUrl}) or bypass it by commenting `/zeeq bypass check`.
                 """;
             await commentClient.CreateIssueCommentAsync(
                 message.OwnerQualifiedRepoName,
