@@ -194,6 +194,10 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+        with:
+          buildkitd-config-inline: |
+            [dns]
+              nameservers = ["1.1.1.1", "8.8.8.8"]
 
       # Build only. The production job below performs the authoritative push
       # after environment approval. Export BuildKit layers to GitHub Actions
@@ -276,6 +280,10 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+        with:
+          buildkitd-config-inline: |
+            [dns]
+              nameservers = ["1.1.1.1", "8.8.8.8"]
 
       # Build the same Dockerfile used by local deploys, but push immutable
       # version and SHA tags. Build args embed release metadata in the .NET app.
