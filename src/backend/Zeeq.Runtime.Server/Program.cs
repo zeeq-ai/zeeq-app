@@ -56,8 +56,7 @@ Log.Information(
     GitVersionInfo.BuildTimeEst ?? "unknown"
 );
 
-var appSettings =
-    builder.Configuration.GetSection(nameof(AppSettings)).Get<AppSettings>()
+var appSettings = builder.Configuration.GetSection(nameof(AppSettings)).Get<AppSettings>()
     ?? throw new InvalidOperationException("AppSettings configuration is required.");
 
 var securitySettings = appSettings.Llm.ToSecuritySettings();
@@ -146,13 +145,10 @@ await app.Services.UseZeeqCacheAsync(appSettings);
 
 // Configure the HTTP request pipeline; serve the OpenAPI schema and Scalar UI
 app.MapOpenApi();
-app.MapScalarApiReference(
-    "/scalar",
-    options =>
-    {
-        options.WithTitle("Zeeq API Reference");
-    }
-);
+app.MapScalarApiReference("/scalar", options =>
+{
+    options.WithTitle("Zeeq API Reference");
+});
 
 app.UseForwardedHeaders();
 app.UseRequestDecompression();

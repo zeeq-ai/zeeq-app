@@ -65,14 +65,12 @@ internal static class HttpPipelineExtensions
             var frontendOrigin = appSettings.Http.FrontendBaseUri.TrimEnd('/');
 
             services.AddCors(options =>
-                options.AddPolicy(
-                    "api-cors-policy",
-                    policy =>
-                        policy
-                            .WithOrigins([.. appSettings.Http.AllowedCorsOrigins, frontendOrigin])
-                            .AllowAnyHeader()
-                            .AllowAnyMethod()
-                            .AllowCredentials()
+                options.AddPolicy("api-cors-policy", policy =>
+                    policy
+                        .WithOrigins([.. appSettings.Http.AllowedCorsOrigins, frontendOrigin])
+                        .AllowAnyHeader()
+                        .AllowAnyMethod()
+                        .AllowCredentials()
                 )
             );
 
