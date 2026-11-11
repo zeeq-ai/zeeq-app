@@ -153,10 +153,7 @@ public sealed class SnippetStoreIntegrationTests : PgTransactionalTestBase
 
         // Re-run reconciliation with the same content (same hash) but identifiers a corrected
         // extractor would now produce — the reserved keywords are gone.
-        var secondPass = firstPass with
-        {
-            Identifiers = ["someservice"],
-        };
+        var secondPass = firstPass with { Identifiers = ["someservice"] };
         await snippetStore.ReplaceForDocumentAsync(document, [secondPass], default);
         _context.ChangeTracker.Clear();
 
@@ -570,6 +567,72 @@ public sealed class SnippetStoreIntegrationTests : PgTransactionalTestBase
     }
 
     [Test]
+    [Arguments(false, "logging and telemetry best practices")]
+    [Arguments(true, "logging and telemetry best practices")]
+    [Arguments(false, "logging,telemetry")]
+    [Arguments(true, "logging,telemetry")]
+    public async Task Search_PlainLanguageQuery_MatchesPartialTerms_AndRanksMoreTermsFirst(
+        bool useEmbedding,
+        string queryText
+    )
+    {
+        var (snippetStore, document) = await SeedDocumentAsync();
+        await snippetStore.ReplaceForDocumentAsync(
+            document,
+            [Section("logging only", 0), Section("logging telemetry best practices", 1)],
+            default
+        );
+        _context.ChangeTracker.Clear();
+
+        var query = FtsQuery(document, queryText) with
+        {
+            QueryEmbedding = useEmbedding ? SampleVector(0.1f) : null,
+        };
+        var results = await snippetStore.SearchAsync(query, default);
+
+        await Assert.That(results).Count().IsEqualTo(2);
+        await Assert.That(results[0].Content).IsEqualTo("logging telemetry best practices");
+        await Assert.That(results[1].Content).IsEqualTo("logging only");
+        await Assert.That(results.All(result => result.TextRank > 0)).IsTrue();
+    }
+
+    [Test]
+    public async Task Search_ExplicitPhraseAndExclusion_KeepWebSearchSemantics()
+    {
+        var (snippetStore, document) = await SeedDocumentAsync();
+        await snippetStore.ReplaceForDocumentAsync(
+            document,
+            [Section("logging best practices", 0), Section("logging debug practices", 1)],
+            default
+        );
+        _context.ChangeTracker.Clear();
+
+        var phrase = await snippetStore.SearchAsync(
+            FtsQuery(document, "\"best practices\""),
+            default
+        );
+        var exclusion = await snippetStore.SearchAsync(
+            FtsQuery(document, "logging -debug"),
+            default
+        );
+        var punctuation = await snippetStore.SearchAsync(
+            FtsQuery(document, "logging,-debug"),
+            default
+        );
+
+        await Assert
+            .That(phrase.Select(result => result.Content))
+            .IsEquivalentTo(["logging best practices"]);
+        await Assert
+            .That(exclusion.Select(result => result.Content))
+            .IsEquivalentTo(["logging best practices"]);
+        // PostgreSQL parses this punctuation as a phrase, not an exclusion.
+        await Assert
+            .That(punctuation.Select(result => result.Content))
+            .IsEquivalentTo(["logging debug practices"]);
+    }
+
+    [Test]
     public async Task Search_VectorArm_RanksClosestEmbeddingFirst()
     {
         var (snippetStore, document) = await SeedDocumentAsync();
@@ -834,13 +897,10 @@ public sealed class SnippetStoreIntegrationTests : PgTransactionalTestBase
             .Start(_context, out _)
             .AddPublicSource(out var source)
             .Under(source)
-            .AddPublicDocuments(
-                out var docs,
-                p =>
-                {
-                    p.Path = "/guides/public.md";
-                }
-            )
+            .AddPublicDocuments(out var docs, p =>
+            {
+                p.Path = "/guides/public.md";
+            })
             .BuildAsync();
         _context.ChangeTracker.Clear();
 
@@ -876,6 +936,59 @@ public sealed class SnippetStoreIntegrationTests : PgTransactionalTestBase
 
         var reloaded = await _context.DocsPublicDocuments.SingleAsync(d => d.Id == docs[0].Id);
         await Assert.That(reloaded.ProcessingStatus).IsEqualTo(DocumentProcessingStatus.Indexed);
+    }
+
+    [Test]
+    [Arguments(false, "logging and telemetry best practices")]
+    [Arguments(true, "logging and telemetry best practices")]
+    [Arguments(false, "logging,telemetry")]
+    [Arguments(true, "logging,telemetry")]
+    public async Task PublicSearch_PlainLanguageQuery_MatchesPartialTerms(
+        bool useEmbedding,
+        string queryText
+    )
+    {
+        await TestBiome
+            .Start(_context, out _)
+            .AddPublicSource(out var source)
+            .Under(source)
+            .AddPublicDocuments(out var docs, document => document.Path = "/guides/logging.md")
+            .BuildAsync();
+        _context.ChangeTracker.Clear();
+
+        var documentStore = new PostgresDocsPublicDocumentStore(_context);
+        var claimed = await documentStore.ClaimPendingIndexingAsync(
+            10,
+            TimeSpan.FromMinutes(10),
+            default
+        );
+        var document = claimed.Single(item => item.Id == docs[0].Id);
+        var store = new PostgresPublicDocumentSnippetStore(_context);
+        await store.ReplaceForDocumentAsync(
+            document,
+            [Section("logging configuration", 0)],
+            default
+        );
+        _context.ChangeTracker.Clear();
+
+        var results = await store.SearchAsync(
+            new SnippetSearchQuery(
+                OrganizationId: null,
+                LibraryId: null,
+                PublicSourceId: document.PublicSourceId,
+                Kind: SnippetKind.Section,
+                QueryText: queryText,
+                QueryEmbedding: useEmbedding ? SampleVector(0.1f) : null,
+                QueryIdentifiers: [],
+                ExcludedDocumentPaths: [],
+                Limit: 5
+            ),
+            default
+        );
+
+        await Assert.That(results).Count().IsEqualTo(1);
+        await Assert.That(results[0].DocumentId).IsEqualTo(document.Id);
+        await Assert.That(results[0].TextRank).IsGreaterThan(0);
     }
 
     // ----- helpers -----

@@ -31,10 +31,9 @@ internal sealed class PostgresLibraryDocumentSnippetStore(
     private const int RrfK = 60;
     private const int CandidatesPerArm = 50;
 
-    // ts_rank_cd normalization: 4 (DivideByMeanHarmonicDistanceBetweenExtents) | 32
-    // (DivideByItselfPlusOne) — mirrors PostgresLibraryDocumentStore.SearchAsync's document-level
-    // ranking so snippet and document search scores are computed the same way.
-    private const int FtsRankNormalization = 36;
+    // Do not divide by extent distance: for OR queries that can tie one-term and multi-term hits.
+    // Normalize to [0, 1) while retaining the higher score for more matching query terms.
+    private const int FtsRankNormalization = 32;
 
     /// <inheritdoc />
     public async Task ReplaceForDocumentAsync(
@@ -269,6 +268,7 @@ internal sealed class PostgresLibraryDocumentSnippetStore(
         var kind = query.Kind.ToString();
         var excludedPaths = query.ExcludedDocumentPaths;
         var queryIdentifiers = query.QueryIdentifiers;
+        var fullTextQuery = SnippetFullTextQuery.Prepare(query.QueryText);
 
         // Code-review execution never surfaces snippets of excluded (operational/informational)
         // documents or scoped skills. Bound as a plain bool parameter inside each retrieval arm
@@ -320,7 +320,7 @@ internal sealed class PostgresLibraryDocumentSnippetStore(
                         SELECT s.id, ROW_NUMBER() OVER (
                             ORDER BY ts_rank_cd(
                                 ARRAY[0.1,0.2,0.4,1.0], s.search_vector,
-                                websearch_to_tsquery('english', {query.QueryText}), {FtsRankNormalization}
+                                websearch_to_tsquery('english', {fullTextQuery}), {FtsRankNormalization}
                             ) DESC
                         ) AS rnk
                         FROM zeeq.docs_library_document_snippets s
@@ -331,7 +331,7 @@ internal sealed class PostgresLibraryDocumentSnippetStore(
                         WHERE s.organization_id = {organizationId}
                           AND s.library_id = {libraryId}
                           AND s.kind = {kind}
-                          AND s.search_vector @@ websearch_to_tsquery('english', {query.QueryText})
+                          AND s.search_vector @@ websearch_to_tsquery('english', {fullTextQuery})
                           AND NOT (d.path = ANY({excludedPaths}))
                           AND (NOT {excludeCodeReviewExcluded} OR (NOT d.excluded_from_code_reviews AND d.as_scoped_skill = 0))
                         LIMIT {CandidatesPerArm}
@@ -370,7 +370,7 @@ internal sealed class PostgresLibraryDocumentSnippetStore(
                         SELECT s.id, ROW_NUMBER() OVER (
                             ORDER BY ts_rank_cd(
                                 ARRAY[0.1,0.2,0.4,1.0], s.search_vector,
-                                websearch_to_tsquery('english', {query.QueryText}), {FtsRankNormalization}
+                                websearch_to_tsquery('english', {fullTextQuery}), {FtsRankNormalization}
                             ) DESC
                         ) AS rnk
                         FROM zeeq.docs_library_document_snippets s
@@ -381,7 +381,7 @@ internal sealed class PostgresLibraryDocumentSnippetStore(
                         WHERE s.organization_id = {organizationId}
                           AND s.library_id = {libraryId}
                           AND s.kind = {kind}
-                          AND s.search_vector @@ websearch_to_tsquery('english', {query.QueryText})
+                          AND s.search_vector @@ websearch_to_tsquery('english', {fullTextQuery})
                           AND NOT (d.path = ANY({excludedPaths}))
                           AND (NOT {excludeCodeReviewExcluded} OR (NOT d.excluded_from_code_reviews AND d.as_scoped_skill = 0))
                     )
