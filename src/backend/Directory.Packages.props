@@ -52,8 +52,8 @@
     <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.1" />
     <PackageVersion Include="Microsoft.IdentityModel.Validators" Version="8.19.1" />
     <PackageVersion Include="Microsoft.OpenApi" Version="3.11.0" />
-    <PackageVersion Include="ModelContextProtocol" Version="2.1.0" />
-    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.1.0" />
+    <PackageVersion Include="ModelContextProtocol" Version="2.4.0" />
+    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.4.0" />
     <PackageVersion Include="Nanoid" Version="3.1.0" />
     <PackageVersion Include="Notion.Net" Version="5.0.0" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
