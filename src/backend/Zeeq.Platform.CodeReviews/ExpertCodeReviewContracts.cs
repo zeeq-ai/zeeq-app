@@ -1,7 +1,12 @@
 using System.Security.Claims;
-using Danom;
 
 namespace Zeeq.Platform.CodeReviews;
+
+/// <summary>Result of a review operation, containing its response or a descriptive error.</summary>
+public union ExpertCodeReviewOutcome<T>(T, ExpertCodeReviewError);
+
+/// <summary>An error returned by an expert review operation.</summary>
+public sealed record ExpertCodeReviewError(string Message);
 
 /// <summary>
 /// Runs the MCP-facing expert code-review flow.
@@ -19,7 +24,7 @@ public interface IExpertCodeReviewRunner
     /// <summary>
     /// Runs the expert reviewers over a previously uploaded diff.
     /// </summary>
-    Task<Result<ExpertCodeReviewRunResponse, string>> RunReviewAsync(
+    Task<ExpertCodeReviewOutcome<ExpertCodeReviewRunResponse>> RunReviewAsync(
         ExpertCodeReviewRunRequest request,
         ClaimsPrincipal user,
         CancellationToken cancellationToken = default
@@ -99,41 +104,35 @@ public sealed record ExpertCodeReviewRunInput(
     /// <summary>
     /// Validates required run-review inputs.
     /// </summary>
-    public Result<ExpertCodeReviewRunRequest, string> ToRequest()
+    public ExpertCodeReviewOutcome<ExpertCodeReviewRunRequest> ToRequest()
     {
         if (string.IsNullOrWhiteSpace(JobId))
         {
-            return Result<ExpertCodeReviewRunRequest, string>.Error(
-                "jobId is required for run_review."
-            );
+            return new ExpertCodeReviewError("jobId is required for run_review.");
         }
 
         if (string.IsNullOrWhiteSpace(UploadToken))
         {
-            return Result<ExpertCodeReviewRunRequest, string>.Error(
-                "uploadToken is required for run_review."
-            );
+            return new ExpertCodeReviewError("uploadToken is required for run_review.");
         }
 
         if (string.IsNullOrWhiteSpace(OwnerQualifiedRepoName))
         {
-            return Result<ExpertCodeReviewRunRequest, string>.Error(
+            return new ExpertCodeReviewError(
                 "remoteRepoNameUsingGit is required for run_review (use `git remote -v` or gh to resolve the remote in the format owning-org/repo-name)."
             );
         }
 
-        return Result<ExpertCodeReviewRunRequest, string>.Ok(
-            new(
-                JobId.Trim(),
-                UploadToken.Trim(),
-                OwnerQualifiedRepoName.Trim(),
-                Title,
-                Description,
-                AgentSessionId,
-                ReviewGroupId,
-                Branch,
-                Libraries ?? []
-            )
+        return new ExpertCodeReviewRunRequest(
+            JobId.Trim(),
+            UploadToken.Trim(),
+            OwnerQualifiedRepoName.Trim(),
+            Title,
+            Description,
+            AgentSessionId,
+            ReviewGroupId,
+            Branch,
+            Libraries ?? []
         );
     }
 }

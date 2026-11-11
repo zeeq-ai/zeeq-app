@@ -38,7 +38,14 @@ public sealed partial class NotionIngestDispatcher(
                 return new NotionDispatchOutcome(IngestRunStatus.Failed, failure.Reason);
             }
 
-            client = ((NotionCredentialResolution.Resolved)resolution).Client;
+            client = resolution switch
+            {
+                NotionCredentialResolution.Resolved resolved => resolved.Client,
+                NotionCredentialResolution.Failed => throw new InvalidOperationException(
+                    "Failure was already handled."
+                ),
+                null => throw new InvalidOperationException("Credential resolution is null."),
+            };
         }
         catch (OperationCanceledException)
         {
@@ -209,7 +216,7 @@ public sealed partial class NotionIngestDispatcher(
         Exception ex
     );
 
-    private abstract record NotionCredentialResolution
+    private closed record NotionCredentialResolution
     {
         internal sealed record Resolved(IZeeqNotionClient Client) : NotionCredentialResolution;
 

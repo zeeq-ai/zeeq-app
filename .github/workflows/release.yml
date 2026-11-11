@@ -168,6 +168,9 @@ jobs:
             -p:ZEEQ_VERSION="${{ needs.plan.outputs.version }}" \
             -p:ZEEQ_VERSION_TAG="${{ needs.plan.outputs.tag }}"
 
+      - name: Check C# formatting
+        run: ./build/check-csharp-format.sh
+
       # Build the Vue app as a standalone validation step. Docker builds it too,
       # but this fails earlier and produces clearer logs when frontend build
       # issues are unrelated to Docker.

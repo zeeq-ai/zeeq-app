@@ -118,7 +118,7 @@ if (c.stage !== "dns") {
   const raw = execFileSync(
     "dotnet",
     [
-      "../../src/backend/Zeeq.Runtime.Server/bin/Release/net10.0/Zeeq.Runtime.Server.dll",
+      "../../src/backend/Zeeq.Runtime.Server/bin/Release/net11.0/Zeeq.Runtime.Server.dll",
     ],
     {
       encoding: "utf8",

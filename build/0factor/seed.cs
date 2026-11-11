@@ -1,4 +1,4 @@
-#:property TargetFramework=net10.0
+#:property TargetFramework=net11.0
 #:property ImplicitUsings=enable
 #:property Nullable=enable
 #:property TreatWarningsAsErrors=true

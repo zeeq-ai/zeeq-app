@@ -55,7 +55,7 @@ When upgrading 0factor, update the pinned NuGet version, inspect upstream change
 
 ## Seed the application test scenarios
 
-The Development-only `auth-e2e-fixtures` Aspire resource runs [seed.cs](seed.cs), a .NET 10 file-based C# app. It stays stopped during normal startup. Start it explicitly to create or reset the multi-user/org/team fixtures:
+The Development-only `auth-e2e-fixtures` Aspire resource runs [seed.cs](seed.cs), a .NET 11 file-based C# app. It stays stopped during normal startup. Start it explicitly to create or reset the multi-user/org/team fixtures:
 
 ```sh
 aspire resource auth-e2e-fixtures start --apphost ./host --non-interactive --nologo

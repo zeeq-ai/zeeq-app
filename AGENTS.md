@@ -90,6 +90,12 @@ Important workflow notes:
 - Read Zeeq MCP: `zeeq://workflow/feature-planning-coding-process.md`
 - Use CSharpRepl to evaluate C# code inside the running local `zeeq-server` process, debug, test hypotheses, inspect DI state, invoke code while bypassing auth, write dynamic wrappers (logging, etc.).  Access via `zeeq-dotnet-repl` skill.  See the full reference guide as needed.
 
+### .NET baseline and formatting
+
+- Backend and Aspire host projects target .NET 11. `global.json` and `.config/mise.toml` pin the same SDK.
+- Use `./build/check-csharp-format.sh` for the C# 15 union declarations and their changed consumers. It runs the pinned CSharpier 1.4 formatter, which supports union and `closed` declarations.
+- Keep EF Core and Npgsql package versions aligned to the PostgreSQL provider's supported EF version. Coordinate with the package owner before changing `src/backend/Directory.Packages.props`; a runtime TFM upgrade does not require a database-provider major upgrade.
+
 ## Plans
 
 Plans do not get committed; they create noise.  Do not add them to git.

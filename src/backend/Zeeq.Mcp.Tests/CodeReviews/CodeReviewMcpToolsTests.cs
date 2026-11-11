@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using System.Text;
-using Danom;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
@@ -48,6 +47,27 @@ public sealed class CodeReviewMcpToolsTests
         );
 
         await Assert.That(response).IsEqualTo("uploadToken is required for run_review.");
+    }
+
+    [Test]
+    public async Task RunReview_UninitializedRunnerOutcome_ReturnsFailure()
+    {
+        var runner = new TestExpertCodeReviewRunner { ReturnUninitialized = true };
+
+        var response = await CodeReviewMcpTools.RunReview(
+            runner,
+            Options(),
+            LoggerFactory.Create(_ => { }),
+            TestUser(),
+            "run_review",
+            jobId: "job_123",
+            uploadToken: "token_123",
+            remoteRepoNameUsingGit: "owner/repo"
+        );
+
+        await Assert
+            .That(response)
+            .IsEqualTo("Expert code review failed: Review outcome is uninitialized.");
     }
 
     [Test]
@@ -329,6 +349,8 @@ public sealed class CodeReviewMcpToolsTests
 
     private sealed class TestExpertCodeReviewRunner : IExpertCodeReviewRunner
     {
+        public bool ReturnUninitialized { get; init; }
+
         public ClaimsPrincipal? CreateUploadUser { get; private set; }
 
         public ExpertCodeReviewRunRequest? RunRequest { get; private set; }
@@ -353,7 +375,7 @@ public sealed class CodeReviewMcpToolsTests
             );
         }
 
-        public Task<Result<ExpertCodeReviewRunResponse, string>> RunReviewAsync(
+        public Task<ExpertCodeReviewOutcome<ExpertCodeReviewRunResponse>> RunReviewAsync(
             ExpertCodeReviewRunRequest request,
             ClaimsPrincipal user,
             CancellationToken cancellationToken = default
@@ -362,26 +384,31 @@ public sealed class CodeReviewMcpToolsTests
             RunRequest = request;
             RunRequestUser = user;
 
-            return Task.FromResult(
-                Result<ExpertCodeReviewRunResponse, string>.Ok(
-                    new(
-                        request.JobId,
-                        """
-                        <reviews noAgentsActivated="false">
-                          <review facet="General" agent="Agent">
-                            <summary>Summary.</summary>
-                            <details>Details.</details>
-                            <findings />
-                          </review>
-                        </reviews>
-                        """,
-                        ["src/App.cs"],
-                        [],
-                        ReviewId: "",
-                        ReviewCreatedAtUtc: DateTimeOffset.UtcNow,
-                        ReviewGroupId: "",
-                        ReviewViewUrl: ""
-                    )
+            if (ReturnUninitialized)
+            {
+                return Task.FromResult(
+                    default(ExpertCodeReviewOutcome<ExpertCodeReviewRunResponse>)
+                );
+            }
+
+            return Task.FromResult<ExpertCodeReviewOutcome<ExpertCodeReviewRunResponse>>(
+                new ExpertCodeReviewRunResponse(
+                    request.JobId,
+                    """
+                    <reviews noAgentsActivated="false">
+                      <review facet="General" agent="Agent">
+                        <summary>Summary.</summary>
+                        <details>Details.</details>
+                        <findings />
+                      </review>
+                    </reviews>
+                    """,
+                    ["src/App.cs"],
+                    [],
+                    ReviewId: "",
+                    ReviewCreatedAtUtc: DateTimeOffset.UtcNow,
+                    ReviewGroupId: "",
+                    ReviewViewUrl: ""
                 )
             );
         }

@@ -22,6 +22,8 @@ It is a key part of Motion's internal agentic coding platform, which is used by 
 
 Zeeq is designed to be easy to setup and run using [Mise](https://mise.jdx.dev/installing-mise.html) to install the necessary runtime components.
 
+The backend and Aspire host use .NET 11. Mise installs the SDK version pinned in `.config/mise.toml`; `global.json` selects the same SDK for CLI commands.
+
 For local setup see: <https://zeeq.ai/docs/managing-zeeq/local-development>
 
 Start the local stack with `mise run up` (GCP Pub/Sub) or `mise run up aws` ([Floci](https://github.com/floci-io/floci) AWS emulator). Stop it with `mise run down`.

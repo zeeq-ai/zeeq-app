@@ -218,8 +218,9 @@ public sealed partial class CodeReviewMcpTools
         string[]? libraries,
         ClaimsPrincipal? user,
         CancellationToken cancellationToken
-    ) =>
-        await new ExpertCodeReviewRunInput(
+    )
+    {
+        var result = new ExpertCodeReviewRunInput(
             jobId,
             uploadToken,
             ownerQualifiedRepoName,
@@ -229,12 +230,20 @@ public sealed partial class CodeReviewMcpTools
             reviewGroupId,
             branch,
             libraries
-        )
-            .ToRequest()
-            .Match(
-                request => RunReviewRequestAsResultAsync(runner, request, user, cancellationToken),
-                error => Task.FromResult(new ReviewCallResult(error, IsError: true))
-            );
+        ).ToRequest();
+
+        return result switch
+        {
+            ExpertCodeReviewRunRequest request => await RunReviewRequestAsResultAsync(
+                runner,
+                request,
+                user,
+                cancellationToken
+            ),
+            ExpertCodeReviewError error => new ReviewCallResult(error.Message, IsError: true),
+            null => throw new InvalidOperationException("Review request outcome is uninitialized."),
+        };
+    }
 
     private static async Task<ReviewCallResult> RunReviewRequestAsResultAsync(
         IExpertCodeReviewRunner runner,
@@ -253,10 +262,15 @@ public sealed partial class CodeReviewMcpTools
 
         var result = await runner.RunReviewAsync(request, user, cancellationToken);
 
-        return result.Match(
-            response => new ReviewCallResult(BuildLocalAgentInstructions(response), IsError: false),
-            error => new ReviewCallResult(error, IsError: true)
-        );
+        return result switch
+        {
+            ExpertCodeReviewRunResponse response => new ReviewCallResult(
+                BuildLocalAgentInstructions(response),
+                IsError: false
+            ),
+            ExpertCodeReviewError error => new ReviewCallResult(error.Message, IsError: true),
+            null => throw new InvalidOperationException("Review outcome is uninitialized."),
+        };
     }
 
     private static string BuildLocalAgentInstructions(ExpertCodeReviewRunResponse response) =>

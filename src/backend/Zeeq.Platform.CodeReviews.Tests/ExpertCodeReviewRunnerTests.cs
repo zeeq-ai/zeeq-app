@@ -496,11 +496,24 @@ public sealed class ExpertCodeReviewRunnerTests
         };
 
     private static ExpertCodeReviewRunResponse Unwrap(
-        Danom.Result<ExpertCodeReviewRunResponse, string> result
-    ) => result.Match(ok => ok, error => throw new InvalidOperationException(error));
+        ExpertCodeReviewOutcome<ExpertCodeReviewRunResponse> result
+    ) =>
+        result switch
+        {
+            ExpertCodeReviewRunResponse ok => ok,
+            ExpertCodeReviewError error => throw new InvalidOperationException(error.Message),
+            null => throw new InvalidOperationException("Uninitialized outcome."),
+        };
 
-    private static string UnwrapError(Danom.Result<ExpertCodeReviewRunResponse, string> result) =>
-        result.Match(_ => throw new InvalidOperationException("Expected error."), error => error);
+    private static string UnwrapError(
+        ExpertCodeReviewOutcome<ExpertCodeReviewRunResponse> result
+    ) =>
+        result switch
+        {
+            ExpertCodeReviewRunResponse => throw new InvalidOperationException("Expected error."),
+            ExpertCodeReviewError error => error.Message,
+            null => throw new InvalidOperationException("Uninitialized outcome."),
+        };
 
     private static string ReviewXml() =>
         """

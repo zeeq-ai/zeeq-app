@@ -231,7 +231,7 @@ public static class IngestTriggerCoordinator
 }
 
 /// <summary>Outcome of an <see cref="IngestTriggerCoordinator"/> queue attempt.</summary>
-public abstract record IngestTriggerResult
+public closed record IngestTriggerResult
 {
     /// <summary>A new run was queued and published.</summary>
     public sealed record Queued(string RunId, DateTimeOffset RunCreatedAtUtc, string ViewToken)

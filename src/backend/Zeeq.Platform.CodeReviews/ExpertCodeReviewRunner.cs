@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Security.Claims;
 using System.Text;
-using Danom;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -82,7 +81,7 @@ public sealed partial class ExpertCodeReviewRunner(
     }
 
     /// <inheritdoc />
-    public async Task<Result<ExpertCodeReviewRunResponse, string>> RunReviewAsync(
+    public async Task<ExpertCodeReviewOutcome<ExpertCodeReviewRunResponse>> RunReviewAsync(
         ExpertCodeReviewRunRequest request,
         ClaimsPrincipal user,
         CancellationToken cancellationToken = default
@@ -96,9 +95,7 @@ public sealed partial class ExpertCodeReviewRunner(
             )
         )
         {
-            return Result<ExpertCodeReviewRunResponse, string>.Error(
-                "Invalid or unrecognized review token."
-            );
+            return new ExpertCodeReviewError("Invalid or unrecognized review token.");
         }
 
         var reviewGroupId = request.ReviewGroupId ?? $"crg_{Guid.CreateVersion7():N}";
@@ -132,14 +129,14 @@ public sealed partial class ExpertCodeReviewRunner(
 
         if (payload!.JobId != request.JobId)
         {
-            return Result<ExpertCodeReviewRunResponse, string>.Error(
+            return new ExpertCodeReviewError(
                 "The review token does not match the requested job id."
             );
         }
 
         if (payload.ExpiresAtUtc <= DateTimeOffset.UtcNow)
         {
-            return Result<ExpertCodeReviewRunResponse, string>.Error(
+            return new ExpertCodeReviewError(
                 "The review token has expired. Create a new upload URL and re-upload the diff."
             );
         }
@@ -151,7 +148,7 @@ public sealed partial class ExpertCodeReviewRunner(
             var files = diffParser.Parse(diffText).ToCodeReviewFileSnapshots();
             if (files.Count == 0)
             {
-                return Result<ExpertCodeReviewRunResponse, string>.Error(
+                return new ExpertCodeReviewError(
                     "Uploaded diff did not contain any parsable file sections."
                 );
             }
@@ -235,7 +232,7 @@ public sealed partial class ExpertCodeReviewRunner(
 
             if (!validation.IsValid)
             {
-                return Result<ExpertCodeReviewRunResponse, string>.Error(
+                return new ExpertCodeReviewError(
                     "Code-review runner produced invalid XML: " + validation.ErrorMessage
                 );
             }
@@ -266,8 +263,8 @@ public sealed partial class ExpertCodeReviewRunner(
                 ExecutionTraceParent = activity.Activity?.Id,
                 ExecutionTraceState = activity.Activity?.TraceStateString,
                 RemainingReviewBudget = 0,
-                EstimatedCostUsd =
-                    telemetry.EstimatedCostUsd ?? (reviewContext.NoAgentsActivated ? 0m : null),
+                EstimatedCostUsd = telemetry.EstimatedCostUsd
+                    ?? (reviewContext.NoAgentsActivated ? 0m : null),
                 CostCatalogVersion =
                     telemetry.EstimatedCostUsd.HasValue || reviewContext.NoAgentsActivated
                         ? PricingCatalog.Version
@@ -320,22 +317,20 @@ public sealed partial class ExpertCodeReviewRunner(
             // Build the deep link for the single-review view.
             var viewUrl = linkFactory.BuildSingleReviewLink(review, CodeReviewSingleViewMode.Agent);
 
-            return Result<ExpertCodeReviewRunResponse, string>.Ok(
-                new(
-                    request.JobId,
-                    xml,
-                    [.. reviewContext.InScopeFiles.Select(file => file.Path)],
-                    [.. reviewContext.OutOfScopeFiles.Select(file => file.Path)],
-                    ReviewId: review.Id,
-                    ReviewCreatedAtUtc: review.CreatedAtUtc,
-                    ReviewGroupId: reviewGroupId,
-                    ReviewViewUrl: viewUrl
-                )
+            return new ExpertCodeReviewRunResponse(
+                request.JobId,
+                xml,
+                [.. reviewContext.InScopeFiles.Select(file => file.Path)],
+                [.. reviewContext.OutOfScopeFiles.Select(file => file.Path)],
+                ReviewId: review.Id,
+                ReviewCreatedAtUtc: review.CreatedAtUtc,
+                ReviewGroupId: reviewGroupId,
+                ReviewViewUrl: viewUrl
             );
         }
         catch (UploadedDiffNotFoundException)
         {
-            return Result<ExpertCodeReviewRunResponse, string>.Error(
+            return new ExpertCodeReviewError(
                 "No uploaded diff found. Upload the diff before running the review."
             );
         }
