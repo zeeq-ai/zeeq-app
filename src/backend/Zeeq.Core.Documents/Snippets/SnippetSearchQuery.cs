@@ -19,7 +19,10 @@ namespace Zeeq.Core.Documents.Snippets;
 /// <param name="LibraryId">Private store only: the single required library id.</param>
 /// <param name="PublicSourceId">Public store only: the subscribed public source id.</param>
 /// <param name="Kind">Section or code — search is always scoped to one kind.</param>
-/// <param name="QueryText">Websearch-syntax text for the full-text arm.</param>
+/// <param name="QueryText">
+/// Text for the full-text arm. Plain words match any term; quoted phrases, exclusions and
+/// explicit <c>OR</c> use PostgreSQL web-search syntax.
+/// </param>
 /// <param name="QueryEmbedding">
 /// The instruction-prefixed query embedding for the vector arm; null runs full-text-only
 /// (degraded mode, e.g. when the embedding provider is unavailable or times out).

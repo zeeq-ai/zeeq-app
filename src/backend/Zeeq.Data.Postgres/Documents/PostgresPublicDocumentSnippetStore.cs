@@ -1,7 +1,7 @@
-using Zeeq.Core.Documents;
-using Zeeq.Core.Documents.Snippets;
 using Microsoft.EntityFrameworkCore;
 using Pgvector;
+using Zeeq.Core.Documents;
+using Zeeq.Core.Documents.Snippets;
 
 namespace Zeeq.Data.Postgres.Documents;
 
@@ -18,7 +18,9 @@ internal sealed class PostgresPublicDocumentSnippetStore(PostgresDbContext db)
 {
     private const int RrfK = 60;
     private const int CandidatesPerArm = 50;
-    private const int FtsRankNormalization = 36;
+
+    // Match private snippet ranking; do not tie single-term and multi-term OR hits.
+    private const int FtsRankNormalization = 32;
 
     /// <inheritdoc />
     public async Task ReplaceForDocumentAsync(
@@ -211,6 +213,7 @@ internal sealed class PostgresPublicDocumentSnippetStore(PostgresDbContext db)
         var kind = query.Kind.ToString();
         var excludedPaths = query.ExcludedDocumentPaths;
         var queryIdentifiers = query.QueryIdentifiers;
+        var fullTextQuery = SnippetFullTextQuery.Prepare(query.QueryText);
 
         // See PostgresLibraryDocumentSnippetStore.SearchAsync for why this composes with an
         // ambient transaction instead of always opening its own.
@@ -243,14 +246,14 @@ internal sealed class PostgresPublicDocumentSnippetStore(PostgresDbContext db)
                         SELECT s.id, ROW_NUMBER() OVER (
                             ORDER BY ts_rank_cd(
                                 ARRAY[0.1,0.2,0.4,1.0], s.search_vector,
-                                websearch_to_tsquery('english', {query.QueryText}), {FtsRankNormalization}
+                                websearch_to_tsquery('english', {fullTextQuery}), {FtsRankNormalization}
                             ) DESC
                         ) AS rnk
                         FROM zeeq.docs_public_document_snippets s
                         JOIN zeeq.docs_public_documents d ON d.id = s.document_id
                         WHERE s.public_source_id = {publicSourceId}
                           AND s.kind = {kind}
-                          AND s.search_vector @@ websearch_to_tsquery('english', {query.QueryText})
+                          AND s.search_vector @@ websearch_to_tsquery('english', {fullTextQuery})
                           AND NOT (d.path = ANY({excludedPaths}))
                         LIMIT {CandidatesPerArm}
                     )
@@ -281,7 +284,7 @@ internal sealed class PostgresPublicDocumentSnippetStore(PostgresDbContext db)
                            (1.0 / ({RrfK} + ROW_NUMBER() OVER (
                                ORDER BY ts_rank_cd(
                                    ARRAY[0.1,0.2,0.4,1.0], s.search_vector,
-                                   websearch_to_tsquery('english', {query.QueryText}), {FtsRankNormalization}
+                                   websearch_to_tsquery('english', {fullTextQuery}), {FtsRankNormalization}
                                ) DESC
                            )))
                          + CASE WHEN s.identifiers && {queryIdentifiers}
@@ -290,7 +293,7 @@ internal sealed class PostgresPublicDocumentSnippetStore(PostgresDbContext db)
                            ROW_NUMBER() OVER (
                                ORDER BY ts_rank_cd(
                                    ARRAY[0.1,0.2,0.4,1.0], s.search_vector,
-                                   websearch_to_tsquery('english', {query.QueryText}), {FtsRankNormalization}
+                                   websearch_to_tsquery('english', {fullTextQuery}), {FtsRankNormalization}
                                ) DESC
                            )::int AS text_rank,
                            (s.identifiers && {queryIdentifiers}) AS identifier_match
@@ -298,7 +301,7 @@ internal sealed class PostgresPublicDocumentSnippetStore(PostgresDbContext db)
                     JOIN zeeq.docs_public_documents d ON d.id = s.document_id
                     WHERE s.public_source_id = {publicSourceId}
                       AND s.kind = {kind}
-                      AND s.search_vector @@ websearch_to_tsquery('english', {query.QueryText})
+                      AND s.search_vector @@ websearch_to_tsquery('english', {fullTextQuery})
                       AND NOT (d.path = ANY({excludedPaths}))
                     ORDER BY score DESC, s.id
                     LIMIT {query.Limit}
