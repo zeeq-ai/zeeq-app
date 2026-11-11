@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- OpenAPI config -->
     <OpenApiDocumentsDirectory>..\..\web\src\api</OpenApiDocumentsDirectory>
-    <OpenApiGenerateDocumentsOptions>--file-name zeeq-api</OpenApiGenerateDocumentsOptions>
+    <OpenApiGenerateDocumentsOptions>--file-name zeeq-api --openapi-version OpenApi3_1</OpenApiGenerateDocumentsOptions>
     <UserSecretsId>4e2232dd-81d4-4251-9966-b2a61b1d499c</UserSecretsId>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">

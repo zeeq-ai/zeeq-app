@@ -1,5 +1,5 @@
 {
-  "openapi": "3.1.1",
+  "openapi": "3.1.2",
   "info": {
     "title": "Zeeq.Runtime.Server | v1",
     "version": "1.0.0"
@@ -255,9 +255,6 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found"
-          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -267,6 +264,9 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -301,6 +301,9 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request"
+          },
           "404": {
             "description": "Not Found"
           },
@@ -313,9 +316,6 @@
                 }
               }
             }
-          },
-          "400": {
-            "description": "Bad Request"
           },
           "429": {
             "description": "Too Many Requests",
@@ -614,9 +614,6 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found"
-          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -626,6 +623,9 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -831,6 +831,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
           }
         }
       }
@@ -863,6 +866,9 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
           }
         }
       },
@@ -894,6 +900,16 @@
           "required": true
         },
         "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAliasesResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -904,22 +920,15 @@
               }
             }
           },
+          "401": {
+            "description": "Unauthorized"
+          },
           "409": {
             "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/IdentityEndpointError"
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserAliasesResponse"
                 }
               }
             }
@@ -1820,9 +1829,6 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found"
-          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -1832,6 +1838,9 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -1874,9 +1883,6 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found"
-          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -1886,6 +1892,9 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -2191,8 +2200,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewPullRequestListResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -2204,15 +2220,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewPullRequestListResponse"
-                }
-              }
-            }
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -2258,8 +2267,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewPullRequestDetailResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -2271,15 +2287,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewPullRequestDetailResponse"
-                }
-              }
-            }
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -2318,8 +2327,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewPullRequestDetailResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -2331,15 +2347,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewPullRequestDetailResponse"
-                }
-              }
-            }
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -2406,8 +2415,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewPullRequestReviewListResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -2419,15 +2435,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewPullRequestReviewListResponse"
-                }
-              }
-            }
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -2467,8 +2476,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewFindingsResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -2480,15 +2496,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewFindingsResponse"
-                }
-              }
-            }
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -2528,8 +2537,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewRawFindingsResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -2541,15 +2557,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewRawFindingsResponse"
-                }
-              }
-            }
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -2588,8 +2597,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewSingleViewResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -2601,15 +2617,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewSingleViewResponse"
-                }
-              }
-            }
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -2649,8 +2658,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewManualRequestResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -2662,15 +2678,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewManualRequestResponse"
-                }
-              }
-            }
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -2694,8 +2703,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewOrganizationSettingsResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -2707,18 +2723,11 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewOrganizationSettingsResponse"
-                }
-              }
-            }
-          },
           "403": {
             "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       },
@@ -2750,8 +2759,15 @@
           "required": true
         },
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewOrganizationSettingsResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -2763,18 +2779,11 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewOrganizationSettingsResponse"
-                }
-              }
-            }
-          },
           "403": {
             "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -2806,8 +2815,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewerAgentListResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -2819,18 +2835,11 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewerAgentListResponse"
-                }
-              }
-            }
-          },
           "403": {
             "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       },
@@ -2870,8 +2879,15 @@
           "required": true
         },
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewerAgentResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -2883,18 +2899,11 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewerAgentResponse"
-                }
-              }
-            }
-          },
           "403": {
             "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -2926,8 +2935,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewerAgentResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -2939,18 +2955,11 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewerAgentResponse"
-                }
-              }
-            }
-          },
           "403": {
             "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -2974,8 +2983,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewerAgentTemplateListResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -2987,18 +3003,11 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewerAgentTemplateListResponse"
-                }
-              }
-            }
-          },
           "403": {
             "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -3057,8 +3066,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewAgentTestTargetListResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -3070,18 +3086,11 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewAgentTestTargetListResponse"
-                }
-              }
-            }
-          },
           "403": {
             "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -3129,8 +3138,15 @@
           }
         },
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewAgentTestRunResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -3142,18 +3158,11 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewAgentTestRunResponse"
-                }
-              }
-            }
-          },
           "403": {
             "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -3203,8 +3212,15 @@
           "required": true
         },
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewerAgentResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -3216,18 +3232,11 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewerAgentResponse"
-                }
-              }
-            }
-          },
           "403": {
             "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       },
@@ -3265,8 +3274,8 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "204": {
+            "description": "No Content"
           },
           "400": {
             "description": "Bad Request",
@@ -3278,11 +3287,11 @@
               }
             }
           },
-          "204": {
-            "description": "No Content"
-          },
           "403": {
             "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -3398,8 +3407,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewInboxUpdateListResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -3411,15 +3427,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewInboxUpdateListResponse"
-                }
-              }
-            }
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -3451,8 +3460,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewRepositoryConfigurationResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -3464,15 +3480,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewRepositoryConfigurationResponse"
-                }
-              }
-            }
+          "404": {
+            "description": "Not Found"
           }
         }
       },
@@ -3512,8 +3521,15 @@
           "required": true
         },
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewRepositoryConfigurationResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -3525,18 +3541,11 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CodeReviewRepositoryConfigurationResponse"
-                }
-              }
-            }
-          },
           "403": {
             "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -3578,8 +3587,15 @@
           "required": true
         },
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewCodeReviewFileFilterResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -3591,18 +3607,11 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PreviewCodeReviewFileFilterResponse"
-                }
-              }
-            }
-          },
           "403": {
             "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -3644,8 +3653,15 @@
           "required": true
         },
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewCodeReviewFileFilterResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -3657,18 +3673,11 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PreviewCodeReviewFileFilterResponse"
-                }
-              }
-            }
-          },
           "403": {
             "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -3713,8 +3722,15 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BypassCheckRunResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -3726,15 +3742,8 @@
               }
             }
           },
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BypassCheckRunResponse"
-                }
-              }
-            }
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -4863,6 +4872,9 @@
               }
             }
           },
+          "404": {
+            "description": "Not Found"
+          },
           "409": {
             "description": "Conflict",
             "content": {
@@ -4872,9 +4884,6 @@
                 }
               }
             }
-          },
-          "404": {
-            "description": "Not Found"
           }
         }
       }
@@ -5880,9 +5889,6 @@
           "204": {
             "description": "No Content"
           },
-          "404": {
-            "description": "Not Found"
-          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -5892,6 +5898,9 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -6103,9 +6112,6 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found"
-          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -6115,6 +6121,9 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -6158,9 +6167,6 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found"
-          },
           "400": {
             "description": "Bad Request",
             "content": {
@@ -6170,6 +6176,9 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -6252,11 +6261,11 @@
           "204": {
             "description": "No Content"
           },
-          "404": {
-            "description": "Not Found"
-          },
           "400": {
             "description": "Bad Request"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       },
@@ -7743,22 +7752,22 @@
           }
         ],
         "responses": {
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentConversationEndpointError"
-                }
-              }
-            }
-          },
           "200": {
             "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentConversationListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConversationEndpointError"
                 }
               }
             }
@@ -7793,9 +7802,6 @@
           }
         ],
         "responses": {
-          "404": {
-            "description": "Not Found"
-          },
           "200": {
             "description": "OK",
             "content": {
@@ -7805,6 +7811,9 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -11870,14 +11879,14 @@
               "null",
               "string"
             ],
-            "description": "A URI reference [RFC3986] that identifies the problem type. This specification encourages that, when\ndereferenced, it provide human-readable documentation for the problem type\n(e.g., using HTML [W3C.REC-html5-20141028]). When this member is not present, its value is assumed to be\n\"about:blank\"."
+            "description": "A URI reference that identifies the problem type. This specification encourages that, when\ndereferenced, it provide human-readable documentation for the problem type, e.g. using HTML.\nWhen this member is not present, its value is assumed to be \"about:blank\";\nsee RFC 3986."
           },
           "title": {
             "type": [
               "null",
               "string"
             ],
-            "description": "A short, human-readable summary of the problem type. It SHOULD NOT change from occurrence to occurrence\nof the problem, except for purposes of localization(e.g., using proactive content negotiation;\nsee[RFC7231], Section 3.4)."
+            "description": "A short, human-readable summary of the problem type. It SHOULD NOT change from occurrence to occurrence\nof the problem, except for purposes of localization, e.g. using proactive content negotiation;\nsee RFC 9110, Section 12."
           },
           "status": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
@@ -11886,7 +11895,7 @@
               "integer",
               "string"
             ],
-            "description": "The HTTP status code([RFC7231], Section 6) generated by the origin server for this occurrence of the problem.",
+            "description": "The HTTP status code generated by the origin server for this occurrence of the problem;\nsee RFC 9110, Section 15.",
             "format": "int32"
           },
           "detail": {
@@ -13743,14 +13752,14 @@
               "null",
               "string"
             ],
-            "description": "A URI reference [RFC3986] that identifies the problem type. This specification encourages that, when\ndereferenced, it provide human-readable documentation for the problem type\n(e.g., using HTML [W3C.REC-html5-20141028]). When this member is not present, its value is assumed to be\n\"about:blank\"."
+            "description": "A URI reference that identifies the problem type. This specification encourages that, when\ndereferenced, it provide human-readable documentation for the problem type, e.g. using HTML.\nWhen this member is not present, its value is assumed to be \"about:blank\";\nsee RFC 3986."
           },
           "title": {
             "type": [
               "null",
               "string"
             ],
-            "description": "A short, human-readable summary of the problem type. It SHOULD NOT change from occurrence to occurrence\nof the problem, except for purposes of localization(e.g., using proactive content negotiation;\nsee[RFC7231], Section 3.4)."
+            "description": "A short, human-readable summary of the problem type. It SHOULD NOT change from occurrence to occurrence\nof the problem, except for purposes of localization, e.g. using proactive content negotiation;\nsee RFC 9110, Section 12."
           },
           "status": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
@@ -13759,7 +13768,7 @@
               "integer",
               "string"
             ],
-            "description": "The HTTP status code([RFC7231], Section 6) generated by the origin server for this occurrence of the problem.",
+            "description": "The HTTP status code generated by the origin server for this occurrence of the problem;\nsee RFC 9110, Section 15.",
             "format": "int32"
           },
           "detail": {
@@ -13777,7 +13786,7 @@
             "description": "A URI reference that identifies the specific occurrence of the problem. It may or may not yield further information if dereferenced."
           }
         },
-        "description": "A machine-readable format for specifying errors in HTTP API responses based on <see href=\"https://tools.ietf.org/html/rfc7807\" />."
+        "description": "A machine-readable format for specifying errors in HTTP API responses based on <see href=\"https://tools.ietf.org/html/rfc9110\" />."
       },
       "PullRequestClaimStatus": {
         "enum": [
@@ -15516,22 +15525,7 @@
       "name": "AuditHistory"
     },
     {
-      "name": "Ingest"
-    },
-    {
-      "name": "SystemActivationKeys"
-    },
-    {
-      "name": "SystemOrganizations"
-    },
-    {
       "name": "Auth"
-    },
-    {
-      "name": "OrganizationActivation"
-    },
-    {
-      "name": "GitHub"
     },
     {
       "name": "Carts"
@@ -15540,37 +15534,52 @@
       "name": "Code Reviews"
     },
     {
-      "name": "Library Documents"
+      "name": "GitHub"
     },
     {
-      "name": "Libraries"
-    },
-    {
-      "name": "Library Snippets"
-    },
-    {
-      "name": "LLM Settings"
+      "name": "Ingest"
     },
     {
       "name": "Invitations"
     },
     {
-      "name": "Memberships"
+      "name": "LLM Settings"
     },
     {
-      "name": "Organizations"
+      "name": "Libraries"
+    },
+    {
+      "name": "Library Documents"
+    },
+    {
+      "name": "Library Snippets"
+    },
+    {
+      "name": "Memberships"
     },
     {
       "name": "Metrics"
     },
     {
+      "name": "Notion"
+    },
+    {
+      "name": "OrganizationActivation"
+    },
+    {
+      "name": "Organizations"
+    },
+    {
       "name": "Sessions"
     },
     {
-      "name": "Telemetry"
+      "name": "SystemActivationKeys"
     },
     {
-      "name": "Notion"
+      "name": "SystemOrganizations"
+    },
+    {
+      "name": "Telemetry"
     }
   ]
 }

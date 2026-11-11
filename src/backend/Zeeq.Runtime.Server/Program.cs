@@ -1,4 +1,5 @@
 using System.Reflection;
+using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 using Zeeq.Core.Common;
 using Zeeq.Core.Common.AspNetCore;
@@ -187,7 +188,7 @@ void HandleSchemaGenerationAndExit()
     var minimalBuilder = WebApplication.CreateBuilder(args);
 
     minimalBuilder
-        .Services.AddOpenApi()
+        .Services.AddOpenApi(options => options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_1)
         .AddSingleton(new AppSettings())
         .AddZeeqJsonConfig()
         .AddHttpContextAccessor()
