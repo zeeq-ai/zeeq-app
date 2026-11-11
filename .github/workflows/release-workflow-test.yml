@@ -18,6 +18,10 @@ jobs:
         run: |
           docker run --rm mcr.microsoft.com/dotnet/aspnet:11.0.0 sh -c 'cat /etc/resolv.conf; ls -l /etc/resolv.conf; getent hosts archive.ubuntu.com || true; apt-get update; apt-get -o APT::Sandbox::User=root update' || true
       - uses: docker/setup-buildx-action@v4
+        with:
+          buildkitd-config-inline: |
+            [dns]
+              nameservers = ["1.1.1.1", "8.8.8.8"]
       - name: BuildKit DNS and apt
         run: |
-          printf 'FROM mcr.microsoft.com/dotnet/aspnet:11.0.0\nRUN cat /etc/resolv.conf; ls -l /etc/resolv.conf; getent hosts archive.ubuntu.com || true; apt-get update; apt-get -o APT::Sandbox::User=root update\n' | docker buildx build --no-cache --progress=plain -f - .
+          printf 'FROM mcr.microsoft.com/dotnet/aspnet:11.0.0\nRUN cat /etc/resolv.conf && getent hosts archive.ubuntu.com && apt-get -o APT::Update::Error-Mode=any update && apt-get install -y --no-install-recommends git curl ca-certificates\n' | docker buildx build --no-cache --progress=plain -f - .
