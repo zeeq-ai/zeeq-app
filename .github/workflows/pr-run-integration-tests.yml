@@ -17,6 +17,7 @@ on:
       - global.json
       - .config/dotnet-tools.json
       - .config/mise.toml
+      - build/check-csharp-format.sh
       - build/Dockerfile
       - .github/workflows/**
 
@@ -65,7 +66,7 @@ jobs:
 
       # Install the .NET SDK used by the test project.
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
@@ -77,6 +78,9 @@ jobs:
       # from runtime integration-test failures.
       - name: Build tests
         run: dotnet build --no-restore --nologo -warnaserror
+
+      - name: Check C# formatting
+        run: ./build/check-csharp-format.sh
 
       # File-based C# apps are not included in the solution build. Compile the
       # manual fixture seeder without executing it or mutating any database.

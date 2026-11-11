@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.OpenApi;
 
 namespace Zeeq.Runtime.Server.Setup;
 
@@ -64,14 +65,12 @@ internal static class HttpPipelineExtensions
             var frontendOrigin = appSettings.Http.FrontendBaseUri.TrimEnd('/');
 
             services.AddCors(options =>
-                options.AddPolicy(
-                    "api-cors-policy",
-                    policy =>
-                        policy
-                            .WithOrigins([.. appSettings.Http.AllowedCorsOrigins, frontendOrigin])
-                            .AllowAnyHeader()
-                            .AllowAnyMethod()
-                            .AllowCredentials()
+                options.AddPolicy("api-cors-policy", policy =>
+                    policy
+                        .WithOrigins([.. appSettings.Http.AllowedCorsOrigins, frontendOrigin])
+                        .AllowAnyHeader()
+                        .AllowAnyMethod()
+                        .AllowCredentials()
                 )
             );
 
@@ -84,14 +83,16 @@ internal static class HttpPipelineExtensions
         public IServiceCollection AddZeeqOpenApiConfig()
         {
             services.AddOpenApi(options =>
+            {
+                options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_1;
                 options.AddDocumentTransformer(
                     (document, context, cancellationToken) =>
                     {
                         document.Servers = [new() { Url = "http://zeeq-api.localhost:8095/" }];
                         return Task.CompletedTask;
                     }
-                )
-            );
+                );
+            });
 
             return services;
         }

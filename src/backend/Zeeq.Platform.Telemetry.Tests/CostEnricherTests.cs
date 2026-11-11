@@ -1,3 +1,4 @@
+using System.Globalization;
 using Zeeq.Core.Models;
 using Zeeq.Platform.Telemetry.Adapters;
 using Zeeq.Platform.Telemetry.Processing;
@@ -14,38 +15,38 @@ public sealed class CostEnricherTests
     private readonly IAgentTelemetryCostEnricher _enricher = new AgentTelemetryCostEnricher();
 
     [Test]
-    [Arguments("gpt-6.1-sol", 2.00, 0.10, 10.00)]
-    [Arguments("gpt-6-astra", 10.00, 1.00, 50.00)]
-    [Arguments("gpt-6-sol", 2.00, 0.20, 10.00)]
-    [Arguments("gpt-6-luna", 0.10, 0.01, 0.50)]
-    [Arguments("gpt-5.6-sol", 4.00, 0.40, 20.00)]
-    [Arguments("gpt-5.6-cyber", 12.50, 1.25, 75.00)]
-    [Arguments("gpt-5.5-cyber", 12.50, 1.25, 75.00)]
-    [Arguments("claude-opus-5.5", 4.00, 0.20, 20.00)]
-    [Arguments("claude-sonnet-5.5", 2.00, 0.20, 10.00)]
-    [Arguments("claude-fable-5.1", 10.00, 0.25, 50.00)]
-    [Arguments("claude-mythos-5.1", 10.00, 0.25, 50.00)]
-    [Arguments("claude-opus-5-5", 4.00, 0.20, 20.00)]
-    [Arguments("claude-sonnet-5-5", 2.00, 0.20, 10.00)]
-    [Arguments("claude-fable-5-1", 10.00, 0.25, 50.00)]
-    [Arguments("claude-mythos-5-1", 10.00, 0.25, 50.00)]
-    [Arguments("claude-haiku-4-5", 1.00, 0.10, 5.00)]
-    [Arguments("claude-opus-4-8", 5.00, 0.50, 25.00)]
-    [Arguments("claude-opus-4-7", 5.00, 0.50, 25.00)]
-    [Arguments("claude-opus-4-6", 5.00, 0.50, 25.00)]
-    [Arguments("claude-opus-4-5", 5.00, 0.50, 25.00)]
-    [Arguments("claude-opus-4-1", 15.00, 1.50, 75.00)]
-    [Arguments("claude-sonnet-4-6", 3.00, 0.30, 15.00)]
-    [Arguments("claude-sonnet-4-5", 3.00, 0.30, 15.00)]
-    [Arguments("claude-sonnet-5", 2.00, 0.20, 10.00)]
-    [Arguments("claude-opus-5", 5.00, 0.50, 25.00)]
-    [Arguments("claude-fable-5", 10.00, 1.00, 50.00)]
-    [Arguments("claude-mythos-5", 10.00, 1.00, 50.00)]
+    [Arguments("gpt-6.1-sol", "2.00", "0.10", "10.00")]
+    [Arguments("gpt-6-astra", "10.00", "1.00", "50.00")]
+    [Arguments("gpt-6-sol", "2.00", "0.20", "10.00")]
+    [Arguments("gpt-6-luna", "0.10", "0.01", "0.50")]
+    [Arguments("gpt-5.6-sol", "4.00", "0.40", "20.00")]
+    [Arguments("gpt-5.6-cyber", "12.50", "1.25", "75.00")]
+    [Arguments("gpt-5.5-cyber", "12.50", "1.25", "75.00")]
+    [Arguments("claude-opus-5.5", "4.00", "0.20", "20.00")]
+    [Arguments("claude-sonnet-5.5", "2.00", "0.20", "10.00")]
+    [Arguments("claude-fable-5.1", "10.00", "0.25", "50.00")]
+    [Arguments("claude-mythos-5.1", "10.00", "0.25", "50.00")]
+    [Arguments("claude-opus-5-5", "4.00", "0.20", "20.00")]
+    [Arguments("claude-sonnet-5-5", "2.00", "0.20", "10.00")]
+    [Arguments("claude-fable-5-1", "10.00", "0.25", "50.00")]
+    [Arguments("claude-mythos-5-1", "10.00", "0.25", "50.00")]
+    [Arguments("claude-haiku-4-5", "1.00", "0.10", "5.00")]
+    [Arguments("claude-opus-4-8", "5.00", "0.50", "25.00")]
+    [Arguments("claude-opus-4-7", "5.00", "0.50", "25.00")]
+    [Arguments("claude-opus-4-6", "5.00", "0.50", "25.00")]
+    [Arguments("claude-opus-4-5", "5.00", "0.50", "25.00")]
+    [Arguments("claude-opus-4-1", "15.00", "1.50", "75.00")]
+    [Arguments("claude-sonnet-4-6", "3.00", "0.30", "15.00")]
+    [Arguments("claude-sonnet-4-5", "3.00", "0.30", "15.00")]
+    [Arguments("claude-sonnet-5", "2.00", "0.20", "10.00")]
+    [Arguments("claude-opus-5", "5.00", "0.50", "25.00")]
+    [Arguments("claude-fable-5", "10.00", "1.00", "50.00")]
+    [Arguments("claude-mythos-5", "10.00", "1.00", "50.00")]
     public async Task CurrentModels_ChargeEachTokenCategoryAtPublishedRates(
         string model,
-        double inputPerMillion,
-        double cachedPerMillion,
-        double outputPerMillion
+        string inputPerMillion,
+        string cachedPerMillion,
+        string outputPerMillion
     )
     {
         // Guards the published rates independently, including reduced cache-read multipliers.
@@ -62,9 +63,15 @@ public sealed class CostEnricherTests
         var cachedResult = _enricher.Enrich(cached, "zeeq-agent");
         var outputResult = _enricher.Enrich(output, "zeeq-agent");
 
-        await Assert.That(inputResult.CostUsd).IsEqualTo((decimal)inputPerMillion / 10m);
-        await Assert.That(cachedResult.CostUsd).IsEqualTo((decimal)cachedPerMillion / 10m);
-        await Assert.That(outputResult.CostUsd).IsEqualTo((decimal)outputPerMillion / 10m);
+        await Assert
+            .That(inputResult.CostUsd)
+            .IsEqualTo(decimal.Parse(inputPerMillion, CultureInfo.InvariantCulture) / 10m);
+        await Assert
+            .That(cachedResult.CostUsd)
+            .IsEqualTo(decimal.Parse(cachedPerMillion, CultureInfo.InvariantCulture) / 10m);
+        await Assert
+            .That(outputResult.CostUsd)
+            .IsEqualTo(decimal.Parse(outputPerMillion, CultureInfo.InvariantCulture) / 10m);
         await Assert
             .That(cachedResult.CostSource)
             .IsEqualTo(AgentSessionEventCostSource.EstimatedFromTokens);

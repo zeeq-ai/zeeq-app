@@ -2,7 +2,7 @@
 
 Pulumi owns the installation, including database preparation, migrations and service rollout. The C# runtime exports its queue catalog; the installer does not duplicate routing rules.
 
-Use Node.js 24+, .NET 10, Docker BuildKit, AWS CLI v2 and Pulumi 3.267.0. Authenticate with an SSO profile. Run commands in this directory.
+Use Node.js 24+, .NET 11, Docker BuildKit, AWS CLI v2 and Pulumi 3.267.0. Authenticate with an SSO profile. Run commands in this directory.
 
 ```sh
 npm ci

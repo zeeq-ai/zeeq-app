@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
-using Danom;
 using Microsoft.Extensions.Logging;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
@@ -213,7 +212,7 @@ public sealed partial class NotionIngestRunner(
             await resolver.ResolveAsync(pageId, cancellationToken),
             job.Scope
         );
-        if (!resolvedLookup.TryGetT1(out var resolved))
+        if (resolvedLookup is not ResolvedNotionPage resolved)
         {
             return await HandleUnavailablePageAsync(resolvedLookup, job, pageId, cancellationToken);
         }
@@ -231,7 +230,7 @@ public sealed partial class NotionIngestRunner(
             await client.GetPageMarkdownAsync(pageId, cancellationToken),
             job.Scope
         );
-        if (!markdownLookup.TryGetT1(out var markdown))
+        if (markdownLookup is not NotionPageMarkdown markdown)
         {
             return await HandleUnavailablePageAsync(markdownLookup, job, pageId, cancellationToken);
         }
@@ -309,27 +308,41 @@ public sealed partial class NotionIngestRunner(
     /// the page disappeared; classifying it as <see cref="PageUnavailable"/> forces the caller to
     /// fail the page instead of deleting it and letting <c>DeleteUnstampedAsync</c> proceed.
     /// </remarks>
-    private static Choice<T, PageAbsent, PageUnavailable> ClassifyLookup<T>(
-        T? value,
-        ExternalSyncScope scope
-    )
-        where T : class =>
-        value is not null ? Choice<T, PageAbsent, PageUnavailable>.FromT1(value)
-        : scope is ExternalSyncScope.Incremental
-            ? Choice<T, PageAbsent, PageUnavailable>.FromT2(default)
-        : Choice<T, PageAbsent, PageUnavailable>.FromT3(default);
+    private union PageLookup<T>(T, PageAbsent, PageUnavailable)
+        where T : class;
+
+    private static PageLookup<T> ClassifyLookup<T>(T? value, ExternalSyncScope scope)
+        where T : class
+    {
+        if (value is not null)
+        {
+            return value;
+        }
+
+        if (scope is ExternalSyncScope.Incremental)
+        {
+            return new PageAbsent();
+        }
+
+        return new PageUnavailable();
+    }
 
     private async Task<PageOutcome> HandleUnavailablePageAsync<T>(
-        Choice<T, PageAbsent, PageUnavailable> outcome,
+        PageLookup<T> outcome,
         NotionIngestJob job,
         string pageId,
         CancellationToken cancellationToken
-    ) =>
-        outcome.TryGetT2(out _)
-            ? await DeleteAbsentPageAsync(job, pageId, cancellationToken)
-            : throw new InvalidOperationException(
+    )
+        where T : class =>
+        outcome switch
+        {
+            PageAbsent => await DeleteAbsentPageAsync(job, pageId, cancellationToken),
+            PageUnavailable => throw new InvalidOperationException(
                 $"Notion page '{pageId}' was discovered but could not be retrieved."
-            );
+            ),
+            T => throw new InvalidOperationException("Page lookup was available."),
+            null => throw new InvalidOperationException("Page lookup was uninitialized."),
+        };
 
     private readonly record struct PageAbsent;
 

@@ -32,8 +32,8 @@ RUN VITE_BASE=/web/ yarn --cwd ./src/web build
 #*----------------------------------------------------------------------------------
 # Stage 3: Build the .NET Server
 #*----------------------------------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/sdk:10.0.402 AS build-gcp
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0.402 AS build-aws
+FROM mcr.microsoft.com/dotnet/sdk:11.0.100 AS build-gcp
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:11.0.100 AS build-aws
 FROM build-${ZEEQ_BUILD_TARGET} AS build
 WORKDIR /srcroot
 ARG ZEEQ_BUILD_TARGET=gcp
@@ -85,7 +85,7 @@ RUN if [ "$ZEEQ_BUILD_TARGET" = aws ] && [ "$BUILDARCH" = arm64 ]; then export P
 #*----------------------------------------------------------------------------------
 # Stage 4: Build the .NET Runtime Image
 #*----------------------------------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.13 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0.0 AS runtime
 WORKDIR /app
 
 ARG ZEEQ_BUILD_TARGET=gcp
