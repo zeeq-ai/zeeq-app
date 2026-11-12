@@ -90,6 +90,8 @@ export const useCodeReviewEvaluationStore = defineStore(
       key: string;
     } | null = null;
     let datasetLoadRequestId = 0;
+    let targetRequestId = 0;
+    let targetRequestScope: string | null = null;
     let resolutionRequestId = 0;
     let resolutionRequestScope: string | null = null;
     let refreshEpoch = 0;
@@ -342,43 +344,67 @@ export const useCodeReviewEvaluationStore = defineStore(
       append = false,
       datasetId?: string,
     ) {
+      const requestId = ++targetRequestId;
       const orgId = activeOrganizationId.value;
       if (!orgId || !repositoryId) {
+        targetRequestScope = null;
+        targetRows.value = [];
+        targetNextCursor.value = null;
+        loadingTargets.value = false;
+        loadingMoreTargets.value = false;
         return;
       }
 
-      if (append) {
-        loadingMoreTargets.value = true;
-      } else {
-        loadingTargets.value = true;
+      const requestQuery = append ? targetQuery.value : query;
+      if (!append) {
         targetRows.value = [];
+        targetNextCursor.value = null;
         targetQuery.value = query;
       }
+      const requestScope = JSON.stringify([
+        orgId,
+        repositoryId,
+        requestQuery,
+        datasetId ?? null,
+      ]);
+      targetRequestScope = requestScope;
+      loadingTargets.value = !append;
+      loadingMoreTargets.value = append;
       targetError.value = null;
+      const isCurrentRequest = () =>
+        requestId === targetRequestId && targetRequestScope === requestScope;
       try {
         const response =
           await CodeReviewEvaluations.listCodeReviewEvaluationPrTargets(
             orgId,
             repositoryId,
             {
-              q: targetQuery.value || undefined,
+              q: requestQuery || undefined,
               datasetId,
               cursor: cursor ?? undefined,
               pageSize: 50,
             },
           );
+        if (!isCurrentRequest() || activeOrganizationId.value !== orgId) {
+          return;
+        }
         targetRows.value = append
           ? [...targetRows.value, ...response.items]
           : response.items;
         targetNextCursor.value = response.nextCursor ?? null;
       } catch (err: unknown) {
+        if (!isCurrentRequest() || activeOrganizationId.value !== orgId) {
+          return;
+        }
         targetError.value = evaluationErrorMessage(
           err,
           "Could not load pull requests.",
         );
       } finally {
-        loadingTargets.value = false;
-        loadingMoreTargets.value = false;
+        if (isCurrentRequest()) {
+          loadingTargets.value = false;
+          loadingMoreTargets.value = false;
+        }
       }
     }
 

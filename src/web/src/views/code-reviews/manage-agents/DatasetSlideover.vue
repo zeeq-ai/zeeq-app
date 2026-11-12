@@ -596,7 +596,10 @@ watch(
           captureToken: item.captureToken,
           preview: item.preview,
         },
-        undefined,
+        props.dataset.cases.find(
+          (evaluationCase) =>
+            Number(evaluationCase.pullRequestNumber) === pullRequestNumber,
+        ),
         props.reviewers.map((reviewer) => reviewer.id),
       );
       selectedPullRequestNumber.value = pullRequestNumber;

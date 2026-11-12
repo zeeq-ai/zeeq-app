@@ -54,6 +54,8 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
             CodeReviewEvaluationArtifact? reused = null;
             if (run.ParentRunId is { } parentId)
             {
+                // Admission copies candidate metadata only from this immutable parent row.
+                // A complete inherited candidate therefore has the same complete parent identity.
                 var parent = await results.FindAsync(org, parentId, item.CaseId, cancellationToken);
                 if (
                     parent is null

@@ -13,6 +13,7 @@ const apiMocks = vi.hoisted(() => ({
   getRun: vi.fn(),
   resolvePrs: vi.fn(),
   refreshCase: vi.fn(),
+  searchTargets: vi.fn(),
 }));
 
 vi.mock("@/api/generated", () => ({
@@ -26,6 +27,7 @@ vi.mock("@/api/generated", () => ({
     getCodeReviewEvaluationRun: apiMocks.getRun,
     resolveCodeReviewEvaluationPrTargets: apiMocks.resolvePrs,
     refreshCodeReviewEvaluationCase: apiMocks.refreshCase,
+    listCodeReviewEvaluationPrTargets: apiMocks.searchTargets,
   },
 }));
 
@@ -229,6 +231,57 @@ describe("evaluation dataset loading scope", () => {
 
     expect(store.selectedDataset?.id).toBe("dataset_B");
     expect(store.loadingDataset).toBe(false);
+  });
+});
+
+describe("evaluation PR target search scope", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+    useAppStore().user = testUser();
+  });
+
+  it("does not let a late old query replace rows or clear the newer search state", async () => {
+    const first = deferred<{
+      items: { pullRequestNumber: number }[];
+      nextCursor: string | null;
+    }>();
+    const second = deferred<{
+      items: { pullRequestNumber: number }[];
+      nextCursor: string | null;
+    }>();
+    apiMocks.searchTargets
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    const store = useCodeReviewEvaluationStore();
+
+    const firstSearch = store.searchTargets(
+      "repo_1",
+      "old query",
+      undefined,
+      false,
+      "dataset_A",
+    );
+    const secondSearch = store.searchTargets(
+      "repo_1",
+      "new query",
+      undefined,
+      false,
+      "dataset_B",
+    );
+
+    first.resolve({ items: [{ pullRequestNumber: 901 }], nextCursor: "old" });
+    await firstSearch;
+    expect(store.targetRows).toEqual([]);
+    expect(store.targetNextCursor).toBeNull();
+    expect(store.loadingTargets).toBe(true);
+
+    second.resolve({ items: [{ pullRequestNumber: 902 }], nextCursor: "next" });
+    await secondSearch;
+    expect(store.targetRows).toEqual([{ pullRequestNumber: 902 }]);
+    expect(store.targetNextCursor).toBe("next");
+    expect(store.loadingTargets).toBe(false);
+    expect(store.loadingMoreTargets).toBe(false);
   });
 });
 
