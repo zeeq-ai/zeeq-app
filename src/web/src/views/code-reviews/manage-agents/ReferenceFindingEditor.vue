@@ -25,6 +25,14 @@
       color="success"
       variant="subtle"
     />
+    <p
+      v-if="referenceState !== 'Expected' && findings.length > 0"
+      class="text-sm text-muted"
+      role="status"
+    >
+      Saving this state removes the expected findings. Switch back to Expected
+      before saving to keep them.
+    </p>
 
     <div
       v-if="referenceState === 'Expected'"

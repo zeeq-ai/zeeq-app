@@ -95,6 +95,23 @@ internal static class CodeReviewEvaluationCaseValidation
                 return "reference_reviewer_required";
             }
 
+            if (!Enum.IsDefined(set.State))
+            {
+                return "reference_state_invalid";
+            }
+
+            // Only an Expected set can carry expectations. The UI may keep fields in an open
+            // editor until Save, but it projects non-expected states to no findings; a direct
+            // store call that persists ReviewedClean/Unlabelled with findings is contradictory
+            // and would corrupt coverage accounting.
+            if (
+                set.State != Zeeq.Core.Models.CodeReviewEvaluationReferenceState.Expected
+                && set.Findings.Count > 0
+            )
+            {
+                return "reference_state_conflict";
+            }
+
             if (!reviewerIds.Add(set.ReviewerAgentId))
             {
                 return "reference_reviewer_duplicate";

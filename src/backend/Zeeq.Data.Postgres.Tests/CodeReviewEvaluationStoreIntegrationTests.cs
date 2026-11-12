@@ -458,6 +458,71 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
     }
 
     [Test]
+    public async Task SaveAsync_RejectsNonExpectedReferenceStateWithFindings()
+    {
+        var (repository, agent) = await SeedRepositoryAsync();
+        var store = Datasets;
+        var dataset = await store.CreateAsync(
+            NewDataset(repository, "state-conflict-key"),
+            CancellationToken.None
+        );
+
+        foreach (
+            var state in new[]
+            {
+                CodeReviewEvaluationReferenceState.ReviewedClean,
+                CodeReviewEvaluationReferenceState.Unlabelled,
+            }
+        )
+        {
+            var contradictory = new CodeReviewEvaluationReferenceSet(
+                agent.Id,
+                state,
+                [
+                    new CodeReviewEvaluationReferenceFinding(
+                        "ref_conflict",
+                        "Contradictory label",
+                        "A non-expected state cannot carry findings.",
+                        CodeReviewEvaluationFindingSeverity.Major,
+                        "src/Search.cs",
+                        12,
+                        CodeReviewEvaluationReferenceOrigin.Manual,
+                        null,
+                        null,
+                        "usr_1",
+                        _clock.GetUtcNow()
+                    ),
+                ]
+            );
+
+            var result = await store.SaveAsync(
+                NewSaveRequest(dataset, [NewCase(901, agent.Id, "sha-state", [contradictory])]),
+                CancellationToken.None
+            );
+
+            await Assert
+                .That(result.Outcome)
+                .IsEqualTo(CodeReviewEvaluationDatasetSaveOutcome.InvalidCase);
+        }
+
+        // Nothing persisted, and the version never advanced.
+        _context.ChangeTracker.Clear();
+        var persisted = await _context
+            .CodeReviewEvaluationDatasets.AsNoTracking()
+            .SingleAsync(item =>
+                item.OrganizationId == dataset.OrganizationId && item.Id == dataset.Id
+            );
+        await Assert.That(persisted.Version).IsEqualTo(1);
+        await Assert
+            .That(
+                await _context
+                    .CodeReviewEvaluationCases.AsNoTracking()
+                    .CountAsync(item => item.DatasetId == dataset.Id)
+            )
+            .IsEqualTo(0);
+    }
+
+    [Test]
     public async Task SaveAsync_RejectsCaseIdPointingAtAnotherPullRequest()
     {
         var (repository, agent) = await SeedRepositoryAsync();
