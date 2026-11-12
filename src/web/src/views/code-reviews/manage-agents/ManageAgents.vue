@@ -43,7 +43,10 @@
         <section
           class="min-h-0 shrink-0 basis-60 flex-col border-r border-default lg:max-w-72 lg:basis-72"
           :class="
-            testWorkspaceActive ? 'hidden min-[1440px]:flex' : 'hidden lg:flex'
+            testWorkspaceActive &&
+            selectedManagementItemId !== managementFiltersItemId
+              ? 'hidden min-[1440px]:flex'
+              : 'hidden lg:flex'
           "
         >
           <div

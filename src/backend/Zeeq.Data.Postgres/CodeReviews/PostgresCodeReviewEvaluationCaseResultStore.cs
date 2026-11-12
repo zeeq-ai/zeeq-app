@@ -389,14 +389,14 @@ internal sealed class PostgresCodeReviewEvaluationCaseResultStore(
         Add(parameters, "error_code", request.ErrorCode);
         Add(parameters, "failure_message", request.FailureMessage);
 
-        // A reviewer failure happens before any candidate exists; a judge failure can only
-        // happen after the candidate was persisted and grading started. Mixing the two would let
-        // a late judge error masquerade as a reviewer error (or the reverse) and would break
-        // judge-only retry's candidate-reuse contract.
+        // A reviewer failure happens before any candidate exists. A judge failure requires a
+        // persisted candidate, and is allowed from `Reviewed` as well as `Grading`: the transition
+        // into grading can fail transiently after the candidate was written, and that failure
+        // must still be recordable or judge-only retry loses the case.
         var outcomeGuard =
             request.Outcome == CodeReviewEvaluationCaseOutcome.ReviewFailed
                 ? "AND c.candidate_storage_uri IS NULL AND c.phase IN ('Pending', 'Reviewing')"
-                : "AND c.phase = 'Grading' AND c.candidate_storage_uri IS NOT NULL";
+                : "AND c.phase IN ('Reviewed', 'Grading') AND c.candidate_storage_uri IS NOT NULL";
 
         return TransitionAsync(
             request.OrganizationId,
@@ -659,6 +659,7 @@ internal sealed class PostgresCodeReviewEvaluationCaseResultStore(
             .CodeReviewEvaluationCaseResults.TagWithOperationCallSite(
                 "code_review_evaluation_case_result.retry_parent_case"
             )
+            .AsNoTracking()
             .FirstOrDefaultAsync(
                 result =>
                     result.OrganizationId == request.OrganizationId

@@ -523,7 +523,11 @@ const caseProps = computed(() => ({
 watch(
   () => props.dataset.id,
   () => {
-    draft.value = createEvaluationDatasetDraft(props.dataset);
+    // The parent can mount this editor with unsaved changes or an adopted finding already
+    // staged. Opening the same dataset must not replace that draft with the saved baseline.
+    if (draft.value.datasetId !== props.dataset.id) {
+      draft.value = createEvaluationDatasetDraft(props.dataset);
+    }
     selectedPullRequestNumber.value =
       draft.value.cases[0]?.pullRequestNumber ?? null;
     activePane.value = "in-dataset";

@@ -1777,6 +1777,136 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
     }
 
     [Test]
+    public async Task RunStore_JudgeFailedAfterCandidateButBeforeGrading_IsRecordableAndRetryable()
+    {
+        var (repository, agent) = await SeedRepositoryAsync();
+        var dataset = await SeedDatasetWithCaseAsync(repository, agent, "judge-reviewed-key");
+        var store = Runs;
+
+        var parent = (
+            await store.AdmitAsync(
+                NewAdmission(dataset, agent, "judge-reviewed-parent"),
+                CancellationToken.None
+            )
+        ).Run!;
+        var caseId = (await store.FindAsync(
+            repository.OrganizationId,
+            parent.Id,
+            CancellationToken.None
+        ))!.Manifest.Cases.Single().CaseId;
+
+        var candidate = new CodeReviewEvaluationArtifact(
+            "postgres://reviewer-evaluations/org/repo/reviewed/output.xml",
+            new string('5', 64),
+            256
+        );
+
+        await store.TryClaimAsync(
+            repository.OrganizationId,
+            parent.Id,
+            "lease-j",
+            TimeSpan.FromMinutes(10),
+            CancellationToken.None
+        );
+        await Results.StartReviewAsync(
+            new(repository.OrganizationId, parent.Id, caseId, "lease-j"),
+            CancellationToken.None
+        );
+        await Results.RecordCandidateAsync(
+            new(
+                repository.OrganizationId,
+                parent.Id,
+                caseId,
+                "lease-j",
+                candidate,
+                1,
+                "[{\"id\":\"cand_1\"}]",
+                "{}",
+                9,
+                3,
+                0.02m
+            ),
+            CancellationToken.None
+        );
+
+        // The grading transition fails transiently. The candidate is persisted and the case is
+        // still Reviewed; a judge failure must be recordable from here.
+        var judgeFailure = await Results.RecordFailureAsync(
+            new(
+                repository.OrganizationId,
+                parent.Id,
+                caseId,
+                "lease-j",
+                CodeReviewEvaluationCaseOutcome.JudgeFailed,
+                "GradingTransitionFailed",
+                "Grading could not start"
+            ),
+            CancellationToken.None
+        );
+
+        await Assert.That(judgeFailure.Phase).IsEqualTo(CodeReviewEvaluationCasePhase.Reviewed);
+        await Assert.That(judgeFailure.Outcome).IsEqualTo(CodeReviewEvaluationCaseOutcome.JudgeFailed);
+        await Assert.That(judgeFailure.CandidateStorageUri).IsEqualTo(candidate.StorageUri);
+
+        await store.FinalizeAsync(
+            new(
+                repository.OrganizationId,
+                parent.Id,
+                "lease-j",
+                CodeReviewEvaluationRunState.Incomplete,
+                null,
+                null
+            ),
+            CancellationToken.None
+        );
+
+        _context.ChangeTracker.Clear();
+        var parentResult = await _context
+            .CodeReviewEvaluationCaseResults.AsNoTracking()
+            .SingleAsync(result =>
+                result.OrganizationId == repository.OrganizationId
+                && result.RunId == parent.Id
+                && result.ManifestCaseId == caseId
+            );
+        await Assert.That(parentResult.Outcome).IsEqualTo(CodeReviewEvaluationCaseOutcome.JudgeFailed);
+        await Assert.That(parentResult.CandidateStorageUri).IsEqualTo(candidate.StorageUri);
+        await Assert.That(parentResult.CandidateSha256).IsEqualTo(candidate.Sha256);
+        await Assert.That(parentResult.CandidateByteCount).IsEqualTo(candidate.ByteCount);
+
+        // Judge-only retry reuses the persisted parent candidate.
+        var retry = await store.AdmitRetryAsync(
+            new(
+                repository.OrganizationId,
+                parent.Id,
+                "judge-reviewed-retry",
+                "usr_1",
+                "build-test",
+                "prompt-v1",
+                "fingerprint-judge-reviewed-retry"
+            ),
+            CancellationToken.None
+        );
+        await Assert.That(retry.Outcome).IsEqualTo(CodeReviewEvaluationRunAdmissionOutcome.Admitted);
+
+        await store.TryClaimAsync(
+            repository.OrganizationId,
+            retry.Run!.Id,
+            "lease-jr",
+            TimeSpan.FromMinutes(10),
+            CancellationToken.None
+        );
+        var reused = await Results.StartGradingAsync(
+            new(repository.OrganizationId, retry.Run.Id, caseId, "lease-jr", candidate),
+            CancellationToken.None
+        );
+
+        await Assert.That(reused.Phase).IsEqualTo(CodeReviewEvaluationCasePhase.Grading);
+        await Assert.That(reused.CandidateStorageUri).IsEqualTo(candidate.StorageUri);
+        await Assert.That(reused.ReviewerInputTokens).IsEqualTo(9);
+        await Assert.That(reused.EstimatedCostUsd).IsEqualTo(0.02m);
+    }
+
+    [Test]
     public async Task RunStore_FailureOutcomeMustMatchExecutionStage()
     {
         var (repository, agent) = await SeedRepositoryAsync();

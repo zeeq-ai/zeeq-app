@@ -81,7 +81,12 @@ export const useCodeReviewEvaluationStore = defineStore(
       description?: string;
       key: string;
     } | null = null;
-    let pendingRunRequestKey: string | null = null;
+    let pendingRunRequest: {
+      organizationId: string;
+      repositoryId: string;
+      payload: string;
+      key: string;
+    } | null = null;
     let availabilityRequestId = 0;
 
     /** Availability is org-scoped and controls only durable evaluation actions. */
@@ -575,12 +580,24 @@ export const useCodeReviewEvaluationStore = defineStore(
         return null;
       }
 
-      if (!pendingRunRequestKey) {
-        pendingRunRequestKey = crypto.randomUUID();
+      const payload = JSON.stringify(request);
+      if (
+        !pendingRunRequest ||
+        pendingRunRequest.organizationId !== orgId ||
+        pendingRunRequest.repositoryId !== repositoryId ||
+        pendingRunRequest.payload !== payload
+      ) {
+        pendingRunRequest = {
+          organizationId: orgId,
+          repositoryId,
+          payload,
+          key: crypto.randomUUID(),
+        };
       }
+      const requestKey = pendingRunRequest.key;
       const fullRequest: CreateEvaluationRunRequest = {
         ...request,
-        requestKey: pendingRunRequestKey,
+        requestKey,
       };
 
       submittingRun.value = true;
@@ -593,7 +610,7 @@ export const useCodeReviewEvaluationStore = defineStore(
           repositoryId,
           fullRequest,
         );
-        pendingRunRequestKey = null;
+        if (pendingRunRequest?.key === requestKey) pendingRunRequest = null;
         await Promise.all([
           loadRuns(repositoryId, request.datasetId),
           loadRun(repositoryId, run.id),

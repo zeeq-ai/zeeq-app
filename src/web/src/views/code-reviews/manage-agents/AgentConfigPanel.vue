@@ -417,7 +417,7 @@ const emits = defineEmits<{
 }>();
 
 const { editorTheme, toggleTheme } = useMarkdownEditorTheme();
-const activeConfigurationTab = ref("test");
+const activeConfigurationTab = ref(props.agent ? "test" : "prompt");
 const compactWorkspace = useMediaQuery("(max-width: 1439px)");
 const reviewerItems = computed(() =>
   props.reviewers.map((reviewer) => ({

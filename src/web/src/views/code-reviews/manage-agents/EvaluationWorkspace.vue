@@ -1108,9 +1108,13 @@ function formatProvenance(value: PublicModelProvenance | null): string {
 }
 
 function provenanceCaption(cases: EvaluationRunCaseDto[]): string {
-  const first = cases[0];
-  if (!first) return "Reviewer: pending · Judge: pending";
-  return `Reviewer: ${formatProvenance(publicProvenance(first.reviewerProvenanceJson))} · Judge: ${formatProvenance(publicProvenance(first.judgeProvenanceJson))}`;
+  const reviewer = cases.find(
+    (item) => item.reviewerProvenanceJson,
+  )?.reviewerProvenanceJson;
+  const judge = cases.find(
+    (item) => item.judgeProvenanceJson,
+  )?.judgeProvenanceJson;
+  return `Reviewer: ${formatProvenance(publicProvenance(reviewer ?? null))} · Judge: ${formatProvenance(publicProvenance(judge ?? null))}`;
 }
 
 function optionalString(value: unknown): string | undefined {
