@@ -375,7 +375,7 @@
       @archive-dataset="archiveDataset"
       @create-dataset="startNewDataset"
       @case-selected="setHistoricalScope"
-      @close="datasetEditorOpen = false"
+      @close="closeDatasetEditor"
     />
 
     <EvaluationRevisionDiff
@@ -487,6 +487,7 @@ const historicalScope = ref<{
   reviewerId: string | null;
 }>({ caseId: null, pullRequestNumber: null, reviewerId: null });
 let historicalRequestId = 0;
+let refreshUiRequestId = 0;
 const revisionDiffOpen = ref(false);
 const datasetDraft = ref<EvaluationDatasetDraft | null>(null);
 const datasetEditorOpen = ref(false);
@@ -531,6 +532,8 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  invalidateDatasetCaptureRequests();
+  store.invalidateDatasetLoad();
   endPolling();
   window.removeEventListener("beforeunload", handleBeforeUnload);
 });
@@ -548,6 +551,8 @@ watch(
       datasetEditorOpen.value = true;
       return;
     }
+    invalidateDatasetCaptureRequests();
+    store.invalidateDatasetLoad();
     selectedDatasetId.value = null;
     selectedDataset.value = null;
     datasetDraft.value = null;
@@ -600,13 +605,20 @@ function endPolling() {
 }
 
 async function selectDataset(datasetId: string) {
+  invalidateDatasetCaptureRequests();
   selectedDatasetId.value = datasetId;
-  const loaded = await store.loadDataset(props.repositoryId, datasetId);
-  if (loaded) {
-    datasetDraft.value = createEvaluationDatasetDraft(loaded);
-    selectedRun.value = null;
-    await store.loadRuns(props.repositoryId, datasetId);
+  const repositoryId = props.repositoryId;
+  const loaded = await store.loadDataset(repositoryId, datasetId);
+  if (
+    !loaded ||
+    selectedDatasetId.value !== datasetId ||
+    props.repositoryId !== repositoryId
+  ) {
+    return;
   }
+  datasetDraft.value = createEvaluationDatasetDraft(loaded);
+  selectedRun.value = null;
+  await store.loadRuns(repositoryId, datasetId);
 }
 
 async function openDatasetEditor() {
@@ -614,6 +626,7 @@ async function openDatasetEditor() {
   if (!selectedDatasetId.value) {
     return;
   }
+  invalidateDatasetCaptureRequests();
   // Reopening the editor must retain staged captures and reference edits.
   if (datasetDraft.value?.datasetId === selectedDatasetId.value) {
     datasetEditorOpen.value = true;
@@ -653,6 +666,7 @@ function createDataset(name: string, description?: string) {
       if (!created) {
         return;
       }
+      invalidateDatasetCaptureRequests();
       selectedDatasetId.value = created.id;
       selectedReviewerId.value =
         props.agentId ?? props.reviewers[0]?.id ?? null;
@@ -672,7 +686,7 @@ function createDataset(name: string, description?: string) {
 }
 
 async function saveDatasetDraft(closeAfterSuccess = false) {
-  if (!datasetDraft.value) {
+  if (!datasetDraft.value || resolvingPrs.value || refreshingCaseId.value) {
     return;
   }
   const stagedPullRequestNumbers = new Set(
@@ -682,6 +696,7 @@ async function saveDatasetDraft(closeAfterSuccess = false) {
   );
   const saved = await store.saveDataset(props.repositoryId, datasetDraft.value);
   if (saved) {
+    invalidateDatasetCaptureRequests();
     const recapturedCaseIds = new Set(
       saved.cases
         .filter((item) =>
@@ -705,7 +720,7 @@ async function saveDatasetDraft(closeAfterSuccess = false) {
     }));
     resolutionResults.value = [];
     refreshCaptures.value = {};
-    if (closeAfterSuccess) datasetEditorOpen.value = false;
+    if (closeAfterSuccess) closeDatasetEditor();
     const currentCaseId = historicalScope.value.caseId;
     if (
       !closeAfterSuccess &&
@@ -722,7 +737,7 @@ async function archiveDataset() {
   if (!datasetId) return;
   const archived = await store.archiveDataset(props.repositoryId, datasetId);
   if (!archived) return;
-  datasetEditorOpen.value = false;
+  closeDatasetEditor();
   datasetDraft.value = null;
   selectedDatasetId.value = datasets.value[0]?.id ?? null;
   if (selectedDatasetId.value) await selectDataset(selectedDatasetId.value);
@@ -733,9 +748,20 @@ async function archiveDataset() {
 }
 
 function startNewDataset() {
-  datasetEditorOpen.value = false;
+  closeDatasetEditor();
   datasetDraft.value = null;
   showCreateDataset.value = true;
+}
+
+function closeDatasetEditor() {
+  invalidateDatasetCaptureRequests();
+  datasetEditorOpen.value = false;
+}
+
+function invalidateDatasetCaptureRequests() {
+  store.invalidateDatasetCaptureRequests();
+  refreshUiRequestId += 1;
+  refreshingCaseId.value = null;
 }
 
 async function loadCaseSnapshot(caseId: string) {
@@ -910,12 +936,17 @@ function resolvePrs(entries: string[]) {
 }
 
 async function refreshCase(caseId: string) {
-  if (!selectedDatasetId.value) {
+  const datasetId = selectedDatasetId.value;
+  if (!datasetId) {
     return;
   }
+  const requestId = ++refreshUiRequestId;
   refreshingCaseId.value = caseId;
-  await store.refreshCase(props.repositoryId, selectedDatasetId.value, caseId);
-  refreshingCaseId.value = null;
+  try {
+    await store.refreshCase(props.repositoryId, datasetId, caseId);
+  } finally {
+    if (requestId === refreshUiRequestId) refreshingCaseId.value = null;
+  }
 }
 
 function selectRevision(revisionId: string) {

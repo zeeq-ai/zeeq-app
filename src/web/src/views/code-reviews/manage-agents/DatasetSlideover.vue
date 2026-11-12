@@ -267,7 +267,13 @@
               icon="i-hugeicons-floppy-disk"
               color="primary"
               :loading="saving"
-              :disabled="!dirty || saving || !draft.name.trim()"
+              :disabled="
+                !dirty ||
+                saving ||
+                resolvingPrs ||
+                !!refreshingCaseId ||
+                !draft.name.trim()
+              "
               @click="emits('save', false)"
             />
           </div>
@@ -305,6 +311,7 @@
           label="Save"
           color="primary"
           :loading="saving"
+          :disabled="resolvingPrs || !!refreshingCaseId"
           @click="saveAndClose"
         />
       </div>

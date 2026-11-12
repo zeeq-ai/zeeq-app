@@ -89,6 +89,12 @@ export const useCodeReviewEvaluationStore = defineStore(
       payload: string;
       key: string;
     } | null = null;
+    let datasetLoadRequestId = 0;
+    let resolutionRequestId = 0;
+    let resolutionRequestScope: string | null = null;
+    let refreshEpoch = 0;
+    let refreshRequestId = 0;
+    const refreshRequestIds = new Map<string, number>();
     let availabilityRequestId = 0;
 
     /** Availability is org-scoped and controls only durable evaluation actions. */
@@ -172,9 +178,13 @@ export const useCodeReviewEvaluationStore = defineStore(
     }
 
     async function loadDataset(repositoryId: string, datasetId: string) {
+      const requestId = ++datasetLoadRequestId;
       const orgId = activeOrganizationId.value;
       if (!orgId || !repositoryId || !datasetId) {
-        selectedDataset.value = null;
+        if (requestId === datasetLoadRequestId) {
+          selectedDataset.value = null;
+          loadingDataset.value = false;
+        }
         return null;
       }
 
@@ -187,16 +197,28 @@ export const useCodeReviewEvaluationStore = defineStore(
             repositoryId,
             datasetId,
           );
+        if (
+          requestId !== datasetLoadRequestId ||
+          activeOrganizationId.value !== orgId
+        ) {
+          return null;
+        }
         selectedDataset.value = response.dataset;
         return response.dataset;
       } catch (err: unknown) {
+        if (
+          requestId !== datasetLoadRequestId ||
+          activeOrganizationId.value !== orgId
+        ) {
+          return null;
+        }
         datasetError.value = evaluationErrorMessage(
           err,
           "Could not load this dataset.",
         );
         return null;
       } finally {
-        loadingDataset.value = false;
+        if (requestId === datasetLoadRequestId) loadingDataset.value = false;
       }
     }
 
@@ -371,8 +393,20 @@ export const useCodeReviewEvaluationStore = defineStore(
         return [];
       }
 
+      const requestId = ++resolutionRequestId;
+      const requestScope = JSON.stringify([
+        orgId,
+        repositoryId,
+        datasetId,
+        expectedDatasetVersion,
+      ]);
+      resolutionRequestScope = requestScope;
       resolvingPrs.value = true;
       targetError.value = null;
+      resolutionResults.value = [];
+      const isCurrentRequest = () =>
+        requestId === resolutionRequestId &&
+        resolutionRequestScope === requestScope;
       try {
         const response =
           await CodeReviewEvaluations.resolveCodeReviewEvaluationPrTargets(
@@ -380,17 +414,39 @@ export const useCodeReviewEvaluationStore = defineStore(
             repositoryId,
             { datasetId, expectedDatasetVersion, entries },
           );
+        if (!isCurrentRequest() || activeOrganizationId.value !== orgId) {
+          return [];
+        }
         resolutionResults.value = response.items;
         return response.items;
       } catch (err: unknown) {
+        if (!isCurrentRequest() || activeOrganizationId.value !== orgId) {
+          return [];
+        }
         targetError.value = evaluationErrorMessage(
           err,
           "Could not resolve pull requests.",
         );
         return [];
       } finally {
-        resolvingPrs.value = false;
+        if (isCurrentRequest()) resolvingPrs.value = false;
       }
+    }
+
+    function invalidateDatasetCaptureRequests() {
+      resolutionRequestId += 1;
+      resolutionRequestScope = null;
+      resolutionResults.value = [];
+      resolvingPrs.value = false;
+      refreshEpoch += 1;
+      refreshRequestIds.clear();
+      refreshCaptures.value = {};
+      targetError.value = null;
+    }
+
+    function invalidateDatasetLoad() {
+      datasetLoadRequestId += 1;
+      loadingDataset.value = false;
     }
 
     async function refreshCase(
@@ -403,6 +459,18 @@ export const useCodeReviewEvaluationStore = defineStore(
         return null;
       }
 
+      const requestEpoch = refreshEpoch;
+      const requestId = ++refreshRequestId;
+      const requestScope = JSON.stringify([
+        orgId,
+        repositoryId,
+        datasetId,
+        caseId,
+      ]);
+      refreshRequestIds.set(requestScope, requestId);
+      const isCurrentRequest = () =>
+        requestEpoch === refreshEpoch &&
+        refreshRequestIds.get(requestScope) === requestId;
       try {
         const response =
           await CodeReviewEvaluations.refreshCodeReviewEvaluationCase(
@@ -411,12 +479,18 @@ export const useCodeReviewEvaluationStore = defineStore(
             datasetId,
             caseId,
           );
+        if (!isCurrentRequest() || activeOrganizationId.value !== orgId) {
+          return null;
+        }
         refreshCaptures.value = {
           ...refreshCaptures.value,
           [caseId]: response,
         };
         return response;
       } catch (err: unknown) {
+        if (!isCurrentRequest() || activeOrganizationId.value !== orgId) {
+          return null;
+        }
         targetError.value = evaluationErrorMessage(
           err,
           "Could not refresh this snapshot.",
@@ -764,11 +838,13 @@ export const useCodeReviewEvaluationStore = defineStore(
       clearAvailability,
       loadDatasets,
       loadDataset,
+      invalidateDatasetLoad,
       createDataset,
       saveDataset,
       archiveDataset,
       searchTargets,
       resolvePrs,
+      invalidateDatasetCaptureRequests,
       refreshCase,
       loadCaseSnapshot,
       loadRevisions,
