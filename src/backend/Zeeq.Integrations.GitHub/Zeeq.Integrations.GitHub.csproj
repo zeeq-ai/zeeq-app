@@ -25,4 +25,7 @@
     <ProjectReference Include="..\Zeeq.Core.Models\Zeeq.Core.Models.csproj" />
     <ProjectReference Include="..\Zeeq.Platform.CodeReviews\Zeeq.Platform.CodeReviews.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Zeeq.Integrations.GitHub.Tests" />
+  </ItemGroup>
 </Project>

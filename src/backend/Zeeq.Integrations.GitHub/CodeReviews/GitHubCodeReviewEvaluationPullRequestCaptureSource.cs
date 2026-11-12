@@ -1,3 +1,4 @@
+using System.Text;
 using Octokit;
 using Zeeq.Core.Models;
 using Zeeq.Platform.CodeReviews;
@@ -46,10 +47,21 @@ internal sealed class GitHubCodeReviewEvaluationPullRequestCaptureSource(
                     request.PullRequestNumber
                 );
 
-                var files = await client.PullRequest.Files(
-                    owner,
-                    repository,
-                    request.PullRequestNumber
+                var files = await FetchFilesWithinBudgetAsync(
+                    (page, pageToken) =>
+                        client.PullRequest.Files(
+                            owner,
+                            repository,
+                            request.PullRequestNumber,
+                            new ApiOptions
+                            {
+                                StartPage = page,
+                                PageCount = 1,
+                                PageSize = FilePageSize,
+                            }
+                        ),
+                    MeasureFileBytes,
+                    cancellationToken
                 );
 
                 // Re-read metadata after the file list so a push during capture is visible.
@@ -97,6 +109,64 @@ internal sealed class GitHubCodeReviewEvaluationPullRequestCaptureSource(
             "The pull request changed while it was being captured. Try again."
         );
     }
+
+    /// <summary>Files requested per Octokit page.</summary>
+    internal const int FilePageSize = 100;
+
+    /// <summary>
+    /// Fetches changed files page by page and stops as soon as the accumulated patch/path bytes
+    /// exceed the evaluation snapshot budget.
+    /// </summary>
+    /// <remarks>
+    /// The persisted snapshot limit is exact and includes envelope metadata; this pre-check is a
+    /// memory guard so a huge pull request never materializes every patch. Exceeding it is
+    /// reported as `snapshot_too_large`, and later pages are never requested. Head/base
+    /// stability is verified by the caller around this fetch.
+    /// </remarks>
+    internal static async Task<IReadOnlyList<T>> FetchFilesWithinBudgetAsync<T>(
+        Func<int, CancellationToken, Task<IReadOnlyList<T>>> fetchPage,
+        Func<T, long> measureBytes,
+        CancellationToken cancellationToken
+    )
+    {
+        var files = new List<T>();
+        long accumulatedBytes = 0;
+
+        for (var page = 1; ; page++)
+        {
+            // Octokit's Files overload does not take a token, so stop between pages.
+            cancellationToken.ThrowIfCancellationRequested();
+            var batch = await fetchPage(page, cancellationToken);
+
+            foreach (var file in batch)
+            {
+                accumulatedBytes += measureBytes(file);
+
+                if (accumulatedBytes > CodeReviewEvaluationLimits.MaxSnapshotBytes)
+                {
+                    throw new CodeReviewEvaluationCaptureException(
+                        "snapshot_too_large",
+                        "The pull request exceeds the 5 MiB evaluation snapshot limit."
+                    );
+                }
+
+                files.Add(file);
+            }
+
+            if (batch.Count < FilePageSize)
+            {
+                break;
+            }
+        }
+
+        return files;
+    }
+
+    /// <summary>Bytes contributed by one file's path metadata and patch text.</summary>
+    internal static long MeasureFileBytes(PullRequestFile file) =>
+        Encoding.UTF8.GetByteCount(file.FileName ?? string.Empty)
+        + Encoding.UTF8.GetByteCount(file.PreviousFileName ?? string.Empty)
+        + Encoding.UTF8.GetByteCount(file.Patch ?? string.Empty);
 
     private CodeReviewEvaluationSnapshot BuildSnapshot(
         CodeReviewEvaluationCaptureRequest request,
