@@ -354,6 +354,14 @@ function assessment(result: EvaluationRunCaseDto, referenceId: string): string {
   );
 }
 function statusLabel(result: EvaluationRunCaseDto): string {
+  // Reference labels are terminal assessment states, not execution progress.
+  if (result.outcome === "None") {
+    if (result.phase === "Pending") return "Queued";
+    if (result.phase === "Reviewing") return "Running";
+    if (result.phase === "Reviewed") return "Awaiting grade";
+    return result.phase;
+  }
+  if (result.outcome === "Cancelled") return "Cancelled";
   if (result.outcome === "Skipped")
     return `Skipped${result.errorCode ? ` · ${result.errorCode}` : ""}`;
   if (result.outcome === "ReviewFailed") return "Review failed";
@@ -364,7 +372,6 @@ function statusLabel(result: EvaluationRunCaseDto): string {
   )
     return "Unlabelled";
   if (result.references.state === "ReviewedClean") return "Reviewed clean";
-  if (result.outcome === "Cancelled") return "Cancelled";
   return result.outcome === "Graded" ? "Graded" : result.phase;
 }
 </script>

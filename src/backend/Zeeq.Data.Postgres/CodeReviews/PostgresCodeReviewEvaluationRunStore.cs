@@ -229,6 +229,12 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
                 && result.RunId == request.ParentRunId
                 && result.DisabledAtUtc == null
             )
+            .Select(result => new
+            {
+                result.ManifestCaseId,
+                result.Phase,
+                result.Outcome,
+            })
             .ToArrayAsync(cancellationToken);
 
         // Failed and interrupted cases are retryable. A cancelled case is interrupted: an
@@ -431,6 +437,9 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
             return new(CodeReviewEvaluationRunClaimOutcome.Claimed, detail.Run, detail.Manifest);
         }
 
+        // NOTE: Expired Running leases are intentionally not reclaimed automatically. The
+        // operator uses Abandon (which rejects live leases) and then retries the interrupted
+        // subset as a child run. This preserves old reports and avoids implicit provider replay.
         var run = detail.Run;
         if (
             run.State == CodeReviewEvaluationRunState.Running

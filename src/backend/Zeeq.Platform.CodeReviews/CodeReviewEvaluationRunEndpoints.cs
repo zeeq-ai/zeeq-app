@@ -501,6 +501,9 @@ public sealed class EvaluationRunHandler(
         var detail = await FindAsync(org, repo, runId, ct);
         if (detail is null)
             return TypedResults.NotFound();
+        // NOTE: A manifest contains at most 25 cases. The report needs candidate findings,
+        // matches and provenance together; keep this bounded read rather than introducing
+        // a second persistence contract solely to omit a few scalar columns.
         var rows = (await results.ListForRunAsync(org, runId, ct)).ToDictionary(x =>
             x.ManifestCaseId
         );

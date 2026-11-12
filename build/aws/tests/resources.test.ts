@@ -76,13 +76,35 @@ test("Pulumi owns queues and native DLQs; runtime IAM cannot create or delete qu
   });
 
   const queues = resources.filter((r) => r.type === "aws:sqs/queue:Queue");
-  assert.equal(queues.length, 52);
-  assert.equal(queues.filter((q) => q.inputs.redrivePolicy).length, 26);
+  assert.equal(queues.length, 58);
+  assert.equal(queues.filter((q) => q.inputs.redrivePolicy).length, 29);
 
   assert.equal(
     queues.filter((q) => q.inputs.messageRetentionSeconds === 1209600).length,
-    26,
+    29,
   );
+
+  const evaluationQueueNames = [
+    "test-install-code-review_evaluation_run_priority_00",
+    "test-install-code-review_evaluation_run_default_00",
+    "test-install-code-review_evaluation_run_low_00",
+  ];
+  const evaluationResources = queues.filter((q) =>
+    q.inputs.name?.startsWith("test-install-code-review_evaluation_run_"),
+  );
+  assert.deepEqual(
+    evaluationResources.map((q) => q.inputs.name).sort(),
+    evaluationQueueNames.flatMap((name) => [name, `${name}-dlq`]).sort(),
+  );
+  for (const name of evaluationQueueNames) {
+    const queue = evaluationResources.find((q) => q.inputs.name === name)!;
+    const dlq = evaluationResources.find((q) => q.inputs.name === `${name}-dlq`)!;
+    assert.deepEqual(JSON.parse(queue.inputs.redrivePolicy), {
+      deadLetterTargetArn: `arn:aws:test::123456789012:${dlq.name}`,
+      maxReceiveCount: 5,
+    });
+    assert.equal(dlq.inputs.messageRetentionSeconds, 1209600);
+  }
 
   const policies = resources.filter(
     (r) => r.name === "web-permissions" || r.name === "worker-permissions",

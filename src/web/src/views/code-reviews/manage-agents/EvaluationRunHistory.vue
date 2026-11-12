@@ -88,7 +88,7 @@
                   @click="requestAction(run, 'cancel')"
                 />
                 <UButton
-                  v-if="run.state === 'Queued'"
+                  v-if="run.state === 'Queued' || run.state === 'Running'"
                   label="Abandon"
                   size="xs"
                   color="neutral"
@@ -99,10 +99,7 @@
                   @click="requestAction(run, 'abandon')"
                 />
                 <UButton
-                  v-if="
-                    run.state === 'Incomplete' &&
-                    Number(run.counts.failedCaseCount) > 0
-                  "
+                  v-if="canRetryEvaluationRun(run)"
                   label="Retry failed"
                   size="xs"
                   color="neutral"
@@ -155,6 +152,7 @@
 
 <script setup lang="ts">
 import type { EvaluationRunDto } from "@/api/generated";
+import { canRetryEvaluationRun } from "./evaluation-view-models";
 
 type RunAction = "cancel" | "abandon" | "retry";
 
@@ -182,14 +180,14 @@ const confirmTitle = computed(() =>
   pendingAction.value === "retry"
     ? "Retry failed cases?"
     : pendingAction.value === "abandon"
-      ? "Abandon queued evaluation?"
+      ? "Abandon evaluation?"
       : "Cancel evaluation?",
 );
 const confirmDescription = computed(() =>
   pendingAction.value === "retry"
     ? "This creates a new report for failed or interrupted cases only. Successful cases and the parent report remain unchanged."
     : pendingAction.value === "abandon"
-      ? "The queued run will stop waiting for a worker. You can submit a new run after it is abandoned."
+      ? "Only queued runs or interrupted runs with an expired worker lease can be abandoned. A live worker remains protected. Finished results are kept, and failed or interrupted cases can be retried afterward."
       : "No new cases will start. Completed case results remain in this run.",
 );
 const confirmButtonLabel = computed(() =>

@@ -135,7 +135,26 @@ public sealed partial class CodeReviewEvaluationPrTargetService(
                         continue;
                     }
 
-                    AddParsed(parsed, fragment, int.Parse(match.Groups["number"].Value));
+                    // A hostile or malformed URL can carry a number far beyond int range.
+                    // Overflow must be a per-entry validation error, never a batch failure.
+                    if (TryParseNumber(match.Groups["number"].Value, out var urlNumber))
+                    {
+                        AddParsed(parsed, fragment, urlNumber);
+                    }
+                    else
+                    {
+                        invalid.Add(
+                            new(
+                                fragment,
+                                null,
+                                null,
+                                null,
+                                "pr_invalid_entry",
+                                "Enter a pull request number or a link to a pull request in this repository."
+                            )
+                        );
+                    }
+
                     continue;
                 }
 

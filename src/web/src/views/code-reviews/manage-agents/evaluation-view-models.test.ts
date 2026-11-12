@@ -9,6 +9,7 @@ import type {
 import {
   addCapturedEvaluationCase,
   buildEvaluationDatasetSaveRequest,
+  canRetryEvaluationRun,
   countEvaluationDatasetDraftChanges,
   createEvaluationDatasetDraft,
   getEvaluationCaseGradeCounts,
@@ -280,3 +281,42 @@ function capturePreview(
     ...overrides,
   };
 }
+
+describe("evaluation recovery actions", () => {
+  const counts = {
+    caseCount: 3,
+    gradedCaseCount: 1,
+    skippedCaseCount: 0,
+    failedCaseCount: 0,
+    unlabelledCaseCount: 0,
+    matchedReferenceCount: 0,
+    missedReferenceCount: 0,
+    expectedReferenceCount: 0,
+    additionalFindingCount: 0,
+  };
+  it("offers failed-subset retry after explicit interruption recovery", () => {
+    for (const state of [
+      "Abandoned",
+      "Cancelled",
+      "DispatchFailed",
+      "Incomplete",
+    ] as const)
+      expect(canRetryEvaluationRun({ state, counts })).toBe(true);
+    for (const state of ["Queued", "Running", "Completed"] as const)
+      expect(canRetryEvaluationRun({ state, counts })).toBe(false);
+  });
+  it("never retries successful, skipped or unlabelled cases", () => {
+    expect(
+      canRetryEvaluationRun({
+        state: "Abandoned",
+        counts: { ...counts, skippedCaseCount: 1, unlabelledCaseCount: 1 },
+      }),
+    ).toBe(false);
+    expect(
+      canRetryEvaluationRun({
+        state: "Incomplete",
+        counts: { ...counts, gradedCaseCount: 3 },
+      }),
+    ).toBe(false);
+  });
+});

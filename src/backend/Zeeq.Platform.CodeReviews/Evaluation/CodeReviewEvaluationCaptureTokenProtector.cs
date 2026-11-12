@@ -105,70 +105,10 @@ public sealed class CodeReviewEvaluationCaptureTokenProtector(
     /// <see langword="true"/> when the token is authentic and unexpired. <see langword="false"/>
     /// when it is missing, malformed, tampered or expired; callers must not reveal which.
     /// </returns>
-    public bool TryUnprotect(string? token, out CodeReviewEvaluationCaptureTokenPayload? payload)
-    {
-        payload = null;
-
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            return false;
-        }
-
-        byte[] tokenBytes;
-        try
-        {
-            tokenBytes = DecodeBase64Url(token);
-        }
-        catch (FormatException)
-        {
-            return false;
-        }
-
-        if (tokenBytes.Length < CiphertextStartIndex || tokenBytes[VersionIndex] != Version)
-        {
-            return false;
-        }
-
-        var nonce = tokenBytes.AsSpan(NonceStartIndex, NonceSize);
-        var tag = tokenBytes.AsSpan(TagStartIndex, TagSize);
-        var ciphertext = tokenBytes.AsSpan(CiphertextStartIndex);
-        var plaintext = new byte[ciphertext.Length];
-
-        try
-        {
-            using var aes = new AesGcm(GetKey(), TagSize);
-            aes.Decrypt(nonce, ciphertext, tag, plaintext, AssociatedData);
-            payload = JsonSerializer.Deserialize<CodeReviewEvaluationCaptureTokenPayload>(
-                plaintext,
-                SerializerOptions
-            );
-        }
-        catch (CryptographicException)
-        {
-            return false;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-
-        if (
-            payload
-                is not {
-                    Version: Version,
-                    Purpose: Purpose,
-                    ExpiresAtUtc: var expiresAtUtc,
-                    Capture: not null,
-                }
-            || expiresAtUtc <= timeProvider.GetUtcNow()
-        )
-        {
-            payload = null;
-            return false;
-        }
-
-        return true;
-    }
+    public bool TryUnprotect(
+        string? token,
+        out CodeReviewEvaluationCaptureTokenPayload? payload
+    ) => TryUnprotectCore(token, out payload, validateExpiry: true);
 
     /// <summary>
     /// Decrypts a capture token without applying expiry, so an expired draft can return an
@@ -177,29 +117,25 @@ public sealed class CodeReviewEvaluationCaptureTokenProtector(
     public bool TryUnprotectIgnoringExpiry(
         string? token,
         out CodeReviewEvaluationCaptureTokenPayload? payload
-    )
-    {
-        var expiresAtUtc =
-            timeProvider.GetUtcNow() - CodeReviewEvaluationLimits.CaptureTokenLifetime * 2;
-        var probe = TryUnprotectCore(token, out payload, validateExpiry: false);
-        _ = expiresAtUtc;
-        return probe;
-    }
+    ) => TryUnprotectCore(token, out payload, validateExpiry: false);
 
     /// <summary>Returns the configured token lifetime.</summary>
     public static TimeSpan Lifetime => CodeReviewEvaluationLimits.CaptureTokenLifetime;
 
+    /// <summary>
+    /// Single decrypt path shared by the expiring and non-expiring readers.
+    /// </summary>
+    /// <remarks>
+    /// Tampering, a wrong key or purpose, malformed JSON and an unsupported version all return
+    /// false without revealing which check failed. Expiry is the only difference between the two
+    /// callers; when it is enforced an expired token also clears the payload.
+    /// </remarks>
     private bool TryUnprotectCore(
         string? token,
         out CodeReviewEvaluationCaptureTokenPayload? payload,
         bool validateExpiry
     )
     {
-        if (validateExpiry)
-        {
-            return TryUnprotect(token, out payload);
-        }
-
         payload = null;
 
         if (string.IsNullOrWhiteSpace(token))
@@ -245,7 +181,19 @@ public sealed class CodeReviewEvaluationCaptureTokenProtector(
             return false;
         }
 
-        return payload is { Version: Version, Purpose: Purpose, Capture: not null };
+        if (payload is not { Version: Version, Purpose: Purpose, Capture: not null })
+        {
+            payload = null;
+            return false;
+        }
+
+        if (validateExpiry && payload.ExpiresAtUtc <= timeProvider.GetUtcNow())
+        {
+            payload = null;
+            return false;
+        }
+
+        return true;
     }
 
     private byte[] GetKey()

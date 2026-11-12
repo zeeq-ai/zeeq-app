@@ -4,6 +4,7 @@ import type {
   CodeReviewEvaluationDatasetDetailDto,
   CodeReviewEvaluationReferenceSetDto,
   EvaluationRunCaseDto,
+  EvaluationRunDto,
   SaveCodeReviewEvaluationDatasetRequest,
 } from "@/api/generated";
 
@@ -325,4 +326,22 @@ function sameReferenceSets(
   right: CodeReviewEvaluationReferenceSetDto[],
 ): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+/** Interrupted terminal runs can retry only cases without a successful final outcome. */
+export function canRetryEvaluationRun(
+  run: Pick<EvaluationRunDto, "state" | "counts">,
+): boolean {
+  if (
+    !["Incomplete", "Abandoned", "Cancelled", "DispatchFailed"].includes(
+      run.state,
+    )
+  )
+    return false;
+  return (
+    Number(run.counts.caseCount) >
+    Number(run.counts.gradedCaseCount) +
+      Number(run.counts.skippedCaseCount) +
+      Number(run.counts.unlabelledCaseCount)
+  );
 }

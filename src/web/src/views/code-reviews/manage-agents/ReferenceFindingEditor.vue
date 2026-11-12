@@ -234,6 +234,8 @@ function addFinding() {
     return;
   }
 
+  // NOTE: Empty fields are valid while editing. Save validates the completed payload on
+  // the server and preserves this draft on failure; a string DTO does not imply nonempty text.
   const finding: CodeReviewEvaluationReferenceFindingDto = {
     id: crypto.randomUUID(),
     title: "",

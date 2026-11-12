@@ -10,9 +10,11 @@ namespace Zeeq.Platform.CodeReviews;
 /// Canonical content form for reviewer agent revisions.
 /// </summary>
 /// <remarks>
-/// Deduplication compares configuration content, not row identity or labels. Status-only
-/// saves and unrelated field updates must not create new revisions, so the hash ignores
-/// timestamps and operator labels and covers exactly the behavior-bearing configuration.
+/// Deduplication compares configuration content, not row identity or labels. Timestamps and
+/// operator labels are excluded. <c>Enabled</c> IS included: the stored revision must be a
+/// faithful snapshot of the content that produced its hash, so two rows can never share a hash
+/// while differing in stored status. A no-op save of identical content still deduplicates;
+/// enabling or disabling records one honest revision rather than reusing a stale snapshot.
 /// </remarks>
 public static class CodeReviewerAgentRevisionContent
 {
@@ -44,27 +46,27 @@ public static class CodeReviewerAgentRevisionContent
     /// </remarks>
     public static string ComputeHash(CodeReviewerAgentRevisionConfiguration configuration)
     {
-        var promptContent = new HashProjection(
+        var content = new HashProjection(
             configuration.DisplayName,
             configuration.ReviewFacet,
             configuration.ModelTier,
             configuration.Prompt,
+            configuration.Enabled,
             configuration.ActivationConfiguration
         );
 
         return Convert.ToHexStringLower(
-            SHA256.HashData(
-                Encoding.UTF8.GetBytes(JsonSerializer.Serialize(promptContent, Options))
-            )
+            SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(content, Options)))
         );
     }
 
-    /// <summary>Prompt-bearing projection used only for content hashing.</summary>
+    /// <summary>Canonical projection used only for content hashing.</summary>
     private sealed record HashProjection(
         string DisplayName,
         string ReviewFacet,
         CodeReviewModelTier ModelTier,
         string Prompt,
+        bool Enabled,
         CodeReviewerActivationConfiguration ActivationConfiguration
     );
 
