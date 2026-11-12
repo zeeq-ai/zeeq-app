@@ -3748,6 +3748,1376 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/code-reviews/evaluation-availability": {
+      "get": {
+        "tags": [
+          "Code Reviews"
+        ],
+        "summary": "Get reviewer evaluation availability.",
+        "operationId": "GetCodeReviewEvaluationAvailability",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEvaluationAvailabilityResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/evaluation-datasets": {
+      "get": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "summary": "List evaluation datasets.",
+        "description": "Returns the reviewer-backtesting datasets for one repository, most recently\nupdated first. Archived datasets are excluded unless `includeArchived` is true.\n\nRestricted to organization owners and admins.",
+        "operationId": "ListCodeReviewEvaluationDatasets",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "includeArchived",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEvaluationDatasetListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "summary": "Create an evaluation dataset.",
+        "description": "Creates a persisted, named dataset so curation can start immediately. The call is\nidempotent on `createRequestKey`: a retry from the same repository returns the same\ndataset instead of creating a duplicate. Replaying the key from a different\nrepository returns `409 create_request_key_conflict` and leaves the original\ndataset untouched. Add-PR resolution requires this persisted dataset id.",
+        "operationId": "CreateCodeReviewEvaluationDataset",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCodeReviewEvaluationDatasetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEvaluationDatasetResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/evaluation-datasets/{datasetId}": {
+      "get": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "summary": "Get an evaluation dataset.",
+        "description": "Returns one dataset with its captured cases and reference expectations. Capture\nidentities are server-owned and immutable; labels are stored per reviewer agent.",
+        "operationId": "GetCodeReviewEvaluationDataset",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "datasetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEvaluationDatasetResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "summary": "Save an evaluation dataset draft.",
+        "description": "Applies one complete dataset draft under the expected version: membership,\nreference expectations and capture installs are installed together, and the\nversion increments exactly once. A stale expected version returns `409` and\nnothing is written. Capture tokens are required for new membership and are\nrejected once expired or reused.",
+        "operationId": "SaveCodeReviewEvaluationDataset",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "datasetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SaveCodeReviewEvaluationDatasetRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEvaluationDatasetResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "summary": "Archive an evaluation dataset.",
+        "description": "Archives the dataset. Existing runs, results and artifacts stay readable with\ntheir original identities; nothing is cascaded or deleted.",
+        "operationId": "ArchiveCodeReviewEvaluationDataset",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "datasetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/evaluation-pr-targets": {
+      "get": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "summary": "Browse pull requests for a dataset.",
+        "description": "Returns known pull requests for the repository with server-side search and\ncursor pagination. Browsing never stages or mutates anything.",
+        "operationId": "ListCodeReviewEvaluationPrTargets",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "datasetId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEvaluationPrTargetListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/evaluation-pr-targets/resolve": {
+      "post": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "summary": "Resolve and stage pull request entries.",
+        "description": "Resolves each manual entry independently and stages its snapshot capture. A\nfailing entry reports its own error and never clears the other valid choices.\nSuccessful entries return an opaque capture token that Save requires.",
+        "operationId": "ResolveCodeReviewEvaluationPrTargets",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ResolveCodeReviewEvaluationPrTargetsRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolveCodeReviewEvaluationPrTargetsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/evaluation-datasets/{datasetId}/cases/{caseId}/snapshot": {
+      "get": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "summary": "Get a saved case capture.",
+        "description": "Returns the immutable snapshot captured for one dataset case, so a diff view can\nrender stored code without a live provider call. The artifact path comes from the\nserver-side case row; callers never supply a storage URI. Available immediately\nafter capture, before any evaluation run.\n\nRestricted to organization owners and admins.",
+        "operationId": "GetCodeReviewEvaluationCaseSnapshot",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "datasetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEvaluationCaseSnapshotResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/evaluation-datasets/{datasetId}/cases/{caseId}/refresh": {
+      "post": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "summary": "Stage a fresh capture for one case.",
+        "description": "Captures the pull request again and stages it without persisting anything. A\nlater Save with the returned token keeps the case id and resets its reference\nexpectations to unlabelled, because the code changed.",
+        "operationId": "RefreshCodeReviewEvaluationCase",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "datasetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshCodeReviewEvaluationCaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/agents/{agentId}/revisions": {
+      "get": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "summary": "List reviewer revisions.",
+        "description": "Returns up to the latest 200 saved reviewer configurations, newest first.\nThis v1 picker has no continuation cursor; existing reports retain older tested\ncontent. An agent without revisions gets an initial snapshot on first view;\nno batch backfill runs.",
+        "operationId": "ListCodeReviewerAgentRevisions",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewerAgentRevisionListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/agents/{agentId}/revisions/{revisionId}": {
+      "get": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "summary": "Get a reviewer revision.",
+        "description": "Returns one immutable revision's full configuration for the read-only diff\nview. Selecting a revision never restores or deploys it.",
+        "operationId": "GetCodeReviewerAgentRevision",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "revisionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewerAgentRevisionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repoId}/evaluation-runs": {
+      "post": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "operationId": "CreateCodeReviewEvaluationRun",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repoId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEvaluationRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRunDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRunConflictDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "operationId": "ListCodeReviewEvaluationRuns",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repoId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "datasetId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursorId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRunListDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repoId}/evaluation-runs/{runId}": {
+      "get": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "operationId": "GetCodeReviewEvaluationRun",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repoId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRunDetailDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repoId}/evaluation-runs/{runId}/cancel": {
+      "post": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "operationId": "CancelCodeReviewEvaluationRun",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repoId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRunDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repoId}/evaluation-runs/{runId}/abandon": {
+      "post": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "operationId": "AbandonCodeReviewEvaluationRun",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repoId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRunDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repoId}/evaluation-runs/{runId}/retry-failed": {
+      "post": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "operationId": "RetryCodeReviewEvaluationRun",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repoId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetryEvaluationRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRunDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvaluationRunConflictDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repoId}/evaluation-runs/{runId}/cases/{caseId}/snapshot": {
+      "get": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "operationId": "GetCodeReviewEvaluationSnapshot",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repoId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEvaluationSnapshot"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repoId}/evaluation-runs/{runId}/cases/{caseId}/candidate": {
+      "get": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "operationId": "GetCodeReviewEvaluationCandidate",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repoId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "caseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/libraries/{name}/documents": {
       "get": {
         "tags": [
@@ -9324,6 +10694,26 @@
         },
         "description": "Error response for code-review API validation failures."
       },
+      "CodeReviewerActivationConfiguration": {
+        "type": "object",
+        "properties": {
+          "includedFiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewFileMatchCriteria"
+            },
+            "description": "Optional allowlist rules. Empty means the agent can review all in-scope files."
+          },
+          "excludedFiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewFileMatchCriteria"
+            },
+            "description": "Deny rules that always win over includes."
+          }
+        },
+        "description": "File activation rules for one persisted code reviewer agent."
+      },
       "CodeReviewerActivationConfigurationDto": {
         "required": [
           "includedFiles",
@@ -9445,6 +10835,181 @@
         },
         "description": "Response for a single persisted reviewer-agent mutation."
       },
+      "CodeReviewerAgentRevisionConfiguration": {
+        "required": [
+          "displayName",
+          "reviewFacet",
+          "modelTier",
+          "prompt",
+          "enabled",
+          "activationConfiguration"
+        ],
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "description": "Reviewer name at capture time."
+          },
+          "reviewFacet": {
+            "type": "string",
+            "description": "Review facet at capture time."
+          },
+          "modelTier": {
+            "description": "Semantic model tier at capture time.",
+            "$ref": "#/components/schemas/CodeReviewModelTier"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Reviewer instructions at capture time."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the agent was enabled at capture time."
+          },
+          "activationConfiguration": {
+            "description": "File activation rules at capture time.",
+            "$ref": "#/components/schemas/CodeReviewerActivationConfiguration"
+          }
+        },
+        "description": "Reviewer configuration content captured by a saved revision."
+      },
+      "CodeReviewerAgentRevisionDto": {
+        "required": [
+          "id",
+          "agentId",
+          "label",
+          "contentHash",
+          "createdAtUtc",
+          "createdByUserId",
+          "displayName",
+          "reviewFacet",
+          "modelTier",
+          "prompt",
+          "enabled",
+          "activationConfiguration"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Immutable generated revision id."
+          },
+          "agentId": {
+            "type": "string",
+            "description": "Reviewer agent the revision belongs to."
+          },
+          "label": {
+            "type": "string",
+            "description": "Optional operator label. Empty when unset."
+          },
+          "contentHash": {
+            "type": "string",
+            "description": "Content hash used for deduplication."
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "description": "Creation timestamp.",
+            "format": "date-time"
+          },
+          "createdByUserId": {
+            "type": "string",
+            "description": "User that produced the revision."
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Reviewer name at capture time."
+          },
+          "reviewFacet": {
+            "type": "string",
+            "description": "Review facet at capture time."
+          },
+          "modelTier": {
+            "description": "Semantic model tier at capture time.",
+            "$ref": "#/components/schemas/CodeReviewModelTier"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Reviewer instructions at capture time."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the agent was enabled at capture time."
+          },
+          "activationConfiguration": {
+            "description": "File activation rules at capture time.",
+            "$ref": "#/components/schemas/CodeReviewerActivationConfigurationDto"
+          }
+        },
+        "description": "Full revision content used by the read-only diff view."
+      },
+      "CodeReviewerAgentRevisionListResponse": {
+        "required": [
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewerAgentRevisionSummaryDto"
+            },
+            "description": "Revisions, newest first."
+          }
+        },
+        "description": "Revision list response."
+      },
+      "CodeReviewerAgentRevisionResponse": {
+        "required": [
+          "revision"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "description": "Full revision content.",
+            "$ref": "#/components/schemas/CodeReviewerAgentRevisionDto"
+          }
+        },
+        "description": "Single revision response."
+      },
+      "CodeReviewerAgentRevisionSummaryDto": {
+        "required": [
+          "id",
+          "agentId",
+          "label",
+          "contentHash",
+          "createdAtUtc",
+          "createdByUserId"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Immutable generated revision id."
+          },
+          "agentId": {
+            "type": "string",
+            "description": "Reviewer agent the revision belongs to."
+          },
+          "label": {
+            "type": "string",
+            "description": "Optional operator label. Empty when unset."
+          },
+          "contentHash": {
+            "type": "string",
+            "description": "Content hash used for deduplication."
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "description": "Creation timestamp.",
+            "format": "date-time"
+          },
+          "createdByUserId": {
+            "type": "string",
+            "description": "User that produced the revision."
+          }
+        },
+        "description": "Revision row in the reviewer history list."
+      },
       "CodeReviewerAgentTemplateDto": {
         "required": [
           "key",
@@ -9504,6 +11069,1173 @@
         },
         "description": "Response for the built-in reviewer-agent template catalog."
       },
+      "CodeReviewEvaluationAvailabilityResponse": {
+        "required": [
+          "enabled",
+          "maxCases",
+          "maxConcurrentCases"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "maxCases": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxConcurrentCases": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        },
+        "description": "Non-secret rollout availability and fixed evaluation limits."
+      },
+      "CodeReviewEvaluationCandidate": {
+        "required": [
+          "id",
+          "summary",
+          "details",
+          "severity",
+          "file",
+          "line"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "details": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/CodeReviewFindingLevel"
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        },
+        "description": "A candidate finding with a stable id within one immutable output."
+      },
+      "CodeReviewEvaluationCapturePreviewDto": {
+        "required": [
+          "pullRequestNumber",
+          "title",
+          "state",
+          "authorLogin",
+          "baseSha",
+          "headSha",
+          "changedFileCount",
+          "omittedFileCount",
+          "capturedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "pullRequestNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Provider pull request number.",
+            "format": "int32"
+          },
+          "title": {
+            "type": "string",
+            "description": "Pull request title captured with the snapshot."
+          },
+          "state": {
+            "description": "Provider state at capture time.",
+            "$ref": "#/components/schemas/PullRequestState"
+          },
+          "authorLogin": {
+            "type": "string",
+            "description": "Provider login of the pull request author."
+          },
+          "baseSha": {
+            "type": "string",
+            "description": "Captured base commit identity."
+          },
+          "headSha": {
+            "type": "string",
+            "description": "Captured head commit identity."
+          },
+          "changedFileCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Changed files visible to the reviewer.",
+            "format": "int32"
+          },
+          "omittedFileCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Changed files omitted from the snapshot.",
+            "format": "int32"
+          },
+          "capturedAtUtc": {
+            "type": "string",
+            "description": "Capture timestamp.",
+            "format": "date-time"
+          }
+        },
+        "description": "Summary of a staged capture, shown before the draft is saved."
+      },
+      "CodeReviewEvaluationCaseDto": {
+        "required": [
+          "id",
+          "pullRequestNumber",
+          "title",
+          "pullRequestRecordId",
+          "baseSha",
+          "headSha",
+          "snapshotSha256",
+          "capturedAtUtc",
+          "changedFileCount",
+          "omittedFileCount",
+          "removedAtUtc",
+          "referenceSets"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable case id. Survives remove and re-add."
+          },
+          "pullRequestNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Provider pull request number.",
+            "format": "int32"
+          },
+          "title": {
+            "type": "string",
+            "description": "Captured pull request title. Not a live provider read."
+          },
+          "pullRequestRecordId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Known local pull request record id, when the PR existed in Zeeq."
+          },
+          "baseSha": {
+            "type": "string",
+            "description": "Captured base commit identity."
+          },
+          "headSha": {
+            "type": "string",
+            "description": "Captured head commit identity."
+          },
+          "snapshotSha256": {
+            "type": "string",
+            "description": "SHA-256 of the captured snapshot artifact."
+          },
+          "capturedAtUtc": {
+            "type": "string",
+            "description": "Capture timestamp.",
+            "format": "date-time"
+          },
+          "changedFileCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Changed files visible to the reviewer.",
+            "format": "int32"
+          },
+          "omittedFileCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Changed files omitted from the snapshot, for example binary files.",
+            "format": "int32"
+          },
+          "removedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Soft-removal timestamp, when the case is no longer a member.",
+            "format": "date-time"
+          },
+          "referenceSets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewEvaluationReferenceSetDto"
+            },
+            "description": "Reference expectations keyed by reviewer agent id."
+          }
+        },
+        "description": "One captured pull request case."
+      },
+      "CodeReviewEvaluationCaseOutcome": {
+        "enum": [
+          "None",
+          "Graded",
+          "ReviewFailed",
+          "JudgeFailed",
+          "Unlabelled",
+          "Skipped",
+          "Cancelled"
+        ],
+        "description": "Terminal outcome of one manifested case."
+      },
+      "CodeReviewEvaluationCasePhase": {
+        "enum": [
+          "Pending",
+          "Reviewing",
+          "Reviewed",
+          "Grading",
+          "Graded"
+        ],
+        "description": "Execution phase of one manifested case."
+      },
+      "CodeReviewEvaluationCaseSnapshotResponse": {
+        "required": [
+          "snapshot"
+        ],
+        "type": "object",
+        "properties": {
+          "snapshot": {
+            "description": "Immutable snapshot envelope captured for the case.",
+            "$ref": "#/components/schemas/CodeReviewEvaluationSnapshot"
+          }
+        },
+        "description": "Saved capture for one dataset case."
+      },
+      "CodeReviewEvaluationDatasetCaseChangeDto": {
+        "required": [
+          "caseId",
+          "pullRequestNumber",
+          "captureToken",
+          "referenceSets"
+        ],
+        "type": "object",
+        "properties": {
+          "caseId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Existing case id, or null for new or re-added membership."
+          },
+          "pullRequestNumber": {
+            "maximum": 999999,
+            "minimum": 1,
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Provider pull request number.",
+            "format": "int32"
+          },
+          "captureToken": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Staged capture token. Required when CaseId is null."
+          },
+          "referenceSets": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewEvaluationReferenceSetDto"
+            },
+            "description": "Replacement reference sets, or null to leave existing content unchanged."
+          }
+        },
+        "description": "One case inside a dataset save draft."
+      },
+      "CodeReviewEvaluationDatasetDetailDto": {
+        "required": [
+          "id",
+          "repositoryId",
+          "name",
+          "description",
+          "version",
+          "caseCount",
+          "createdAtUtc",
+          "updatedAtUtc",
+          "archivedAtUtc",
+          "cases"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable dataset id."
+          },
+          "repositoryId": {
+            "type": "string",
+            "description": "Repository mapping the dataset belongs to."
+          },
+          "name": {
+            "type": "string",
+            "description": "Dataset label."
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Optional operator description."
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Current content version.",
+            "format": "int64"
+          },
+          "caseCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Number of live cases.",
+            "format": "int32"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "description": "Creation timestamp.",
+            "format": "date-time"
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "description": "Last save timestamp.",
+            "format": "date-time"
+          },
+          "archivedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Archive timestamp, when archived.",
+            "format": "date-time"
+          },
+          "cases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewEvaluationCaseDto"
+            },
+            "description": "Live cases in pull request number order."
+          }
+        },
+        "description": "Full dataset draft returned to curation."
+      },
+      "CodeReviewEvaluationDatasetListResponse": {
+        "required": [
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewEvaluationDatasetSummaryDto"
+            },
+            "description": "Datasets, most recently updated first."
+          }
+        },
+        "description": "Dataset list response."
+      },
+      "CodeReviewEvaluationDatasetResponse": {
+        "required": [
+          "dataset"
+        ],
+        "type": "object",
+        "properties": {
+          "dataset": {
+            "description": "Dataset draft.",
+            "$ref": "#/components/schemas/CodeReviewEvaluationDatasetDetailDto"
+          }
+        },
+        "description": "Single dataset response."
+      },
+      "CodeReviewEvaluationDatasetSummaryDto": {
+        "required": [
+          "id",
+          "repositoryId",
+          "name",
+          "description",
+          "version",
+          "caseCount",
+          "createdAtUtc",
+          "updatedAtUtc",
+          "archivedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable dataset id."
+          },
+          "repositoryId": {
+            "type": "string",
+            "description": "Repository mapping the dataset belongs to."
+          },
+          "name": {
+            "type": "string",
+            "description": "Dataset label. Not an identity."
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Optional operator description."
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Current content version used for optimistic concurrency.",
+            "format": "int64"
+          },
+          "caseCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Number of live cases.",
+            "format": "int32"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "description": "Creation timestamp.",
+            "format": "date-time"
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "description": "Last save timestamp.",
+            "format": "date-time"
+          },
+          "archivedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Archive timestamp, when archived.",
+            "format": "date-time"
+          }
+        },
+        "description": "Evaluation dataset row returned to curation screens."
+      },
+      "CodeReviewEvaluationFindingSeverity": {
+        "enum": [
+          "Critical",
+          "Major",
+          "Minor",
+          "Suggestion",
+          "Comment"
+        ],
+        "description": "Severity carried by a reference finding."
+      },
+      "CodeReviewEvaluationMatch": {
+        "required": [
+          "referenceId",
+          "candidateId",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "referenceId": {
+            "type": "string"
+          },
+          "candidateId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "description": "A one-to-one judge assignment and its explanation."
+      },
+      "CodeReviewEvaluationPrResolutionDto": {
+        "required": [
+          "entry",
+          "pullRequestNumber",
+          "target",
+          "captureToken",
+          "expiresAtUtc",
+          "preview",
+          "errorCode",
+          "errorMessage"
+        ],
+        "type": "object",
+        "properties": {
+          "entry": {
+            "type": "string",
+            "description": "Original entry text."
+          },
+          "pullRequestNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "description": "Resolved provider pull request number.",
+            "format": "int32"
+          },
+          "target": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "Known pull request row, when it already exists in Zeeq.",
+                "$ref": "#/components/schemas/CodeReviewEvaluationPrTargetDto"
+              }
+            ]
+          },
+          "captureToken": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Opaque staged capture token for Save."
+          },
+          "expiresAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Token expiry.",
+            "format": "date-time"
+          },
+          "preview": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "Capture preview for confirmation.",
+                "$ref": "#/components/schemas/CodeReviewEvaluationCapturePreviewDto"
+              }
+            ]
+          },
+          "errorCode": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Stable per-entry error code."
+          },
+          "errorMessage": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Human-readable per-entry error."
+          }
+        },
+        "description": "One entry resolution outcome."
+      },
+      "CodeReviewEvaluationPrTargetDto": {
+        "required": [
+          "pullRequestNumber",
+          "title",
+          "state",
+          "headSha",
+          "authorLogin",
+          "updatedAtUtc",
+          "alreadyInDataset"
+        ],
+        "type": "object",
+        "properties": {
+          "pullRequestNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Provider pull request number.",
+            "format": "int32"
+          },
+          "title": {
+            "type": "string",
+            "description": "Current provider title."
+          },
+          "state": {
+            "description": "Current provider state.",
+            "$ref": "#/components/schemas/PullRequestState"
+          },
+          "headSha": {
+            "type": "string",
+            "description": "Current head commit identity."
+          },
+          "authorLogin": {
+            "type": "string",
+            "description": "Provider login of the author."
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "description": "Most recent update timestamp.",
+            "format": "date-time"
+          },
+          "alreadyInDataset": {
+            "type": "boolean",
+            "description": "True when the dataset already contains this pull request."
+          }
+        },
+        "description": "One known pull request offered as an evaluation target."
+      },
+      "CodeReviewEvaluationPrTargetListResponse": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewEvaluationPrTargetDto"
+            },
+            "description": "Matching rows, newest first."
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Opaque cursor for the next page, when one exists."
+          }
+        },
+        "description": "Page of known evaluation targets."
+      },
+      "CodeReviewEvaluationReferenceFinding": {
+        "required": [
+          "id",
+          "title",
+          "summary",
+          "severity",
+          "file",
+          "line",
+          "origin",
+          "sourceRunId",
+          "sourceFindingId",
+          "approvedByUserId",
+          "approvedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable identifier used by the judge to report matches."
+          },
+          "title": {
+            "type": "string",
+            "description": "Short expectation title shown in the reference editor."
+          },
+          "summary": {
+            "type": "string",
+            "description": "What the reviewer should report, at most 4000 characters."
+          },
+          "severity": {
+            "description": "Expected severity. Severity does not affect matching in v1.",
+            "$ref": "#/components/schemas/CodeReviewEvaluationFindingSeverity"
+          },
+          "file": {
+            "type": "string",
+            "description": "Repository-relative file path the finding is expected in."
+          },
+          "line": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "description": "Optional expected line number. Location helps comparison but never forces a match.",
+            "format": "int32"
+          },
+          "origin": {
+            "description": "How this finding entered the dataset.",
+            "$ref": "#/components/schemas/CodeReviewEvaluationReferenceOrigin"
+          },
+          "sourceRunId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Evaluation run the finding was adopted from, when applicable."
+          },
+          "sourceFindingId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Candidate finding id inside SourceRunId, when applicable."
+          },
+          "approvedByUserId": {
+            "type": "string",
+            "description": "User who approved the reference into the dataset."
+          },
+          "approvedAtUtc": {
+            "type": "string",
+            "description": "Time the reference was approved.",
+            "format": "date-time"
+          }
+        },
+        "description": "One expected finding inside a reviewer's reference set."
+      },
+      "CodeReviewEvaluationReferenceFindingDto": {
+        "required": [
+          "id",
+          "title",
+          "summary",
+          "severity",
+          "file",
+          "line",
+          "origin",
+          "sourceRunId",
+          "sourceFindingId"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable finding id used by the judge."
+          },
+          "title": {
+            "maxLength": 300,
+            "type": "string",
+            "description": "Short expectation title, at most 300 characters."
+          },
+          "summary": {
+            "maxLength": 4000,
+            "type": "string",
+            "description": "What the reviewer should report, at most 4000 characters."
+          },
+          "severity": {
+            "description": "Expected severity.",
+            "$ref": "#/components/schemas/CodeReviewEvaluationFindingSeverity"
+          },
+          "file": {
+            "type": "string",
+            "description": "Repository-relative file path."
+          },
+          "line": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "description": "Optional expected line.",
+            "format": "int32"
+          },
+          "origin": {
+            "description": "How the finding entered the dataset.",
+            "$ref": "#/components/schemas/CodeReviewEvaluationReferenceOrigin"
+          },
+          "sourceRunId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Evaluation run it was adopted from, when applicable."
+          },
+          "sourceFindingId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Candidate finding id inside the source run, when applicable."
+          }
+        },
+        "description": "One editable reference finding."
+      },
+      "CodeReviewEvaluationReferenceOrigin": {
+        "enum": [
+          "Manual",
+          "RunFinding",
+          "HistoricalReview"
+        ],
+        "description": "How one reference finding entered the dataset."
+      },
+      "CodeReviewEvaluationReferenceSet": {
+        "required": [
+          "reviewerAgentId",
+          "state",
+          "findings"
+        ],
+        "type": "object",
+        "properties": {
+          "reviewerAgentId": {
+            "type": "string",
+            "description": "Stable reviewer agent id that owns this expectation set."
+          },
+          "state": {
+            "description": "Expectation state for this reviewer and case.",
+            "$ref": "#/components/schemas/CodeReviewEvaluationReferenceState"
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewEvaluationReferenceFinding"
+            },
+            "description": "Expected findings. Empty is valid for CodeReviewEvaluationReferenceState.ReviewedClean."
+          }
+        },
+        "description": "Expected findings for one reviewer on one dataset case."
+      },
+      "CodeReviewEvaluationReferenceSetDto": {
+        "required": [
+          "reviewerAgentId",
+          "state",
+          "findings"
+        ],
+        "type": "object",
+        "properties": {
+          "reviewerAgentId": {
+            "type": "string",
+            "description": "Stable reviewer agent id."
+          },
+          "state": {
+            "description": "Unlabelled, Expected or ReviewedClean.",
+            "$ref": "#/components/schemas/CodeReviewEvaluationReferenceState"
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewEvaluationReferenceFindingDto"
+            },
+            "description": "Expected findings. Empty is valid for ReviewedClean."
+          }
+        },
+        "description": "One reviewer's reference expectations for one case."
+      },
+      "CodeReviewEvaluationReferenceState": {
+        "enum": [
+          "Unlabelled",
+          "Expected",
+          "ReviewedClean"
+        ],
+        "description": "Review state of one reviewer's expectation set for one captured pull request."
+      },
+      "CodeReviewEvaluationRunCounts": {
+        "required": [
+          "caseCount",
+          "gradedCaseCount",
+          "skippedCaseCount",
+          "failedCaseCount",
+          "unlabelledCaseCount",
+          "matchedReferenceCount",
+          "missedReferenceCount",
+          "expectedReferenceCount",
+          "additionalFindingCount"
+        ],
+        "type": "object",
+        "properties": {
+          "caseCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Manifest case count.",
+            "format": "int32"
+          },
+          "gradedCaseCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Cases that reached a successful binary grade.",
+            "format": "int32"
+          },
+          "skippedCaseCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Cases skipped before any provider call.",
+            "format": "int32"
+          },
+          "failedCaseCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Cases that failed the reviewer or judge stage.",
+            "format": "int32"
+          },
+          "unlabelledCaseCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Cases with a reviewer reference set that has no expectation.",
+            "format": "int32"
+          },
+          "matchedReferenceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Expected findings the judge matched.",
+            "format": "int32"
+          },
+          "missedReferenceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Expected findings the judge reported as missed.",
+            "format": "int32"
+          },
+          "expectedReferenceCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Expected findings across graded labelled cases.",
+            "format": "int32"
+          },
+          "additionalFindingCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Candidate findings reported as additional and unverified.",
+            "format": "int32"
+          }
+        },
+        "description": "Aggregate counts recorded on a run and returned to the UI."
+      },
+      "CodeReviewEvaluationRunState": {
+        "enum": [
+          "Queued",
+          "Running",
+          "Completed",
+          "Incomplete",
+          "Cancelled",
+          "Abandoned",
+          "DispatchFailed"
+        ],
+        "description": "Lifecycle state of one evaluation run."
+      },
+      "CodeReviewEvaluationSnapshot": {
+        "required": [
+          "schemaVersion",
+          "organizationId",
+          "repositoryId",
+          "ownerQualifiedRepoName",
+          "pullRequestNumber",
+          "title",
+          "body",
+          "baseSha",
+          "headSha",
+          "authorLogin",
+          "htmlUrl",
+          "isDraft",
+          "state",
+          "capturedAtUtc",
+          "declaredChangedFileCount",
+          "files"
+        ],
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Envelope schema version. Bump when the JSON shape changes.",
+            "format": "int32"
+          },
+          "organizationId": {
+            "type": "string",
+            "description": "Organization that owns the capture."
+          },
+          "repositoryId": {
+            "type": "string",
+            "description": "Repository mapping the capture belongs to."
+          },
+          "ownerQualifiedRepoName": {
+            "type": "string",
+            "description": "Provider-qualified repository name."
+          },
+          "pullRequestNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Provider pull request number.",
+            "format": "int32"
+          },
+          "title": {
+            "type": "string",
+            "description": "Pull request title at capture time."
+          },
+          "body": {
+            "type": "string",
+            "description": "Pull request body at capture time."
+          },
+          "baseSha": {
+            "type": "string",
+            "description": "Base commit identity at capture time."
+          },
+          "headSha": {
+            "type": "string",
+            "description": "Head commit identity at capture time."
+          },
+          "authorLogin": {
+            "type": "string",
+            "description": "Provider login of the pull request author."
+          },
+          "htmlUrl": {
+            "type": "string",
+            "description": "Browser URL for the pull request."
+          },
+          "isDraft": {
+            "type": "boolean",
+            "description": "Whether the pull request was a draft at capture time."
+          },
+          "state": {
+            "description": "Provider lifecycle state at capture time.",
+            "$ref": "#/components/schemas/PullRequestState"
+          },
+          "capturedAtUtc": {
+            "type": "string",
+            "description": "UTC time the snapshot was captured.",
+            "format": "date-time"
+          },
+          "declaredChangedFileCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Changed-file count declared by the provider.",
+            "format": "int32"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewEvaluationSnapshotFile"
+            },
+            "description": "Changed files included in the snapshot, including explicitly omitted entries."
+          },
+          "includedFiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewEvaluationSnapshotFile"
+            },
+            "description": "Files the reviewer will actually see, excluding explicitly omitted entries."
+          },
+          "omittedFileCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Number of changed files the snapshot omits (binary or missing patch).",
+            "format": "int32"
+          },
+          "changedFileCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Number of changed files the reviewer will see.",
+            "format": "int32"
+          }
+        },
+        "description": "Evaluation-owned capture envelope for one pull request snapshot."
+      },
+      "CodeReviewEvaluationSnapshotFile": {
+        "required": [
+          "path",
+          "previousPath",
+          "mutationState",
+          "patch",
+          "isOmitted"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Repository-relative path."
+          },
+          "previousPath": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Previous path for renamed or copied files."
+          },
+          "mutationState": {
+            "description": "How the pull request changed the file.",
+            "$ref": "#/components/schemas/CodeReviewFileMutationState"
+          },
+          "patch": {
+            "type": "string",
+            "description": "Unified diff patch text. Empty when IsOmitted is true."
+          },
+          "isOmitted": {
+            "type": "boolean",
+            "description": "True when the file is binary or the provider returned no patch."
+          }
+        },
+        "description": "One changed file inside an evaluation snapshot envelope."
+      },
       "CodeReviewFileFilterDto": {
         "required": [
           "includedFiles",
@@ -9528,6 +12260,20 @@
         },
         "description": "Include and exclude rules applied before reviewer-agent activation."
       },
+      "CodeReviewFileMatchCriteria": {
+        "type": "object",
+        "properties": {
+          "matchType": {
+            "description": "How string CodeReviewFileMatchCriteria.Pattern should be interpreted.",
+            "$ref": "#/components/schemas/CodeReviewFileNameMatchType"
+          },
+          "pattern": {
+            "type": "string",
+            "description": "Repository-relative path, prefix, extension, or glob pattern."
+          }
+        },
+        "description": "One repository-relative file matching rule for code-review filters."
+      },
       "CodeReviewFileMatchCriteriaDto": {
         "required": [
           "matchType",
@@ -9546,6 +12292,17 @@
           }
         },
         "description": "One repository-relative file matching rule for repository review filters."
+      },
+      "CodeReviewFileMutationState": {
+        "enum": [
+          "Added",
+          "Modified",
+          "Deleted",
+          "Renamed",
+          "Copied",
+          "Binary"
+        ],
+        "description": "Provider-neutral mutation state for a file included in a code-review source snapshot."
       },
       "CodeReviewFileNameMatchType": {
         "enum": [
@@ -10987,9 +13744,93 @@
           "activationConfiguration": {
             "description": "File activation filters that decide whether this agent runs for a PR.",
             "$ref": "#/components/schemas/CodeReviewerActivationConfigurationDto"
+          },
+          "label": {
+            "maxLength": 200,
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Optional revision label. Saved with the revision this request creates."
           }
         },
         "description": "Request for creating a repository reviewer agent."
+      },
+      "CreateCodeReviewEvaluationDatasetRequest": {
+        "required": [
+          "name",
+          "description",
+          "createRequestKey"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "maxLength": 256,
+            "type": "string",
+            "description": "Dataset label, at most 256 characters."
+          },
+          "description": {
+            "maxLength": 2000,
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Optional description, at most 2000 characters."
+          },
+          "createRequestKey": {
+            "maxLength": 128,
+            "type": "string",
+            "description": "Client idempotency key. Retries return the same dataset."
+          }
+        },
+        "description": "Creates one named dataset. Idempotent on the request key."
+      },
+      "CreateEvaluationRunRequest": {
+        "required": [
+          "datasetId",
+          "expectedVersion",
+          "agentId",
+          "savedRevisionId",
+          "draft",
+          "requestKey"
+        ],
+        "type": "object",
+        "properties": {
+          "datasetId": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "savedRevisionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "draft": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CodeReviewerAgentRevisionConfiguration"
+              }
+            ]
+          },
+          "requestKey": {
+            "type": "string"
+          }
+        },
+        "description": "Request to evaluate one reviewer configuration against a dataset."
       },
       "CreateInvitationRequest": {
         "required": [
@@ -11595,6 +14436,234 @@
           }
         },
         "description": "A ranked search hit for the \"Test\" panel. `Library` is echoed from the API so each\nrow carries its owning library name independently (D-1)."
+      },
+      "EvaluationRunCaseDto": {
+        "required": [
+          "caseId",
+          "pullRequestNumber",
+          "title",
+          "baseSha",
+          "headSha",
+          "omittedFileCount",
+          "references",
+          "phase",
+          "outcome",
+          "candidateFindings",
+          "judgeMatches",
+          "reviewerProvenanceJson",
+          "judgeProvenanceJson",
+          "errorCode"
+        ],
+        "type": "object",
+        "properties": {
+          "caseId": {
+            "type": "string"
+          },
+          "pullRequestNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "title": {
+            "type": "string"
+          },
+          "baseSha": {
+            "type": "string"
+          },
+          "headSha": {
+            "type": "string"
+          },
+          "omittedFileCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "references": {
+            "$ref": "#/components/schemas/CodeReviewEvaluationReferenceSet"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/CodeReviewEvaluationCasePhase"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/CodeReviewEvaluationCaseOutcome"
+          },
+          "candidateFindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewEvaluationCandidate"
+            }
+          },
+          "judgeMatches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewEvaluationMatch"
+            }
+          },
+          "reviewerProvenanceJson": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "judgeProvenanceJson": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "errorCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "description": "A sanitized case result and immutable reference content."
+      },
+      "EvaluationRunConflictDto": {
+        "required": [
+          "code",
+          "activeRunId"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "activeRunId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "description": "Active-run or stale-version conflict."
+      },
+      "EvaluationRunDetailDto": {
+        "required": [
+          "run",
+          "cases"
+        ],
+        "type": "object",
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/EvaluationRunDto"
+          },
+          "cases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EvaluationRunCaseDto"
+            }
+          }
+        },
+        "description": "Run details with immutable case results."
+      },
+      "EvaluationRunDto": {
+        "required": [
+          "id",
+          "datasetId",
+          "datasetVersion",
+          "agentId",
+          "savedRevisionId",
+          "parentRunId",
+          "state",
+          "createdAtUtc",
+          "startedAtUtc",
+          "completedAtUtc",
+          "counts",
+          "errorCode"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "datasetId": {
+            "type": "string"
+          },
+          "datasetVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "savedRevisionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "parentRunId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/CodeReviewEvaluationRunState"
+          },
+          "createdAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "startedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "completedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/CodeReviewEvaluationRunCounts"
+          },
+          "errorCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "description": "Public run summary; does not expose lease, artifact paths or credential references."
+      },
+      "EvaluationRunListDto": {
+        "required": [
+          "items",
+          "nextCursorId"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EvaluationRunDto"
+            }
+          },
+          "nextCursorId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "description": "Page of evaluation runs."
       },
       "FindingReviewListItemResponse": {
         "required": [
@@ -13803,6 +16872,30 @@
         ],
         "description": "Durable state of a pull request as reported by the provider."
       },
+      "RefreshCodeReviewEvaluationCaseResponse": {
+        "required": [
+          "captureToken",
+          "expiresAtUtc",
+          "preview"
+        ],
+        "type": "object",
+        "properties": {
+          "captureToken": {
+            "type": "string",
+            "description": "Opaque staged capture token for the next Save."
+          },
+          "expiresAtUtc": {
+            "type": "string",
+            "description": "Token expiry.",
+            "format": "date-time"
+          },
+          "preview": {
+            "description": "Capture preview for the confirmation step.",
+            "$ref": "#/components/schemas/CodeReviewEvaluationCapturePreviewDto"
+          }
+        },
+        "description": "Staged refresh result for one existing case."
+      },
       "RenameDocumentRequest": {
         "required": [
           "fromPath",
@@ -14008,6 +17101,67 @@
           }
         },
         "description": "Response returned after clearing a private library's active ingest state."
+      },
+      "ResolveCodeReviewEvaluationPrTargetsRequest": {
+        "required": [
+          "datasetId",
+          "expectedDatasetVersion",
+          "entries"
+        ],
+        "type": "object",
+        "properties": {
+          "datasetId": {
+            "type": "string",
+            "description": "Persisted dataset the captures are staged for."
+          },
+          "expectedDatasetVersion": {
+            "maximum": 9223372036854776000,
+            "minimum": 1,
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Dataset version the captures are staged against.",
+            "format": "int64"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Numbers, `#` numbers, comma or newline lists, or same-repository PR URLs."
+          }
+        },
+        "description": "Resolves and stages one or more manual pull request entries."
+      },
+      "ResolveCodeReviewEvaluationPrTargetsResponse": {
+        "required": [
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewEvaluationPrResolutionDto"
+            },
+            "description": "One result per entry, in request order."
+          }
+        },
+        "description": "Per-entry resolution results. A bad entry never clears valid choices."
+      },
+      "RetryEvaluationRunRequest": {
+        "required": [
+          "requestKey"
+        ],
+        "type": "object",
+        "properties": {
+          "requestKey": {
+            "type": "string"
+          }
+        },
+        "description": "Idempotency key for a failed-case retry."
       },
       "ReviewCostMetrics": {
         "required": [
@@ -14455,6 +17609,49 @@
           }
         },
         "description": "The full client-side draft, submitted once on first save. string SaveCartRequest.Id and\nstring SaveCartRequest.Name were minted client-side when the draft was created and are\npreserved unchanged; DateTimeOffset SaveCartRequest.CreatedAtUtc is the draft's original creation\ntime, not \"now\"."
+      },
+      "SaveCodeReviewEvaluationDatasetRequest": {
+        "required": [
+          "expectedVersion",
+          "name",
+          "description",
+          "cases"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "maximum": 9223372036854776000,
+            "minimum": 1,
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Version the caller loaded.",
+            "format": "int64"
+          },
+          "name": {
+            "maxLength": 256,
+            "type": "string",
+            "description": "Desired dataset name."
+          },
+          "description": {
+            "maxLength": 2000,
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Desired description."
+          },
+          "cases": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CodeReviewEvaluationDatasetCaseChangeDto"
+            },
+            "description": "Complete desired case membership."
+          }
+        },
+        "description": "Saves one complete dataset draft under an expected version."
       },
       "SaveCodeReviewOrganizationSettingsRequest": {
         "required": [
@@ -15181,6 +18378,14 @@
           "activationConfiguration": {
             "description": "File activation filters that decide whether this agent runs for a PR.",
             "$ref": "#/components/schemas/CodeReviewerActivationConfigurationDto"
+          },
+          "label": {
+            "maxLength": 200,
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Optional revision label. Saved with the revision this request creates."
           }
         },
         "description": "Request for replacing editable repository reviewer-agent fields."
@@ -15529,6 +18734,9 @@
     },
     {
       "name": "Carts"
+    },
+    {
+      "name": "Code Review Evaluations"
     },
     {
       "name": "Code Reviews"

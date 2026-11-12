@@ -15,6 +15,50 @@ namespace Zeeq.Platform.CodeReviews.Tests;
 public sealed class CodeReviewRunnerTests
 {
     [Test]
+    public async Task EvaluationUsesFrozenSnapshotAndConfigurationWithoutLiveLoadsOrFeedback()
+    {
+        var fixture = RunnerFixture.Create();
+        fixture.Repositories.Repository = null!;
+        fixture.PullRequests.Record = null!;
+        fixture.PullRequestSource.Snapshot = new("live title", "live body", [], []);
+        var model = new CodeReviewEvaluationModelSelection(
+            CodeReviewModelTier.High,
+            "provider",
+            "model",
+            null,
+            CodeReviewEvaluationCredentialSource.SystemDefault,
+            null
+        );
+        var input = new CodeReviewEvaluationInput(
+            new(
+                "frozen title",
+                "frozen body",
+                [new("src/Frozen.cs", null, CodeReviewFileMutationState.Modified, "+frozen")],
+                []
+            ),
+            new CodeRepositoryReviewConfiguration { SharedPromptFragment = "frozen shared" },
+            [new("agent", "Reviewer", "Security", CodeReviewModelTier.High, "review", new())],
+            []
+        );
+
+        await fixture.ExecutionEngine.RunAsync(
+            fixture.Message,
+            fixture.Review,
+            CodeReviewExecutionOptions.Evaluation(model),
+            null,
+            CancellationToken.None,
+            input
+        );
+
+        await Assert.That(fixture.AgentExecutor.Prompt).Contains("frozen body");
+        await Assert.That(fixture.AgentExecutor.Prompt).Contains("frozen shared");
+        await Assert.That(fixture.AgentExecutor.Prompt).Contains("src/Frozen.cs");
+        await Assert.That(fixture.AgentExecutor.Prompt.Contains("live body")).IsFalse();
+        await Assert.That(fixture.PullRequestSource.CallCount).IsEqualTo(0);
+        await Assert.That(fixture.AgentExecutor.Options?.FrozenModel).IsEqualTo(model);
+    }
+
+    [Test]
     public async Task RunAsync_WithValidReview_WritesArtifactAndReturnsCounts()
     {
         var fixture = RunnerFixture.Create();
@@ -456,11 +500,16 @@ public sealed class CodeReviewRunnerTests
     private sealed class TestCodeReviewPullRequestSource : ICodeReviewPullRequestSource
     {
         public CodeReviewPullRequestSnapshot Snapshot { get; set; } = new("", "", [], []);
+        public int CallCount { get; private set; }
 
         public Task<CodeReviewPullRequestSnapshot> GetPullRequestAsync(
             CodeReviewRunRequested message,
             CancellationToken cancellationToken
-        ) => Task.FromResult(Snapshot);
+        )
+        {
+            CallCount++;
+            return Task.FromResult(Snapshot);
+        }
     }
 
     private sealed class TestCodeReviewArtifactStore : ICodeReviewArtifactStore
@@ -716,6 +765,14 @@ public sealed class CodeReviewRunnerTests
             CodeReviewerAgent agent,
             CancellationToken cancellationToken
         ) => Task.FromResult(agent);
+
+        public Task<CodeReviewerAgent> SaveWithRevisionAsync(
+            CodeReviewerAgent agent,
+            bool create,
+            string createdByUserId,
+            string? label,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
 
         public Task<bool> DisableAsync(
             string organizationId,

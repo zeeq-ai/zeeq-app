@@ -24,6 +24,15 @@ public sealed partial record AppSettings
 public sealed record CodeReviewSettings
 {
     /// <summary>
+    /// Enables dataset curation and admission of reviewer backtesting runs.
+    /// </summary>
+    /// <remarks>
+    /// Disabled by default for additive rollouts. Already admitted evaluations can
+    /// finish when this is disabled; ordinary reviews and quick tests are unaffected.
+    /// </remarks>
+    public bool EvaluationsEnabled { get; init; }
+
+    /// <summary>
     /// Stable identity used by automated code-review agents.
     /// </summary>
     public string AgentIdentity { get; init; } = "zeeq-code-review-agent";

@@ -8,7 +8,8 @@ namespace Zeeq.Platform.CodeReviews;
 public sealed class CreateRepositoryCodeReviewerAgentHandler(
     CodeReviewAuthorization authorization,
     ICodeRepositoryStore repositories,
-    ICodeReviewerAgentStore agents
+    ICodeReviewerAgentStore agents,
+    TimeProvider timeProvider
 ) : IEndpointHandler
 {
     private const int MaxRepositoryAgents = 25;
@@ -61,6 +62,16 @@ public sealed class CreateRepositoryCodeReviewerAgentHandler(
             return TypedResults.BadRequest(validationError);
         }
 
+        if (request.Label is { Length: > 200 })
+        {
+            return TypedResults.BadRequest(
+                new CodeReviewEndpointError(
+                    "invalid_label",
+                    "A revision label must be at most 200 characters."
+                )
+            );
+        }
+
         var repository = await repositories.FindActiveForOrganizationAsync(
             organizationId,
             repositoryId,
@@ -86,8 +97,8 @@ public sealed class CreateRepositoryCodeReviewerAgentHandler(
             );
         }
 
-        var now = DateTimeOffset.UtcNow;
-        var saved = await agents.AddAsync(
+        var now = timeProvider.GetUtcNow();
+        var saved = await agents.SaveWithRevisionAsync(
             new CodeReviewerAgent
             {
                 Id = $"cra_{Guid.CreateVersion7():N}",
@@ -105,6 +116,9 @@ public sealed class CreateRepositoryCodeReviewerAgentHandler(
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,
             },
+            create: true,
+            CodeReviewEvaluationHandlerSupport.UserId(user) ?? string.Empty,
+            request.Label,
             cancellationToken
         );
 

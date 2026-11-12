@@ -143,6 +143,30 @@ public static class PostgresSetupExtension
                 PostgresStorageProvider
             >();
             services.AddScoped<ICodeReviewArtifactStore, PostgresCodeReviewArtifactStore>();
+            services.AddScoped<
+                ICodeReviewEvaluationArtifactStore,
+                PostgresCodeReviewEvaluationArtifactStore
+            >();
+            services.AddScoped<
+                ICodeReviewEvaluationDatasetStore,
+                PostgresCodeReviewEvaluationDatasetStore
+            >();
+            services.AddScoped<
+                ICodeReviewEvaluationPrTargetStore,
+                PostgresCodeReviewEvaluationPrTargetStore
+            >();
+            services.AddScoped<
+                ICodeReviewerAgentRevisionStore,
+                PostgresCodeReviewerAgentRevisionStore
+            >();
+            services.AddScoped<
+                ICodeReviewEvaluationRunStore,
+                PostgresCodeReviewEvaluationRunStore
+            >();
+            services.AddScoped<
+                ICodeReviewEvaluationCaseResultStore,
+                PostgresCodeReviewEvaluationCaseResultStore
+            >();
             services.AddScoped<ICodeReviewPreviousReviewStore, CodeReviewPreviousReviewStore>();
             services.AddScoped<IGitHubWebhookDeliveryStore, PostgresGitHubWebhookDeliveryStore>();
             services.AddScoped<IGitHubCommentLeaseStore, PostgresGitHubCommentLeaseStore>();
@@ -193,23 +217,20 @@ public static class PostgresSetupExtension
     )
     {
         options
-            .UseNpgsql(
-                connectionString,
-                npgsqlOptions =>
-                {
-                    // Runtime references the migrations assembly for now so local/dev
-                    // migration application can use the same host. We may want to
-                    // decouple runtime and migrations later with a design/deploy-time
-                    // migration runner.
-                    npgsqlOptions.MigrationsAssembly("Zeeq.Data.Postgres.Migrations");
-                    npgsqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "zeeq");
-                    npgsqlOptions.SetPostgresVersion(18, 0);
+            .UseNpgsql(connectionString, npgsqlOptions =>
+            {
+                // Runtime references the migrations assembly for now so local/dev
+                // migration application can use the same host. We may want to
+                // decouple runtime and migrations later with a design/deploy-time
+                // migration runner.
+                npgsqlOptions.MigrationsAssembly("Zeeq.Data.Postgres.Migrations");
+                npgsqlOptions.MigrationsHistoryTable("__EFMigrationsHistory", "zeeq");
+                npgsqlOptions.SetPostgresVersion(18, 0);
 
-                    // Enable pgvector type mapping (halfvec/vector columns on snippet tables)
-                    // for both scoped-request and factory-created contexts.
-                    npgsqlOptions.UseVector();
-                }
-            )
+                // Enable pgvector type mapping (halfvec/vector columns on snippet tables)
+                // for both scoped-request and factory-created contexts.
+                npgsqlOptions.UseVector();
+            })
             .UseOpenIddict()
             .UseSnakeCaseNamingConvention()
             .EnableDetailedErrors(false)

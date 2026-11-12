@@ -131,6 +131,8 @@ if (builder.Environment.IsDevelopment())
     builder.Services.AddZeeqStalledIngestSyncCleanup();
 }
 
+builder.AddCodeReviewEvaluationFixtures(appSettings);
+
 var app = builder.Build();
 
 // This will trigger migrations to run.

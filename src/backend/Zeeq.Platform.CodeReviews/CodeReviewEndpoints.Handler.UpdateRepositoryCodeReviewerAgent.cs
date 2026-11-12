@@ -5,10 +5,16 @@ namespace Zeeq.Platform.CodeReviews;
 /// <summary>
 /// Handles updating persisted reviewer agents for one repository.
 /// </summary>
+/// <remarks>
+/// Saving an agent also captures revision history. The pre-change configuration is snapshotted
+/// on the first update, and the new configuration is snapshotted atomically with the same
+/// update. A status-only or otherwise content-identical save creates no revision noise.
+/// </remarks>
 public sealed class UpdateRepositoryCodeReviewerAgentHandler(
     CodeReviewAuthorization authorization,
     ICodeRepositoryStore repositories,
-    ICodeReviewerAgentStore agents
+    ICodeReviewerAgentStore agents,
+    TimeProvider timeProvider
 ) : IEndpointHandler
 {
     /// <summary>
@@ -54,6 +60,16 @@ public sealed class UpdateRepositoryCodeReviewerAgentHandler(
             return TypedResults.BadRequest(validationError);
         }
 
+        if (request.Label is { Length: > 200 })
+        {
+            return TypedResults.BadRequest(
+                new CodeReviewEndpointError(
+                    "invalid_label",
+                    "A revision label must be at most 200 characters."
+                )
+            );
+        }
+
         var repository = await repositories.FindActiveForOrganizationAsync(
             organizationId,
             repositoryId,
@@ -70,18 +86,35 @@ public sealed class UpdateRepositoryCodeReviewerAgentHandler(
             return TypedResults.NotFound();
         }
 
-        existing.TeamId = repository.TeamId;
-        existing.DisplayName = request.DisplayName.Trim();
-        existing.ReviewFacet = request.ReviewFacet.Trim();
-        existing.ModelTier = request.ModelTier;
-        existing.Prompt = request.Prompt.Trim();
-        existing.Enabled = request.Enabled;
-        existing.ActivationConfiguration = CodeReviewEndpointMapping.ToModel(
-            request.ActivationConfiguration
-        );
-        existing.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        var now = timeProvider.GetUtcNow();
+        var userId = CodeReviewEvaluationHandlerSupport.UserId(user) ?? string.Empty;
 
-        var saved = await agents.UpdateAsync(existing, cancellationToken);
+        // Use a detached replacement. The store locks and reloads the persisted original
+        // before capturing history, then commits the replacement and revisions together.
+        var replacement = new CodeReviewerAgent
+        {
+            Id = existing.Id,
+            OrganizationId = existing.OrganizationId,
+            RepositoryId = existing.RepositoryId,
+            TeamId = repository.TeamId,
+            DisplayName = request.DisplayName.Trim(),
+            ReviewFacet = request.ReviewFacet.Trim(),
+            ModelTier = request.ModelTier,
+            Prompt = request.Prompt.Trim(),
+            Enabled = request.Enabled,
+            ActivationConfiguration = CodeReviewEndpointMapping.ToModel(
+                request.ActivationConfiguration
+            ),
+            CreatedAtUtc = existing.CreatedAtUtc,
+            UpdatedAtUtc = now,
+        };
+        var saved = await agents.SaveWithRevisionAsync(
+            replacement,
+            create: false,
+            userId,
+            request.Label,
+            cancellationToken
+        );
 
         return TypedResults.Ok(
             new CodeReviewerAgentResponse(CodeReviewEndpointMapping.ToDto(saved))

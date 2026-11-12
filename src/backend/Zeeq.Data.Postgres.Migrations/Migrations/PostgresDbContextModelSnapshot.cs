@@ -2007,6 +2007,548 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                     b.ToTable("code_repository_prompt_configurations", "zeeq");
                 });
 
+            modelBuilder.Entity("Zeeq.Core.Models.CodeReviewEvaluationCase", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Id")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BaseSha")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("base_sha");
+
+                    b.Property<DateTimeOffset>("CapturedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("captured_at_utc");
+
+                    b.Property<int>("ChangedFileCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("changed_file_count");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("DatasetId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("dataset_id");
+
+                    b.Property<int>("DeclaredChangedFileCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("declared_changed_file_count");
+
+                    b.Property<DateTimeOffset?>("DisabledAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disabled_at_utc");
+
+                    b.Property<string>("HeadSha")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("head_sha");
+
+                    b.Property<int>("OmittedFileCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("omitted_file_count");
+
+                    b.Property<int>("PullRequestNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("pull_request_number");
+
+                    b.Property<string>("PullRequestRecordId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("pull_request_record_id");
+
+                    b.Property<string>("PullRequestState")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("pull_request_state");
+
+                    b.Property<string>("PullRequestTitle")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("pull_request_title");
+
+                    b.Property<string>("ReferenceSets")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("reference_sets");
+
+                    b.Property<DateTimeOffset?>("RemovedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("removed_at_utc");
+
+                    b.Property<string>("RepositoryId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("repository_id");
+
+                    b.Property<int>("SnapshotByteCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("snapshot_byte_count");
+
+                    b.Property<int>("SnapshotSchemaVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("snapshot_schema_version");
+
+                    b.Property<string>("SnapshotSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("snapshot_sha256");
+
+                    b.Property<string>("SnapshotStorageUri")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("snapshot_storage_uri");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("OrganizationId", "Id")
+                        .HasName("pk_code_review_evaluation_cases");
+
+                    b.HasIndex("OrganizationId", "DatasetId", "PullRequestNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_code_review_evaluation_cases_organization_id_dataset_id_pul");
+
+                    b.HasIndex("OrganizationId", "RepositoryId", "DatasetId")
+                        .HasDatabaseName("ix_code_review_evaluation_cases_organization_id_repository_id_");
+
+                    b.HasIndex("OrganizationId", "DatasetId", "RemovedAtUtc", "Id")
+                        .HasDatabaseName("ix_code_review_evaluation_cases_organization_id_dataset_id_rem");
+
+                    b.ToTable("code_review_evaluation_cases", "zeeq");
+                });
+
+            modelBuilder.Entity("Zeeq.Core.Models.CodeReviewEvaluationCaseResult", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Id")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AdditionalFindingCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("additional_finding_count");
+
+                    b.Property<int?>("CandidateByteCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("candidate_byte_count");
+
+                    b.Property<int>("CandidateFindingCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("candidate_finding_count");
+
+                    b.Property<string>("CandidateFindingsJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("candidate_findings_json");
+
+                    b.Property<string>("CandidateSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("candidate_sha256");
+
+                    b.Property<string>("CandidateStorageUri")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("candidate_storage_uri");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at_utc");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<DateTimeOffset?>("DisabledAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disabled_at_utc");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("error_code");
+
+                    b.Property<decimal?>("EstimatedCostUsd")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("numeric(18,8)")
+                        .HasColumnName("estimated_cost_usd");
+
+                    b.Property<int>("ExpectedReferenceCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("expected_reference_count");
+
+                    b.Property<string>("FailureMessage")
+                        .HasMaxLength(4096)
+                        .HasColumnType("character varying(4096)")
+                        .HasColumnName("failure_message");
+
+                    b.Property<long?>("JudgeInputTokens")
+                        .HasColumnType("bigint")
+                        .HasColumnName("judge_input_tokens");
+
+                    b.Property<string>("JudgeMatchesJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("judge_matches_json");
+
+                    b.Property<long?>("JudgeOutputTokens")
+                        .HasColumnType("bigint")
+                        .HasColumnName("judge_output_tokens");
+
+                    b.Property<string>("JudgeProvenanceJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("judge_provenance_json");
+
+                    b.Property<string>("JudgeReasonsJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("judge_reasons_json");
+
+                    b.Property<string>("ManifestCaseId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("manifest_case_id");
+
+                    b.Property<int>("MatchedReferenceCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("matched_reference_count");
+
+                    b.Property<int>("MissedReferenceCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("missed_reference_count");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("outcome");
+
+                    b.Property<string>("Phase")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("phase");
+
+                    b.Property<int>("PullRequestNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("pull_request_number");
+
+                    b.Property<long?>("ReviewerInputTokens")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reviewer_input_tokens");
+
+                    b.Property<long?>("ReviewerOutputTokens")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reviewer_output_tokens");
+
+                    b.Property<string>("ReviewerProvenanceJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("reviewer_provenance_json");
+
+                    b.Property<string>("RunId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("run_id");
+
+                    b.Property<DateTimeOffset?>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at_utc");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("OrganizationId", "Id")
+                        .HasName("pk_code_review_evaluation_case_results");
+
+                    b.HasIndex("OrganizationId", "RunId", "ManifestCaseId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_code_review_evaluation_case_results_organization_id_run_id_");
+
+                    b.HasIndex("OrganizationId", "RunId", "Phase", "ManifestCaseId")
+                        .HasDatabaseName("ix_code_review_evaluation_case_results_organization_id_run_id_1");
+
+                    b.ToTable("code_review_evaluation_case_results", "zeeq");
+                });
+
+            modelBuilder.Entity("Zeeq.Core.Models.CodeReviewEvaluationDataset", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Id")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ArchivedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("archived_at_utc");
+
+                    b.Property<string>("CreateRequestKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("create_request_key");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("description");
+
+                    b.Property<DateTimeOffset?>("DisabledAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disabled_at_utc");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("RepositoryId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("repository_id");
+
+                    b.Property<string>("TeamId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("team_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("OrganizationId", "Id")
+                        .HasName("pk_code_review_evaluation_datasets");
+
+                    b.HasAlternateKey("OrganizationId", "RepositoryId", "Id")
+                        .HasName("ak_code_review_evaluation_datasets_organization_id_repository_");
+
+                    b.HasIndex("OrganizationId", "CreateRequestKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_code_review_evaluation_datasets_organization_id_create_requ");
+
+                    b.HasIndex("OrganizationId", "TeamId")
+                        .HasDatabaseName("ix_code_review_evaluation_datasets_organization_id_team_id");
+
+                    b.HasIndex("OrganizationId", "RepositoryId", "ArchivedAtUtc", "Id")
+                        .HasDatabaseName("ix_code_review_evaluation_datasets_organization_id_repository_");
+
+                    b.ToTable("code_review_evaluation_datasets", "zeeq");
+                });
+
+            modelBuilder.Entity("Zeeq.Core.Models.CodeReviewEvaluationRun", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Id")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AdditionalFindingCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("additional_finding_count");
+
+                    b.Property<string>("AgentId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("agent_id");
+
+                    b.Property<DateTimeOffset?>("CancelRequestedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancel_requested_at_utc");
+
+                    b.Property<int>("CaseCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("case_count");
+
+                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at_utc");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("DatasetId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("dataset_id");
+
+                    b.Property<long>("DatasetVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("dataset_version");
+
+                    b.Property<DateTimeOffset?>("DisabledAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disabled_at_utc");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("error_code");
+
+                    b.Property<int>("ExpectedReferenceCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("expected_reference_count");
+
+                    b.Property<int>("FailedCaseCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("failed_case_count");
+
+                    b.Property<string>("FailureMessage")
+                        .HasMaxLength(4096)
+                        .HasColumnType("character varying(4096)")
+                        .HasColumnName("failure_message");
+
+                    b.Property<int>("GradedCaseCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("graded_case_count");
+
+                    b.Property<DateTimeOffset?>("LeaseExpiresAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lease_expires_at_utc");
+
+                    b.Property<string>("LeaseToken")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("lease_token");
+
+                    b.Property<string>("ManifestJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("manifest_json");
+
+                    b.Property<int>("MatchedReferenceCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("matched_reference_count");
+
+                    b.Property<int>("MissedReferenceCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("missed_reference_count");
+
+                    b.Property<string>("ParentRunId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("parent_run_id");
+
+                    b.Property<string>("RepositoryId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("repository_id");
+
+                    b.Property<string>("RequestKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("request_key");
+
+                    b.Property<string>("RequestedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("requested_by_user_id");
+
+                    b.Property<string>("SavedRevisionId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("saved_revision_id");
+
+                    b.Property<int>("SkippedCaseCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("skipped_case_count");
+
+                    b.Property<DateTimeOffset?>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at_utc");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("state");
+
+                    b.Property<string>("TeamId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("team_id");
+
+                    b.Property<int>("UnlabelledCaseCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("unlabelled_case_count");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("OrganizationId", "Id")
+                        .HasName("ak_code_review_evaluation_runs_organization_id_id");
+
+                    b.HasIndex("OrganizationId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_code_review_evaluation_runs_active_per_org")
+                        .HasFilter("state IN ('Queued', 'Running')");
+
+                    b.HasIndex("OrganizationId", "ParentRunId")
+                        .HasDatabaseName("ix_code_review_evaluation_runs_organization_id_parent_run_id");
+
+                    b.HasIndex("OrganizationId", "RequestKey")
+                        .IsUnique()
+                        .HasDatabaseName("ix_code_review_evaluation_runs_organization_id_request_key");
+
+                    b.HasIndex("OrganizationId", "RepositoryId", "SavedRevisionId")
+                        .HasDatabaseName("ix_code_review_evaluation_runs_organization_id_repository_id_s");
+
+                    b.HasIndex("OrganizationId", "RepositoryId", "DatasetId", "CreatedAtUtc", "Id")
+                        .HasDatabaseName("ix_code_review_evaluation_runs_organization_id_repository_id_d");
+
+                    b.ToTable("code_review_evaluation_runs", "zeeq");
+                });
+
             modelBuilder.Entity("Zeeq.Core.Models.CodeReviewExecutionLease", b =>
                 {
                     b.Property<string>("OrganizationId")
@@ -2361,6 +2903,12 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                     b.HasKey("Id")
                         .HasName("pk_code_reviewer_agents");
 
+                    b.HasAlternateKey("OrganizationId", "Id")
+                        .HasName("ak_code_reviewer_agents_organization_id_id");
+
+                    b.HasAlternateKey("OrganizationId", "RepositoryId", "Id")
+                        .HasName("ak_code_reviewer_agents_organization_id_repository_id_id");
+
                     b.HasIndex("RepositoryId")
                         .HasDatabaseName("ix_code_reviewer_agents_repository_id");
 
@@ -2371,6 +2919,82 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                         .HasDatabaseName("ix_code_reviewer_agents_organization_id_repository_id_enabled_");
 
                     b.ToTable("code_reviewer_agents", "zeeq");
+                });
+
+            modelBuilder.Entity("Zeeq.Core.Models.CodeReviewerAgentRevision", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Id")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AgentId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("Configuration")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("configuration");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("content_hash");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("CreatedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<DateTimeOffset?>("DisabledAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disabled_at_utc");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("label");
+
+                    b.Property<string>("RepositoryId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("repository_id");
+
+                    b.Property<string>("TeamId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("team_id");
+
+                    b.HasKey("OrganizationId", "Id")
+                        .HasName("pk_code_reviewer_agent_revisions");
+
+                    b.HasAlternateKey("OrganizationId", "RepositoryId", "Id")
+                        .HasName("ak_code_reviewer_agent_revisions_organization_id_repository_id");
+
+                    b.HasIndex("OrganizationId", "AgentId", "CreatedAtUtc", "Id")
+                        .HasDatabaseName("ix_code_reviewer_agent_revisions_organization_id_agent_id_crea");
+
+                    b.HasIndex("OrganizationId", "RepositoryId", "AgentId", "ContentHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_code_reviewer_agent_revisions_organization_id_repository_id");
+
+                    b.ToTable("code_reviewer_agent_revisions", "zeeq");
                 });
 
             modelBuilder.Entity("Zeeq.Core.Models.DcrClientSetup", b =>
@@ -4797,6 +5421,113 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                         .HasConstraintName("fk_code_repository_prompt_configurations_code_review_repositor");
                 });
 
+            modelBuilder.Entity("Zeeq.Core.Models.CodeReviewEvaluationCase", b =>
+                {
+                    b.HasOne("Zeeq.Core.Models.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_code_review_evaluation_cases_organizations_organization_id");
+
+                    b.HasOne("Zeeq.Core.Models.CodeRepository", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "RepositoryId")
+                        .HasPrincipalKey("OrganizationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_code_review_evaluation_cases_code_review_repositories_organ");
+
+                    b.HasOne("Zeeq.Core.Models.CodeReviewEvaluationDataset", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "RepositoryId", "DatasetId")
+                        .HasPrincipalKey("OrganizationId", "RepositoryId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_code_review_evaluation_cases_code_review_evaluation_dataset");
+                });
+
+            modelBuilder.Entity("Zeeq.Core.Models.CodeReviewEvaluationCaseResult", b =>
+                {
+                    b.HasOne("Zeeq.Core.Models.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_code_review_evaluation_case_results_organizations_organizat");
+
+                    b.HasOne("Zeeq.Core.Models.CodeReviewEvaluationRun", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "RunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_code_review_evaluation_case_results_code_review_evaluation_");
+                });
+
+            modelBuilder.Entity("Zeeq.Core.Models.CodeReviewEvaluationDataset", b =>
+                {
+                    b.HasOne("Zeeq.Core.Models.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_code_review_evaluation_datasets_organizations_organization_");
+
+                    b.HasOne("Zeeq.Core.Models.CodeRepository", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "RepositoryId")
+                        .HasPrincipalKey("OrganizationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_code_review_evaluation_datasets_code_review_repositories_or");
+
+                    b.HasOne("Zeeq.Core.Models.Team", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "TeamId")
+                        .HasPrincipalKey("OrganizationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_code_review_evaluation_datasets_teams_organization_id_team_");
+                });
+
+            modelBuilder.Entity("Zeeq.Core.Models.CodeReviewEvaluationRun", b =>
+                {
+                    b.HasOne("Zeeq.Core.Models.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_code_review_evaluation_runs_organizations_organization_id");
+
+                    b.HasOne("Zeeq.Core.Models.CodeReviewEvaluationRun", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "ParentRunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_code_review_evaluation_runs_code_review_evaluation_runs_org");
+
+                    b.HasOne("Zeeq.Core.Models.CodeRepository", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "RepositoryId")
+                        .HasPrincipalKey("OrganizationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_code_review_evaluation_runs_code_review_repositories_organi");
+
+                    b.HasOne("Zeeq.Core.Models.CodeReviewEvaluationDataset", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "RepositoryId", "DatasetId")
+                        .HasPrincipalKey("OrganizationId", "RepositoryId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_code_review_evaluation_runs_code_review_evaluation_datasets");
+
+                    b.HasOne("Zeeq.Core.Models.CodeReviewerAgentRevision", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "RepositoryId", "SavedRevisionId")
+                        .HasPrincipalKey("OrganizationId", "RepositoryId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_code_review_evaluation_runs_code_reviewer_agent_revisions_o");
+                });
+
             modelBuilder.Entity("Zeeq.Core.Models.CodeReviewExecutionLease", b =>
                 {
                     b.HasOne("Zeeq.Core.Models.Organization", null)
@@ -4908,6 +5639,32 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
 
                     b.Navigation("ActivationConfiguration")
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Zeeq.Core.Models.CodeReviewerAgentRevision", b =>
+                {
+                    b.HasOne("Zeeq.Core.Models.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_code_reviewer_agent_revisions_organizations_organization_id");
+
+                    b.HasOne("Zeeq.Core.Models.CodeRepository", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "RepositoryId")
+                        .HasPrincipalKey("OrganizationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_code_reviewer_agent_revisions_code_review_repositories_orga");
+
+                    b.HasOne("Zeeq.Core.Models.CodeReviewerAgent", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "RepositoryId", "AgentId")
+                        .HasPrincipalKey("OrganizationId", "RepositoryId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_code_reviewer_agent_revisions_code_reviewer_agents_organiza");
                 });
 
             modelBuilder.Entity("Zeeq.Core.Models.DcrClientSetup", b =>

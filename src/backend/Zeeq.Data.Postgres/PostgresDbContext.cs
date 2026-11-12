@@ -160,6 +160,36 @@ public class PostgresDbContext(DbContextOptions<PostgresDbContext> options)
     public DbSet<CodeReviewerAgent> CodeReviewerAgents => Set<CodeReviewerAgent>();
 
     /// <summary>
+    /// Immutable reviewer agent revision snapshots.
+    /// </summary>
+    public DbSet<CodeReviewerAgentRevision> CodeReviewerAgentRevisions =>
+        Set<CodeReviewerAgentRevision>();
+
+    /// <summary>
+    /// Versioned reviewer backtesting datasets.
+    /// </summary>
+    public DbSet<CodeReviewEvaluationDataset> CodeReviewEvaluationDatasets =>
+        Set<CodeReviewEvaluationDataset>();
+
+    /// <summary>
+    /// Captured pull request cases inside evaluation datasets.
+    /// </summary>
+    public DbSet<CodeReviewEvaluationCase> CodeReviewEvaluationCases =>
+        Set<CodeReviewEvaluationCase>();
+
+    /// <summary>
+    /// Admitted reviewer backtesting runs.
+    /// </summary>
+    public DbSet<CodeReviewEvaluationRun> CodeReviewEvaluationRuns =>
+        Set<CodeReviewEvaluationRun>();
+
+    /// <summary>
+    /// Per-case evaluation results.
+    /// </summary>
+    public DbSet<CodeReviewEvaluationCaseResult> CodeReviewEvaluationCaseResults =>
+        Set<CodeReviewEvaluationCaseResult>();
+
+    /// <summary>
     /// Active review guard rows.
     /// </summary>
     public DbSet<ActiveCodeReviewLock> ActiveCodeReviewLocks => Set<ActiveCodeReviewLock>();

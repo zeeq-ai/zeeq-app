@@ -1,6 +1,16 @@
 namespace Zeeq.Platform.CodeReviews;
 
 /// <summary>
+/// Marker for the real, provider-backed pull request source.
+/// </summary>
+/// <remarks>
+/// Development fixture decorators depend on this marker so they can wrap the provider source
+/// without a circular dependency. Production resolves the marker as
+/// <see cref="ICodeReviewPullRequestSource"/>.
+/// </remarks>
+public interface ICodeReviewProviderPullRequestSource : ICodeReviewPullRequestSource;
+
+/// <summary>
 /// Provider-neutral source for pull request data needed by a code review run.
 /// </summary>
 public interface ICodeReviewPullRequestSource

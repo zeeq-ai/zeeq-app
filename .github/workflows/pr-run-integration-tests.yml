@@ -87,6 +87,9 @@ jobs:
       - name: Build 0factor fixture seeder
         run: dotnet build build/0factor/seed.cs
 
+      - name: Build reviewer backtesting fixture seeder
+        run: dotnet build build/code-review-evaluation/seed.cs
+
       # Run every TUnit test in the solution. PostgreSQL integration tests use
       # Testcontainers rather than a shared service database so migrations and
       # data mutations remain isolated per test assembly.

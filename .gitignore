@@ -535,3 +535,6 @@ generated/
 # We need these
 !**/proto/logs**
 !**/collector/logs**
+
+# Local backtesting fixture manifests
+build/code-review-evaluation/bt_*.manifest.json
