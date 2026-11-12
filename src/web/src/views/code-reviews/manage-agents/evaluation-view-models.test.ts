@@ -143,6 +143,11 @@ describe("evaluation dataset view models", () => {
       ],
     });
     expect(request.cases[0].pullRequestNumber).toBe(501);
+    expect(next.cases[0].baselineReferenceSets).toEqual(
+      draft.cases[0].baselineReferenceSets,
+    );
+    next.cases[0].captureToken = null;
+    expect(countEvaluationDatasetDraftChanges(next)).toBe(1);
   });
 
   it("counts additions, removals, refreshes, and reference edits once per case", () => {

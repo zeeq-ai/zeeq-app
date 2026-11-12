@@ -242,7 +242,6 @@ export function refreshEvaluationCase(
           omittedFileCount: Number(capture.preview.omittedFileCount),
         },
         referenceSets,
-        baselineReferenceSets: cloneReferenceSets(referenceSets),
       };
     }),
   };
