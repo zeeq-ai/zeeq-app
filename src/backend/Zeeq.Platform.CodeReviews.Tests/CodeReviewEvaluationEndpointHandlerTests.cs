@@ -25,6 +25,36 @@ namespace Zeeq.Platform.CodeReviews.Tests;
 public sealed class CodeReviewEvaluationEndpointHandlerTests
 {
     [Test]
+    public async Task Create_ReplayedKeyFromAnotherRepository_ReturnsConflict()
+    {
+        var fixture = Fixture.Create();
+        fixture
+            .Datasets.CreateAsync(
+                Arg.Any<CodeReviewEvaluationDataset>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns<Task<CodeReviewEvaluationDataset>>(_ =>
+                throw new CodeReviewEvaluationDatasetRequestKeyConflictException(
+                    "shared-key",
+                    "repo_other"
+                )
+            );
+
+        var result = await fixture.CreateHandler.HandleAsync(
+            Fixture.OrganizationId,
+            Fixture.RepositoryId,
+            new("Fixture dataset", null, "shared-key"),
+            Fixture.User(),
+            CancellationToken.None
+        );
+
+        var conflict = result.Result as Conflict<CodeReviewEndpointError>;
+
+        await Assert.That(conflict).IsNotNull();
+        await Assert.That(conflict!.Value!.Code).IsEqualTo("create_request_key_conflict");
+    }
+
+    [Test]
     public async Task Save_RejectsCaptureTokenForAnotherPullRequest()
     {
         var fixture = Fixture.Create();
@@ -369,6 +399,7 @@ public sealed class CodeReviewEvaluationEndpointHandlerTests
                 )
             );
 
+            CreateHandler = new(authorization, repositories, Datasets, settings, Clock);
             SaveHandler = new(
                 authorization,
                 repositories,
@@ -397,6 +428,8 @@ public sealed class CodeReviewEvaluationEndpointHandlerTests
         public GetCodeReviewEvaluationCaseSnapshotHandler SnapshotHandler { get; }
 
         public CodeReviewEvaluationPrTargetService TargetService { get; }
+
+        public CreateCodeReviewEvaluationDatasetHandler CreateHandler { get; }
 
         public SaveCodeReviewEvaluationDatasetHandler SaveHandler { get; }
 

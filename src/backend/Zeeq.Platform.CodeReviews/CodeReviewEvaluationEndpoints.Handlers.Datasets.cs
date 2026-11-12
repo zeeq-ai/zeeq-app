@@ -173,6 +173,7 @@ public sealed class CreateCodeReviewEvaluationDatasetHandler(
             ForbidHttpResult,
             BadRequest<CodeReviewEndpointError>,
             Ok<CodeReviewEvaluationDatasetResponse>,
+            Conflict<CodeReviewEndpointError>,
             JsonHttpResult<CodeReviewEndpointError>
         >
     > HandleAsync(
@@ -247,24 +248,37 @@ public sealed class CreateCodeReviewEvaluationDatasetHandler(
         }
 
         var now = timeProvider.GetUtcNow();
-        var created = await datasets.CreateAsync(
-            new CodeReviewEvaluationDataset
-            {
-                Id = $"cred_{Guid.CreateVersion7():N}",
-                OrganizationId = organizationId,
-                TeamId = repository.TeamId,
-                RepositoryId = repository.Id,
-                Name = name,
-                Description = string.IsNullOrWhiteSpace(request.Description)
-                    ? null
-                    : request.Description.Trim(),
-                Version = 1,
-                CreateRequestKey = request.CreateRequestKey.Trim(),
-                CreatedAtUtc = now,
-                UpdatedAtUtc = now,
-            },
-            cancellationToken
-        );
+        CodeReviewEvaluationDataset created;
+        try
+        {
+            created = await datasets.CreateAsync(
+                new CodeReviewEvaluationDataset
+                {
+                    Id = $"cred_{Guid.CreateVersion7():N}",
+                    OrganizationId = organizationId,
+                    TeamId = repository.TeamId,
+                    RepositoryId = repository.Id,
+                    Name = name,
+                    Description = string.IsNullOrWhiteSpace(request.Description)
+                        ? null
+                        : request.Description.Trim(),
+                    Version = 1,
+                    CreateRequestKey = request.CreateRequestKey.Trim(),
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now,
+                },
+                cancellationToken
+            );
+        }
+        catch (CodeReviewEvaluationDatasetRequestKeyConflictException)
+        {
+            return TypedResults.Conflict(
+                new CodeReviewEndpointError(
+                    "create_request_key_conflict",
+                    "The create request key already belongs to a dataset in another repository."
+                )
+            );
+        }
 
         var cases = await datasets.ListCasesAsync(
             organizationId,

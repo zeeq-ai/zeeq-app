@@ -3849,7 +3849,7 @@
           "Code Review Evaluations"
         ],
         "summary": "Create an evaluation dataset.",
-        "description": "Creates a persisted, named dataset so curation can start immediately. The call is\nidempotent on `createRequestKey`: a retry returns the same dataset instead of\ncreating a duplicate. Add-PR resolution requires this persisted dataset id.",
+        "description": "Creates a persisted, named dataset so curation can start immediately. The call is\nidempotent on `createRequestKey`: a retry from the same repository returns the same\ndataset instead of creating a duplicate. Replaying the key from a different\nrepository returns `409 create_request_key_conflict` and leaves the original\ndataset untouched. Add-PR resolution requires this persisted dataset id.",
         "operationId": "CreateCodeReviewEvaluationDataset",
         "parameters": [
           {
@@ -3905,6 +3905,16 @@
           },
           "404": {
             "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
           },
           "503": {
             "description": "Service Unavailable",

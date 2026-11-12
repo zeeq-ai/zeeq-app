@@ -80,6 +80,35 @@ public interface ICodeReviewEvaluationDatasetStore
 }
 
 /// <summary>
+/// Thrown when a create request key is replayed from a different repository.
+/// </summary>
+/// <remarks>
+/// The idempotency key is scoped to one organization, so a retry must return the dataset it
+/// originally created. Replaying the key from another repository would either leak a dataset
+/// across repositories or silently create a second one, so it is a conflict and the original row
+/// is left untouched.
+/// </remarks>
+public sealed class CodeReviewEvaluationDatasetRequestKeyConflictException : Exception
+{
+    /// <summary>Creates a conflict for one replayed request key.</summary>
+    public CodeReviewEvaluationDatasetRequestKeyConflictException(
+        string createRequestKey,
+        string existingRepositoryId
+    )
+        : base("The create request key already belongs to a dataset in another repository.")
+    {
+        CreateRequestKey = createRequestKey;
+        ExistingRepositoryId = existingRepositoryId;
+    }
+
+    /// <summary>Replayed idempotency key.</summary>
+    public string CreateRequestKey { get; }
+
+    /// <summary>Repository that owns the existing dataset for this key.</summary>
+    public string ExistingRepositoryId { get; }
+}
+
+/// <summary>
 /// Filter for listing evaluation datasets.
 /// </summary>
 /// <param name="OrganizationId">Organization scope.</param>

@@ -72,6 +72,7 @@ public sealed class CodeReviewEvaluationEndpoints : IEndpoint
             .WithName("CreateCodeReviewEvaluationDataset")
             .Produces<CodeReviewEvaluationDatasetResponse>()
             .Produces<CodeReviewEndpointError>(StatusCodes.Status400BadRequest)
+            .Produces<CodeReviewEndpointError>(StatusCodes.Status409Conflict)
             .Produces(StatusCodes.Status403Forbidden)
             .Produces(StatusCodes.Status404NotFound)
             .Produces<CodeReviewEndpointError>(StatusCodes.Status503ServiceUnavailable)
@@ -79,8 +80,10 @@ public sealed class CodeReviewEvaluationEndpoints : IEndpoint
             .WithDescription(
                 """
                 Creates a persisted, named dataset so curation can start immediately. The call is
-                idempotent on `createRequestKey`: a retry returns the same dataset instead of
-                creating a duplicate. Add-PR resolution requires this persisted dataset id.
+                idempotent on `createRequestKey`: a retry from the same repository returns the same
+                dataset instead of creating a duplicate. Replaying the key from a different
+                repository returns `409 create_request_key_conflict` and leaves the original
+                dataset untouched. Add-PR resolution requires this persisted dataset id.
                 """
             );
 

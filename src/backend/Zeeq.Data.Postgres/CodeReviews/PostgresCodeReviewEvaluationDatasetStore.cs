@@ -27,20 +27,15 @@ internal sealed class PostgresCodeReviewEvaluationDatasetStore(
         CancellationToken cancellationToken
     )
     {
-        var existing = await db
-            .CodeReviewEvaluationDatasets.TagWithOperationCallSite(
-                "code_review_evaluation_dataset.find_by_request_key"
-            )
-            .FirstOrDefaultAsync(
-                candidate =>
-                    candidate.OrganizationId == dataset.OrganizationId
-                    && candidate.CreateRequestKey == dataset.CreateRequestKey,
-                cancellationToken
-            );
+        var existing = await FindByRequestKeyAsync(
+            dataset.OrganizationId,
+            dataset.CreateRequestKey,
+            cancellationToken
+        );
 
         if (existing is not null)
         {
-            return existing;
+            return ResolveReplay(dataset, existing);
         }
 
         db.CodeReviewEvaluationDatasets.Add(dataset);
@@ -50,29 +45,66 @@ internal sealed class PostgresCodeReviewEvaluationDatasetStore(
             await db.SaveChangesAsync(cancellationToken);
             return dataset;
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception)
+            when (PostgresConstraintViolation.IsUniqueViolation(
+                    exception,
+                    "ix_code_review_evaluation_datasets_organization"
+                )
+            )
         {
-            // A concurrent retry won the unique request-key index. Return that row so the
-            // create call stays idempotent instead of creating a second dataset.
+            // A concurrent retry won the unique request-key index. Resolve against the winner the
+            // same way as the pre-lookup path, including the cross-repository conflict rule.
             db.Entry(dataset).State = EntityState.Detached;
 
-            var winner = await db
-                .CodeReviewEvaluationDatasets.TagWithOperationCallSite(
-                    "code_review_evaluation_dataset.find_by_request_key"
-                )
-                .FirstOrDefaultAsync(
-                    candidate =>
-                        candidate.OrganizationId == dataset.OrganizationId
-                        && candidate.CreateRequestKey == dataset.CreateRequestKey,
-                    cancellationToken
-                );
+            var winner = await FindByRequestKeyAsync(
+                dataset.OrganizationId,
+                dataset.CreateRequestKey,
+                cancellationToken
+            );
 
-            return winner
-                ?? throw new InvalidOperationException(
+            return winner is null
+                ? throw new InvalidOperationException(
                     "A dataset create race could not be resolved for its request key."
-                );
+                )
+                : ResolveReplay(dataset, winner);
         }
     }
+
+    private static CodeReviewEvaluationDataset ResolveReplay(
+        CodeReviewEvaluationDataset requested,
+        CodeReviewEvaluationDataset existing
+    )
+    {
+        // The key is organization-scoped, but a replay must not cross repositories: returning
+        // the other repository's dataset would leak it, and inserting would duplicate the key.
+        if (!string.Equals(existing.RepositoryId, requested.RepositoryId, StringComparison.Ordinal))
+        {
+            throw new CodeReviewEvaluationDatasetRequestKeyConflictException(
+                requested.CreateRequestKey,
+                existing.RepositoryId
+            );
+        }
+
+        // NOTE: the existing row is returned unchanged; a replay never mutates it.
+        return existing;
+    }
+
+    private Task<CodeReviewEvaluationDataset?> FindByRequestKeyAsync(
+        string organizationId,
+        string createRequestKey,
+        CancellationToken cancellationToken
+    ) =>
+        db
+            .CodeReviewEvaluationDatasets.TagWithOperationCallSite(
+                "code_review_evaluation_dataset.find_by_request_key"
+            )
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                candidate =>
+                    candidate.OrganizationId == organizationId
+                    && candidate.CreateRequestKey == createRequestKey,
+                cancellationToken
+            );
 
     /// <inheritdoc />
     public Task<CodeReviewEvaluationDataset?> FindAsync(
@@ -466,12 +498,7 @@ internal sealed class PostgresCodeReviewEvaluationDatasetStore(
             );
         }
 
-        return await FindAsync(
-            organizationId,
-            datasetId,
-            includeArchived: true,
-            cancellationToken
-        );
+        return await FindAsync(organizationId, datasetId, includeArchived: true, cancellationToken);
     }
 
     private async Task<bool> PromotionSourcesAreValidAsync(
@@ -563,11 +590,7 @@ internal sealed class PostgresCodeReviewEvaluationDatasetStore(
         return promoted.All(entry =>
             !string.IsNullOrWhiteSpace(entry.Finding.SourceFindingId)
             && candidates.Any(candidate =>
-                string.Equals(
-                    candidate.RunId,
-                    entry.Finding.SourceRunId,
-                    StringComparison.Ordinal
-                )
+                string.Equals(candidate.RunId, entry.Finding.SourceRunId, StringComparison.Ordinal)
                 && candidate.PullRequestNumber == entry.PullRequestNumber
                 && CandidateFindingsContain(candidate.Payload, entry.Finding.SourceFindingId)
             )

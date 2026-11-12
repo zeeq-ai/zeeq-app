@@ -146,6 +146,7 @@
             :loading="loadingHistorical"
             @click="emits('importHistorical')"
           />
+          <p class="text-xs text-muted">Checks the latest 20 reviews for this PR.</p>
           <p
             v-if="
               historicalLookupComplete &&
@@ -154,7 +155,7 @@
             "
             class="text-xs text-muted"
           >
-            No previous findings were found for this reviewer on this PR.
+            No findings for this reviewer were found in the latest 20 reviews.
           </p>
           <ReferenceFindingEditor
             :reference-set="referenceSet"

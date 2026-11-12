@@ -77,6 +77,8 @@ export const useCodeReviewEvaluationStore = defineStore(
     const runErrorCode = ref<string | null>(null);
     const runConflict = ref<string | null>(null);
     let pendingCreate: {
+      organizationId: string;
+      repositoryId: string;
       name: string;
       description?: string;
       key: string;
@@ -212,10 +214,14 @@ export const useCodeReviewEvaluationStore = defineStore(
       const normalizedDescription = description?.trim() || undefined;
       if (
         !pendingCreate ||
+        pendingCreate.organizationId !== orgId ||
+        pendingCreate.repositoryId !== repositoryId ||
         pendingCreate.name !== normalizedName ||
         pendingCreate.description !== normalizedDescription
       ) {
         pendingCreate = {
+          organizationId: orgId,
+          repositoryId,
           name: normalizedName,
           description: normalizedDescription,
           key: crypto.randomUUID(),
@@ -237,7 +243,7 @@ export const useCodeReviewEvaluationStore = defineStore(
             },
           );
         selectedDataset.value = response.dataset;
-        pendingCreate = null;
+        if (pendingCreate?.key === createRequestKey) pendingCreate = null;
         await loadDatasets(repositoryId);
         return response.dataset;
       } catch (err: unknown) {

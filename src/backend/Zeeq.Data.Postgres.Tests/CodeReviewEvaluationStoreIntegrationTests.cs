@@ -69,6 +69,46 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
     }
 
     [Test]
+    public async Task CreateAsync_ReplayedKeyFromAnotherRepositoryConflictsAndLeavesOriginal()
+    {
+        await TestBiome
+            .Start(_context, out _)
+            .AddRepository(out var alpha)
+            .AddRepository(out var beta)
+            .BuildAsync();
+
+        var store = Datasets;
+        var first = await store.CreateAsync(
+            NewDataset(alpha, "shared-request-key"),
+            CancellationToken.None
+        );
+
+        var conflict =
+            await Assert.ThrowsAsync<CodeReviewEvaluationDatasetRequestKeyConflictException>(() =>
+                store.CreateAsync(NewDataset(beta, "shared-request-key"), CancellationToken.None)
+            );
+
+        await Assert.That(conflict!.ExistingRepositoryId).IsEqualTo(alpha.Id);
+        await Assert.That(conflict.CreateRequestKey).IsEqualTo("shared-request-key");
+
+        _context.ChangeTracker.Clear();
+        var rows = await _context
+            .CodeReviewEvaluationDatasets.AsNoTracking()
+            .Where(item =>
+                item.OrganizationId == alpha.OrganizationId
+                && item.CreateRequestKey == "shared-request-key"
+            )
+            .ToArrayAsync();
+
+        // No second dataset, and the original row was not mutated by the replay.
+        await Assert.That(rows.Length).IsEqualTo(1);
+        await Assert.That(rows[0].Id).IsEqualTo(first.Id);
+        await Assert.That(rows[0].RepositoryId).IsEqualTo(alpha.Id);
+        await Assert.That(rows[0].Version).IsEqualTo(1);
+        await Assert.That(rows[0].Name).IsEqualTo(first.Name);
+    }
+
+    [Test]
     public async Task SaveAsync_RejectsStaleVersionWithoutWriting()
     {
         var (repository, agent) = await SeedRepositoryAsync();
@@ -286,7 +326,8 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
             CancellationToken.None
         );
         var caseId = seeded.Cases!.Single().Id;
-        await Assert.That(seeded.Cases!.Single().ReferenceSets.Single().Findings.Single().Id)
+        await Assert
+            .That(seeded.Cases!.Single().ReferenceSets.Single().Findings.Single().Id)
             .IsEqualTo("ref_old");
 
         var newSet = new CodeReviewEvaluationReferenceSet(
@@ -323,7 +364,9 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
             CancellationToken.None
         );
 
-        await Assert.That(refreshed.Outcome).IsEqualTo(CodeReviewEvaluationDatasetSaveOutcome.Saved);
+        await Assert
+            .That(refreshed.Outcome)
+            .IsEqualTo(CodeReviewEvaluationDatasetSaveOutcome.Saved);
         var updated = refreshed.Cases!.Single();
         await Assert.That(updated.Id).IsEqualTo(caseId);
         await Assert.That(updated.HeadSha).IsEqualTo("head-sha-sha-new");
@@ -400,7 +443,9 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
             CancellationToken.None
         );
 
-        await Assert.That(refreshed.Outcome).IsEqualTo(CodeReviewEvaluationDatasetSaveOutcome.Saved);
+        await Assert
+            .That(refreshed.Outcome)
+            .IsEqualTo(CodeReviewEvaluationDatasetSaveOutcome.Saved);
         await Assert.That(refreshed.Cases!.Single().ReferenceSets.Count).IsEqualTo(0);
 
         _context.ChangeTracker.Clear();
@@ -1580,10 +1625,7 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
                 version,
                 dataset.Name,
                 null,
-                [
-                    new(case901, 901, null, null),
-                    new(null, 902, NewCapture("sha-902", 902), null),
-                ]
+                [new(case901, 901, null, null), new(null, 902, NewCapture("sha-902", 902), null)]
             ),
             CancellationToken.None
         );
@@ -1789,11 +1831,11 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
                 CancellationToken.None
             )
         ).Run!;
-        var caseId = (await store.FindAsync(
-            repository.OrganizationId,
-            parent.Id,
-            CancellationToken.None
-        ))!.Manifest.Cases.Single().CaseId;
+        var caseId = (
+            await store.FindAsync(repository.OrganizationId, parent.Id, CancellationToken.None)
+        )!
+            .Manifest.Cases.Single()
+            .CaseId;
 
         var candidate = new CodeReviewEvaluationArtifact(
             "postgres://reviewer-evaluations/org/repo/reviewed/output.xml",
@@ -1845,7 +1887,9 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
         );
 
         await Assert.That(judgeFailure.Phase).IsEqualTo(CodeReviewEvaluationCasePhase.Reviewed);
-        await Assert.That(judgeFailure.Outcome).IsEqualTo(CodeReviewEvaluationCaseOutcome.JudgeFailed);
+        await Assert
+            .That(judgeFailure.Outcome)
+            .IsEqualTo(CodeReviewEvaluationCaseOutcome.JudgeFailed);
         await Assert.That(judgeFailure.CandidateStorageUri).IsEqualTo(candidate.StorageUri);
 
         await store.FinalizeAsync(
@@ -1868,7 +1912,9 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
                 && result.RunId == parent.Id
                 && result.ManifestCaseId == caseId
             );
-        await Assert.That(parentResult.Outcome).IsEqualTo(CodeReviewEvaluationCaseOutcome.JudgeFailed);
+        await Assert
+            .That(parentResult.Outcome)
+            .IsEqualTo(CodeReviewEvaluationCaseOutcome.JudgeFailed);
         await Assert.That(parentResult.CandidateStorageUri).IsEqualTo(candidate.StorageUri);
         await Assert.That(parentResult.CandidateSha256).IsEqualTo(candidate.Sha256);
         await Assert.That(parentResult.CandidateByteCount).IsEqualTo(candidate.ByteCount);
@@ -1886,7 +1932,9 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
             ),
             CancellationToken.None
         );
-        await Assert.That(retry.Outcome).IsEqualTo(CodeReviewEvaluationRunAdmissionOutcome.Admitted);
+        await Assert
+            .That(retry.Outcome)
+            .IsEqualTo(CodeReviewEvaluationRunAdmissionOutcome.Admitted);
 
         await store.TryClaimAsync(
             repository.OrganizationId,
@@ -1931,11 +1979,11 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
                 TimeSpan.FromMinutes(5),
                 CancellationToken.None
             );
-            var caseId = (await store.FindAsync(
-                repository.OrganizationId,
-                run.Id,
-                CancellationToken.None
-            ))!.Manifest.Cases.Single().CaseId;
+            var caseId = (
+                await store.FindAsync(repository.OrganizationId, run.Id, CancellationToken.None)
+            )!
+                .Manifest.Cases.Single()
+                .CaseId;
 
             return (run, caseId, lease);
         }
@@ -2027,21 +2075,20 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
             ),
             CancellationToken.None
         );
-        await Assert
-            .ThrowsAsync<CodeReviewEvaluationFencedException>(async () =>
-                await Results.RecordFailureAsync(
-                    new(
-                        repository.OrganizationId,
-                        afterCandidate.Run.Id,
-                        afterCandidate.CaseId,
-                        afterCandidate.Lease,
-                        CodeReviewEvaluationCaseOutcome.ReviewFailed,
-                        "ReviewerFailed",
-                        "Late reviewer failure"
-                    ),
-                    CancellationToken.None
-                )
-            );
+        await Assert.ThrowsAsync<CodeReviewEvaluationFencedException>(async () =>
+            await Results.RecordFailureAsync(
+                new(
+                    repository.OrganizationId,
+                    afterCandidate.Run.Id,
+                    afterCandidate.CaseId,
+                    afterCandidate.Lease,
+                    CodeReviewEvaluationCaseOutcome.ReviewFailed,
+                    "ReviewerFailed",
+                    "Late reviewer failure"
+                ),
+                CancellationToken.None
+            )
+        );
         await FinishAsync(afterCandidate.Run, afterCandidate.Lease);
 
         // A judge failure before grading starts is rejected.
@@ -2055,21 +2102,20 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
             ),
             CancellationToken.None
         );
-        await Assert
-            .ThrowsAsync<CodeReviewEvaluationFencedException>(async () =>
-                await Results.RecordFailureAsync(
-                    new(
-                        repository.OrganizationId,
-                        beforeGrading.Run.Id,
-                        beforeGrading.CaseId,
-                        beforeGrading.Lease,
-                        CodeReviewEvaluationCaseOutcome.JudgeFailed,
-                        "JudgeInvalidJson",
-                        "Judge ran too early"
-                    ),
-                    CancellationToken.None
-                )
-            );
+        await Assert.ThrowsAsync<CodeReviewEvaluationFencedException>(async () =>
+            await Results.RecordFailureAsync(
+                new(
+                    repository.OrganizationId,
+                    beforeGrading.Run.Id,
+                    beforeGrading.CaseId,
+                    beforeGrading.Lease,
+                    CodeReviewEvaluationCaseOutcome.JudgeFailed,
+                    "JudgeInvalidJson",
+                    "Judge ran too early"
+                ),
+                CancellationToken.None
+            )
+        );
         await FinishAsync(beforeGrading.Run, beforeGrading.Lease);
     }
 
