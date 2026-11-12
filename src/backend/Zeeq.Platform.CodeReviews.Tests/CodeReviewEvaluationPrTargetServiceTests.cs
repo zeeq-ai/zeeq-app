@@ -51,6 +51,36 @@ public sealed class CodeReviewEvaluationPrTargetServiceTests
     }
 
     [Test]
+    public async Task ResolveAsync_PreservesFragmentOrderAcrossValidAndInvalidEntries()
+    {
+        var service = NewService();
+
+        var results = await service.ResolveAsync(
+            OrganizationId,
+            RepositoryId,
+            OwnerQualifiedName,
+            "dataset_1",
+            1,
+            ["901", "not-a-number", "902", "#901"],
+            CancellationToken.None
+        );
+
+        // Item order mirrors the request fragments; the repeated 901 keeps its first position
+        // and is not resolved twice.
+        await Assert.That(results.Count).IsEqualTo(3);
+        await Assert.That(results[0].Entry).IsEqualTo("901");
+        await Assert.That(results[0].PullRequestNumber).IsEqualTo(901);
+        await Assert.That(results[0].ErrorCode).IsNull();
+
+        await Assert.That(results[1].Entry).IsEqualTo("not-a-number");
+        await Assert.That(results[1].ErrorCode).IsEqualTo("pr_invalid_entry");
+
+        await Assert.That(results[2].Entry).IsEqualTo("902");
+        await Assert.That(results[2].PullRequestNumber).IsEqualTo(902);
+        await Assert.That(results[2].ErrorCode).IsNull();
+    }
+
+    [Test]
     public async Task ResolveAsync_RejectsCrossRepositoryUrlPerEntry()
     {
         var service = NewService();

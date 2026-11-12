@@ -38,13 +38,24 @@ public sealed partial class CodeReviewEvaluationPrTargetService(
         CancellationToken cancellationToken
     )
     {
-        var (parsed, invalid) = ParseEntries(entries, ownerQualifiedRepoName);
-        var results = new List<CodeReviewEvaluationPrResolution>(parsed.Count + invalid.Count);
-        results.AddRange(invalid);
+        var slots = ParseEntries(entries, ownerQualifiedRepoName);
+        var results = new List<CodeReviewEvaluationPrResolution>(slots.Count);
 
-        foreach (var entry in parsed.Values)
+        // Results preserve the caller's fragment order, mixing successful resolutions and
+        // per-entry errors exactly where the entry appeared.
+        foreach (var slot in slots)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (slot.Parsed is null)
+            {
+                results.Add(
+                    new(slot.Entry, null, null, null, slot.ErrorCode, slot.ErrorMessage)
+                );
+                continue;
+            }
+
+            var entry = slot.Parsed;
 
             try
             {
@@ -85,14 +96,28 @@ public sealed partial class CodeReviewEvaluationPrTargetService(
         return results;
     }
 
-    private static (
-        Dictionary<int, ParsedEntry> Parsed,
-        List<CodeReviewEvaluationPrResolution> Invalid
-    ) ParseEntries(IReadOnlyList<string> entries, string ownerQualifiedRepoName)
+    private static List<EntrySlot> ParseEntries(
+        IReadOnlyList<string> entries,
+        string ownerQualifiedRepoName
+    )
     {
-        var parsed = new Dictionary<int, ParsedEntry>();
-        var invalid = new List<CodeReviewEvaluationPrResolution>();
+        var slots = new List<EntrySlot>();
+        var seenNumbers = new HashSet<int>();
         var seenEntries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddParsed(string entry, int number)
+        {
+            // The same pull request is resolved once, at its first occurrence.
+            if (number <= 0 || !seenNumbers.Add(number))
+            {
+                return;
+            }
+
+            slots.Add(new(entry, new ParsedEntry(entry, number), null, null));
+        }
+
+        void AddInvalid(string entry, string code, string message) =>
+            slots.Add(new(entry, null, code, message));
 
         foreach (var rawEntry in entries)
         {
@@ -122,15 +147,10 @@ public sealed partial class CodeReviewEvaluationPrTargetService(
                         )
                     )
                     {
-                        invalid.Add(
-                            new(
-                                fragment,
-                                null,
-                                null,
-                                null,
-                                "pr_cross_repository",
-                                "Only pull requests from this repository can be added."
-                            )
+                        AddInvalid(
+                            fragment,
+                            "pr_cross_repository",
+                            "Only pull requests from this repository can be added."
                         );
                         continue;
                     }
@@ -139,19 +159,14 @@ public sealed partial class CodeReviewEvaluationPrTargetService(
                     // Overflow must be a per-entry validation error, never a batch failure.
                     if (TryParseNumber(match.Groups["number"].Value, out var urlNumber))
                     {
-                        AddParsed(parsed, fragment, urlNumber);
+                        AddParsed(fragment, urlNumber);
                     }
                     else
                     {
-                        invalid.Add(
-                            new(
-                                fragment,
-                                null,
-                                null,
-                                null,
-                                "pr_invalid_entry",
-                                "Enter a pull request number or a link to a pull request in this repository."
-                            )
+                        AddInvalid(
+                            fragment,
+                            "pr_invalid_entry",
+                            "Enter a pull request number or a link to a pull request in this repository."
                         );
                     }
 
@@ -160,38 +175,19 @@ public sealed partial class CodeReviewEvaluationPrTargetService(
 
                 if (TryParseNumber(fragment, out var number))
                 {
-                    AddParsed(parsed, fragment, number);
+                    AddParsed(fragment, number);
                     continue;
                 }
 
-                invalid.Add(
-                    new(
-                        fragment,
-                        null,
-                        null,
-                        null,
-                        "pr_invalid_entry",
-                        "Enter a pull request number or a link to a pull request in this repository."
-                    )
+                AddInvalid(
+                    fragment,
+                    "pr_invalid_entry",
+                    "Enter a pull request number or a link to a pull request in this repository."
                 );
             }
         }
 
-        return (parsed, invalid);
-    }
-
-    private static void AddParsed(
-        Dictionary<int, ParsedEntry> parsed,
-        string entry,
-        int pullRequestNumber
-    )
-    {
-        if (pullRequestNumber <= 0 || parsed.ContainsKey(pullRequestNumber))
-        {
-            return;
-        }
-
-        parsed[pullRequestNumber] = new(entry, pullRequestNumber);
+        return slots;
     }
 
     private static bool TryParseNumber(string value, out int number)
@@ -209,6 +205,13 @@ public sealed partial class CodeReviewEvaluationPrTargetService(
     private static partial Regex GitHubPullRequestUrlPattern();
 
     private sealed record ParsedEntry(string Entry, int PullRequestNumber);
+
+    private sealed record EntrySlot(
+        string Entry,
+        ParsedEntry? Parsed,
+        string? ErrorCode,
+        string? ErrorMessage
+    );
 }
 
 /// <summary>

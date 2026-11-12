@@ -4487,7 +4487,7 @@
           "Code Review Evaluations"
         ],
         "summary": "List reviewer revisions.",
-        "description": "Returns saved reviewer configuration revisions, newest first. An agent without\nrevisions gets an initial snapshot on first view; no batch backfill runs.",
+        "description": "Returns up to the latest 200 saved reviewer configurations, newest first.\nThis v1 picker has no continuation cursor; existing reports retain older tested\ncontent. An agent without revisions gets an initial snapshot on first view;\nno batch backfill runs.",
         "operationId": "ListCodeReviewerAgentRevisions",
         "parameters": [
           {

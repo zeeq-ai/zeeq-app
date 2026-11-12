@@ -334,8 +334,10 @@ public sealed class CodeReviewEvaluationEndpoints : IEndpoint
             .WithSummary("List reviewer revisions.")
             .WithDescription(
                 """
-                Returns saved reviewer configuration revisions, newest first. An agent without
-                revisions gets an initial snapshot on first view; no batch backfill runs.
+                Returns up to the latest 200 saved reviewer configurations, newest first.
+                This v1 picker has no continuation cursor; existing reports retain older tested
+                content. An agent without revisions gets an initial snapshot on first view;
+                no batch backfill runs.
                 """
             );
 
