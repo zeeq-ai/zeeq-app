@@ -69,7 +69,8 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
                 if (
                     parent is
                     {
-                        Outcome: CodeReviewEvaluationCaseOutcome.JudgeFailed,
+                        Outcome: CodeReviewEvaluationCaseOutcome.JudgeFailed
+                            or CodeReviewEvaluationCaseOutcome.Cancelled,
                         CandidateStorageUri: not null,
                         CandidateSha256: not null,
                         CandidateByteCount: not null
@@ -80,7 +81,17 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
                         parent.CandidateSha256,
                         parent.CandidateByteCount.Value
                     );
-                else if (parent.Outcome == CodeReviewEvaluationCaseOutcome.JudgeFailed)
+                else if (
+                    parent.Outcome == CodeReviewEvaluationCaseOutcome.JudgeFailed
+                    || (
+                        parent.Outcome == CodeReviewEvaluationCaseOutcome.Cancelled
+                        && (
+                            parent.CandidateStorageUri is not null
+                            || parent.CandidateSha256 is not null
+                            || parent.CandidateByteCount is not null
+                        )
+                    )
+                )
                     throw new InvalidOperationException("Parent candidate is unavailable.");
             }
 
@@ -89,7 +100,7 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
                 stage = CodeReviewEvaluationCaseOutcome.JudgeFailed;
                 if (item.References.State == CodeReviewEvaluationReferenceState.Unlabelled)
                     throw new InvalidOperationException(
-                        "An unlabelled case cannot have a judge-failed parent."
+                        "An unlabelled case cannot reuse a candidate for grading."
                     );
                 operation = "StartGrading";
                 await results.StartGradingAsync(

@@ -1955,6 +1955,210 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
     }
 
     [Test]
+    public async Task Retry_CancelledPendingChild_KeepsJudgeCandidateForGrandchild()
+    {
+        var (repository, agent) = await SeedRepositoryAsync();
+        var dataset = await SeedDatasetWithCaseAsync(repository, agent, "ancestry-key");
+        var store = Runs;
+
+        var candidate = new CodeReviewEvaluationArtifact(
+            "postgres://reviewer-evaluations/org/repo/ancestry/output.xml",
+            new string('4', 64),
+            300
+        );
+
+        // Parent: reviewer ran, candidate persisted, judge failed.
+        var parent = (
+            await store.AdmitAsync(
+                NewAdmission(dataset, agent, "ancestry-parent"),
+                CancellationToken.None
+            )
+        ).Run!;
+        var caseId = (
+            await store.FindAsync(repository.OrganizationId, parent.Id, CancellationToken.None)
+        )!
+            .Manifest.Cases.Single()
+            .CaseId;
+
+        await store.TryClaimAsync(
+            repository.OrganizationId,
+            parent.Id,
+            "lease-ap",
+            TimeSpan.FromMinutes(10),
+            CancellationToken.None
+        );
+        await Results.StartReviewAsync(
+            new(repository.OrganizationId, parent.Id, caseId, "lease-ap"),
+            CancellationToken.None
+        );
+        await Results.RecordCandidateAsync(
+            new(
+                repository.OrganizationId,
+                parent.Id,
+                caseId,
+                "lease-ap",
+                candidate,
+                2,
+                "[{\"id\":\"cand_1\"},{\"id\":\"cand_2\"}]",
+                "{\"model\":\"ancestry-reviewer\"}",
+                77,
+                33,
+                0.07m
+            ),
+            CancellationToken.None
+        );
+        await Results.StartGradingAsync(
+            new(repository.OrganizationId, parent.Id, caseId, "lease-ap", null),
+            CancellationToken.None
+        );
+        await Results.RecordFailureAsync(
+            new(
+                repository.OrganizationId,
+                parent.Id,
+                caseId,
+                "lease-ap",
+                CodeReviewEvaluationCaseOutcome.JudgeFailed,
+                "JudgeInvalidJson",
+                "Judge failed"
+            ),
+            CancellationToken.None
+        );
+        await store.FinalizeAsync(
+            new(
+                repository.OrganizationId,
+                parent.Id,
+                "lease-ap",
+                CodeReviewEvaluationRunState.Incomplete,
+                null,
+                null
+            ),
+            CancellationToken.None
+        );
+
+        // Child: admitted as a judge-only retry, then cancelled before grading starts.
+        var child = (
+            await store.AdmitRetryAsync(
+                new(
+                    repository.OrganizationId,
+                    parent.Id,
+                    "ancestry-child",
+                    "usr_1",
+                    "build-test",
+                    "prompt-v1",
+                    "fingerprint-ancestry-child"
+                ),
+                CancellationToken.None
+            )
+        ).Run!;
+
+        var childAtAdmission = await LoadCaseResultAsync(repository, child.Id, caseId);
+        await AssertAncestryCandidateAsync(childAtAdmission, candidate);
+
+        await store.TryClaimAsync(
+            repository.OrganizationId,
+            child.Id,
+            "lease-ac",
+            TimeSpan.FromMinutes(10),
+            CancellationToken.None
+        );
+        await store.RequestCancelAsync(repository.OrganizationId, child.Id, CancellationToken.None);
+        await store.FinalizeAsync(
+            new(
+                repository.OrganizationId,
+                child.Id,
+                "lease-ac",
+                CodeReviewEvaluationRunState.Cancelled,
+                null,
+                null
+            ),
+            CancellationToken.None
+        );
+
+        var cancelledChild = await LoadCaseResultAsync(repository, child.Id, caseId);
+        await Assert
+            .That(cancelledChild.Outcome)
+            .IsEqualTo(CodeReviewEvaluationCaseOutcome.Cancelled);
+        await AssertAncestryCandidateAsync(cancelledChild, candidate);
+
+        // Grandchild: still judge-only, reusing the exact same candidate.
+        var grandchild = (
+            await store.AdmitRetryAsync(
+                new(
+                    repository.OrganizationId,
+                    child.Id,
+                    "ancestry-grandchild",
+                    "usr_1",
+                    "build-test",
+                    "prompt-v1",
+                    "fingerprint-ancestry-grandchild"
+                ),
+                CancellationToken.None
+            )
+        ).Run!;
+
+        await Assert.That(grandchild.ParentRunId).IsEqualTo(child.Id);
+        var grandchildAtAdmission = await LoadCaseResultAsync(repository, grandchild.Id, caseId);
+        await AssertAncestryCandidateAsync(grandchildAtAdmission, candidate);
+
+        await store.TryClaimAsync(
+            repository.OrganizationId,
+            grandchild.Id,
+            "lease-ag",
+            TimeSpan.FromMinutes(10),
+            CancellationToken.None
+        );
+        var grading = await Results.StartGradingAsync(
+            new(repository.OrganizationId, grandchild.Id, caseId, "lease-ag", candidate),
+            CancellationToken.None
+        );
+
+        await Assert.That(grading.Phase).IsEqualTo(CodeReviewEvaluationCasePhase.Grading);
+        await AssertAncestryCandidateAsync(grading, candidate);
+
+        // Parent rows are untouched by the ancestry walk.
+        var parentAfter = await LoadCaseResultAsync(repository, parent.Id, caseId);
+        await Assert
+            .That(parentAfter.Outcome)
+            .IsEqualTo(CodeReviewEvaluationCaseOutcome.JudgeFailed);
+        await AssertAncestryCandidateAsync(parentAfter, candidate);
+        var childAfter = await LoadCaseResultAsync(repository, child.Id, caseId);
+        await Assert.That(childAfter.Outcome).IsEqualTo(CodeReviewEvaluationCaseOutcome.Cancelled);
+    }
+
+    private async Task<CodeReviewEvaluationCaseResult> LoadCaseResultAsync(
+        CodeRepository repository,
+        string runId,
+        string caseId
+    )
+    {
+        _context.ChangeTracker.Clear();
+
+        return await _context
+            .CodeReviewEvaluationCaseResults.AsNoTracking()
+            .SingleAsync(result =>
+                result.OrganizationId == repository.OrganizationId
+                && result.RunId == runId
+                && result.ManifestCaseId == caseId
+            );
+    }
+
+    private static async Task AssertAncestryCandidateAsync(
+        CodeReviewEvaluationCaseResult result,
+        CodeReviewEvaluationArtifact candidate
+    )
+    {
+        await Assert.That(result.CandidateStorageUri).IsEqualTo(candidate.StorageUri);
+        await Assert.That(result.CandidateSha256).IsEqualTo(candidate.Sha256);
+        await Assert.That(result.CandidateByteCount).IsEqualTo(candidate.ByteCount);
+        await Assert.That(result.CandidateFindingCount).IsEqualTo(2);
+        await Assert.That(result.ReviewerInputTokens).IsEqualTo(77);
+        await Assert.That(result.ReviewerOutputTokens).IsEqualTo(33);
+        await Assert.That(result.EstimatedCostUsd).IsEqualTo(0.07m);
+        await Assert.That(result.ReviewerProvenanceJson).IsNotNull();
+        await Assert.That(result.CandidateFindingsJson).IsNotNull();
+    }
+
+    [Test]
     public async Task RunStore_FailureOutcomeMustMatchExecutionStage()
     {
         var (repository, agent) = await SeedRepositoryAsync();

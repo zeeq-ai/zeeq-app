@@ -202,8 +202,6 @@ internal sealed class PostgresCodeReviewEvaluationCaseResultStore(
             );
         }
 
-        var parentRunId = await ValidateParentCandidateAsync(request, cancellationToken);
-
         var parameters = BaseParameters(
             request.OrganizationId,
             request.RunId,
@@ -212,16 +210,66 @@ internal sealed class PostgresCodeReviewEvaluationCaseResultStore(
             now
         );
         AddArtifactParameters(parameters, request.ReusedCandidate);
+
+        // Fast path: admission copies the parent candidate onto a pending child, so an
+        // interrupted child (or a grandchild) already owns the exact artifact. Identity on the
+        // run's own row is enough; no parent lookup and no reviewer call.
+        var own = await db
+            .CodeReviewEvaluationCaseResults.TagWithOperationCallSite(
+                "code_review_evaluation_case_result.retry_own_candidate"
+            )
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                result =>
+                    result.OrganizationId == request.OrganizationId
+                    && result.RunId == request.RunId
+                    && result.ManifestCaseId == request.CaseId,
+                cancellationToken
+            );
+
+        if (
+            own is not null
+            && own.Outcome == CodeReviewEvaluationCaseOutcome.None
+            && own.Phase
+                is CodeReviewEvaluationCasePhase.Pending
+                    or CodeReviewEvaluationCasePhase.Reviewed
+            && ArtifactMatches(own, request.ReusedCandidate)
+        )
+        {
+            return await TransitionAsync(
+                request.OrganizationId,
+                request.RunId,
+                request.CaseId,
+                $"""
+                UPDATE code_review_evaluation_case_results AS c
+                SET phase = 'Grading', updated_at_utc = @now
+                WHERE c.organization_id = @org
+                  AND c.run_id = @run
+                  AND c.manifest_case_id = @case
+                  AND c.phase IN ('Pending', 'Reviewed')
+                  AND c.outcome = 'None'
+                  AND c.disabled_at_utc IS NULL
+                  AND c.candidate_storage_uri = @candidate_storage_uri
+                  AND c.candidate_sha256 = @candidate_sha256
+                  AND c.candidate_byte_count = @candidate_byte_count
+                  AND {LiveLeaseGuard(requireNoCancelRequest: true)}
+                """,
+                parameters,
+                null,
+                cancellationToken
+            );
+        }
+
+        var parentRunId = await ValidateParentCandidateAsync(request, cancellationToken);
         Add(parameters, "parent_run", parentRunId);
 
-        // Judge-only retry from a pending child: copy the parent's whole candidate record, not
-        // just its identity, so the retry report keeps findings, count, provenance and usage.
-        // Every artifact identity field must match the immutable parent row, and reused review
-        // cost is carried over rather than charged again.
+        // Judge-only retry from a child that has no copied candidate (defensive path): copy the
+        // parent's whole candidate record. The parent must be a judge failure or an interrupted
+        // retry that still holds a complete candidate, and every identity field must match.
         // NOTE: values are bound as Npgsql parameters; the only interpolation is the constant
         // lease-guard fragment, so EF1002 does not apply here.
 #pragma warning disable EF1002
-        var reusedFromPending = await db.Database.ExecuteSqlRawAsync(
+        var reusedFromParent = await db.Database.ExecuteSqlRawAsync(
             $"""
             UPDATE code_review_evaluation_case_results AS c
             SET phase = 'Grading',
@@ -245,7 +293,7 @@ internal sealed class PostgresCodeReviewEvaluationCaseResultStore(
               AND p.organization_id = @org
               AND p.run_id = @parent_run
               AND p.manifest_case_id = @case
-              AND p.outcome = 'JudgeFailed'
+              AND p.outcome IN ('JudgeFailed', 'Cancelled')
               AND p.candidate_storage_uri = @candidate_storage_uri
               AND p.candidate_sha256 = @candidate_sha256
               AND p.candidate_byte_count = @candidate_byte_count
@@ -256,44 +304,24 @@ internal sealed class PostgresCodeReviewEvaluationCaseResultStore(
         );
 #pragma warning restore EF1002
 
-        if (reusedFromPending > 0)
-        {
-            return await ResolveAsync(
-                request.OrganizationId,
-                request.RunId,
-                request.CaseId,
-                request.LeaseToken,
-                reusedFromPending,
-                null,
-                cancellationToken
-            );
-        }
-
-        // A child that already owns a candidate keeps its own record; only the artifact
-        // identity is cross-checked against the requested parent artifact.
-        return await TransitionAsync(
+        return await ResolveAsync(
             request.OrganizationId,
             request.RunId,
             request.CaseId,
-            $"""
-            UPDATE code_review_evaluation_case_results AS c
-            SET phase = 'Grading', updated_at_utc = @now
-            WHERE c.organization_id = @org
-              AND c.run_id = @run
-              AND c.manifest_case_id = @case
-              AND c.phase = 'Reviewed'
-              AND c.outcome = 'None'
-              AND c.disabled_at_utc IS NULL
-              AND c.candidate_storage_uri = @candidate_storage_uri
-              AND c.candidate_sha256 = @candidate_sha256
-              AND c.candidate_byte_count = @candidate_byte_count
-              AND {LiveLeaseGuard(requireNoCancelRequest: true)}
-            """,
-            parameters,
+            request.LeaseToken,
+            reusedFromParent,
             null,
             cancellationToken
         );
     }
+
+    private static bool ArtifactMatches(
+        CodeReviewEvaluationCaseResult result,
+        CodeReviewEvaluationArtifact artifact
+    ) =>
+        string.Equals(result.CandidateStorageUri, artifact.StorageUri, StringComparison.Ordinal)
+        && string.Equals(result.CandidateSha256, artifact.Sha256, StringComparison.Ordinal)
+        && result.CandidateByteCount == artifact.ByteCount;
 
     /// <inheritdoc />
     public Task<CodeReviewEvaluationCaseResult> RecordGradeAsync(
@@ -677,7 +705,11 @@ internal sealed class PostgresCodeReviewEvaluationCaseResultStore(
         }
 
         if (
-            parentResult.Outcome != CodeReviewEvaluationCaseOutcome.JudgeFailed
+            parentResult.Outcome
+                is not (
+                    CodeReviewEvaluationCaseOutcome.JudgeFailed
+                    or CodeReviewEvaluationCaseOutcome.Cancelled
+                )
             || parentResult.CandidateStorageUri is null
             || !string.Equals(
                 parentResult.CandidateStorageUri,

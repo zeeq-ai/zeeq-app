@@ -237,12 +237,6 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
                 && result.RunId == request.ParentRunId
                 && result.DisabledAtUtc == null
             )
-            .Select(result => new
-            {
-                result.ManifestCaseId,
-                result.Phase,
-                result.Outcome,
-            })
             .ToArrayAsync(cancellationToken);
 
         // Failed and interrupted cases are retryable. A cancelled case is interrupted: an
@@ -308,7 +302,17 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
         };
 
         db.CodeReviewEvaluationRuns.Add(run);
-        AddPendingCaseResults(run, retryCases, now);
+        // Preserve the reviewer's persisted candidate through interrupted retries. Without this,
+        // a child cancelled before grading loses the artifact, and the next retry reruns the
+        // reviewer instead of grading the existing output.
+        AddPendingCaseResults(
+            run,
+            retryCases,
+            now,
+            parentResults
+                .Where(result => result.CandidateStorageUri is not null)
+                .ToDictionary(result => result.ManifestCaseId, StringComparer.Ordinal)
+        );
 
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -1069,11 +1073,15 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
     private void AddPendingCaseResults(
         CodeReviewEvaluationRun run,
         IReadOnlyList<CodeReviewEvaluationManifestCase> cases,
-        DateTimeOffset now
+        DateTimeOffset now,
+        IReadOnlyDictionary<string, CodeReviewEvaluationCaseResult>? inheritedCandidates = null
     )
     {
         foreach (var item in cases)
         {
+            CodeReviewEvaluationCaseResult? inherited = null;
+            inheritedCandidates?.TryGetValue(item.CaseId, out inherited);
+
             db.CodeReviewEvaluationCaseResults.Add(
                 new CodeReviewEvaluationCaseResult
                 {
@@ -1084,6 +1092,21 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
                     PullRequestNumber = item.PullRequestNumber,
                     Phase = CodeReviewEvaluationCasePhase.Pending,
                     Outcome = CodeReviewEvaluationCaseOutcome.None,
+                    // Candidate METADATA is copied here; the artifact itself stays a shared,
+                    // immutable URI and is never duplicated. A later cancellation of this child
+                    // therefore cannot lose the reviewer output, and the executor treats a
+                    // pending case that carries a candidate as judge-only. The carried cost is
+                    // the parent's reviewer cost, so grading adds judge cost without charging
+                    // the reviewer twice.
+                    CandidateStorageUri = inherited?.CandidateStorageUri,
+                    CandidateSha256 = inherited?.CandidateSha256,
+                    CandidateByteCount = inherited?.CandidateByteCount,
+                    CandidateFindingCount = inherited?.CandidateFindingCount ?? 0,
+                    CandidateFindingsJson = inherited?.CandidateFindingsJson,
+                    ReviewerProvenanceJson = inherited?.ReviewerProvenanceJson,
+                    ReviewerInputTokens = inherited?.ReviewerInputTokens,
+                    ReviewerOutputTokens = inherited?.ReviewerOutputTokens,
+                    EstimatedCostUsd = inherited?.EstimatedCostUsd,
                     CreatedAtUtc = now,
                     UpdatedAtUtc = now,
                 }

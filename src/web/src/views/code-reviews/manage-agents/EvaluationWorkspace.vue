@@ -614,6 +614,18 @@ async function openDatasetEditor() {
   if (!selectedDatasetId.value) {
     return;
   }
+  // Reopening the editor must retain staged captures and reference edits.
+  if (datasetDraft.value?.datasetId === selectedDatasetId.value) {
+    datasetEditorOpen.value = true;
+    await store.searchTargets(
+      props.repositoryId,
+      "",
+      undefined,
+      false,
+      selectedDatasetId.value,
+    );
+    return;
+  }
   const loaded = await store.loadDataset(
     props.repositoryId,
     selectedDatasetId.value,

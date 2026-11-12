@@ -9,7 +9,102 @@ namespace Zeeq.Platform.CodeReviews.Tests;
 public sealed class CodeReviewEvaluationCaseExecutorTests
 {
     [Test]
-    public async Task JudgeFailedRetryUsesParentCandidateAndLeavesParentUnchanged()
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task CancelledParentWithoutCompleteCandidateDoesNotGrade(bool partialCandidate)
+    {
+        var run = new CodeReviewEvaluationRun
+        {
+            Id = "child",
+            ParentRunId = "parent",
+            OrganizationId = "org",
+            RepositoryId = "repo",
+            DatasetId = "dataset",
+            DatasetVersion = 1,
+            AgentId = "agent",
+            ManifestJson = "{}",
+            RequestedByUserId = "user",
+            RequestKey = "retry",
+            State = CodeReviewEvaluationRunState.Running,
+        };
+        var parent = new CodeReviewEvaluationCaseResult
+        {
+            Id = "result",
+            OrganizationId = "org",
+            RunId = "parent",
+            ManifestCaseId = "case",
+            PullRequestNumber = 901,
+            Phase = CodeReviewEvaluationCasePhase.Pending,
+            Outcome = CodeReviewEvaluationCaseOutcome.Cancelled,
+            CandidateStorageUri = partialCandidate ? "uri" : null,
+        };
+        var item = new CodeReviewEvaluationManifestCase(
+            "case",
+            901,
+            "title",
+            new("uri", "hash", 1),
+            "base",
+            "head",
+            DateTimeOffset.UtcNow,
+            1,
+            0,
+            new("agent", CodeReviewEvaluationReferenceState.ReviewedClean, [])
+        );
+        var results = Substitute.For<ICodeReviewEvaluationCaseResultStore>();
+        results.FindAsync("org", "parent", "case", Arg.Any<CancellationToken>()).Returns(parent);
+        var artifacts = Substitute.For<ICodeReviewEvaluationArtifactStore>();
+        artifacts
+            .ReadSnapshotAsync("org", "repo", item.Snapshot, Arg.Any<CancellationToken>())
+            .Returns(
+                Task.FromException<CodeReviewEvaluationSnapshot>(
+                    new InvalidOperationException("stop after branch")
+                )
+            );
+        var executor = new CodeReviewEvaluationCaseExecutor(
+            results,
+            artifacts,
+            null!,
+            null!,
+            null!,
+            NullLogger<CodeReviewEvaluationCaseExecutor>.Instance
+        );
+
+        await executor.ExecuteAsync(run, null!, item, "lease", CancellationToken.None);
+
+        if (partialCandidate)
+            await results
+                .DidNotReceive()
+                .StartReviewAsync(
+                    Arg.Any<CodeReviewEvaluationCaseStart>(),
+                    Arg.Any<CancellationToken>()
+                );
+        else
+            await results
+                .Received(1)
+                .StartReviewAsync(
+                    Arg.Is<CodeReviewEvaluationCaseStart>(x =>
+                        x.RunId == "child" && x.CaseId == "case"
+                    ),
+                    Arg.Any<CancellationToken>()
+                );
+        await results
+            .DidNotReceive()
+            .StartGradingAsync(
+                Arg.Any<CodeReviewEvaluationCaseGrading>(),
+                Arg.Any<CancellationToken>()
+            );
+        await results
+            .Received(1)
+            .RecordFailureAsync(
+                Arg.Any<CodeReviewEvaluationCaseFailure>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task RetryUsesParentCandidateAndLeavesParentUnchanged(bool cancelledBeforeGrading)
     {
         var now = DateTimeOffset.UtcNow;
         var run = new CodeReviewEvaluationRun
@@ -33,8 +128,12 @@ public sealed class CodeReviewEvaluationCaseExecutorTests
             RunId = "parent",
             ManifestCaseId = "case",
             PullRequestNumber = 901,
-            Phase = CodeReviewEvaluationCasePhase.Grading,
-            Outcome = CodeReviewEvaluationCaseOutcome.JudgeFailed,
+            Phase = cancelledBeforeGrading
+                ? CodeReviewEvaluationCasePhase.Pending
+                : CodeReviewEvaluationCasePhase.Grading,
+            Outcome = cancelledBeforeGrading
+                ? CodeReviewEvaluationCaseOutcome.Cancelled
+                : CodeReviewEvaluationCaseOutcome.JudgeFailed,
             CandidateStorageUri = "parent-uri",
             CandidateSha256 = "parent-hash",
             CandidateByteCount = 123,
