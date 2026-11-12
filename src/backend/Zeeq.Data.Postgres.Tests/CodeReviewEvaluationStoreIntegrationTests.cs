@@ -2020,10 +2020,14 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
     }
 
     [Test]
-    public async Task Retry_CancelledPendingChild_KeepsJudgeCandidateForGrandchild()
+    [Arguments("cancelled")]
+    [Arguments("dispatchfailed")]
+    public async Task Retry_InterruptedPendingChild_KeepsJudgeCandidateForGrandchild(
+        string interruption
+    )
     {
         var (repository, agent) = await SeedRepositoryAsync();
-        var dataset = await SeedDatasetWithCaseAsync(repository, agent, "ancestry-key");
+        var dataset = await SeedDatasetWithCaseAsync(repository, agent, $"ancestry-{interruption}");
         var store = Runs;
 
         var candidate = new CodeReviewEvaluationArtifact(
@@ -2035,7 +2039,7 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
         // Parent: reviewer ran, candidate persisted, judge failed.
         var parent = (
             await store.AdmitAsync(
-                NewAdmission(dataset, agent, "ancestry-parent"),
+                NewAdmission(dataset, agent, $"ancestry-parent-{interruption}"),
                 CancellationToken.None
             )
         ).Run!;
@@ -2100,17 +2104,18 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
             CancellationToken.None
         );
 
-        // Child: admitted as a judge-only retry, then cancelled before grading starts.
+        // Child: judge-only retry that is interrupted before grading starts, either by
+        // cancellation (claimed) or by a failed dispatch (never claimed).
         var child = (
             await store.AdmitRetryAsync(
                 new(
                     repository.OrganizationId,
                     parent.Id,
-                    "ancestry-child",
+                    $"ancestry-child-{interruption}",
                     "usr_1",
                     "build-test",
                     "prompt-v1",
-                    "fingerprint-ancestry-child"
+                    $"fingerprint-ancestry-child-{interruption}"
                 ),
                 CancellationToken.None
             )
@@ -2119,43 +2124,75 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
         var childAtAdmission = await LoadCaseResultAsync(repository, child.Id, caseId);
         await AssertAncestryCandidateAsync(childAtAdmission, candidate);
 
-        await store.TryClaimAsync(
-            repository.OrganizationId,
-            child.Id,
-            "lease-ac",
-            TimeSpan.FromMinutes(10),
-            CancellationToken.None
-        );
-        await store.RequestCancelAsync(repository.OrganizationId, child.Id, CancellationToken.None);
-        await store.FinalizeAsync(
-            new(
+        if (interruption == "cancelled")
+        {
+            await store.TryClaimAsync(
                 repository.OrganizationId,
                 child.Id,
                 "lease-ac",
-                CodeReviewEvaluationRunState.Cancelled,
-                null,
-                null
-            ),
-            CancellationToken.None
-        );
+                TimeSpan.FromMinutes(10),
+                CancellationToken.None
+            );
+            await store.RequestCancelAsync(
+                repository.OrganizationId,
+                child.Id,
+                CancellationToken.None
+            );
+            await store.FinalizeAsync(
+                new(
+                    repository.OrganizationId,
+                    child.Id,
+                    "lease-ac",
+                    CodeReviewEvaluationRunState.Cancelled,
+                    null,
+                    null
+                ),
+                CancellationToken.None
+            );
+        }
+        else
+        {
+            // Publish never reached a consumer: the run is dispatch-failed while the queued case
+            // still holds the inherited candidate and a None outcome.
+            await store.MarkDispatchFailedAsync(
+                repository.OrganizationId,
+                child.Id,
+                "PublishFailed",
+                CancellationToken.None
+            );
+        }
 
-        var cancelledChild = await LoadCaseResultAsync(repository, child.Id, caseId);
-        await Assert
-            .That(cancelledChild.Outcome)
-            .IsEqualTo(CodeReviewEvaluationCaseOutcome.Cancelled);
-        await AssertAncestryCandidateAsync(cancelledChild, candidate);
+        var interruptedChild = await LoadCaseResultAsync(repository, child.Id, caseId);
+        if (interruption == "cancelled")
+        {
+            await Assert
+                .That(interruptedChild.Outcome)
+                .IsEqualTo(CodeReviewEvaluationCaseOutcome.Cancelled);
+        }
+        else
+        {
+            await Assert
+                .That(interruptedChild.Outcome)
+                .IsEqualTo(CodeReviewEvaluationCaseOutcome.None);
+            await Assert
+                .That(interruptedChild.Phase)
+                .IsEqualTo(CodeReviewEvaluationCasePhase.Pending);
+        }
 
-        // Grandchild: still judge-only, reusing the exact same candidate.
+        await AssertAncestryCandidateAsync(interruptedChild, candidate);
+
+        // Grandchild: still judge-only, reusing the exact same candidate through a parent that is
+        // either Cancelled or DispatchFailed with a None outcome.
         var grandchild = (
             await store.AdmitRetryAsync(
                 new(
                     repository.OrganizationId,
                     child.Id,
-                    "ancestry-grandchild",
+                    $"ancestry-grandchild-{interruption}",
                     "usr_1",
                     "build-test",
                     "prompt-v1",
-                    "fingerprint-ancestry-grandchild"
+                    $"fingerprint-ancestry-grandchild-{interruption}"
                 ),
                 CancellationToken.None
             )
@@ -2187,7 +2224,16 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
             .IsEqualTo(CodeReviewEvaluationCaseOutcome.JudgeFailed);
         await AssertAncestryCandidateAsync(parentAfter, candidate);
         var childAfter = await LoadCaseResultAsync(repository, child.Id, caseId);
-        await Assert.That(childAfter.Outcome).IsEqualTo(CodeReviewEvaluationCaseOutcome.Cancelled);
+        if (interruption == "cancelled")
+        {
+            await Assert
+                .That(childAfter.Outcome)
+                .IsEqualTo(CodeReviewEvaluationCaseOutcome.Cancelled);
+        }
+        else
+        {
+            await Assert.That(childAfter.Outcome).IsEqualTo(CodeReviewEvaluationCaseOutcome.None);
+        }
     }
 
     private async Task<CodeReviewEvaluationCaseResult> LoadCaseResultAsync(

@@ -9,9 +9,14 @@ namespace Zeeq.Platform.CodeReviews.Tests;
 public sealed class CodeReviewEvaluationCaseExecutorTests
 {
     [Test]
-    [Arguments(false)]
-    [Arguments(true)]
-    public async Task CancelledParentWithoutCompleteCandidateDoesNotGrade(bool partialCandidate)
+    [Arguments(CodeReviewEvaluationCaseOutcome.Cancelled, false)]
+    [Arguments(CodeReviewEvaluationCaseOutcome.Cancelled, true)]
+    [Arguments(CodeReviewEvaluationCaseOutcome.None, false)]
+    [Arguments(CodeReviewEvaluationCaseOutcome.None, true)]
+    public async Task InterruptedParentWithoutCompleteCandidateDoesNotGrade(
+        CodeReviewEvaluationCaseOutcome outcome,
+        bool partialCandidate
+    )
     {
         var run = new CodeReviewEvaluationRun
         {
@@ -35,7 +40,7 @@ public sealed class CodeReviewEvaluationCaseExecutorTests
             ManifestCaseId = "case",
             PullRequestNumber = 901,
             Phase = CodeReviewEvaluationCasePhase.Pending,
-            Outcome = CodeReviewEvaluationCaseOutcome.Cancelled,
+            Outcome = outcome,
             CandidateStorageUri = partialCandidate ? "uri" : null,
         };
         var item = new CodeReviewEvaluationManifestCase(
@@ -102,9 +107,12 @@ public sealed class CodeReviewEvaluationCaseExecutorTests
     }
 
     [Test]
-    [Arguments(false)]
-    [Arguments(true)]
-    public async Task RetryUsesParentCandidateAndLeavesParentUnchanged(bool cancelledBeforeGrading)
+    [Arguments(CodeReviewEvaluationCaseOutcome.JudgeFailed)]
+    [Arguments(CodeReviewEvaluationCaseOutcome.Cancelled)]
+    [Arguments(CodeReviewEvaluationCaseOutcome.None)]
+    public async Task RetryUsesParentCandidateAndLeavesParentUnchanged(
+        CodeReviewEvaluationCaseOutcome outcome
+    )
     {
         var now = DateTimeOffset.UtcNow;
         var run = new CodeReviewEvaluationRun
@@ -128,12 +136,11 @@ public sealed class CodeReviewEvaluationCaseExecutorTests
             RunId = "parent",
             ManifestCaseId = "case",
             PullRequestNumber = 901,
-            Phase = cancelledBeforeGrading
-                ? CodeReviewEvaluationCasePhase.Pending
-                : CodeReviewEvaluationCasePhase.Grading,
-            Outcome = cancelledBeforeGrading
-                ? CodeReviewEvaluationCaseOutcome.Cancelled
-                : CodeReviewEvaluationCaseOutcome.JudgeFailed,
+            Phase =
+                outcome == CodeReviewEvaluationCaseOutcome.JudgeFailed
+                    ? CodeReviewEvaluationCasePhase.Grading
+                    : CodeReviewEvaluationCasePhase.Pending,
+            Outcome = outcome,
             CandidateStorageUri = "parent-uri",
             CandidateSha256 = "parent-hash",
             CandidateByteCount = 123,

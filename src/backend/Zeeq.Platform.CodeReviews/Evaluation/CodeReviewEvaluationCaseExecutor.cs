@@ -70,7 +70,8 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
                     parent is
                     {
                         Outcome: CodeReviewEvaluationCaseOutcome.JudgeFailed
-                            or CodeReviewEvaluationCaseOutcome.Cancelled,
+                            or CodeReviewEvaluationCaseOutcome.Cancelled
+                            or CodeReviewEvaluationCaseOutcome.None,
                         CandidateStorageUri: not null,
                         CandidateSha256: not null,
                         CandidateByteCount: not null
@@ -84,7 +85,11 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
                 else if (
                     parent.Outcome == CodeReviewEvaluationCaseOutcome.JudgeFailed
                     || (
-                        parent.Outcome == CodeReviewEvaluationCaseOutcome.Cancelled
+                        (
+                            parent.Outcome
+                            is CodeReviewEvaluationCaseOutcome.Cancelled
+                                or CodeReviewEvaluationCaseOutcome.None
+                        )
                         && (
                             parent.CandidateStorageUri is not null
                             || parent.CandidateSha256 is not null
