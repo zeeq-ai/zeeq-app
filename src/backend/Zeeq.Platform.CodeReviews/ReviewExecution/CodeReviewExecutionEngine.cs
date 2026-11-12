@@ -44,9 +44,23 @@ public sealed partial class CodeReviewExecutionEngine(
         CodeReviewRecord review,
         CodeReviewExecutionOptions options,
         IReadOnlyList<CodeReviewerRuntimeAgent>? runtimeAgentsOverride,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        CodeReviewEvaluationInput? evaluationInput = null
     )
     {
+        if (
+            (evaluationInput is null) != (options.Mode != CodeReviewExecutionMode.Evaluation)
+            || (
+                evaluationInput is not null
+                && (options.FrozenModel is null || options.IncludePreviousReviews)
+            )
+        )
+        {
+            throw new ArgumentException(
+                "Evaluation execution requires frozen input and model, without previous reviews."
+            );
+        }
+
         // Draft test runs intentionally share this engine but suppress code-controlled
         // Activity spans/events. The LLM/provider layer can still emit its own telemetry; this
         // flag only gates Zeeq review-execution diagnostics that would otherwise feed listeners.
@@ -72,19 +86,26 @@ public sealed partial class CodeReviewExecutionEngine(
 
         try
         {
-            var repository = await LoadRepositoryAsync(message, cancellationToken);
-            var pullRequest = await LoadPullRequestAsync(message, cancellationToken);
+            var repository = evaluationInput is null
+                ? await LoadRepositoryAsync(message, cancellationToken)
+                : null;
+            if (evaluationInput is null)
+            {
+                _ = await LoadPullRequestAsync(message, cancellationToken);
+            }
 
             // Always reload the live provider snapshot. Stored PR rows choose the target, but
             // the review must reflect the latest GitHub diff/body even for old closed PRs.
-            var snapshot = await pullRequestSource.GetPullRequestAsync(message, cancellationToken);
+            var snapshot = evaluationInput?.Snapshot
+                ?? await pullRequestSource.GetPullRequestAsync(message, cancellationToken);
+            var configuration = evaluationInput?.Configuration ?? repository!.ReviewConfiguration;
 
             // Repository filters are applied before agent activation. The UI test flow can then
             // distinguish "the repository excluded every file" from "this draft agent did not
             // activate for any remaining file."
             var fileScope = CodeReviewFileFilterEvaluator.Apply(
                 snapshot.Files,
-                repository.ReviewConfiguration.FileFilter
+                configuration.FileFilter
             );
 
             // runtimeAgentsOverride is the draft-agent test hook. It bypasses persisted agent
@@ -92,7 +113,7 @@ public sealed partial class CodeReviewExecutionEngine(
             var agentResolution = await ResolveAgentsAsync(
                 message,
                 fileScope.InScopeFiles,
-                runtimeAgentsOverride,
+                evaluationInput?.Reviewers ?? runtimeAgentsOverride,
                 cancellationToken
             );
 
@@ -104,19 +125,9 @@ public sealed partial class CodeReviewExecutionEngine(
                 agentResolution.NoAgentsActivated
             );
 
-            var executionContext = new CodeReviewExecutionContext(
-                review,
-                pullRequest,
-                snapshot,
-                repository.ReviewConfiguration,
-                [.. agentResolution.Agents],
-                fileScope.InScopeFiles,
-                fileScope.OutOfScopeFiles
-            );
-
             var mappedLibraryNames = await libraries.ResolveMappedLibraryNamesAsync(
                 message.OrganizationId,
-                repository.LibraryIds,
+                evaluationInput is null ? repository!.LibraryIds : [.. evaluationInput.LibraryIds],
                 cache,
                 cancellationToken
             );
@@ -140,7 +151,15 @@ public sealed partial class CodeReviewExecutionEngine(
             }
 
             var prompt = CodeReviewUserPrompt.From(
-                executionContext.ToPromptInput(mappedLibraryNames)
+                new CodeReviewPromptInput(
+                    snapshot.Title,
+                    snapshot.Body,
+                    evaluationInput is null ? snapshot.DeveloperFeedbackComments : [],
+                    fileScope.InScopeFiles,
+                    fileScope.OutOfScopeFiles,
+                    mappedLibraryNames,
+                    configuration.SharedPromptFragment
+                )
             );
 
             LogPromptBuilt(logger, review.Id, prompt.SharedPullRequestPromptBody.Length);
@@ -191,8 +210,8 @@ public sealed partial class CodeReviewExecutionEngine(
             // Synthetic automation identity for the async webhook path and draft test path:
             // no real end-user principal exists once execution reaches this provider-neutral core.
             var callerIdentity = CodeReviewAutomationIdentity.Create(
-                repository.OrganizationId,
-                repository.TeamId
+                message.OrganizationId,
+                repository?.TeamId ?? message.TeamId
             );
 
             var xml = await agentExecutor.ExecuteAsync(
@@ -210,8 +229,7 @@ public sealed partial class CodeReviewExecutionEngine(
             // The engine returns both canonical XML and parsed output. Durable callers persist
             // the XML artifact; draft test callers can render the parsed output directly.
             var validation = ValidateXml(xml);
-            var output =
-                validation.Output
+            var output = validation.Output
                 ?? throw new InvalidOperationException("Validated code-review output was missing.");
             var counts = output.CountFindings();
 
@@ -239,8 +257,8 @@ public sealed partial class CodeReviewExecutionEngine(
                 counts.Comment
             );
 
-            review.EstimatedCostUsd =
-                telemetry.EstimatedCostUsd ?? (agentResolution.NoAgentsActivated ? 0m : null);
+            review.EstimatedCostUsd = telemetry.EstimatedCostUsd
+                ?? (agentResolution.NoAgentsActivated ? 0m : null);
             review.CostCatalogVersion = review.EstimatedCostUsd.HasValue
                 ? PricingCatalog.Version
                 : null;

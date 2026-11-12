@@ -49,6 +49,14 @@ public static class SetupCodeReviews
             services.AddScoped<CodeReviewerAgentResolver>();
             services.AddScoped<CodeReviewExecutionEngine>();
             services.AddScoped<CodeReviewLlmTierResolver>();
+            services.AddScoped<
+                ICodeReviewEvaluationCaseExecutor,
+                CodeReviewEvaluationCaseExecutor
+            >();
+            services.AddScoped<ICodeReviewEvaluationJudge, CodeReviewEvaluationJudge>();
+            services.AddSingleton<CodeReviewEvaluationCaptureTokenProtector>();
+            services.AddScoped<CodeReviewEvaluationCaptureService>();
+            services.AddScoped<CodeReviewEvaluationPrTargetService>();
             services.AddSingleton<CodeReviewXmlOutputValidator>();
             services.AddScoped<CodeReviewWorkflowFactory>();
             services.AddScoped<CodeReviewAgentExecutor>();

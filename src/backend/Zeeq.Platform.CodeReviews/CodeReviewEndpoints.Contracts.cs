@@ -665,13 +665,15 @@ public sealed record CodeReviewerAgentResponse(CodeReviewerAgentDto Agent);
 /// <param name="Prompt">Reviewer-specific instructions appended to the shared review prompt.</param>
 /// <param name="Enabled">Whether the persisted agent can participate in future reviews.</param>
 /// <param name="ActivationConfiguration">File activation filters that decide whether this agent runs for a PR.</param>
+/// <param name="Label">Optional revision label. Saved with the revision this request creates.</param>
 public sealed record CreateCodeReviewerAgentRequest(
     [property: Required, MaxLength(256)] string DisplayName,
     [property: Required, MaxLength(128)] string ReviewFacet,
     CodeReviewModelTier ModelTier,
     [property: Required, MaxLength(20_000)] string Prompt,
     bool Enabled,
-    [property: Required] CodeReviewerActivationConfigurationDto ActivationConfiguration
+    [property: Required] CodeReviewerActivationConfigurationDto ActivationConfiguration,
+    [property: MaxLength(200)] string? Label = null
 );
 
 /// <summary>
@@ -683,13 +685,15 @@ public sealed record CreateCodeReviewerAgentRequest(
 /// <param name="Prompt">Reviewer-specific instructions appended to the shared review prompt.</param>
 /// <param name="Enabled">Whether the persisted agent can participate in future reviews.</param>
 /// <param name="ActivationConfiguration">File activation filters that decide whether this agent runs for a PR.</param>
+/// <param name="Label">Optional revision label. Saved with the revision this request creates.</param>
 public sealed record UpdateCodeReviewerAgentRequest(
     [property: Required, MaxLength(256)] string DisplayName,
     [property: Required, MaxLength(128)] string ReviewFacet,
     CodeReviewModelTier ModelTier,
     [property: Required, MaxLength(20_000)] string Prompt,
     bool Enabled,
-    [property: Required] CodeReviewerActivationConfigurationDto ActivationConfiguration
+    [property: Required] CodeReviewerActivationConfigurationDto ActivationConfiguration,
+    [property: MaxLength(200)] string? Label = null
 );
 
 /// <summary>

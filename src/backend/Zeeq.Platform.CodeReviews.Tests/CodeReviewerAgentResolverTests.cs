@@ -1,5 +1,5 @@
-using Zeeq.Core.Models;
 using Microsoft.Extensions.Logging.Abstractions;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews.Tests;
 
@@ -250,6 +250,14 @@ public sealed class CodeReviewerAgentResolverTests
             CodeReviewerAgent agent,
             CancellationToken cancellationToken
         ) => Task.FromResult(agent);
+
+        public Task<CodeReviewerAgent> SaveWithRevisionAsync(
+            CodeReviewerAgent agent,
+            bool create,
+            string createdByUserId,
+            string? label,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException();
 
         public Task<bool> DisableAsync(
             string organizationId,

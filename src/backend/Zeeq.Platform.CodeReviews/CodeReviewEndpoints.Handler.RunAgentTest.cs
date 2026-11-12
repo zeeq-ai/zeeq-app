@@ -105,7 +105,10 @@ public sealed class RunCodeReviewAgentTestHandler(
         var result = await executionEngine.RunAsync(
             message,
             review,
-            CodeReviewExecutionOptions.Test,
+            CodeReviewExecutionOptions.Test with
+            {
+                FixturePullRequestNumber = pullRequest.PullRequestNumber,
+            },
             runtimeAgentsOverride: [runtimeAgent],
             cancellationToken
         );

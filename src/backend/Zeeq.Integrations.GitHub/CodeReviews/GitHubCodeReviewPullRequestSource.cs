@@ -1,6 +1,6 @@
+using Octokit;
 using Zeeq.Core.Common;
 using Zeeq.Platform.CodeReviews;
-using Octokit;
 
 namespace Zeeq.Integrations.GitHub;
 
@@ -17,7 +17,7 @@ internal sealed class GitHubCodeReviewPullRequestSource(
     IGitHubClientFactory clientFactory,
     IGitHubPullRequestDataClient dataClient,
     CodeReviewSettings settings
-) : ICodeReviewPullRequestSource
+) : ICodeReviewProviderPullRequestSource
 {
     private const int MaxDeveloperFeedbackComments = 20;
 

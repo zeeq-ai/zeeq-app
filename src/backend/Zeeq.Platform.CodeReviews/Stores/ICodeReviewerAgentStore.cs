@@ -37,6 +37,16 @@ public interface ICodeReviewerAgentStore
         CancellationToken cancellationToken
     );
 
+    /// <summary>Atomically saves configuration and its content-addressed revision history.</summary>
+    /// <remarks>For an update, preserves the previous configuration before replacing it.</remarks>
+    Task<CodeReviewerAgent> SaveWithRevisionAsync(
+        CodeReviewerAgent agent,
+        bool create,
+        string createdByUserId,
+        string? label,
+        CancellationToken cancellationToken
+    );
+
     /// <summary>Soft-disables a reviewer agent.</summary>
     Task<bool> DisableAsync(
         string organizationId,

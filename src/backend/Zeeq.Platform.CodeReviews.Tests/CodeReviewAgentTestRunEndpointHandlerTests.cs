@@ -121,7 +121,14 @@ public sealed class CodeReviewAgentTestRunEndpointHandlerTests
         await Assert.That(ok.Value.Review.MajorFindings).IsEqualTo(1);
         await Assert.That(ok.Value.Findings.Reviews).HasSingleItem();
         await Assert.That(ok.Value.Findings.Reviews.Single().Facet).IsEqualTo("Draft");
-        await Assert.That(fixture.AgentExecutor.Options).IsEqualTo(CodeReviewExecutionOptions.Test);
+        await Assert
+            .That(fixture.AgentExecutor.Options)
+            .IsEqualTo(
+                CodeReviewExecutionOptions.Test with
+                {
+                    FixturePullRequestNumber = fixture.PullRequest.PullRequestNumber,
+                }
+            );
         await Assert.That(fixture.AgentExecutor.ActiveReviewers).HasSingleItem();
         await Assert
             .That(fixture.AgentExecutor.ActiveReviewers.Single().Id)

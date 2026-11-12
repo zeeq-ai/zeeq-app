@@ -14,7 +14,9 @@ public sealed record CodeReviewExecutionOptions(
     CodeReviewExecutionMode Mode,
     bool EmitDiagnostics,
     bool RecordMetrics,
-    bool IncludePreviousReviews
+    bool IncludePreviousReviews,
+    CodeReviewEvaluationModelSelection? FrozenModel = null,
+    int? FixturePullRequestNumber = null
 )
 {
     /// <summary>
@@ -38,6 +40,16 @@ public sealed record CodeReviewExecutionOptions(
             RecordMetrics: false,
             IncludePreviousReviews: false
         );
+
+    /// <summary>Evaluation runs use frozen inputs and never emit sensitive reviewer telemetry.</summary>
+    public static CodeReviewExecutionOptions Evaluation(CodeReviewEvaluationModelSelection model) =>
+        new(
+            CodeReviewExecutionMode.Evaluation,
+            EmitDiagnostics: false,
+            RecordMetrics: false,
+            IncludePreviousReviews: false,
+            FrozenModel: model
+        );
 }
 
 /// <summary>
@@ -54,4 +66,7 @@ public enum CodeReviewExecutionMode
     /// An ephemeral draft-agent test run.
     /// </summary>
     Test = 1,
+
+    /// <summary>A durable evaluation with frozen input and isolated telemetry.</summary>
+    Evaluation = 2,
 }

@@ -239,6 +239,16 @@ internal sealed class CodeReviewerAgentConfiguration : IEntityTypeConfiguration<
     {
         entity.ToTable("code_reviewer_agents");
         entity.HasKey(agent => agent.Id);
+        // Organization-qualified alternate key so revisions and evaluation artifacts can use
+        // composite foreign keys instead of trusting a globally unique agent id.
+        entity.HasAlternateKey(agent => new { agent.OrganizationId, agent.Id });
+        // Repository-qualified alternate key used by agent revisions.
+        entity.HasAlternateKey(agent => new
+        {
+            agent.OrganizationId,
+            agent.RepositoryId,
+            agent.Id,
+        });
 
         entity.Property(agent => agent.Id).HasMaxLength(128);
         entity.Property(agent => agent.OrganizationId).IsRequired().HasMaxLength(128);
@@ -828,9 +838,8 @@ internal sealed class CodeRepositoryPromptConfigurationConfiguration
             value =>
                 value == null
                     ? 0
-                    : value.Aggregate(
-                        0,
-                        (hash, pair) => hash ^ HashCode.Combine(pair.Key, pair.Value)
+                    : value.Aggregate(0, (hash, pair) =>
+                        hash ^ HashCode.Combine(pair.Key, pair.Value)
                     ),
             value =>
                 value == null ? new(StringComparer.Ordinal) : new(value, StringComparer.Ordinal)

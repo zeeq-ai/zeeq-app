@@ -1,7 +1,7 @@
 using System.Runtime.CompilerServices;
-using Zeeq.Platform.CodeReviews;
 using Medallion.Threading.Postgres;
 using Microsoft.EntityFrameworkCore.Storage;
+using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Data.Postgres.CodeReviews;
 
@@ -57,6 +57,39 @@ internal static class PostgresCodeReviewStoreAdvisoryLocks
         AcquireTransactionLockAsync(
             transaction,
             $"zeeq:code-reviews:github-comment-lease:{key}",
+            cancellationToken
+        );
+
+    /// <summary>
+    /// Serializes evaluation admission for one organization.
+    /// </summary>
+    /// <remarks>
+    /// Acquired before any dataset or run row lock so the "one active evaluation per
+    /// organization" rule cannot race two admits past the partial unique index.
+    /// </remarks>
+    public static ValueTask AcquireEvaluationAdmissionAsync(
+        IDbContextTransaction transaction,
+        string organizationId,
+        CancellationToken cancellationToken
+    ) =>
+        AcquireTransactionLockAsync(
+            transaction,
+            $"zeeq:code-reviews:evaluation-admission:{organizationId}",
+            cancellationToken
+        );
+
+    /// <summary>
+    /// Serializes dataset saves and admission manifest copies for one dataset row.
+    /// </summary>
+    public static ValueTask AcquireEvaluationDatasetAsync(
+        IDbContextTransaction transaction,
+        string organizationId,
+        string datasetId,
+        CancellationToken cancellationToken
+    ) =>
+        AcquireTransactionLockAsync(
+            transaction,
+            $"zeeq:code-reviews:evaluation-dataset:{organizationId}:{datasetId}",
             cancellationToken
         );
 

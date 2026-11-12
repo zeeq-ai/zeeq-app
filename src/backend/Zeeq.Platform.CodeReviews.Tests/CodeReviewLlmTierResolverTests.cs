@@ -21,6 +21,97 @@ public sealed class CodeReviewLlmTierResolverTests
     private const string OrganizationId = "org_123";
 
     [Test]
+    public async Task FrozenSelection_UsesCapturedMappingAndExactKeyAfterTierChanges()
+    {
+        var fixture = new Fixture
+        {
+            OrganizationConfiguration = new()
+            {
+                Fast = OrganizationLlmConfiguration.Default.Fast,
+                High = new()
+                {
+                    Provider = "OpenAI",
+                    Model = "original-model",
+                    KeyId = "original-key",
+                },
+                Max = OrganizationLlmConfiguration.Default.Max,
+            },
+        };
+        await fixture.StoreKeyAsync("original-key", "original-secret");
+        var descriptor = await fixture.Resolver.CaptureAsync(
+            OrganizationId,
+            CodeReviewModelTier.High,
+            CancellationToken.None
+        );
+        fixture.SettingsStore.Configuration = new()
+        {
+            Fast = OrganizationLlmConfiguration.Default.Fast,
+            High = new()
+            {
+                Provider = "OpenAI",
+                Model = "changed-model",
+                KeyId = "changed-key",
+            },
+            Max = OrganizationLlmConfiguration.Default.Max,
+        };
+
+        var result = await fixture.Resolver.ResolveFrozenAsync(
+            OrganizationId,
+            descriptor,
+            CancellationToken.None
+        );
+        var configuration = fixture.ClientFactory.CreatedTenantConfigurations.Single();
+        await Assert.That(result.Model).IsEqualTo("original-model");
+        await Assert.That(configuration.ApiKey).IsEqualTo("original-secret");
+        await Assert.That(descriptor.ToString().Contains("original-key")).IsFalse();
+    }
+
+    [Test]
+    public async Task FrozenSelection_MissingCapturedKeyDoesNotFallBack()
+    {
+        var fixture = new Fixture();
+        var descriptor = new CodeReviewEvaluationModelSelection(
+            CodeReviewModelTier.High,
+            "OpenAI",
+            "model",
+            "",
+            CodeReviewEvaluationCredentialSource.OrganizationManagedKey,
+            "missing-key"
+        );
+        async Task Act() =>
+            _ = await fixture.Resolver.ResolveFrozenAsync(
+                OrganizationId,
+                descriptor,
+                CancellationToken.None
+            );
+        await Assert.That(Act).Throws<InvalidOperationException>();
+        await Assert.That(fixture.ClientFactory.CreatedTenantConfigurations).IsEmpty();
+        await Assert.That(fixture.ClientFactory.CreatedDefaultConfigurations).IsEmpty();
+    }
+
+    [Test]
+    public async Task FrozenSelection_DoesNotUseDefaultKeyFromDifferentProvider()
+    {
+        var fixture = new Fixture();
+        var descriptor = new CodeReviewEvaluationModelSelection(
+            CodeReviewModelTier.High,
+            "OpenAI",
+            "old-model",
+            "",
+            CodeReviewEvaluationCredentialSource.SystemDefault,
+            null
+        );
+        async Task Act() =>
+            _ = await fixture.Resolver.ResolveFrozenAsync(
+                OrganizationId,
+                descriptor,
+                CancellationToken.None
+            );
+        await Assert.That(Act).Throws<InvalidOperationException>();
+        await Assert.That(fixture.ClientFactory.CreatedDefaultConfigurations).IsEmpty();
+    }
+
+    [Test]
     public async Task ResolveChatClientAsync_WithNoOrganizationConfiguration_UsesSystemDefaultTierClient()
     {
         var fixture = new Fixture();

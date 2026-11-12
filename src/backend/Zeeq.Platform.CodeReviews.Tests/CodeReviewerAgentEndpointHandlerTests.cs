@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Time.Testing;
 using NSubstitute;
 using OpenIddict.Abstractions;
 using Zeeq.Core.Identity;
@@ -339,6 +340,10 @@ public sealed class CodeReviewerAgentEndpointHandlerTests
 
         public TestCodeReviewerAgentStore Agents { get; } = new();
 
+        public TestCodeReviewerAgentRevisionStore Revisions { get; } = new();
+
+        public FakeTimeProvider TimeProvider { get; } = new(DateTimeOffset.UtcNow);
+
         public ListRepositoryCodeReviewerAgentsHandler ListHandler { get; private set; } = null!;
 
         public GetCodeReviewerAgentHandler GetHandler { get; private set; } = null!;
@@ -372,8 +377,18 @@ public sealed class CodeReviewerAgentEndpointHandlerTests
 
             fixture.ListHandler = new(authorization, fixture.Repositories, fixture.Agents);
             fixture.GetHandler = new(authorization, fixture.Agents);
-            fixture.CreateHandler = new(authorization, fixture.Repositories, fixture.Agents);
-            fixture.UpdateHandler = new(authorization, fixture.Repositories, fixture.Agents);
+            fixture.CreateHandler = new(
+                authorization,
+                fixture.Repositories,
+                fixture.Agents,
+                fixture.TimeProvider
+            );
+            fixture.UpdateHandler = new(
+                authorization,
+                fixture.Repositories,
+                fixture.Agents,
+                fixture.TimeProvider
+            );
             fixture.DeleteHandler = new(authorization, fixture.Repositories, fixture.Agents);
 
             return fixture;
@@ -554,6 +569,23 @@ public sealed class CodeReviewerAgentEndpointHandlerTests
             return Task.FromResult(agent);
         }
 
+        public async Task<CodeReviewerAgent> SaveWithRevisionAsync(
+            CodeReviewerAgent agent,
+            bool create,
+            string createdByUserId,
+            string? label,
+            CancellationToken cancellationToken
+        )
+        {
+            if (create)
+                return await AddAsync(agent, cancellationToken);
+            var index = Agents.FindIndex(x =>
+                x.Id == agent.Id && x.OrganizationId == agent.OrganizationId
+            );
+            Agents[index] = agent;
+            return await UpdateAsync(agent, cancellationToken);
+        }
+
         public async Task<bool> DisableAsync(
             string organizationId,
             string agentId,
@@ -573,6 +605,121 @@ public sealed class CodeReviewerAgentEndpointHandlerTests
             agent.UpdatedAtUtc = disabledAtUtc;
 
             return true;
+        }
+    }
+
+    /// <summary>
+    /// In-memory revision store used by reviewer-agent handler tests.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors the real content-addressed dedupe rule so a handler test can assert that a
+    /// no-op save does not create revision noise.
+    /// </remarks>
+    private sealed class TestCodeReviewerAgentRevisionStore : ICodeReviewerAgentRevisionStore
+    {
+        public List<CodeReviewerAgentRevision> Revisions { get; } = [];
+
+        public Task<CodeReviewerAgentRevision?> FindAsync(
+            string organizationId,
+            string agentId,
+            string revisionId,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                Revisions.FirstOrDefault(revision =>
+                    revision.OrganizationId == organizationId
+                    && revision.AgentId == agentId
+                    && revision.Id == revisionId
+                )
+            );
+
+        public Task<IReadOnlyList<CodeReviewerAgentRevision>> ListForAgentAsync(
+            string organizationId,
+            string agentId,
+            string? cursorId,
+            int pageSize,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult<IReadOnlyList<CodeReviewerAgentRevision>>([
+                .. Revisions
+                    .Where(revision =>
+                        revision.OrganizationId == organizationId && revision.AgentId == agentId
+                    )
+                    .OrderByDescending(revision => revision.Id)
+                    .Take(pageSize),
+            ]);
+
+        public Task<CodeReviewerAgentRevision?> FindLatestAsync(
+            string organizationId,
+            string agentId,
+            CancellationToken cancellationToken
+        ) =>
+            Task.FromResult(
+                Revisions
+                    .Where(revision =>
+                        revision.OrganizationId == organizationId && revision.AgentId == agentId
+                    )
+                    .OrderByDescending(revision => revision.Id)
+                    .FirstOrDefault()
+            );
+
+        public Task<CodeReviewerAgentRevision> AddAsync(
+            CodeReviewerAgentRevision revision,
+            CancellationToken cancellationToken
+        )
+        {
+            revision.ContentHash = CodeReviewerAgentRevisionContent.ComputeHash(
+                revision.Configuration
+            );
+
+            var existing = Revisions.FirstOrDefault(candidate =>
+                candidate.OrganizationId == revision.OrganizationId
+                && candidate.AgentId == revision.AgentId
+                && candidate.ContentHash == revision.ContentHash
+            );
+
+            if (existing is not null)
+            {
+                return Task.FromResult(existing);
+            }
+
+            Revisions.Add(revision);
+            return Task.FromResult(revision);
+        }
+
+        public Task<CodeReviewerAgentRevision> EnsureInitialSnapshotAsync(
+            CodeReviewerAgent agent,
+            string createdByUserId,
+            DateTimeOffset nowUtc,
+            CancellationToken cancellationToken
+        )
+        {
+            var configuration = CodeReviewerAgentRevisionContent.Capture(agent);
+            var contentHash = CodeReviewerAgentRevisionContent.ComputeHash(configuration);
+            var current = Revisions.FirstOrDefault(revision =>
+                revision.OrganizationId == agent.OrganizationId
+                && revision.AgentId == agent.Id
+                && revision.ContentHash == contentHash
+            );
+
+            return current is not null
+                ? Task.FromResult(current)
+                : AddAsync(
+                    new CodeReviewerAgentRevision
+                    {
+                        Id = $"crr_{Guid.CreateVersion7():N}",
+                        OrganizationId = agent.OrganizationId,
+                        TeamId = agent.TeamId,
+                        RepositoryId = agent.RepositoryId,
+                        AgentId = agent.Id,
+                        ContentHash = string.Empty,
+                        Label = string.Empty,
+                        Configuration = CodeReviewerAgentRevisionContent.Capture(agent),
+                        CreatedByUserId = createdByUserId,
+                        CreatedAtUtc = nowUtc,
+                    },
+                    cancellationToken
+                );
         }
     }
 }

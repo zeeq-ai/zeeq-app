@@ -125,11 +125,17 @@ public sealed partial class CodeReviewAgentExecutor(
                 reviewerScopes.Add(reviewerScope);
                 var reviewerServices = reviewerScope.ServiceProvider;
 
-                var resolvedClient = await llmTierResolver.ResolveChatClientAsync(
-                    organizationId,
-                    reviewer.ModelTier,
-                    cancellationToken
-                );
+                var resolvedClient = options.FrozenModel is { } frozenModel
+                    ? await llmTierResolver.ResolveFrozenAsync(
+                        organizationId,
+                        frozenModel,
+                        cancellationToken
+                    )
+                    : await llmTierResolver.ResolveChatClientAsync(
+                        organizationId,
+                        reviewer.ModelTier,
+                        cancellationToken
+                    );
 
                 var previousReviewsSection = BuildPreviousReviewsSection(previousReviews);
 
@@ -153,7 +159,8 @@ public sealed partial class CodeReviewAgentExecutor(
                                 sourceName: LlmTelemetry.ActivitySourceName,
                                 configure: config =>
                                 {
-                                    config.EnableSensitiveData = true; // TODO: This should be only on local
+                                    config.EnableSensitiveData =
+                                        options.Mode != CodeReviewExecutionMode.Evaluation;
                                 }
                             )
                             // Captures which KB sources this reviewer consults; reads the per-run

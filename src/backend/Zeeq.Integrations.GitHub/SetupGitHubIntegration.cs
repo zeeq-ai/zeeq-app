@@ -75,7 +75,20 @@ public static class SetupGitHubIntegration
             services.AddScoped<IGitHubCommentResolver, GitHubCommentResolver>();
             services.AddScoped<IGitHubCommentWriter, GitHubCommentWriter>();
             services.AddScoped<IGitHubPullRequestDataClient, OctokitGitHubPullRequestDataClient>();
-            services.AddScoped<ICodeReviewPullRequestSource, GitHubCodeReviewPullRequestSource>();
+            services.AddScoped<
+                ICodeReviewProviderPullRequestSource,
+                GitHubCodeReviewPullRequestSource
+            >();
+            services.AddScoped<ICodeReviewPullRequestSource>(provider =>
+                provider.GetRequiredService<ICodeReviewProviderPullRequestSource>()
+            );
+            services.AddScoped<
+                ICodeReviewEvaluationProviderCaptureSource,
+                GitHubCodeReviewEvaluationPullRequestCaptureSource
+            >();
+            services.AddScoped<ICodeReviewEvaluationPullRequestCaptureSource>(provider =>
+                provider.GetRequiredService<ICodeReviewEvaluationProviderCaptureSource>()
+            );
             services.AddScoped<GitHubWebhookRepositoryGate>();
             services.AddScoped<WebhookEventProcessor, ZeeqGitHubWebhookEventProcessor>();
             services.AddScoped<IGitHubInstallationVerifier, OctokitGitHubInstallationVerifier>();
