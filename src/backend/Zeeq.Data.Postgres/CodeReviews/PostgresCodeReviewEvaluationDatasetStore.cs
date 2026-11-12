@@ -308,10 +308,12 @@ internal sealed class PostgresCodeReviewEvaluationDatasetStore(
                 {
                     ApplyCapture(existing, requestedCase.Capture, now);
 
-                    // Fresh capture invalidates every prior label: stale expectations must
-                    // never attach to changed code. Explicit labels in the same draft apply
-                    // only to brand-new membership; a refresh always resets.
-                    existing.ReferenceSets = [];
+                    // Fresh capture never carries PRIOR labels onto changed code, but an
+                    // operator editing the same draft may stage new expectations in the same
+                    // save. Honor those explicit sets; a null set means "reset to unlabelled".
+                    existing.ReferenceSets = requestedCase.ReferenceSets is null
+                        ? []
+                        : [.. requestedCase.ReferenceSets];
                 }
                 else if (requestedCase.ReferenceSets is not null)
                 {

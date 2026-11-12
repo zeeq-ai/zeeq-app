@@ -121,7 +121,7 @@ const datasetItems = computed(() =>
 const revisionItems = computed(() => [
   { label: "Current draft", value: draftRevisionValue },
   ...props.revisions.map((revision) => ({
-    label: revision.label || `Revision ${revision.id.slice(0, 8)}`,
+    label: revision.label || `Revision ${revision.id.slice(-8)}`,
     value: revision.id,
   })),
 ]);

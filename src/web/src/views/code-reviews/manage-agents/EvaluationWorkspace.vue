@@ -1064,7 +1064,7 @@ function revisionCaption(run: EvaluationRunDto): string {
   const revision = revisions.value.find(
     (item) => item.id === run.savedRevisionId,
   );
-  return revision?.label || `Saved revision ${run.savedRevisionId.slice(0, 8)}`;
+  return revision?.label || `Saved revision ${run.savedRevisionId.slice(-8)}`;
 }
 
 function coverageLabel(run: EvaluationRunDto): string {

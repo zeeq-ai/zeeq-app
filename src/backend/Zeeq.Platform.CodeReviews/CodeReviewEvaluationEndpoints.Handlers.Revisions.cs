@@ -70,6 +70,9 @@ public sealed class ListCodeReviewerAgentRevisionsHandler(
             cancellationToken
         );
 
+        // NOTE: The v1 picker intentionally lists the latest 200 saved configurations.
+        // Older revision details remain addressable by ID and are retained in run manifests.
+        // Expanding the picker into a paged history browser is deferred product scope.
         var rows = await revisions.ListForAgentAsync(
             organizationId,
             agent.Id,

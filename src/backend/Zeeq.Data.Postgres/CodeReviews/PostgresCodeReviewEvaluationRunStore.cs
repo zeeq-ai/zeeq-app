@@ -219,6 +219,14 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
             return new(CodeReviewEvaluationRunAdmissionOutcome.DatasetNotFound, null, null);
         }
 
+        // Admission above already rejects an active parent through the organization slot.
+        // Keep the terminal-parent requirement explicit at the retry boundary as well.
+        if (!IsTerminal(parentDetail.Run.State))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return new(CodeReviewEvaluationRunAdmissionOutcome.NoRunnableCases, null, null);
+        }
+
         var parentResults = await db
             .CodeReviewEvaluationCaseResults.TagWithOperationCallSite(
                 "code_review_evaluation_run.retry_parent_results"
@@ -656,6 +664,9 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
         var run = await LockRunAsync(organizationId, runId, cancellationToken);
         var now = timeProvider.GetUtcNow();
 
+        // NOTE: A queued message delivered after abandonment cannot claim this row:
+        // TryClaim only updates Queued rows, and its update serializes on this row lock.
+        // If claim wins first, the live-lease check below rejects abandonment instead.
         // Already terminal: abandon is a no-op so a duplicate operator action cannot discard
         // successful results.
         if (IsTerminal(run.State))

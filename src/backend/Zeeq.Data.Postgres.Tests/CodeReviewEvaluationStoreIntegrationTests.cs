@@ -252,6 +252,167 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
     }
 
     [Test]
+    public async Task SaveAsync_RefreshKeepsExplicitNewReferencesAndNeverResurrectsOldOnes()
+    {
+        var (repository, agent) = await SeedRepositoryAsync();
+        var store = Datasets;
+        var dataset = await store.CreateAsync(
+            NewDataset(repository, "refresh-refs-key"),
+            CancellationToken.None
+        );
+
+        var oldSet = new CodeReviewEvaluationReferenceSet(
+            agent.Id,
+            CodeReviewEvaluationReferenceState.Expected,
+            [
+                new CodeReviewEvaluationReferenceFinding(
+                    "ref_old",
+                    "Old label",
+                    "This label must not survive a recapture.",
+                    CodeReviewEvaluationFindingSeverity.Major,
+                    "src/Search.cs",
+                    12,
+                    CodeReviewEvaluationReferenceOrigin.Manual,
+                    null,
+                    null,
+                    "usr_1",
+                    _clock.GetUtcNow()
+                ),
+            ]
+        );
+
+        var seeded = await store.SaveAsync(
+            NewSaveRequest(dataset, [NewCase(901, agent.Id, "sha-old", [oldSet])]),
+            CancellationToken.None
+        );
+        var caseId = seeded.Cases!.Single().Id;
+        await Assert.That(seeded.Cases!.Single().ReferenceSets.Single().Findings.Single().Id)
+            .IsEqualTo("ref_old");
+
+        var newSet = new CodeReviewEvaluationReferenceSet(
+            agent.Id,
+            CodeReviewEvaluationReferenceState.Expected,
+            [
+                new CodeReviewEvaluationReferenceFinding(
+                    "ref_new",
+                    "New label",
+                    "This label was staged in the same refresh draft.",
+                    CodeReviewEvaluationFindingSeverity.Minor,
+                    "src/Search.cs",
+                    40,
+                    CodeReviewEvaluationReferenceOrigin.Manual,
+                    null,
+                    null,
+                    "usr_1",
+                    _clock.GetUtcNow()
+                ),
+            ]
+        );
+
+        // One save: fresh capture plus explicitly staged expectations.
+        var refreshed = await store.SaveAsync(
+            new(
+                dataset.OrganizationId,
+                repository.Id,
+                dataset.Id,
+                ExpectedVersion: seeded.Dataset!.Version,
+                dataset.Name,
+                null,
+                [new(caseId, 901, NewCapture("sha-new", 901), [newSet])]
+            ),
+            CancellationToken.None
+        );
+
+        await Assert.That(refreshed.Outcome).IsEqualTo(CodeReviewEvaluationDatasetSaveOutcome.Saved);
+        var updated = refreshed.Cases!.Single();
+        await Assert.That(updated.Id).IsEqualTo(caseId);
+        await Assert.That(updated.HeadSha).IsEqualTo("head-sha-sha-new");
+        await Assert.That(updated.ReferenceSets.Single().Findings.Single().Id).IsEqualTo("ref_new");
+
+        // Fresh database read: only the explicit new label exists, the old one is gone.
+        _context.ChangeTracker.Clear();
+        var persisted = await _context
+            .CodeReviewEvaluationCases.AsNoTracking()
+            .SingleAsync(item =>
+                item.OrganizationId == dataset.OrganizationId && item.Id == caseId
+            );
+        var persistedFindings = persisted.ReferenceSets.Single().Findings;
+        await Assert.That(persistedFindings.Count).IsEqualTo(1);
+        await Assert.That(persistedFindings.Single().Id).IsEqualTo("ref_new");
+    }
+
+    [Test]
+    public async Task SaveAsync_RefreshWithoutExplicitReferencesResetsToUnlabelled()
+    {
+        var (repository, agent) = await SeedRepositoryAsync();
+        var store = Datasets;
+        var dataset = await store.CreateAsync(
+            NewDataset(repository, "refresh-reset-key"),
+            CancellationToken.None
+        );
+
+        var seeded = await store.SaveAsync(
+            NewSaveRequest(
+                dataset,
+                [
+                    NewCase(
+                        901,
+                        agent.Id,
+                        "sha-old",
+                        [
+                            new(
+                                agent.Id,
+                                CodeReviewEvaluationReferenceState.Expected,
+                                [
+                                    new CodeReviewEvaluationReferenceFinding(
+                                        "ref_old",
+                                        "Old label",
+                                        "Must reset on recapture.",
+                                        CodeReviewEvaluationFindingSeverity.Major,
+                                        "src/Search.cs",
+                                        12,
+                                        CodeReviewEvaluationReferenceOrigin.Manual,
+                                        null,
+                                        null,
+                                        "usr_1",
+                                        _clock.GetUtcNow()
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            CancellationToken.None
+        );
+        var caseId = seeded.Cases!.Single().Id;
+
+        var refreshed = await store.SaveAsync(
+            new(
+                dataset.OrganizationId,
+                repository.Id,
+                dataset.Id,
+                ExpectedVersion: seeded.Dataset!.Version,
+                dataset.Name,
+                null,
+                [new(caseId, 901, NewCapture("sha-reset", 901), null)]
+            ),
+            CancellationToken.None
+        );
+
+        await Assert.That(refreshed.Outcome).IsEqualTo(CodeReviewEvaluationDatasetSaveOutcome.Saved);
+        await Assert.That(refreshed.Cases!.Single().ReferenceSets.Count).IsEqualTo(0);
+
+        _context.ChangeTracker.Clear();
+        var persisted = await _context
+            .CodeReviewEvaluationCases.AsNoTracking()
+            .SingleAsync(item =>
+                item.OrganizationId == dataset.OrganizationId && item.Id == caseId
+            );
+        await Assert.That(persisted.ReferenceSets.Count).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task SaveAsync_RejectsCaseIdPointingAtAnotherPullRequest()
     {
         var (repository, agent) = await SeedRepositoryAsync();

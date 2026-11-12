@@ -12,7 +12,7 @@ Each PR preserves its captured patch and commit identity. Refreshing a PR is exp
 
 The judge matches candidate findings to references and reports reference coverage, missed findings and additional **unverified** findings. An additional finding may be useful even when absent from the reference. Graded/finished indicates completion, not a passing verdict. Skipped, unlabelled and failed cases remain visible alongside the coverage counts.
 
-**Add to reference** stages a finding in the dataset editor; it does not change the old run's grade. Only the dataset save commits a new reference version. Testing an old revision never restores or deploys the old agent configuration.
+**Add to reference** stages a finding in the dataset editor; it does not change the old run's grade. Only the dataset save commits a new reference version. Testing an old revision never restores or deploys the old agent configuration. The v1 picker lists the latest 200 saved configurations; older run reports retain their tested configuration.
 
 ## Execution and storage
 
