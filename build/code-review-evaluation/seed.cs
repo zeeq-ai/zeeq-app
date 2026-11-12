@@ -510,11 +510,33 @@ async Task<int> CleanupAsync()
         throw new InvalidOperationException("Fixture manifest namespace does not match this run.");
     }
 
+    if (
+        stored.Repositories.Any(id =>
+            id != $"repo_{namespacePrefix}_alpha" && id != $"repo_{namespacePrefix}_beta"
+        )
+    )
+    {
+        throw new InvalidOperationException(
+            "Fixture manifest contains a repository outside this run."
+        );
+    }
+
     await db.Database.BeginTransactionAsync();
 
-    // Delete exactly what the manifest owns. Runs created by browser/worker acceptance are
-    // discovered through the manifest's dataset ids, then their results are removed first.
-    var datasetIds = stored.Datasets.ToArray();
+    // Capture parent identities before deleting repositories. Browser-created datasets and
+    // outputs belong to these exact manifest-owned fixture repositories as well.
+    var repositoryIds = stored.Repositories.ToArray();
+    var ownedRepositories = await db
+        .CodeRepositories.AsNoTracking()
+        .Where(repository => repositoryIds.Contains(repository.Id))
+        .Select(repository => new { repository.OrganizationId, repository.Id })
+        .ToArrayAsync();
+    var discoveredDatasetIds = await db
+        .CodeReviewEvaluationDatasets.AsNoTracking()
+        .Where(dataset => repositoryIds.Contains(dataset.RepositoryId))
+        .Select(dataset => dataset.Id)
+        .ToArrayAsync();
+    var datasetIds = stored.Datasets.Concat(discoveredDatasetIds).Distinct().ToArray();
     var runIds =
         datasetIds.Length == 0
             ? []
@@ -555,7 +577,6 @@ async Task<int> CleanupAsync()
         );
     }
 
-    var repositoryIds = stored.Repositories.ToArray();
     if (repositoryIds.Length > 0)
     {
         await db.Database.ExecuteSqlInterpolatedAsync(
@@ -579,20 +600,12 @@ async Task<int> CleanupAsync()
         );
     }
 
-    foreach (var repositoryId in repositoryIds)
+    foreach (var repository in ownedRepositories)
     {
-        var repository = await db
-            .CodeRepositories.AsNoTracking()
-            .FirstOrDefaultAsync(candidate => candidate.Id == repositoryId);
-        if (repository is null)
-        {
-            continue;
-        }
-
         var prefix =
             $"postgres://reviewer-evaluations/{repository.OrganizationId}/{repository.Id}/";
         await db.Database.ExecuteSqlInterpolatedAsync(
-            $"DELETE FROM zeeq.storage_objects WHERE uri LIKE {prefix + "%"}"
+            $"DELETE FROM zeeq.storage_objects WHERE starts_with(uri, {prefix})"
         );
     }
 

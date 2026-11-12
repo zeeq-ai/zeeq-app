@@ -37,7 +37,9 @@ Fixture intent:
   them while dataset membership stays exactly P1-P8.
 
 The Beta repository has no dataset: it exists to prove per-organization admission independence
-and cross-organization 404 behavior.
+and tenant boundaries. A route organization that differs from the active cookie organization
+returns 403 through the existing route guard. Missing or cross-repository parents within the
+active authorized organization return 404.
 
 ## Run it
 
