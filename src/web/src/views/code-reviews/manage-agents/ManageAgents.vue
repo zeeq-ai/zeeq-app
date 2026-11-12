@@ -41,7 +41,10 @@
 
       <div class="flex min-h-0 flex-1 overflow-hidden">
         <section
-          class="flex min-h-0 basis-full flex-col border-r border-default lg:max-w-96 lg:basis-96"
+          class="min-h-0 shrink-0 basis-60 flex-col border-r border-default lg:max-w-72 lg:basis-72"
+          :class="
+            testWorkspaceActive ? 'hidden min-[1440px]:flex' : 'hidden lg:flex'
+          "
         >
           <div
             class="flex min-h-16 items-center justify-between gap-3 border-b border-default px-4 py-3 sm:px-6"
@@ -105,7 +108,7 @@
           </div>
         </section>
 
-        <section class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <section class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <FileFiltersPanel
             v-if="selectedManagementItemId === managementFiltersItemId"
             :file-filter="repositoryConfiguration?.fileFilter ?? null"
@@ -128,10 +131,10 @@
               selectedAgent
             "
             ref="agentConfigPanelRef"
-            v-model:selected-agent-test-pull-request="
-              selectedAgentTestPullRequest
-            "
             :agent="selectedAgent"
+            :repository-id="selectedRepositoryId ?? ''"
+            :repository-name="originRepoLabel"
+            :reviewers="agents"
             :saving="savingAgent"
             :disabled="!canManageOrganization || !selectedRepositoryId"
             :initial-form="copiedAgentForm"
@@ -157,6 +160,8 @@
             @load-more-test-targets="loadMoreAgentTestTargets"
             @run-test="runAgentTest"
             @preview-activation-filters="previewActivationFilters"
+            @workspace-mode="testWorkspaceActive = $event"
+            @select-reviewer="selectReviewerById"
           />
 
           <UEmpty
@@ -312,6 +317,7 @@ const props = defineProps<{
 }>();
 
 const toast = useToast();
+const testWorkspaceActive = ref(true);
 const route = useRoute();
 const router = useRouter();
 const appStore = useAppStore();
@@ -449,7 +455,6 @@ const activationFilterPreviewError = ref<string | null>(null);
 const agentTestTargets = ref<CodeReviewPullRequestDto[]>([]);
 const agentTestTargetsNextCursor = ref<CodeReviewStreamCursorDto | null>(null);
 const loadingMoreAgentTestTargets = ref(false);
-const selectedAgentTestPullRequest = ref<CodeReviewPullRequestDto | null>(null);
 const agentTestResult = ref<CodeReviewAgentTestRunResponse | null>(null);
 
 const agentHasUnsavedChanges = computed(
@@ -628,6 +633,11 @@ async function selectAgent(agent: CodeReviewerAgentDto) {
   });
 }
 
+async function selectReviewerById(agentId: string) {
+  const agent = agents.value.find((item) => item.id === agentId);
+  if (agent) await selectAgent(agent);
+}
+
 /** Persists repository-level filters. */
 async function saveRepositoryFilters(fileFilter: CodeReviewFileFilterDto) {
   try {
@@ -744,7 +754,6 @@ function clearAgentTestState() {
   agentTestTargets.value = [];
   agentTestTargetsNextCursor.value = null;
   loadingMoreAgentTestTargets.value = false;
-  selectedAgentTestPullRequest.value = null;
   agentTestResult.value = null;
   activationFilterPreviewResult.value = null;
   activationFilterPreviewError.value = null;

@@ -9,7 +9,20 @@
         class="flex h-[45px] shrink-0 items-center gap-3 border-b border-default px-3"
       >
         <div class="flex min-w-0 flex-1 items-center gap-2">
-          <h2 class="truncate text-xl font-bold text-highlighted">
+          <USelectMenu
+            v-if="
+              activeConfigurationTab === 'test' && compactWorkspace && agent
+            "
+            :model-value="agent.id"
+            :items="reviewerItems"
+            value-key="value"
+            variant="ghost"
+            color="neutral"
+            aria-label="Reviewer"
+            class="min-w-0 max-w-full text-lg font-semibold"
+            @update:model-value="(id) => id && emits('selectReviewer', id)"
+          />
+          <h2 v-else class="truncate text-xl font-bold text-highlighted">
             {{
               draft.displayName.trim() ||
               (agent ? "Reviewer agent" : "New reviewer agent")
@@ -55,11 +68,16 @@
         color="neutral"
         variant="link"
         class="agent-config-tabs min-h-0 flex-1 px-3"
-        :ui="{ root: 'min-h-0 flex-1', content: 'min-h-0 flex-1 pt-3' }"
+        :ui="{
+          root: 'min-h-0 flex-1',
+          list: 'shrink-0 overflow-x-auto',
+          trigger: 'shrink-0',
+          content: 'min-h-0 flex-1 pt-3',
+        }"
       >
         <template #default="{ item }">
-          <span class="inline-flex min-w-0 items-center gap-1.5">
-            <span class="truncate">{{ item.label }}</span>
+          <span class="inline-flex shrink-0 items-center gap-1.5">
+            <span class="whitespace-nowrap">{{ item.label }}</span>
             <UBadge
               v-if="item.value === 'filters'"
               :label="`${activationFilterCount}`"
@@ -113,22 +131,29 @@
         </template>
 
         <template #test>
-          <AgentTestPanel
-            v-model:selected-pull-request="selectedAgentTestPullRequest"
-            :targets="agentTestTargets"
-            :loading="agentTestTargetsLoading"
-            :loading-more="agentTestTargetsLoadingMore"
-            :running="agentTestRunning"
-            :disabled="disabled || saving"
-            :has-more="agentTestTargetsHasMore"
-            @load-targets="emits('loadTestTargets')"
-            @load-more-targets="emits('loadMoreTestTargets')"
-            @run="runAgentTest"
+          <EvaluationWorkspace
+            v-if="repositoryId"
+            :repository-id="repositoryId"
+            :repository-name="repositoryName"
+            :agent-id="agent?.id ?? null"
+            :reviewers="reviewers"
+            :reviewer-configuration="reviewerConfiguration"
+            :can-manage="!disabled && !saving"
+            :quick-test-targets="agentTestTargets"
+            :quick-test-loading="agentTestTargetsLoading"
+            :quick-test-loading-more="agentTestTargetsLoadingMore"
+            :quick-test-has-more="agentTestTargetsHasMore"
+            :quick-test-running="agentTestRunning"
+            :quick-test-result="agentTestResult"
+            @load-quick-test-targets="emits('loadTestTargets')"
+            @load-more-quick-test-targets="emits('loadMoreTestTargets')"
+            @run-quick-test="runAgentTest"
           />
-        </template>
-
-        <template #results>
-          <AgentTestResultsPanel :result="agentTestResult" />
+          <UEmpty
+            v-else
+            title="Select a repository"
+            description="Choose a repository to test this reviewer."
+          />
         </template>
       </UTabs>
     </div>
@@ -152,7 +177,7 @@
     />
 
     <aside
-      v-else
+      v-else-if="activeConfigurationTab !== 'test'"
       class="flex w-72 shrink-0 flex-col border-l border-default bg-default"
     >
       <div class="min-h-0 flex-1 overflow-y-auto p-4">
@@ -303,6 +328,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useMediaQuery } from "@vueuse/core";
 import { MdEditor, type ToolbarNames } from "md-editor-v3";
 import "md-editor-v3/lib/style.css";
 import type {
@@ -311,6 +337,7 @@ import type {
   CodeReviewPullRequestDto,
   CodeReviewerActivationConfigurationDto,
   CodeReviewerAgentDto,
+  CodeReviewerAgentRevisionConfiguration,
 } from "@/api/generated";
 import {
   agentToForm,
@@ -325,13 +352,15 @@ import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 
 import AgentActivationFiltersEditor from "./AgentActivationFiltersEditor.vue";
 import FilterPreviewSidePanel from "./FilterPreviewSidePanel.vue";
-import AgentTestPanel from "./AgentTestPanel.vue";
-import AgentTestResultsPanel from "./AgentTestResultsPanel.vue";
+import EvaluationWorkspace from "./EvaluationWorkspace.vue";
 import { formatAgentFormForDiff } from "./agent-diff-format";
 
 const props = withDefaults(
   defineProps<{
     agent: CodeReviewerAgentDto | null;
+    repositoryId?: string;
+    repositoryName?: string;
+    reviewers?: CodeReviewerAgentDto[];
     saving: boolean;
     disabled: boolean;
     initialForm?: CodeReviewerAgentForm | null;
@@ -355,18 +384,18 @@ const props = withDefaults(
     agentTestTargetsHasMore: false,
     agentTestRunning: false,
     agentTestResult: null,
+    repositoryId: "",
+    repositoryName: "Repository",
+    reviewers: () => [],
     activationFilterPreviewResult: null,
     activationFilterPreviewLoading: false,
     activationFilterPreviewError: null,
   },
 );
 
-const selectedAgentTestPullRequest =
-  defineModel<CodeReviewPullRequestDto | null>("selectedAgentTestPullRequest", {
-    default: null,
-  });
-
 const emits = defineEmits<{
+  workspaceMode: [isTest: boolean];
+  selectReviewer: [agentId: string];
   cancel: [];
   save: [agentId: string | null, form: CodeReviewerAgentForm];
   review: [
@@ -388,7 +417,17 @@ const emits = defineEmits<{
 }>();
 
 const { editorTheme, toggleTheme } = useMarkdownEditorTheme();
-const activeConfigurationTab = ref("prompt");
+const activeConfigurationTab = ref("test");
+const compactWorkspace = useMediaQuery("(max-width: 1439px)");
+const reviewerItems = computed(() =>
+  props.reviewers.map((reviewer) => ({
+    label: reviewer.displayName,
+    value: reviewer.id,
+  })),
+);
+watch(activeConfigurationTab, (tab) => emits("workspaceMode", tab === "test"), {
+  immediate: true,
+});
 const copyTargetRepositoryId = ref<string | undefined>(undefined);
 const originalDiffText = ref(formatAgentFormForDiff(defaultAgentForm()));
 const {
@@ -404,8 +443,8 @@ const {
 type AgentConfigurationTab = {
   label: string;
   icon: string;
-  value: "prompt" | "filters" | "test" | "results";
-  slot: "prompt" | "filters" | "test" | "results";
+  value: "prompt" | "filters" | "test";
+  slot: "prompt" | "filters" | "test";
 };
 
 const agentConfigurationTabs = computed<AgentConfigurationTab[]>(() => {
@@ -430,17 +469,26 @@ const agentConfigurationTabs = computed<AgentConfigurationTab[]>(() => {
     },
   ];
 
-  if (props.agentTestResult) {
-    tabs.push({
-      label: "Results",
-      icon: "i-hugeicons-message-programming",
-      value: "results",
-      slot: "results" as const,
-    });
-  }
-
   return tabs;
 });
+
+const reviewerConfiguration = computed<CodeReviewerAgentRevisionConfiguration>(
+  () => ({
+    displayName: draft.value.displayName,
+    reviewFacet: draft.value.reviewFacet,
+    modelTier: draft.value.modelTier,
+    prompt: draft.value.prompt,
+    enabled: draft.value.enabled,
+    activationConfiguration: {
+      includedFiles: draft.value.activationConfiguration.includedFiles.map(
+        (item) => ({ ...item }),
+      ),
+      excludedFiles: draft.value.activationConfiguration.excludedFiles.map(
+        (item) => ({ ...item }),
+      ),
+    },
+  }),
+);
 
 const enabledTabItems = computed(() => [
   {
@@ -533,21 +581,6 @@ watch(activeConfigurationTab, (tab) => {
  * A completed synthetic run should reveal its browser-local result immediately.
  * Subsequent runs replace the same result surface without becoming review history.
  */
-watch(
-  () => props.agentTestResult,
-  (result) => {
-    if (result) {
-      activeConfigurationTab.value = "results";
-      return;
-    }
-
-    if (activeConfigurationTab.value === "results") {
-      // Results is conditional; return to the test workflow when its backing result is cleared.
-      activeConfigurationTab.value = "test";
-    }
-  },
-);
-
 /** Replaces activation rules with a cloned value from the shared rule editor. */
 function updateActivationConfiguration(
   value: CodeReviewerActivationConfigurationDto,
