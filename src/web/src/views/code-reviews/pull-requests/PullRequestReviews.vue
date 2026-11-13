@@ -68,21 +68,27 @@
         v-model:open-review-id="openReviewId"
         v-model:bypassing="bypassing"
         :cart-content-hashes="cartContentHashes"
+        :can-add-to-dataset="canAddToDataset"
         class="hidden lg:flex"
         @request-review="requestReview"
         @bypass-check="handleBypassCheck"
         @load-review-findings="loadReviewFindings"
         @load-raw-xml="loadReviewRawXml"
         @toggle-cart="handleToggleCart"
+        @add-to-dataset="openInboxDatasetPicker"
       />
 
       <USlideover
         v-if="isMobile"
         v-model:open="detailPanelOpen"
+        :title="
+          mobileDatasetPickerOpen ? 'Add to dataset' : 'Pull request details'
+        "
         :ui="{ content: 'max-w-xl' }"
       >
         <template #content>
           <PullRequestReviewDetail
+            v-show="!mobileDatasetPickerOpen"
             :pull-request="selectedPullRequest"
             :reviews="actualSelectedPullRequestReviews"
             :review-findings-by-review-key
@@ -96,6 +102,7 @@
             v-model:open-review-id="openReviewId"
             v-model:bypassing="bypassing"
             :cart-content-hashes="cartContentHashes"
+            :can-add-to-dataset="canAddToDataset"
             show-close
             class="h-full"
             @request-review="requestReview"
@@ -104,10 +111,34 @@
             @load-raw-xml="loadReviewRawXml"
             @toggle-cart="handleToggleCart"
             @close="closeDetailPanel"
+            @add-to-dataset="openInboxDatasetPicker"
+          />
+          <AddPullRequestToDataset
+            v-if="selectedPullRequest"
+            v-model:open="mobileDatasetPickerOpen"
+            :pull-request="selectedPullRequest"
+            :repository-id="selectedPullRequest.repositoryId"
+            :embedded="true"
+            :max-cases="maxEvaluationCases"
+            :can-open-editor="canOpenEditorForSelectedPullRequest"
+            @back="mobileDatasetPickerOpen = false"
+            @added="handleDatasetAdded"
+            @open-editor="openEvaluationDatasetEditor"
           />
         </template>
       </USlideover>
     </div>
+
+    <AddPullRequestToDataset
+      v-if="selectedPullRequest && !isMobile"
+      v-model:open="desktopDatasetPickerOpen"
+      :pull-request="selectedPullRequest"
+      :repository-id="selectedPullRequest.repositoryId"
+      :max-cases="maxEvaluationCases"
+      :can-open-editor="canOpenEditorForSelectedPullRequest"
+      @added="handleDatasetAdded"
+      @open-editor="openEvaluationDatasetEditor"
+    />
   </div>
 </template>
 
@@ -128,6 +159,8 @@ import {
 import { useCodeReviewStore } from "@/stores/code-review-store";
 import { useCartStore } from "@/stores/cart-store";
 import { useAppStore } from "@/stores/app-store";
+import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
+import { useCodeReviewEvaluationStore } from "@/stores/code-review-evaluation-store";
 import type {
   CodeReviewFindingDto,
   CodeReviewReviewerFindingsDto,
@@ -137,6 +170,7 @@ import { useCodeReviewDeepLink } from "@/composables/useCodeReviewDeepLink";
 
 import PullRequestInboxList from "./PullRequestInboxList.vue";
 import PullRequestReviewDetail from "./PullRequestReviewDetail.vue";
+import AddPullRequestToDataset from "./AddPullRequestToDataset.vue";
 
 /**
  * Route query params injected via router `props`.
@@ -161,6 +195,10 @@ const toast = useToast();
 const codeReviewStore = useCodeReviewStore();
 const cartStore = useCartStore();
 const appStore = useAppStore();
+const organizationSettingsStore = useOrganizationSettingsStore();
+const evaluationStore = useCodeReviewEvaluationStore();
+const { canManageOrganization } = storeToRefs(organizationSettingsStore);
+const { availability: evaluationAvailability } = storeToRefs(evaluationStore);
 const { cartContentHashes } = storeToRefs(cartStore);
 const {
   pullRequests,
@@ -181,6 +219,8 @@ const {
   loadingSelectedPullRequest,
   requestingReviewId,
   selectedRepositoryId,
+  agents,
+  selectedManagementItemId,
   error: codeReviewError,
   activeOrganizationId,
   hasConfiguredRepositories,
@@ -197,6 +237,20 @@ const prNumberFilterInput = ref("");
 
 /** True when a repository is selected; required for repo-scoped number lookup. */
 const canFilterByNumber = computed(() => selectedRepositoryId.value !== null);
+const canAddToDataset = computed(
+  () => canManageOrganization.value && evaluationAvailability.value?.enabled,
+);
+const maxEvaluationCases = computed(() =>
+  Number(evaluationAvailability.value?.maxCases ?? 25),
+);
+const canOpenEditorForSelectedPullRequest = computed(
+  () =>
+    !!selectedPullRequest.value &&
+    selectedRepositoryId.value === selectedPullRequest.value.repositoryId &&
+    agents.value.length > 0,
+);
+const desktopDatasetPickerOpen = ref(false);
+const mobileDatasetPickerOpen = ref(false);
 
 let pollHandle: number | null = null;
 let polling = false;
@@ -242,6 +296,7 @@ const detailPanelOpen = computed({
 let isUnmounted = false;
 
 onMounted(async () => {
+  void evaluationStore.loadAvailability();
   await refreshInbox();
 
   if (props.prId) {
@@ -286,6 +341,11 @@ onBeforeUnmount(() => {
   isUnmounted = true;
   stopPolling();
   document.removeEventListener("visibilitychange", handleVisibilityChange);
+});
+
+watch(activeOrganizationId, () => {
+  evaluationStore.clearAvailability();
+  void evaluationStore.loadAvailability();
 });
 
 /** Reload when the user switches organizations in the app shell. */
@@ -404,8 +464,113 @@ function deselectPr() {
 
 /** Closes the mobile detail slideover, clears selection, and strips PR params from the URL. */
 function closeDetailPanel() {
+  mobileDatasetPickerOpen.value = false;
   deselectPr();
   router.replace({ query: stripPrParams() });
+}
+
+function openInboxDatasetPicker() {
+  if (!canAddToDataset.value) return;
+  if (isMobile.value) mobileDatasetPickerOpen.value = true;
+  else desktopDatasetPickerOpen.value = true;
+}
+
+async function openEvaluationDatasetEditor(
+  datasetId: string,
+  pullRequestNumber: number,
+) {
+  const pullRequest = selectedPullRequest.value;
+  if (!pullRequest || !canManageOrganization.value) return;
+  await openEvaluationDatasetEditorFor(
+    pullRequest.repositoryId,
+    datasetId,
+    pullRequestNumber,
+  );
+}
+
+async function handleDatasetAdded(result: {
+  added: boolean;
+  datasetId: string;
+  repositoryId: string;
+  datasetName: string;
+  datasetVersion: number;
+  pullRequestNumber: number;
+  baseSha: string;
+  headSha: string;
+  capturedAtUtc: Date;
+}) {
+  const actionAvailable =
+    selectedRepositoryId.value === result.repositoryId &&
+    agents.value.length > 0;
+  toast.add({
+    title: result.added
+      ? `Added #${result.pullRequestNumber} @ ${result.headSha.slice(0, 7)} to ${result.datasetName} v${result.datasetVersion}`
+      : `#${result.pullRequestNumber} is already in ${result.datasetName} v${result.datasetVersion}`,
+    color: result.added ? "success" : "info",
+    icon: result.added
+      ? "i-hugeicons-tick-02"
+      : "i-hugeicons-information-circle",
+    actions: actionAvailable
+      ? [
+          {
+            label: result.added ? "Open in editor" : "Open existing",
+            onClick: () =>
+              void openEvaluationDatasetEditorFor(
+                result.repositoryId,
+                result.datasetId,
+                result.pullRequestNumber,
+              ),
+          },
+        ]
+      : [
+          {
+            label: "Manage agents",
+            to: "/code-reviews/manage-agents",
+          },
+        ],
+  });
+}
+
+async function openEvaluationDatasetEditorFor(
+  repositoryId: string,
+  datasetId: string,
+  pullRequestNumber: number,
+) {
+  try {
+    if (selectedRepositoryId.value !== repositoryId) {
+      await codeReviewStore.setSelectedRepository(repositoryId);
+    }
+    const reviewer =
+      agents.value.find((item) => item.id === selectedManagementItemId.value) ??
+      agents.value[0];
+    if (!reviewer) {
+      toast.add({
+        title: "Dataset saved",
+        description:
+          "Configure a reviewer agent for this repository before opening its dataset editor.",
+        color: "info",
+        icon: "i-hugeicons-information-circle",
+        actions: [
+          {
+            label: "Manage agents",
+            to: "/code-reviews/manage-agents",
+          },
+        ],
+      });
+      return;
+    }
+    await router.push({
+      name: "ManageAgent",
+      params: { orgId: activeOrganizationId.value, agentId: reviewer.id },
+      query: {
+        repositoryId,
+        datasetId,
+        prNumber: String(pullRequestNumber),
+      },
+    });
+  } catch (err: unknown) {
+    showError("Could not open the dataset editor", err);
+  }
 }
 
 /**

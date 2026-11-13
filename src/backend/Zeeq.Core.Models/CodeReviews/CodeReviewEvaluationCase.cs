@@ -49,7 +49,7 @@ public sealed class CodeReviewEvaluationCase : MutableDomainEntityBase, IOrganiz
     /// <summary>SHA-256 of the snapshot artifact bytes, verified on every read.</summary>
     public required string SnapshotSha256 { get; set; }
 
-    /// <summary>Byte length of the snapshot artifact, verified on every read.</summary>
+    /// <summary>Byte length of the canonical uncompressed snapshot JSON, verified on every read.</summary>
     public int SnapshotByteCount { get; set; }
 
     /// <summary>Schema version of the snapshot envelope stored in the artifact.</summary>

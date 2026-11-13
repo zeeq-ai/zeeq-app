@@ -17,6 +17,7 @@
 // The helper never touches a normal user's repositories, identities, permissions, tier
 // mappings or artifacts.
 
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -355,8 +356,9 @@ async Task<RepositoryFixture> SeedRepositoryAsync(
             now
         );
         var bytes = CodeReviewEvaluationSnapshotSerializer.Serialize(snapshot);
+        var storedBytes = CompressSnapshot(bytes);
         var path =
-            $"reviewer-evaluations/{organizationId}/{repositoryId}/snap_{namespacePrefix}_{definition.Number}/snapshot.json";
+            $"reviewer-evaluations/{organizationId}/{repositoryId}/snap_{namespacePrefix}_{definition.Number}/{Convert.ToHexStringLower(SHA256.HashData(storedBytes))}/snapshot.json.gz";
         var uri = $"postgres://{path}";
         var sha = Convert.ToHexStringLower(SHA256.HashData(bytes));
 
@@ -366,8 +368,8 @@ async Task<RepositoryFixture> SeedRepositoryAsync(
                 (uri, organization_id, container, path, content_type, content_bytes,
                  metadata_json, created_at_utc, updated_at_utc)
             VALUES
-                ({uri}, {organizationId}, {"Default"}, {path}, {"application/json"},
-                 {bytes}, {"{}"}::jsonb, {now}, {now})
+                ({uri}, {organizationId}, {"Default"}, {path}, {"application/gzip"},
+                 {storedBytes}, {"{}"}::jsonb, {now}, {now})
             """
         );
         artifactUris.Add(uri);
@@ -437,8 +439,9 @@ async Task<RepositoryFixture> SeedRepositoryAsync(
             now
         );
         var bytes = CodeReviewEvaluationSnapshotSerializer.Serialize(snapshot);
+        var storedBytes = CompressSnapshot(bytes);
         var path =
-            $"reviewer-evaluations/{organizationId}/{repositoryId}/snap_{namespacePrefix}_{captureDefinition.Number}/snapshot.json";
+            $"reviewer-evaluations/{organizationId}/{repositoryId}/snap_{namespacePrefix}_{captureDefinition.Number}/{Convert.ToHexStringLower(SHA256.HashData(storedBytes))}/snapshot.json.gz";
         var uri = $"postgres://{path}";
         var sha = Convert.ToHexStringLower(SHA256.HashData(bytes));
 
@@ -448,8 +451,8 @@ async Task<RepositoryFixture> SeedRepositoryAsync(
                 (uri, organization_id, container, path, content_type, content_bytes,
                  metadata_json, created_at_utc, updated_at_utc)
             VALUES
-                ({uri}, {organizationId}, {"Default"}, {path}, {"application/json"},
-                 {bytes}, {"{}"}::jsonb, {now}, {now})
+                ({uri}, {organizationId}, {"Default"}, {path}, {"application/gzip"},
+                 {storedBytes}, {"{}"}::jsonb, {now}, {now})
             """
         );
         artifactUris.Add(uri);
@@ -625,6 +628,19 @@ async Task<int> CleanupAsync()
     File.Delete(manifestPath);
     Console.WriteLine($"Fixture cleaned: {namespacePrefix}");
     return 0;
+}
+
+// Seed the same single gzip format as the evaluation artifact writer. Identity stays
+// attached to the canonical uncompressed JSON bytes recorded on the case.
+static byte[] CompressSnapshot(byte[] bytes)
+{
+    using var output = new MemoryStream();
+    using (var gzip = new GZipStream(output, CompressionLevel.Optimal, leaveOpen: true))
+    {
+        gzip.Write(bytes);
+    }
+
+    return output.ToArray();
 }
 
 static bool IsLoopback(string host) =>

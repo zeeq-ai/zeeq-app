@@ -9,8 +9,8 @@ namespace Zeeq.Platform.CodeReviews;
 /// verifying <see cref="Sha256"/> on every read.
 /// </remarks>
 /// <param name="StorageUri">Storage URI returned by the artifact writer.</param>
-/// <param name="Sha256">Lower-case hexadecimal SHA-256 of the artifact bytes.</param>
-/// <param name="ByteCount">Artifact length in bytes.</param>
+/// <param name="Sha256">Lower-case SHA-256 of the logical artifact bytes, before snapshot compression.</param>
+/// <param name="ByteCount">Logical artifact length; snapshots use the canonical uncompressed JSON length.</param>
 public sealed record CodeReviewEvaluationArtifact(string StorageUri, string Sha256, int ByteCount);
 
 /// <summary>

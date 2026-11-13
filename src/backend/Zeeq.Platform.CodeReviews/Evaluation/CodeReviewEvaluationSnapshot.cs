@@ -15,10 +15,11 @@ namespace Zeeq.Platform.CodeReviews;
 /// hashing and never appear in the envelope.
 ///
 /// Storage boundary: this envelope, serialized into
-/// <c>reviewer-evaluations/{org}/{repo}/{uniqueArtifactId}/snapshot.json</c>, is the single
+/// <c>reviewer-evaluations/{org}/{repo}/{uniqueArtifactId}/{encodedHash}/snapshot.json.gz</c>, is the single
 /// stored capture. <see cref="ToPullRequestSnapshot"/> is a pure in-memory projection used to
 /// build the execution input and is never persisted a second time. The run manifest carries
-/// capture metadata plus the artifact reference (URI, SHA-256, byte count), never file
+/// capture metadata plus the artifact reference (URI, SHA-256, byte count of the canonical
+/// uncompressed JSON), never file
 /// content. Readers verify hash and length before projecting, and a mismatch is a hard
 /// failure rather than a reason to recapture. Reference findings are never part of this
 /// envelope or the projection; they reach the judge only, from the manifest case.

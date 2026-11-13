@@ -3,6 +3,23 @@ using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews;
 
+/// <summary>Request to capture and add one pull request.</summary>
+public sealed record AddCodeReviewEvaluationCaseRequest(
+    int PullRequestNumber,
+    long ExpectedVersion
+);
+
+/// <summary>Result of adding or finding an existing pull request membership.</summary>
+public sealed record AddCodeReviewEvaluationCaseResponse(
+    bool Added,
+    string DatasetId,
+    long DatasetVersion,
+    int PullRequestNumber,
+    string BaseSha,
+    string HeadSha,
+    DateTimeOffset CapturedAtUtc
+);
+
 /// <summary>
 /// Evaluation dataset row returned to curation screens.
 /// </summary>

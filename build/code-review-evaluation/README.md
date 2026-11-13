@@ -17,7 +17,9 @@ Everything is namespaced with `bt_{runId}`:
 | Pull request rows | `#901`-`#910` with lookups | `#901`-`#910` with lookups |
 
 The Alpha dataset holds eight cases, `crec_bt_{runId}_901` through `..._908`, with immutable
-snapshot artifacts under `reviewer-evaluations/{org}/{repo}/snap_bt_{runId}_*/snapshot.json`.
+snapshot artifacts under `reviewer-evaluations/{org}/{repo}/snap_bt_{runId}_*/{encodedHash}/snapshot.json.gz`.
+
+Snapshot payloads use gzip. Recorded hashes and byte counts describe the canonical uncompressed JSON.
 
 Fixture intent:
 

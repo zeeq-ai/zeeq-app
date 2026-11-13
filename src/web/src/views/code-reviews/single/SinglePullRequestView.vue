@@ -87,6 +87,18 @@
                   @click="copyPullRequestLink(singlePullRequest)"
                 />
               </UTooltip>
+              <UTooltip text="Add to dataset" :delayDuration="0">
+                <UButton
+                  v-if="canAddToDataset && singlePullRequest.repositoryId"
+                  icon="i-hugeicons-database-02"
+                  :aria-label="`Add PR #${singlePullRequest.pullRequestNumber} to dataset`"
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                  square
+                  @click="datasetPickerOpen = true"
+                />
+              </UTooltip>
               <UTooltip text="View on GitHub" :delayDuration="0">
                 <UButton
                   icon="i-hugeicons-github"
@@ -135,10 +147,20 @@
       </div>
     </template>
   </section>
+  <AddPullRequestToDataset
+    v-if="singlePullRequest && singlePullRequest.repositoryId"
+    v-model:open="datasetPickerOpen"
+    :pull-request="singlePullRequest"
+    :repository-id="singlePullRequest.repositoryId"
+    :max-cases="maxEvaluationCases"
+    :can-open-editor="canOpenEditorForSinglePullRequest"
+    @added="handleDatasetAdded"
+    @open-editor="openEvaluationDatasetEditor"
+  />
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { CodeReviews } from "@/api/generated";
 import type {
@@ -150,9 +172,12 @@ import type {
 import { useCodeReviewStore } from "@/stores/code-review-store";
 import { useAppStore } from "@/stores/app-store";
 import { useCartStore } from "@/stores/cart-store";
+import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
+import { useCodeReviewEvaluationStore } from "@/stores/code-review-evaluation-store";
 import { toAbsoluteAppUrl } from "@/router/app-url";
 
 import CodeReviewAccordion from "@/views/code-reviews/pull-requests/CodeReviewAccordion.vue";
+import AddPullRequestToDataset from "@/views/code-reviews/pull-requests/AddPullRequestToDataset.vue";
 
 const props = defineProps<{
   pullRequestRecordId: string;
@@ -160,8 +185,19 @@ const props = defineProps<{
 }>();
 
 const codeReviewStore = useCodeReviewStore();
+const evaluationStore = useCodeReviewEvaluationStore();
+const organizationSettingsStore = useOrganizationSettingsStore();
 const cartStore = useCartStore();
 const appStore = useAppStore();
+const router = useRouter();
+const { canManageOrganization } = storeToRefs(organizationSettingsStore);
+const { availability: evaluationAvailability } = storeToRefs(evaluationStore);
+const {
+  agents,
+  selectedManagementItemId,
+  selectedRepositoryId,
+  activeOrganizationId,
+} = storeToRefs(codeReviewStore);
 
 const {
   singlePullRequest,
@@ -181,6 +217,19 @@ const { cartContentHashes } = storeToRefs(cartStore);
 /** Auto-expand the first review on load. */
 const openReviewId = ref<string | undefined>();
 const bypassing = ref(false);
+const datasetPickerOpen = ref(false);
+const canAddToDataset = computed(
+  () => canManageOrganization.value && evaluationAvailability.value?.enabled,
+);
+const maxEvaluationCases = computed(() =>
+  Number(evaluationAvailability.value?.maxCases ?? 25),
+);
+const canOpenEditorForSinglePullRequest = computed(
+  () =>
+    !!singlePullRequest.value &&
+    selectedRepositoryId.value === singlePullRequest.value.repositoryId &&
+    agents.value.length > 0,
+);
 
 const toast = useToast();
 
@@ -188,6 +237,7 @@ const toast = useToast();
 let isUnmounted = false;
 
 onMounted(async () => {
+  void evaluationStore.loadAvailability();
   if (!props.c) return;
 
   await codeReviewStore.loadSinglePullRequest(
@@ -201,6 +251,11 @@ onMounted(async () => {
 
   startPolling();
   document.addEventListener("visibilitychange", handleVisibilityChange);
+});
+
+watch(activeOrganizationId, () => {
+  evaluationStore.clearAvailability();
+  void evaluationStore.loadAvailability();
 });
 
 onBeforeUnmount(() => {
@@ -372,6 +427,109 @@ async function handleBypassCheck() {
     });
   } finally {
     bypassing.value = false;
+  }
+}
+
+async function openEvaluationDatasetEditor(
+  datasetId: string,
+  pullRequestNumber: number,
+) {
+  const pullRequest = singlePullRequest.value;
+  if (!pullRequest?.repositoryId || !canManageOrganization.value) return;
+  await openEvaluationDatasetEditorFor(
+    pullRequest.repositoryId,
+    datasetId,
+    pullRequestNumber,
+  );
+}
+
+function handleDatasetAdded(result: {
+  added: boolean;
+  datasetId: string;
+  repositoryId: string;
+  datasetName: string;
+  datasetVersion: number;
+  pullRequestNumber: number;
+  baseSha: string;
+  headSha: string;
+  capturedAtUtc: Date;
+}) {
+  const actionAvailable =
+    selectedRepositoryId.value === result.repositoryId &&
+    agents.value.length > 0;
+  toast.add({
+    title: result.added
+      ? `Added #${result.pullRequestNumber} @ ${result.headSha.slice(0, 7)} to ${result.datasetName} v${result.datasetVersion}`
+      : `#${result.pullRequestNumber} is already in ${result.datasetName} v${result.datasetVersion}`,
+    color: result.added ? "success" : "info",
+    icon: result.added
+      ? "i-hugeicons-tick-02"
+      : "i-hugeicons-information-circle",
+    actions: actionAvailable
+      ? [
+          {
+            label: result.added ? "Open in editor" : "Open existing",
+            onClick: () =>
+              void openEvaluationDatasetEditorFor(
+                result.repositoryId,
+                result.datasetId,
+                result.pullRequestNumber,
+              ),
+          },
+        ]
+      : [
+          {
+            label: "Manage agents",
+            to: "/code-reviews/manage-agents",
+          },
+        ],
+  });
+}
+
+async function openEvaluationDatasetEditorFor(
+  repositoryId: string,
+  datasetId: string,
+  pullRequestNumber: number,
+) {
+  try {
+    if (selectedRepositoryId.value !== repositoryId) {
+      await codeReviewStore.setSelectedRepository(repositoryId);
+    }
+    const reviewer =
+      agents.value.find((item) => item.id === selectedManagementItemId.value) ??
+      agents.value[0];
+    if (!reviewer) {
+      toast.add({
+        title: "Dataset saved",
+        description:
+          "Configure a reviewer agent for this repository before opening its dataset editor.",
+        color: "info",
+        icon: "i-hugeicons-information-circle",
+        actions: [
+          {
+            label: "Manage agents",
+            to: "/code-reviews/manage-agents",
+          },
+        ],
+      });
+      return;
+    }
+    await router.push({
+      name: "ManageAgent",
+      params: { orgId: activeOrganizationId.value, agentId: reviewer.id },
+      query: {
+        repositoryId,
+        datasetId,
+        prNumber: String(pullRequestNumber),
+      },
+    });
+  } catch (err: unknown) {
+    toast.add({
+      title: "Could not open the dataset editor",
+      description: err instanceof Error ? err.message : undefined,
+      icon: "i-hugeicons-alert-02",
+      color: "error",
+    });
   }
 }
 </script>
