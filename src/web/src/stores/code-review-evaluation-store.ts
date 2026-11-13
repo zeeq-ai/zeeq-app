@@ -209,6 +209,8 @@ export const useCodeReviewEvaluationStore = defineStore(
         ) {
           return null;
         }
+        inboxAddErrorCode.value = null;
+        inboxAddError.value = null;
         inboxAddDataset.value = response.dataset;
         return response.dataset;
       } catch (err: unknown) {

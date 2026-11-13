@@ -4,6 +4,7 @@ import type {
   CodeReviewEvaluationDatasetDetailDto,
   MeResponse,
 } from "@/api/generated";
+import { ZeeqApiError } from "@/api/zeeq-api-client";
 import { useAppStore } from "@/stores/app-store";
 import { useCodeReviewEvaluationStore } from "./code-review-evaluation-store";
 
@@ -258,6 +259,68 @@ describe("inbox add-to-dataset mutation", () => {
       { pullRequestNumber: 901, expectedVersion: 4 },
       { pullRequestNumber: 901, expectedVersion: 4 },
     ]);
+  });
+
+  it("clears a version conflict after a successful deferred membership reload", async () => {
+    const pendingReload = deferred<{
+      dataset: CodeReviewEvaluationDatasetDetailDto;
+    }>();
+    const store = useCodeReviewEvaluationStore();
+    store.setInboxAddScope("org_123/repo_1/pr_901");
+    apiMocks.addInboxCase.mockRejectedValueOnce(
+      new ZeeqApiError(409, "Conflict", {
+        code: "version_conflict",
+        message: "The dataset changed.",
+      }),
+    );
+    apiMocks.getDataset.mockReturnValueOnce(pendingReload.promise);
+
+    await expect(
+      store.addInboxPullRequest("repo_1", "dataset_1", 901, 4),
+    ).resolves.toBeNull();
+    expect(store.inboxAddErrorCode).toBe("version_conflict");
+
+    const reload = store.loadInboxAddDataset("repo_1", "dataset_1");
+    expect(store.inboxAddErrorCode).toBe("version_conflict");
+
+    const dataset = {
+      id: "dataset_1",
+      repositoryId: "repo_1",
+      name: "Dataset",
+      description: null,
+      version: 5,
+      caseCount: 1,
+      createdAtUtc: new Date("2026-11-13T12:00:00Z"),
+      updatedAtUtc: new Date("2026-11-13T12:00:00Z"),
+      archivedAtUtc: null,
+      cases: [],
+    } satisfies CodeReviewEvaluationDatasetDetailDto;
+    pendingReload.resolve({ dataset });
+
+    await expect(reload).resolves.toEqual(dataset);
+    expect(store.inboxAddErrorCode).toBeNull();
+    expect(store.inboxAddError).toBeNull();
+    expect(store.inboxAddDataset).toEqual(dataset);
+  });
+
+  it("keeps the version conflict code when the membership reload fails", async () => {
+    const store = useCodeReviewEvaluationStore();
+    store.setInboxAddScope("org_123/repo_1/pr_901");
+    apiMocks.addInboxCase.mockRejectedValueOnce(
+      new ZeeqApiError(409, "Conflict", {
+        code: "version_conflict",
+        message: "The dataset changed.",
+      }),
+    );
+
+    await store.addInboxPullRequest("repo_1", "dataset_1", 901, 4);
+    apiMocks.getDataset.mockRejectedValueOnce(new Error("Reload failed."));
+
+    await expect(
+      store.loadInboxAddDataset("repo_1", "dataset_1"),
+    ).resolves.toBeNull();
+    expect(store.inboxAddErrorCode).toBe("version_conflict");
+    expect(store.inboxAddError).toBe("Reload failed.");
   });
 
   it("ignores an add response after the picker changes scope", async () => {
