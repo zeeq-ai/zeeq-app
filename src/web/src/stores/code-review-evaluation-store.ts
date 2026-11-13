@@ -14,6 +14,7 @@ import {
   type EvaluationRunDetailDto,
   type EvaluationRunDto,
   type RefreshCodeReviewEvaluationCaseMutationResponse,
+  type AddCodeReviewEvaluationCaseResponse,
 } from "@/api/generated";
 import { ZeeqApiError } from "@/api/zeeq-api-client";
 import { useAppStore } from "@/stores/app-store";
@@ -39,6 +40,16 @@ export const useCodeReviewEvaluationStore = defineStore(
     const loadingAvailability = ref(false);
     const availabilityError = ref<string | null>(null);
     const datasets = ref<CodeReviewEvaluationDatasetSummaryDto[]>([]);
+    const inboxAddDatasets = ref<CodeReviewEvaluationDatasetSummaryDto[]>([]);
+    const inboxAddDataset = ref<CodeReviewEvaluationDatasetDetailDto | null>(
+      null,
+    );
+    const loadingInboxAddDatasets = ref(false);
+    const loadingInboxAddDataset = ref(false);
+    const addingInboxCase = ref(false);
+    const creatingInboxDataset = ref(false);
+    const inboxAddError = ref<string | null>(null);
+    const inboxAddErrorCode = ref<string | null>(null);
     const selectedDataset = ref<CodeReviewEvaluationDatasetDetailDto | null>(
       null,
     );
@@ -98,6 +109,260 @@ export const useCodeReviewEvaluationStore = defineStore(
     let refreshRequestId = 0;
     const refreshRequestIds = new Map<string, number>();
     let availabilityRequestId = 0;
+    let inboxAddScope: string | null = null;
+    let inboxAddListRequestId = 0;
+    let inboxAddDetailRequestId = 0;
+    let inboxAddMutationRequestId = 0;
+    let inboxAddCreateRequestId = 0;
+    let pendingInboxCreate: {
+      organizationId: string;
+      repositoryId: string;
+      name: string;
+      key: string;
+    } | null = null;
+
+    /** Bind picker requests to the currently visible PR/repository context. */
+    function setInboxAddScope(scope: string | null) {
+      if (inboxAddScope === scope) return;
+      inboxAddScope = scope;
+      inboxAddListRequestId += 1;
+      inboxAddDetailRequestId += 1;
+      inboxAddMutationRequestId += 1;
+      inboxAddCreateRequestId += 1;
+      loadingInboxAddDatasets.value = false;
+      loadingInboxAddDataset.value = false;
+      addingInboxCase.value = false;
+      creatingInboxDataset.value = false;
+      inboxAddError.value = null;
+      inboxAddErrorCode.value = null;
+      inboxAddDatasets.value = [];
+      inboxAddDataset.value = null;
+    }
+
+    function invalidateInboxAddRequests() {
+      setInboxAddScope(null);
+      inboxAddDatasets.value = [];
+    }
+
+    async function loadInboxAddDatasets(repositoryId: string) {
+      const orgId = activeOrganizationId.value;
+      const scope = inboxAddScope;
+      const requestId = ++inboxAddListRequestId;
+      if (!orgId || !repositoryId || !scope) return [];
+      loadingInboxAddDatasets.value = true;
+      inboxAddError.value = null;
+      try {
+        const response =
+          await CodeReviewEvaluations.listCodeReviewEvaluationDatasets(
+            orgId,
+            repositoryId,
+          );
+        if (
+          requestId !== inboxAddListRequestId ||
+          inboxAddScope !== scope ||
+          activeOrganizationId.value !== orgId
+        ) {
+          return [];
+        }
+        inboxAddDatasets.value = response.items;
+        return response.items;
+      } catch (err: unknown) {
+        if (
+          requestId === inboxAddListRequestId &&
+          inboxAddScope === scope &&
+          activeOrganizationId.value === orgId
+        ) {
+          inboxAddError.value = evaluationErrorMessage(
+            err,
+            "Could not load datasets.",
+          );
+        }
+        return [];
+      } finally {
+        if (requestId === inboxAddListRequestId && inboxAddScope === scope) {
+          loadingInboxAddDatasets.value = false;
+        }
+      }
+    }
+
+    async function loadInboxAddDataset(
+      repositoryId: string,
+      datasetId: string,
+    ) {
+      const orgId = activeOrganizationId.value;
+      const scope = inboxAddScope;
+      const requestId = ++inboxAddDetailRequestId;
+      if (!orgId || !repositoryId || !datasetId || !scope) return null;
+      loadingInboxAddDataset.value = true;
+      inboxAddError.value = null;
+      try {
+        const response =
+          await CodeReviewEvaluations.getCodeReviewEvaluationDataset(
+            orgId,
+            repositoryId,
+            datasetId,
+          );
+        if (
+          requestId !== inboxAddDetailRequestId ||
+          inboxAddScope !== scope ||
+          activeOrganizationId.value !== orgId
+        ) {
+          return null;
+        }
+        inboxAddErrorCode.value = null;
+        inboxAddError.value = null;
+        inboxAddDataset.value = response.dataset;
+        return response.dataset;
+      } catch (err: unknown) {
+        if (
+          requestId === inboxAddDetailRequestId &&
+          inboxAddScope === scope &&
+          activeOrganizationId.value === orgId
+        ) {
+          inboxAddError.value = evaluationErrorMessage(
+            err,
+            "Could not load this dataset.",
+          );
+        }
+        return null;
+      } finally {
+        if (requestId === inboxAddDetailRequestId && inboxAddScope === scope) {
+          loadingInboxAddDataset.value = false;
+        }
+      }
+    }
+
+    async function addInboxPullRequest(
+      repositoryId: string,
+      datasetId: string,
+      pullRequestNumber: number,
+      expectedVersion: number,
+    ): Promise<AddCodeReviewEvaluationCaseResponse | null> {
+      const orgId = activeOrganizationId.value;
+      const scope = inboxAddScope;
+      const requestId = ++inboxAddMutationRequestId;
+      if (!orgId || !repositoryId || !datasetId || !scope) return null;
+      addingInboxCase.value = true;
+      inboxAddError.value = null;
+      inboxAddErrorCode.value = null;
+      try {
+        const response =
+          await CodeReviewEvaluations.addCodeReviewEvaluationCase(
+            orgId,
+            repositoryId,
+            datasetId,
+            { pullRequestNumber, expectedVersion },
+          );
+        if (
+          requestId !== inboxAddMutationRequestId ||
+          inboxAddScope !== scope ||
+          activeOrganizationId.value !== orgId
+        ) {
+          return null;
+        }
+        return response;
+      } catch (err: unknown) {
+        if (
+          requestId === inboxAddMutationRequestId &&
+          inboxAddScope === scope &&
+          activeOrganizationId.value === orgId
+        ) {
+          inboxAddError.value =
+            err instanceof ZeeqApiError && err.status < 500 && err.status !== 0
+              ? evaluationErrorMessage(err, "Could not add this pull request.")
+              : "Could not confirm whether this pull request was added. Retry to check.";
+          inboxAddErrorCode.value = evaluationErrorCode(err);
+        }
+        return null;
+      } finally {
+        if (
+          requestId === inboxAddMutationRequestId &&
+          inboxAddScope === scope
+        ) {
+          addingInboxCase.value = false;
+        }
+      }
+    }
+
+    async function createInboxDataset(repositoryId: string, name: string) {
+      const orgId = activeOrganizationId.value;
+      const scope = inboxAddScope;
+      const normalizedName = name.trim();
+      const requestId = ++inboxAddCreateRequestId;
+      if (!orgId || !repositoryId || !scope || !normalizedName) return null;
+      if (
+        !pendingInboxCreate ||
+        pendingInboxCreate.organizationId !== orgId ||
+        pendingInboxCreate.repositoryId !== repositoryId ||
+        pendingInboxCreate.name !== normalizedName
+      ) {
+        pendingInboxCreate = {
+          organizationId: orgId,
+          repositoryId,
+          name: normalizedName,
+          key: crypto.randomUUID(),
+        };
+      }
+      const createRequestKey = pendingInboxCreate.key;
+      creatingInboxDataset.value = true;
+      inboxAddError.value = null;
+      try {
+        const response =
+          await CodeReviewEvaluations.createCodeReviewEvaluationDataset(
+            orgId,
+            repositoryId,
+            { name: normalizedName, description: null, createRequestKey },
+          );
+        if (pendingInboxCreate?.key === createRequestKey) {
+          pendingInboxCreate = null;
+        }
+        if (
+          requestId !== inboxAddCreateRequestId ||
+          inboxAddScope !== scope ||
+          activeOrganizationId.value !== orgId
+        ) {
+          return null;
+        }
+        const created = response.dataset;
+        const summary: CodeReviewEvaluationDatasetSummaryDto = {
+          id: created.id,
+          repositoryId: created.repositoryId,
+          name: created.name,
+          description: created.description,
+          version: created.version,
+          caseCount: created.caseCount,
+          createdAtUtc: created.createdAtUtc,
+          updatedAtUtc: created.updatedAtUtc,
+          archivedAtUtc: created.archivedAtUtc,
+        };
+        // A list started before this create can contain an older membership set.
+        inboxAddListRequestId += 1;
+        loadingInboxAddDatasets.value = false;
+        inboxAddDatasets.value = [
+          summary,
+          ...inboxAddDatasets.value.filter((item) => item.id !== created.id),
+        ];
+        inboxAddDataset.value = created;
+        return created;
+      } catch (err: unknown) {
+        if (
+          requestId === inboxAddCreateRequestId &&
+          inboxAddScope === scope &&
+          activeOrganizationId.value === orgId
+        ) {
+          inboxAddError.value = evaluationErrorMessage(
+            err,
+            "Could not create the dataset.",
+          );
+          inboxAddErrorCode.value = evaluationErrorCode(err);
+        }
+        return null;
+      } finally {
+        if (requestId === inboxAddCreateRequestId && inboxAddScope === scope) {
+          creatingInboxDataset.value = false;
+        }
+      }
+    }
 
     /** Availability is org-scoped and controls only durable evaluation actions. */
     async function loadAvailability() {
@@ -179,7 +444,11 @@ export const useCodeReviewEvaluationStore = defineStore(
       }
     }
 
-    async function loadDataset(repositoryId: string, datasetId: string) {
+    async function loadDataset(
+      repositoryId: string,
+      datasetId: string,
+      shouldApply?: () => boolean,
+    ) {
       const requestId = ++datasetLoadRequestId;
       const orgId = activeOrganizationId.value;
       if (!orgId || !repositoryId || !datasetId) {
@@ -201,7 +470,8 @@ export const useCodeReviewEvaluationStore = defineStore(
           );
         if (
           requestId !== datasetLoadRequestId ||
-          activeOrganizationId.value !== orgId
+          activeOrganizationId.value !== orgId ||
+          shouldApply?.() === false
         ) {
           return null;
         }
@@ -210,7 +480,8 @@ export const useCodeReviewEvaluationStore = defineStore(
       } catch (err: unknown) {
         if (
           requestId !== datasetLoadRequestId ||
-          activeOrganizationId.value !== orgId
+          activeOrganizationId.value !== orgId ||
+          shouldApply?.() === false
         ) {
           return null;
         }
@@ -841,6 +1112,14 @@ export const useCodeReviewEvaluationStore = defineStore(
       selectedRun,
       runNextCursorId,
       loadingDatasets,
+      inboxAddDatasets,
+      inboxAddDataset,
+      loadingInboxAddDatasets,
+      loadingInboxAddDataset,
+      addingInboxCase,
+      creatingInboxDataset,
+      inboxAddError,
+      inboxAddErrorCode,
       loadingDataset,
       creatingDataset,
       savingDataset,
@@ -863,6 +1142,12 @@ export const useCodeReviewEvaluationStore = defineStore(
       loadAvailability,
       clearAvailability,
       loadDatasets,
+      setInboxAddScope,
+      invalidateInboxAddRequests,
+      loadInboxAddDatasets,
+      loadInboxAddDataset,
+      addInboxPullRequest,
+      createInboxDataset,
       loadDataset,
       invalidateDatasetLoad,
       createDataset,

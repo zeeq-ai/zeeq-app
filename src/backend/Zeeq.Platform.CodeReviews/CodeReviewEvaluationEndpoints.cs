@@ -146,6 +146,29 @@ public sealed class CodeReviewEvaluationEndpoints : IEndpoint
                 """
             );
 
+        repositories
+            .MapPost(
+                "/evaluation-datasets/{datasetId}/cases",
+                static (
+                    string orgId,
+                    string repositoryId,
+                    string datasetId,
+                    [FromBody] AddCodeReviewEvaluationCaseRequest? request,
+                    ClaimsPrincipal user,
+                    [FromServices] AddCodeReviewEvaluationCaseHandler handler,
+                    CancellationToken ct
+                ) => handler.HandleAsync(orgId, repositoryId, datasetId, request, user, ct)
+            )
+            .RequireActiveOrganization()
+            .WithName("AddCodeReviewEvaluationCase")
+            .Produces<AddCodeReviewEvaluationCaseResponse>()
+            .Produces<CodeReviewEndpointError>(StatusCodes.Status400BadRequest)
+            .Produces<CodeReviewEndpointError>(StatusCodes.Status409Conflict)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces<CodeReviewEndpointError>(StatusCodes.Status503ServiceUnavailable)
+            .WithSummary("Add a pull request to an evaluation dataset.");
+
         // DELETE /api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/evaluation-datasets/{datasetId}
         repositories
             .MapDelete(

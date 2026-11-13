@@ -390,7 +390,7 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { onBeforeRouteLeave } from "vue-router";
+import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
 import type {
   CodeReviewAgentTestRunResponse,
   CodeReviewPullRequestDto,
@@ -440,6 +440,9 @@ const emits = defineEmits<{
 }>();
 
 const store = useCodeReviewEvaluationStore();
+const route = useRoute();
+const router = useRouter();
+const toast = useToast();
 const {
   availability,
   availabilityError,
@@ -490,11 +493,22 @@ let historicalRequestId = 0;
 let refreshUiRequestId = 0;
 const revisionDiffOpen = ref(false);
 const datasetDraft = ref<EvaluationDatasetDraft | null>(null);
+const datasetDraftEditEpoch = ref(0);
 const datasetEditorOpen = ref(false);
 const showCreateDataset = ref(false);
 const quickTestOpen = ref(false);
 const selectedQuickTestPullRequest = ref<CodeReviewPullRequestDto | null>(null);
 let pollHandle: ReturnType<typeof setInterval> | null = null;
+let inboxIntentRequestId = 0;
+let inboxIntentReady = false;
+
+watch(
+  datasetDraft,
+  () => {
+    datasetDraftEditEpoch.value += 1;
+  },
+  { deep: true, flush: "sync" },
+);
 
 const datasetDraftDirty = computed(() => {
   if (!datasetDraft.value || !selectedDataset.value) {
@@ -528,8 +542,17 @@ onMounted(async () => {
       await selectDataset(selectedDatasetId.value);
     }
   }
+  inboxIntentReady = true;
+  await openInboxDatasetIntent();
   beginPolling();
 });
+
+watch(
+  () => [route.query.repositoryId, route.query.datasetId, route.query.prNumber],
+  () => {
+    if (inboxIntentReady) void openInboxDatasetIntent();
+  },
+);
 
 onBeforeUnmount(() => {
   invalidateDatasetCaptureRequests();
@@ -621,8 +644,8 @@ async function selectDataset(datasetId: string) {
   await store.loadRuns(repositoryId, datasetId);
 }
 
-async function openDatasetEditor() {
-  referenceFocusPr.value = null;
+async function openDatasetEditor(focusPullRequestNumber: number | null = null) {
+  referenceFocusPr.value = focusPullRequestNumber;
   if (!selectedDatasetId.value) {
     return;
   }
@@ -657,6 +680,145 @@ async function openDatasetEditor() {
       selectedDatasetId.value ?? undefined,
     );
   }
+}
+
+async function openInboxDatasetIntent() {
+  const requestId = ++inboxIntentRequestId;
+  const repositoryId = route.query.repositoryId;
+  const datasetId = route.query.datasetId;
+  const routeOrganizationId = route.params.orgId;
+  const prNumber = Number(route.query.prNumber);
+  if (
+    typeof repositoryId !== "string" ||
+    typeof datasetId !== "string" ||
+    !Number.isInteger(prNumber) ||
+    prNumber <= 0
+  ) {
+    return;
+  }
+  if (repositoryId !== props.repositoryId) {
+    showInboxIntentNotice(
+      "The repository changed before the dataset could open. Select the repository and try again.",
+    );
+    clearInboxDatasetIntent();
+    return;
+  }
+  if (
+    typeof routeOrganizationId === "string" &&
+    routeOrganizationId !== store.activeOrganizationId
+  ) {
+    showInboxIntentNotice(
+      "The organization changed before the dataset could open. Select the organization and try again.",
+    );
+    clearInboxDatasetIntent();
+    return;
+  }
+  if (datasetDraftDirty.value) {
+    datasetEditorOpen.value = true;
+    showInboxIntentNotice(
+      "Save or discard the open dataset draft before opening another dataset.",
+    );
+    clearInboxDatasetIntent();
+    return;
+  }
+  if (!availability.value?.enabled || !props.canManage) {
+    clearInboxDatasetIntent();
+    return;
+  }
+
+  const originalDraft = datasetDraft.value;
+  const originalSelectedDatasetId = selectedDatasetId.value;
+  const initialEditEpoch = datasetDraftEditEpoch.value;
+  const draftOrSelectionChanged = () =>
+    datasetDraft.value !== originalDraft ||
+    datasetDraftEditEpoch.value !== initialEditEpoch ||
+    selectedDatasetId.value !== originalSelectedDatasetId ||
+    datasetDraftDirty.value;
+  const isIntentCurrent = () =>
+    requestId === inboxIntentRequestId &&
+    route.query.repositoryId === repositoryId &&
+    route.query.datasetId === datasetId &&
+    route.query.prNumber === String(prNumber) &&
+    props.repositoryId === repositoryId &&
+    datasetDraft.value === originalDraft &&
+    datasetDraftEditEpoch.value === initialEditEpoch &&
+    selectedDatasetId.value === originalSelectedDatasetId;
+  const canApplyIntent = () => isIntentCurrent() && !datasetDraftDirty.value;
+
+  await store.loadDatasets(repositoryId);
+  if (!canApplyIntent()) {
+    if (
+      requestId === inboxIntentRequestId &&
+      route.query.datasetId === datasetId
+    ) {
+      showInboxIntentNotice(
+        "The current dataset draft or selection changed while the requested dataset was loading. It was kept; save or discard it before opening another dataset.",
+      );
+      datasetEditorOpen.value = true;
+      clearInboxDatasetIntent();
+    }
+    return;
+  }
+  if (!datasets.value.some((item) => item.id === datasetId)) {
+    showInboxIntentNotice(
+      "This dataset is not available in the selected repository.",
+    );
+    clearInboxDatasetIntent();
+    return;
+  }
+
+  const loaded = await store.loadDataset(
+    repositoryId,
+    datasetId,
+    canApplyIntent,
+  );
+  if (!loaded || !isIntentCurrent()) {
+    if (
+      requestId === inboxIntentRequestId &&
+      route.query.datasetId === datasetId
+    ) {
+      if (draftOrSelectionChanged()) {
+        showInboxIntentNotice(
+          "The current dataset draft or selection changed while the requested dataset was loading. It was kept; save or discard it before opening another dataset.",
+        );
+        datasetEditorOpen.value = true;
+      } else {
+        showInboxIntentNotice(
+          "Could not load the requested dataset. Your current dataset draft and selection were kept.",
+        );
+      }
+      clearInboxDatasetIntent();
+    }
+    return;
+  }
+
+  selectedDatasetId.value = datasetId;
+  datasetDraft.value = createEvaluationDatasetDraft(loaded);
+  selectedRun.value = null;
+  referenceFocusPr.value = prNumber;
+  void store.loadRuns(repositoryId, datasetId);
+  await openDatasetEditor(prNumber);
+  if (requestId === inboxIntentRequestId) clearInboxDatasetIntent();
+}
+
+function clearInboxDatasetIntent() {
+  void router.replace({
+    query: {
+      ...route.query,
+      repositoryId: undefined,
+      datasetId: undefined,
+      prNumber: undefined,
+    },
+  });
+}
+
+function showInboxIntentNotice(description: string) {
+  toast.add({
+    title: "Dataset not opened",
+    description,
+    color: "warning",
+    icon: "i-hugeicons-alert-02",
+  });
 }
 
 function createDataset(name: string, description?: string) {

@@ -4156,6 +4156,105 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/evaluation-datasets/{datasetId}/cases": {
+      "post": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "summary": "Add a pull request to an evaluation dataset.",
+        "operationId": "AddCodeReviewEvaluationCase",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "datasetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AddCodeReviewEvaluationCaseRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddCodeReviewEvaluationCaseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/evaluation-pr-targets": {
       "get": {
         "tags": [
@@ -9271,6 +9370,79 @@
   },
   "components": {
     "schemas": {
+      "AddCodeReviewEvaluationCaseRequest": {
+        "required": [
+          "pullRequestNumber",
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "pullRequestNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "expectedVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        },
+        "description": "Request to capture and add one pull request."
+      },
+      "AddCodeReviewEvaluationCaseResponse": {
+        "required": [
+          "added",
+          "datasetId",
+          "datasetVersion",
+          "pullRequestNumber",
+          "baseSha",
+          "headSha",
+          "capturedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "added": {
+            "type": "boolean"
+          },
+          "datasetId": {
+            "type": "string"
+          },
+          "datasetVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "pullRequestNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "baseSha": {
+            "type": "string"
+          },
+          "headSha": {
+            "type": "string"
+          },
+          "capturedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "Result of adding or finding an existing pull request membership."
+      },
       "AdminDiagnosticResponse": {
         "required": [
           "success",

@@ -95,6 +95,18 @@
                 @click="emits('bypassCheck', pullRequest)"
               />
             </UTooltip>
+            <UTooltip text="Add to dataset" :delayDuration="0">
+              <UButton
+                v-if="canAddToDataset"
+                icon="i-hugeicons-database-02"
+                :aria-label="`Add PR #${pullRequest.pullRequestNumber} to dataset`"
+                color="neutral"
+                variant="outline"
+                size="sm"
+                square
+                @click="emits('addToDataset', pullRequest)"
+              />
+            </UTooltip>
             <UButton
               label="Run review"
               icon="i-hugeicons-message-programming"
@@ -160,6 +172,7 @@ defineProps<{
   loading: boolean;
   requestingReviewId: string | null;
   showClose?: boolean;
+  canAddToDataset?: boolean;
   cartContentHashes: Set<string>;
 }>();
 
@@ -173,6 +186,7 @@ const emits = defineEmits<{
   loadReviewFindings: [review: CodeReviewRecordDto];
   loadRawXml: [review: CodeReviewRecordDto];
   close: [];
+  addToDataset: [pullRequest: CodeReviewPullRequestDto];
   bypassCheck: [pullRequest: CodeReviewPullRequestDto];
   toggleCart: [
     finding: CodeReviewFindingDto,

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
-import type { MeResponse } from "@/api/generated";
+import type {
+  CodeReviewEvaluationDatasetDetailDto,
+  MeResponse,
+} from "@/api/generated";
+import { ZeeqApiError } from "@/api/zeeq-api-client";
 import { useAppStore } from "@/stores/app-store";
 import { useCodeReviewEvaluationStore } from "./code-review-evaluation-store";
 
@@ -14,6 +18,7 @@ const apiMocks = vi.hoisted(() => ({
   resolvePrs: vi.fn(),
   refreshCase: vi.fn(),
   searchTargets: vi.fn(),
+  addInboxCase: vi.fn(),
 }));
 
 vi.mock("@/api/generated", () => ({
@@ -28,6 +33,7 @@ vi.mock("@/api/generated", () => ({
     resolveCodeReviewEvaluationPrTargets: apiMocks.resolvePrs,
     refreshCodeReviewEvaluationCase: apiMocks.refreshCase,
     listCodeReviewEvaluationPrTargets: apiMocks.searchTargets,
+    addCodeReviewEvaluationCase: apiMocks.addInboxCase,
   },
 }));
 
@@ -111,31 +117,42 @@ describe("code review evaluation dataset request keys", () => {
 
     apiMocks.createDataset.mockRejectedValueOnce(new Error("network timeout"));
     await store.createDataset("repo_1", "Dataset", "Notes");
-    expect(apiMocks.createDataset.mock.calls[1][2].createRequestKey).toBe(firstKey);
+    expect(apiMocks.createDataset.mock.calls[1][2].createRequestKey).toBe(
+      firstKey,
+    );
 
     apiMocks.createDataset.mockRejectedValueOnce(new Error("network timeout"));
     await store.createDataset("repo_1", "Dataset changed", "Notes");
-    const changedInputKey = apiMocks.createDataset.mock.calls[2][2].createRequestKey;
+    const changedInputKey =
+      apiMocks.createDataset.mock.calls[2][2].createRequestKey;
     expect(changedInputKey).not.toBe(firstKey);
 
     apiMocks.createDataset.mockRejectedValueOnce(new Error("network timeout"));
     await store.createDataset("repo_2", "Dataset changed", "Notes");
-    const changedRepositoryKey = apiMocks.createDataset.mock.calls[3][2].createRequestKey;
+    const changedRepositoryKey =
+      apiMocks.createDataset.mock.calls[3][2].createRequestKey;
     expect(changedRepositoryKey).not.toBe(changedInputKey);
 
     useAppStore().user = { ...testUser(), organizationId: "org_456" };
     apiMocks.createDataset.mockRejectedValueOnce(new Error("network timeout"));
     await store.createDataset("repo_2", "Dataset changed", "Notes");
-    const changedOrganizationKey = apiMocks.createDataset.mock.calls[4][2].createRequestKey;
+    const changedOrganizationKey =
+      apiMocks.createDataset.mock.calls[4][2].createRequestKey;
     expect(changedOrganizationKey).not.toBe(changedRepositoryKey);
 
-    apiMocks.createDataset.mockResolvedValueOnce({ dataset: { id: "dataset_1" } });
+    apiMocks.createDataset.mockResolvedValueOnce({
+      dataset: { id: "dataset_1" },
+    });
     await store.createDataset("repo_2", "Dataset changed", "Notes");
-    expect(apiMocks.createDataset.mock.calls[5][2].createRequestKey).toBe(changedOrganizationKey);
+    expect(apiMocks.createDataset.mock.calls[5][2].createRequestKey).toBe(
+      changedOrganizationKey,
+    );
 
     apiMocks.createDataset.mockRejectedValueOnce(new Error("network timeout"));
     await store.createDataset("repo_2", "Dataset changed", "Notes");
-    expect(apiMocks.createDataset.mock.calls[6][2].createRequestKey).not.toBe(changedOrganizationKey);
+    expect(apiMocks.createDataset.mock.calls[6][2].createRequestKey).not.toBe(
+      changedOrganizationKey,
+    );
   });
 });
 
@@ -200,10 +217,183 @@ describe("evaluation pull request resolution scope", () => {
     expect(store.refreshCaptures).toEqual({});
 
     currentDatasetRefresh.resolve({ captureToken: "current-token" });
-    await expect(currentRequest).resolves.toEqual({ captureToken: "current-token" });
+    await expect(currentRequest).resolves.toEqual({
+      captureToken: "current-token",
+    });
     expect(store.refreshCaptures).toEqual({
       case_B: { captureToken: "current-token" },
     });
+  });
+});
+
+describe("inbox add-to-dataset mutation", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+    useAppStore().user = testUser();
+  });
+
+  it("keeps the submitted version for retries after an uncertain failure", async () => {
+    const store = useCodeReviewEvaluationStore();
+    store.setInboxAddScope("org_123/repo_1/pr_901");
+    apiMocks.addInboxCase.mockRejectedValueOnce(new Error("network timeout"));
+
+    await expect(
+      store.addInboxPullRequest("repo_1", "dataset_1", 901, 4),
+    ).resolves.toBeNull();
+    expect(store.inboxAddError).toBe(
+      "Could not confirm whether this pull request was added. Retry to check.",
+    );
+
+    apiMocks.addInboxCase.mockResolvedValueOnce({
+      added: false,
+      datasetId: "dataset_1",
+      datasetVersion: 5,
+      pullRequestNumber: 901,
+      baseSha: "base",
+      headSha: "head",
+      capturedAtUtc: new Date(),
+    });
+    await store.addInboxPullRequest("repo_1", "dataset_1", 901, 4);
+    expect(apiMocks.addInboxCase.mock.calls.map((call) => call[3])).toEqual([
+      { pullRequestNumber: 901, expectedVersion: 4 },
+      { pullRequestNumber: 901, expectedVersion: 4 },
+    ]);
+  });
+
+  it("clears a version conflict after a successful deferred membership reload", async () => {
+    const pendingReload = deferred<{
+      dataset: CodeReviewEvaluationDatasetDetailDto;
+    }>();
+    const store = useCodeReviewEvaluationStore();
+    store.setInboxAddScope("org_123/repo_1/pr_901");
+    apiMocks.addInboxCase.mockRejectedValueOnce(
+      new ZeeqApiError(409, "Conflict", {
+        code: "version_conflict",
+        message: "The dataset changed.",
+      }),
+    );
+    apiMocks.getDataset.mockReturnValueOnce(pendingReload.promise);
+
+    await expect(
+      store.addInboxPullRequest("repo_1", "dataset_1", 901, 4),
+    ).resolves.toBeNull();
+    expect(store.inboxAddErrorCode).toBe("version_conflict");
+
+    const reload = store.loadInboxAddDataset("repo_1", "dataset_1");
+    expect(store.inboxAddErrorCode).toBe("version_conflict");
+
+    const dataset = {
+      id: "dataset_1",
+      repositoryId: "repo_1",
+      name: "Dataset",
+      description: null,
+      version: 5,
+      caseCount: 1,
+      createdAtUtc: new Date("2026-11-13T12:00:00Z"),
+      updatedAtUtc: new Date("2026-11-13T12:00:00Z"),
+      archivedAtUtc: null,
+      cases: [],
+    } satisfies CodeReviewEvaluationDatasetDetailDto;
+    pendingReload.resolve({ dataset });
+
+    await expect(reload).resolves.toEqual(dataset);
+    expect(store.inboxAddErrorCode).toBeNull();
+    expect(store.inboxAddError).toBeNull();
+    expect(store.inboxAddDataset).toEqual(dataset);
+  });
+
+  it("keeps the version conflict code when the membership reload fails", async () => {
+    const store = useCodeReviewEvaluationStore();
+    store.setInboxAddScope("org_123/repo_1/pr_901");
+    apiMocks.addInboxCase.mockRejectedValueOnce(
+      new ZeeqApiError(409, "Conflict", {
+        code: "version_conflict",
+        message: "The dataset changed.",
+      }),
+    );
+
+    await store.addInboxPullRequest("repo_1", "dataset_1", 901, 4);
+    apiMocks.getDataset.mockRejectedValueOnce(new Error("Reload failed."));
+
+    await expect(
+      store.loadInboxAddDataset("repo_1", "dataset_1"),
+    ).resolves.toBeNull();
+    expect(store.inboxAddErrorCode).toBe("version_conflict");
+    expect(store.inboxAddError).toBe("Reload failed.");
+  });
+
+  it("ignores an add response after the picker changes scope", async () => {
+    const pending = deferred<{
+      added: boolean;
+      datasetId: string;
+      datasetVersion: number;
+      pullRequestNumber: number;
+      baseSha: string;
+      headSha: string;
+      capturedAtUtc: Date;
+    }>();
+    apiMocks.addInboxCase.mockReturnValueOnce(pending.promise);
+    const store = useCodeReviewEvaluationStore();
+    store.setInboxAddScope("org_123/repo_1/pr_901");
+
+    const request = store.addInboxPullRequest("repo_1", "dataset_1", 901, 4);
+    store.invalidateInboxAddRequests();
+    pending.resolve({
+      added: true,
+      datasetId: "dataset_1",
+      datasetVersion: 5,
+      pullRequestNumber: 901,
+      baseSha: "base",
+      headSha: "head",
+      capturedAtUtc: new Date(),
+    });
+
+    await expect(request).resolves.toBeNull();
+    expect(store.inboxAddError).toBeNull();
+    expect(store.addingInboxCase).toBe(false);
+  });
+
+  it("does not publish a create response after the picker closes", async () => {
+    const pendingCreate = deferred<{
+      dataset: {
+        id: string;
+        repositoryId: string;
+        name: string;
+        description: null;
+        version: number;
+        caseCount: number;
+        createdAtUtc: Date;
+        updatedAtUtc: Date;
+        archivedAtUtc: null;
+        cases: [];
+      };
+    }>();
+    apiMocks.createDataset.mockReturnValueOnce(pendingCreate.promise);
+    const store = useCodeReviewEvaluationStore();
+    store.setInboxAddScope("org_123/repo_1/pr_901");
+
+    const request = store.createInboxDataset("repo_1", "New dataset");
+    store.invalidateInboxAddRequests();
+    const createdAtUtc = new Date("2026-11-13T12:00:00Z");
+    pendingCreate.resolve({
+      dataset: {
+        id: "created_1",
+        repositoryId: "repo_1",
+        name: "New dataset",
+        description: null,
+        version: 1,
+        caseCount: 0,
+        createdAtUtc,
+        updatedAtUtc: createdAtUtc,
+        archivedAtUtc: null,
+        cases: [],
+      },
+    });
+
+    await expect(request).resolves.toBeNull();
+    expect(store.inboxAddDataset).toBeNull();
+    expect(store.inboxAddDatasets).toEqual([]);
   });
 });
 
@@ -231,6 +421,104 @@ describe("evaluation dataset loading scope", () => {
 
     expect(store.selectedDataset?.id).toBe("dataset_B");
     expect(store.loadingDataset).toBe(false);
+  });
+
+  it("keeps the current selection when an inbox draft changes during dataset lookup", async () => {
+    const pending = deferred<{ dataset: { id: string } }>();
+    apiMocks.getDataset.mockReturnValueOnce(pending.promise);
+    const store = useCodeReviewEvaluationStore();
+    const originalDataset = {
+      id: "dataset_original",
+    } as unknown as CodeReviewEvaluationDatasetDetailDto;
+    store.selectedDataset = originalDataset;
+    let draftEditEpoch = 0;
+
+    const request = store.loadDataset(
+      "repo_1",
+      "dataset_target",
+      () => draftEditEpoch === 0,
+    );
+    draftEditEpoch += 1;
+    pending.resolve({ dataset: { id: "dataset_target" } });
+
+    await expect(request).resolves.toBeNull();
+    expect(store.selectedDataset?.id).toBe("dataset_original");
+  });
+});
+
+describe("inbox dataset creation", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+    useAppStore().user = testUser();
+  });
+
+  it("keeps the created summary when an older dataset list settles later", async () => {
+    const pendingList = deferred<{ items: [] }>();
+    apiMocks.listDatasets.mockReturnValueOnce(pendingList.promise);
+    const createdAtUtc = new Date("2026-11-13T12:00:00Z");
+    apiMocks.createDataset.mockResolvedValueOnce({
+      dataset: {
+        id: "dataset_created",
+        repositoryId: "repo_1",
+        name: "New dataset",
+        description: null,
+        version: 1,
+        caseCount: 0,
+        createdAtUtc,
+        updatedAtUtc: createdAtUtc,
+        archivedAtUtc: null,
+        cases: [],
+      },
+    });
+    const store = useCodeReviewEvaluationStore();
+    store.setInboxAddScope("org_123/repo_1/pr_901");
+    const listRequest = store.loadInboxAddDatasets("repo_1");
+    expect(store.loadingInboxAddDatasets).toBe(true);
+
+    await store.createInboxDataset("repo_1", "New dataset");
+    expect(store.loadingInboxAddDatasets).toBe(false);
+    pendingList.resolve({ items: [] });
+    await listRequest;
+
+    expect(store.inboxAddDatasets.map((item) => item.id)).toEqual([
+      "dataset_created",
+    ]);
+    expect(store.inboxAddDataset?.id).toBe("dataset_created");
+  });
+
+  it("publishes the created summary without waiting for a dataset list refresh", async () => {
+    const createdAtUtc = new Date("2026-11-13T12:00:00Z");
+    apiMocks.createDataset.mockResolvedValueOnce({
+      dataset: {
+        id: "dataset_created",
+        repositoryId: "repo_1",
+        name: "New dataset",
+        description: null,
+        version: 1,
+        caseCount: 0,
+        createdAtUtc,
+        updatedAtUtc: createdAtUtc,
+        archivedAtUtc: null,
+        cases: [],
+      },
+    });
+    const store = useCodeReviewEvaluationStore();
+    store.setInboxAddScope("org_123/repo_1/pr_901");
+
+    await expect(
+      store.createInboxDataset("repo_1", "New dataset"),
+    ).resolves.toMatchObject({ id: "dataset_created" });
+
+    expect(apiMocks.listDatasets).not.toHaveBeenCalled();
+    expect(store.inboxAddDatasets).toEqual([
+      expect.objectContaining({
+        id: "dataset_created",
+        name: "New dataset",
+        version: 1,
+        caseCount: 0,
+      }),
+    ]);
   });
 });
 
