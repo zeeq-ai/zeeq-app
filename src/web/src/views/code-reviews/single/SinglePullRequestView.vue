@@ -153,7 +153,6 @@
     :pull-request="singlePullRequest"
     :repository-id="singlePullRequest.repositoryId"
     :max-cases="maxEvaluationCases"
-    :can-open-editor="canOpenEditorForSinglePullRequest"
     @added="handleDatasetAdded"
     @open-editor="openEvaluationDatasetEditor"
   />
@@ -192,12 +191,8 @@ const appStore = useAppStore();
 const router = useRouter();
 const { canManageOrganization } = storeToRefs(organizationSettingsStore);
 const { availability: evaluationAvailability } = storeToRefs(evaluationStore);
-const {
-  agents,
-  selectedManagementItemId,
-  selectedRepositoryId,
-  activeOrganizationId,
-} = storeToRefs(codeReviewStore);
+const { selectedManagementItemId, selectedRepositoryId, activeOrganizationId } =
+  storeToRefs(codeReviewStore);
 
 const {
   singlePullRequest,
@@ -223,12 +218,6 @@ const canAddToDataset = computed(
 );
 const maxEvaluationCases = computed(() =>
   Number(evaluationAvailability.value?.maxCases ?? 25),
-);
-const canOpenEditorForSinglePullRequest = computed(
-  () =>
-    !!singlePullRequest.value &&
-    selectedRepositoryId.value === singlePullRequest.value.repositoryId &&
-    agents.value.length > 0,
 );
 
 const toast = useToast();
@@ -433,6 +422,7 @@ async function handleBypassCheck() {
 async function openEvaluationDatasetEditor(
   datasetId: string,
   pullRequestNumber: number,
+  reviewerIds: string[],
 ) {
   const pullRequest = singlePullRequest.value;
   if (!pullRequest?.repositoryId || !canManageOrganization.value) return;
@@ -440,6 +430,7 @@ async function openEvaluationDatasetEditor(
     pullRequest.repositoryId,
     datasetId,
     pullRequestNumber,
+    reviewerIds,
   );
 }
 
@@ -447,6 +438,7 @@ function handleDatasetAdded(result: {
   added: boolean;
   datasetId: string;
   repositoryId: string;
+  reviewerIds: string[];
   datasetName: string;
   datasetVersion: number;
   pullRequestNumber: number;
@@ -454,9 +446,7 @@ function handleDatasetAdded(result: {
   headSha: string;
   capturedAtUtc: Date;
 }) {
-  const actionAvailable =
-    selectedRepositoryId.value === result.repositoryId &&
-    agents.value.length > 0;
+  const actionAvailable = result.reviewerIds.length > 0;
   toast.add({
     title: result.added
       ? `Added #${result.pullRequestNumber} @ ${result.headSha.slice(0, 7)} to ${result.datasetName} v${result.datasetVersion}`
@@ -474,6 +464,7 @@ function handleDatasetAdded(result: {
                 result.repositoryId,
                 result.datasetId,
                 result.pullRequestNumber,
+                result.reviewerIds,
               ),
           },
         ]
@@ -490,15 +481,18 @@ async function openEvaluationDatasetEditorFor(
   repositoryId: string,
   datasetId: string,
   pullRequestNumber: number,
+  reviewerIds: string[],
 ) {
   try {
     if (selectedRepositoryId.value !== repositoryId) {
       await codeReviewStore.setSelectedRepository(repositoryId);
     }
-    const reviewer =
-      agents.value.find((item) => item.id === selectedManagementItemId.value) ??
-      agents.value[0];
-    if (!reviewer) {
+    const reviewerId =
+      (selectedManagementItemId.value &&
+      reviewerIds.includes(selectedManagementItemId.value)
+        ? selectedManagementItemId.value
+        : null) ?? reviewerIds[0];
+    if (!reviewerId) {
       toast.add({
         title: "Dataset saved",
         description:
@@ -516,7 +510,7 @@ async function openEvaluationDatasetEditorFor(
     }
     await router.push({
       name: "ManageAgent",
-      params: { orgId: activeOrganizationId.value, agentId: reviewer.id },
+      params: { orgId: activeOrganizationId.value, agentId: reviewerId },
       query: {
         repositoryId,
         datasetId,

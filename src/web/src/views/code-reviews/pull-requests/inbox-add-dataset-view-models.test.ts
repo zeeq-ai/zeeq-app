@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { getInboxDatasetRowState } from "./inbox-add-dataset-view-models";
+import {
+  getInboxDatasetAddLabel,
+  getInboxDatasetRowState,
+} from "./inbox-add-dataset-view-models";
 
 describe("inbox dataset selection", () => {
   it("allows a full row to load membership before deciding whether it can add", () => {
@@ -33,5 +36,10 @@ describe("inbox dataset selection", () => {
         mutating: true,
       }),
     ).toEqual({ full: false, selectable: false, canAdd: false });
+  });
+
+  it("uses a neutral action label until a dataset is selected", () => {
+    expect(getInboxDatasetAddLabel(null)).toBe("Add to dataset");
+    expect(getInboxDatasetAddLabel(2)).toBe("Add & save as v2");
   });
 });

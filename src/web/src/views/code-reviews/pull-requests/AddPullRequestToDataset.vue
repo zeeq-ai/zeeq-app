@@ -19,6 +19,8 @@
       :adding="addingInboxCase"
       :can-add
       :can-open-editor="canOpenEditor"
+      :already-present="containsCurrentPullRequest"
+      :reviewer-ids="reviewerIds"
       :add-label
       :max-cases
       :selected-dataset
@@ -60,6 +62,8 @@
         :adding="addingInboxCase"
         :can-add
         :can-open-editor="canOpenEditor"
+        :already-present="containsCurrentPullRequest"
+        :reviewer-ids="reviewerIds"
         :add-label
         :max-cases
         :selected-dataset
@@ -86,16 +90,19 @@ import type {
   CodeReviewEvaluationDatasetSummaryDto,
   CodeReviewPullRequestDto,
 } from "@/api/generated";
+import { CodeReviews } from "@/api/generated";
 import { useCodeReviewEvaluationStore } from "@/stores/code-review-evaluation-store";
 import InboxAddDatasetPickerContent from "./InboxAddDatasetPickerContent.vue";
-import { getInboxDatasetRowState } from "./inbox-add-dataset-view-models";
+import {
+  getInboxDatasetAddLabel,
+  getInboxDatasetRowState,
+} from "./inbox-add-dataset-view-models";
 
 const props = defineProps<{
   pullRequest: CodeReviewPullRequestDto;
   repositoryId: string;
   embedded?: boolean;
   maxCases: number;
-  canOpenEditor: boolean;
 }>();
 
 const open = defineModel<boolean>("open", { default: false });
@@ -106,6 +113,7 @@ const emits = defineEmits<{
       added: boolean;
       datasetId: string;
       repositoryId: string;
+      reviewerIds: string[];
       datasetName: string;
       datasetVersion: number;
       pullRequestNumber: number;
@@ -114,7 +122,11 @@ const emits = defineEmits<{
       capturedAtUtc: Date;
     },
   ];
-  openEditor: [datasetId: string, pullRequestNumber: number];
+  openEditor: [
+    datasetId: string,
+    pullRequestNumber: number,
+    reviewerIds: string[],
+  ];
 }>();
 
 const store = useCodeReviewEvaluationStore();
@@ -135,6 +147,8 @@ const creatingNew = ref(false);
 const newDatasetName = ref("");
 const expectedVersions = ref<Record<string, number>>({});
 const attemptedDatasetIds = ref<string[]>([]);
+const reviewerIds = ref<string[]>([]);
+const reviewerContextKey = ref<string | null>(null);
 const selectedDataset = computed(() =>
   inboxAddDataset.value?.id === selectedDatasetId.value
     ? inboxAddDataset.value
@@ -147,6 +161,11 @@ const activeContext = computed(() =>
     props.pullRequest.id,
     props.pullRequest.pullRequestNumber,
   ]),
+);
+const canOpenEditor = computed(
+  () =>
+    reviewerContextKey.value === activeContext.value &&
+    reviewerIds.value.length > 0,
 );
 const visibleDatasets = computed(() => {
   const query = search.value.trim().toLocaleLowerCase();
@@ -183,6 +202,8 @@ const canAdd = computed(() => {
     !!selectedDatasetId.value &&
     !!selectedDataset.value &&
     state.canAdd &&
+    !creatingNew.value &&
+    inboxAddErrorCode.value !== "version_conflict" &&
     !loadingInboxAddDataset.value
   );
 });
@@ -195,24 +216,32 @@ const containsCurrentPullRequest = computed(
     ) ?? false,
 );
 const nextVersion = computed(() => (selectedVersion.value ?? 0) + 1);
-const addLabel = computed(() => `Add & save as v${nextVersion.value}`);
+const addLabel = computed(() =>
+  getInboxDatasetAddLabel(
+    selectedVersion.value === null ? null : nextVersion.value,
+  ),
+);
 const currentPullRequestNumber = computed(() =>
   Number(props.pullRequest.pullRequestNumber),
 );
 let selectionRequestId = 0;
 let activeContextKey: string | null = null;
 let preserveOnClose = false;
+let reviewerRequestId = 0;
 
 watch(
   () => [open.value, activeContext.value] as const,
   async ([isOpen, context]) => {
     if (!isOpen) {
       store.invalidateInboxAddRequests();
+      reviewerRequestId += 1;
       if (preserveOnClose) {
         preserveOnClose = false;
         return;
       }
       activeContextKey = null;
+      reviewerIds.value = [];
+      reviewerContextKey.value = null;
       return;
     }
     if (activeContextKey !== context) {
@@ -221,11 +250,16 @@ watch(
       selectedDatasetId.value = null;
       expectedVersions.value = {};
       attemptedDatasetIds.value = [];
+      reviewerIds.value = [];
+      reviewerContextKey.value = null;
       creatingNew.value = false;
       newDatasetName.value = "";
       inboxAddDataset.value = null;
     } else {
       store.setInboxAddScope(context);
+    }
+    if (reviewerContextKey.value !== context) {
+      void loadReviewerContext(context);
     }
     const datasets = await store.loadInboxAddDatasets(props.repositoryId);
     if (!open.value || activeContextKey !== context) return;
@@ -291,6 +325,35 @@ async function loadSelectedDataset(datasetId: string) {
   }
 }
 
+async function loadReviewerContext(context: string) {
+  const requestId = ++reviewerRequestId;
+  const orgId = store.activeOrganizationId;
+  const repositoryId = props.repositoryId;
+  if (!orgId || !repositoryId) return;
+  try {
+    const response = await CodeReviews.listRepositoryCodeReviewerAgents(
+      repositoryId,
+      orgId,
+    );
+    if (
+      requestId !== reviewerRequestId ||
+      !open.value ||
+      activeContextKey !== context ||
+      store.activeOrganizationId !== orgId ||
+      props.repositoryId !== repositoryId
+    ) {
+      return;
+    }
+    reviewerIds.value = response.items.map((reviewer) => reviewer.id);
+    reviewerContextKey.value = context;
+  } catch {
+    if (requestId === reviewerRequestId && activeContextKey === context) {
+      reviewerIds.value = [];
+      reviewerContextKey.value = null;
+    }
+  }
+}
+
 async function createDataset() {
   if (!newDatasetName.value.trim()) return;
   const context = activeContextKey;
@@ -315,10 +378,26 @@ function cancelCreate() {
 
 async function reloadVersion() {
   const datasetId = selectedDatasetId.value;
+  const context = activeContextKey;
   if (!datasetId) return;
   const loaded = await store.loadInboxAddDataset(props.repositoryId, datasetId);
-  if (!loaded || !open.value || selectedDatasetId.value !== datasetId) return;
+  if (
+    !loaded ||
+    !open.value ||
+    activeContextKey !== context ||
+    selectedDatasetId.value !== datasetId
+  )
+    return;
   expectedVersions.value[datasetId] = Number(loaded.version);
+  inboxAddDatasets.value = inboxAddDatasets.value.map((item) =>
+    item.id === datasetId
+      ? {
+          ...item,
+          version: loaded.version,
+          caseCount: loaded.cases.filter((item) => !item.removedAtUtc).length,
+        }
+      : item,
+  );
   attemptedDatasetIds.value = attemptedDatasetIds.value.filter(
     (item) => item !== datasetId,
   );
@@ -370,6 +449,7 @@ async function addPullRequest() {
     added: result.added,
     datasetId,
     repositoryId: submittedRepositoryId,
+    reviewerIds: canOpenEditor.value ? [...reviewerIds.value] : [],
     datasetName,
     datasetVersion: version,
     pullRequestNumber: Number(result.pullRequestNumber),
@@ -380,8 +460,10 @@ async function addPullRequest() {
   close();
 }
 
-function openEditor(datasetId: string) {
-  emits("openEditor", datasetId, currentPullRequestNumber.value);
+function openEditor(datasetId: string, availableReviewerIds: string[]) {
+  emits("openEditor", datasetId, currentPullRequestNumber.value, [
+    ...availableReviewerIds,
+  ]);
 }
 
 function back() {

@@ -57,8 +57,8 @@
           </div>
           <UBadge
             :label="pullRequest.state"
-            color="neutral"
-            variant="outline"
+            :color="pullRequest.state === 'Open' ? 'success' : 'neutral'"
+            variant="subtle"
             class="shrink-0"
           />
         </div>
@@ -92,44 +92,69 @@
         <div
           v-for="dataset in datasets"
           :key="dataset.id"
-          class="flex h-11 min-w-0 items-center gap-2 rounded-md border px-2 transition-colors"
+          class="min-w-0 rounded-md border px-2 transition-colors"
           :class="[
-            selectedDatasetId === dataset.id
-              ? 'border-primary ring-1 ring-primary/30'
-              : 'border-default',
+            selectedDatasetId === dataset.id &&
+            containsSelectedPullRequest(dataset)
+              ? 'border-default bg-elevated/40 ring-1 ring-default'
+              : selectedDatasetId === dataset.id
+                ? 'border-primary ring-1 ring-primary/30'
+                : 'border-default',
             datasetDisabled(dataset) && !containsSelectedPullRequest(dataset)
               ? 'opacity-60'
               : 'hover:bg-elevated/50',
           ]"
         >
-          <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
-            <input
-              type="radio"
-              name="inbox-add-dataset"
-              class="peer sr-only"
-              :value="dataset.id"
-              :checked="selectedDatasetId === dataset.id"
-              :disabled="datasetDisabled(dataset)"
-              :aria-label="`Select ${dataset.name}`"
-              @change="emits('select', dataset.id)"
-            />
-            <span
-              class="size-4 shrink-0 rounded-full border border-muted peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2"
-              aria-hidden="true"
-            />
-            <span class="min-w-0 flex-1 truncate text-sm text-highlighted">
-              {{ dataset.name }}
-            </span>
-            <span
-              class="shrink-0 whitespace-nowrap font-mono text-xs tabular-nums text-muted"
+          <div class="flex h-11 min-w-0 items-center gap-2">
+            <label
+              class="flex min-w-0 flex-1 cursor-pointer items-center gap-2"
             >
-              v{{ versionFor(dataset) }} · {{ Number(dataset.caseCount) }}/{{
-                maxCases
-              }}
+              <input
+                type="radio"
+                name="inbox-add-dataset"
+                class="peer sr-only"
+                :value="dataset.id"
+                :checked="selectedDatasetId === dataset.id"
+                :disabled="datasetDisabled(dataset)"
+                :aria-label="`Select ${dataset.name}`"
+                @change="emits('select', dataset.id)"
+              />
+              <span
+                class="size-4 shrink-0 rounded-full border border-muted peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2"
+                aria-hidden="true"
+              />
+              <span class="min-w-0 flex-1 truncate text-sm text-highlighted">
+                {{ dataset.name }}
+              </span>
+              <span
+                class="shrink-0 whitespace-nowrap font-mono text-xs tabular-nums text-muted"
+              >
+                v{{ versionFor(dataset) }} · {{ Number(dataset.caseCount) }}/{{
+                  maxCases
+                }}
+              </span>
+            </label>
+            <span
+              v-if="selectedDatasetId === dataset.id && loadingSelectedDataset"
+              class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted border-r-transparent"
+              role="status"
+              aria-label="Checking dataset membership"
+            />
+            <span
+              v-else-if="
+                Number(dataset.caseCount) >= maxCases &&
+                !containsSelectedPullRequest(dataset)
+              "
+              class="shrink-0 whitespace-nowrap text-xs text-muted"
+            >
+              {{ maxCases }}/{{ maxCases }} full
             </span>
-          </label>
-          <template v-if="containsSelectedPullRequest(dataset)">
-            <span class="shrink-0 whitespace-nowrap text-xs text-muted">
+          </div>
+          <div
+            v-if="containsSelectedPullRequest(dataset)"
+            class="flex min-h-8 items-center justify-end gap-3 pb-1 ps-6"
+          >
+            <span class="whitespace-nowrap text-xs text-muted">
               Contains #{{ pullRequest.pullRequestNumber }}
             </span>
             <UButton
@@ -140,15 +165,9 @@
               size="xs"
               class="shrink-0"
               :disabled="adding || creatingDataset"
-              @click="emits('open-editor', dataset.id)"
+              @click="emits('open-editor', dataset.id, reviewerIds)"
             />
-          </template>
-          <span
-            v-else-if="Number(dataset.caseCount) >= maxCases"
-            class="shrink-0 whitespace-nowrap text-xs text-muted"
-          >
-            {{ maxCases }}/{{ maxCases }} full
-          </span>
+          </div>
         </div>
       </fieldset>
 
@@ -165,7 +184,7 @@
         </UFormField>
         <div class="flex justify-end gap-2">
           <UButton
-            label="Cancel"
+            label="Discard"
             color="neutral"
             variant="ghost"
             size="sm"
@@ -175,6 +194,7 @@
           <UButton
             label="Create dataset"
             color="primary"
+            variant="outline"
             size="sm"
             :disabled="!newDatasetName.trim() || adding"
             :loading="creatingDataset"
@@ -227,8 +247,9 @@
         @click="emits('cancel')"
       />
       <UButton
-        :label="addLabel"
-        color="primary"
+        :label="alreadyPresent ? 'Already in dataset' : addLabel"
+        :color="alreadyPresent || !canAdd ? 'neutral' : 'primary'"
+        :variant="alreadyPresent || !canAdd ? 'outline' : 'solid'"
         size="sm"
         :disabled="!canAdd || adding"
         :loading="adding"
@@ -261,6 +282,8 @@ const props = defineProps<{
   errorCode: string | null;
   canAdd: boolean;
   canOpenEditor: boolean;
+  alreadyPresent: boolean;
+  reviewerIds: string[];
   addLabel: string;
   maxCases: number;
   selectedDataset: {
@@ -286,16 +309,14 @@ const emits = defineEmits<{
   "cancel-create": [];
   create: [];
   "reload-version": [];
-  "open-editor": [datasetId: string];
+  "open-editor": [datasetId: string, reviewerIds: string[]];
 }>();
 
 const description = computed(
   () =>
     `PR #${props.pullRequest.pullRequestNumber} · ${props.pullRequest.title}`,
 );
-const errorTitle = computed(() =>
-  props.errorCode ? "Could not add pull request" : "Add status",
-);
+const errorTitle = computed(() => "Add status");
 
 function datasetDisabled(dataset: CodeReviewEvaluationDatasetSummaryDto) {
   return !getInboxDatasetRowState({

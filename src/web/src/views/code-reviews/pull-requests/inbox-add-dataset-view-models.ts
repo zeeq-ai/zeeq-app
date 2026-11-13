@@ -13,3 +13,9 @@ export function getInboxDatasetRowState(input: {
     canAdd: !input.mutating && !full && !input.containsPullRequest,
   };
 }
+
+export function getInboxDatasetAddLabel(nextVersion: number | null) {
+  return nextVersion === null
+    ? "Add to dataset"
+    : `Add & save as v${nextVersion}`;
+}
