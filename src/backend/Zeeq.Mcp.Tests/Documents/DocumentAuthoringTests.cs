@@ -9,6 +9,7 @@ using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using NSubstitute;
@@ -25,6 +26,61 @@ namespace Zeeq.Mcp.Documents.Tests;
 /// <summary>Authoring tools, ownership metadata, and public-library overlay behavior.</summary>
 public sealed class DocumentAuthoringTests
 {
+    [McpServerTool(Name = "beta_probe", Title = "Beta Probe (BETA)")]
+    private static string BetaProbe() => "probe";
+
+    [Test]
+    public async Task ToolDiscovery_WithoutBetaHeader_IncludesBothAuthoringTools()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IHttpContextAccessor>(
+            new HttpContextAccessor { HttpContext = new DefaultHttpContext() }
+        );
+        services.AddMcpServer().WithZeeqMcpFilters();
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<McpServerOptions>>().Value;
+        options.ToolCollection = new McpServerPrimitiveCollection<McpServerTool>();
+        foreach (
+            var name in new[]
+            {
+                nameof(DocumentLibraryMcpTools.CreateDocument),
+                nameof(DocumentLibraryMcpTools.UpdateDocumentByDiff),
+            }
+        )
+            options.ToolCollection.Add(
+                McpServerTool.Create(typeof(DocumentLibraryMcpTools).GetMethod(name)!)
+            );
+        options.ToolCollection.Add(
+            McpServerTool.Create(
+                typeof(DocumentAuthoringTests).GetMethod(
+                    nameof(BetaProbe),
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
+                )!
+            )
+        );
+        await using var server = McpServer.Create(
+            Substitute.For<ITransport>(),
+            options,
+            serviceProvider: provider
+        );
+        var context = new RequestContext<ListToolsRequestParams>(
+            server,
+            new JsonRpcRequest { Method = "tools/list" },
+            new ListToolsRequestParams()
+        )
+        {
+            Services = provider,
+        };
+        await options.Handlers!.ListToolsHandler!(context, default);
+        await Assert
+            .That(options.ToolCollection.Select(t => t.ProtocolTool.Name))
+            .IsEquivalentTo(["create_document", "update_document_by_diff"]);
+        await Assert
+            .That(options.ToolCollection.All(t => !t.ProtocolTool.Title!.Contains("(BETA)")))
+            .IsTrue();
+    }
+
     private sealed class CapturingMetricExporter : BaseExporter<Metric>
     {
         public HashSet<string> Names { get; } = [];
@@ -194,7 +250,6 @@ public sealed class DocumentAuthoringTests
         var (store, _, _, service) = Setup(library);
         var actor = new AuditActorContext { Current = Actor };
         var http = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
-        http.HttpContext.Request.Headers["x-zeeq-enable-beta"] = "1";
         var oversized = new string('r', 2001);
         foreach (var (path, rationale) in new[] { ("../bad", "why"), ("/ok.md", oversized) })
         {
@@ -326,7 +381,6 @@ public sealed class DocumentAuthoringTests
                 Arg.Any<CancellationToken>()
             );
         var http = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
-        http.HttpContext.Request.Headers["x-zeeq-enable-beta"] = "1";
         var mcpCreated = await DocumentLibraryMcpTools.CreateDocument(
             store,
             service,
@@ -404,7 +458,6 @@ public sealed class DocumentAuthoringTests
             .Returns(Task.FromException<ReplaceContentResult>(new ArgumentException("post-write")));
         var actor = new AuditActorContext { Current = Actor };
         var http = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
-        http.HttpContext.Request.Headers["x-zeeq-enable-beta"] = "1";
         var create = await DocumentLibraryMcpTools.CreateDocument(
             store,
             service,
@@ -690,7 +743,7 @@ public sealed class DocumentAuthoringTests
     }
 
     [Test]
-    public async Task BetaTools_RejectWithoutHeader_AndReturnStaleAndAppliedWithClientAudit()
+    public async Task AuthoringTools_WithoutBetaHeader_ReturnStaleAndAppliedWithClientAudit()
     {
         var (store, _, _, service) = Setup(Library());
         var original = Local();
@@ -709,26 +762,6 @@ public sealed class DocumentAuthoringTests
             .Returns(call => new ReplaceContentResult.Applied(call.ArgAt<LibraryDocument>(0)));
         var http = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
         var actor = new AuditActorContext { Current = Actor };
-        var betaTool = McpServerTool.Create(
-            typeof(DocumentLibraryMcpTools).GetMethod(
-                nameof(DocumentLibraryMcpTools.UpdateDocumentByDiff)
-            )!
-        );
-        await Assert.That(betaTool.ProtocolTool.Title).Contains("(BETA)");
-        var denied = await DocumentLibraryMcpTools.UpdateDocumentByDiff(
-            store,
-            service,
-            actor,
-            http,
-            User(),
-            "kb",
-            "/local.md",
-            "old",
-            "diff",
-            "why"
-        );
-        await Assert.That(((TextContentBlock)denied.Content[0]).Text).Contains("beta_required");
-        http.HttpContext!.Request.Headers["x-zeeq-enable-beta"] = "1";
         http.HttpContext.Items[McpRequestTelemetryContext.HttpContextItemKey] =
             new McpRequestTelemetryContext("test", "example-client", "1");
         var stale = await DocumentLibraryMcpTools.UpdateDocumentByDiff(
@@ -798,7 +831,6 @@ public sealed class DocumentAuthoringTests
                 )
             );
         var http = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
-        http.HttpContext.Request.Headers["x-zeeq-enable-beta"] = "1";
         var result = await DocumentLibraryMcpTools.UpdateDocumentByDiff(
             store,
             service,
@@ -817,11 +849,10 @@ public sealed class DocumentAuthoringTests
     }
 
     [Test]
-    public async Task BetaCreate_InvalidAndExistingPathsAreReported()
+    public async Task Create_InvalidAndExistingPathsAreReported()
     {
         var (store, _, _, service) = Setup(Library());
         var http = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
-        http.HttpContext.Request.Headers["x-zeeq-enable-beta"] = "1";
         var actor = new AuditActorContext { Current = Actor };
         var invalid = await DocumentLibraryMcpTools.CreateDocument(
             store,
@@ -946,7 +977,6 @@ public sealed class DocumentAuthoringTests
         var (store, pub, _, service) = Setup(library);
         pub.GetByPathAsync("src", "/shared.md", Arg.Any<CancellationToken>()).Returns(Shared());
         var http = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
-        http.HttpContext.Request.Headers["x-zeeq-enable-beta"] = "1";
         var result = await DocumentLibraryMcpTools.UpdateDocumentByDiff(
             store,
             service,
@@ -1011,7 +1041,6 @@ public sealed class DocumentAuthoringTests
         var logs = new CapturingLogger<DocumentAuthoringService>();
         var service = new DocumentAuthoringService(store, pub, sources, Editor(), logs);
         var http = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
-        http.HttpContext.Request.Headers["x-zeeq-enable-beta"] = "1";
         var result = await DocumentLibraryMcpTools.UpdateDocumentByDiff(
             store,
             service,
@@ -1121,7 +1150,6 @@ public sealed class DocumentAuthoringTests
             )
             .Returns(call => new ReplaceContentResult.Applied(call.ArgAt<LibraryDocument>(0)));
         var http = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
-        http.HttpContext.Request.Headers["x-zeeq-enable-beta"] = "1";
         http.HttpContext.Items[McpRequestTelemetryContext.HttpContextItemKey] =
             new McpRequestTelemetryContext("test", "sdk-client", "1");
         var actors = new AuditActorContext { Current = Actor };

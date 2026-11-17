@@ -20,7 +20,7 @@ public sealed partial class DocumentLibraryMcpTools
         ZeeqTelemetry.Metrics.CreateCounter<int>("zeeq_create_document_total");
 
     /// <summary>Applies an approved unified diff to a locally owned document.</summary>
-    [McpServerTool(Name = "update_document_by_diff", Title = "Update Document By Diff (BETA)")]
+    [McpServerTool(Name = "update_document_by_diff", Title = "Update Document By Diff")]
     [Description(
         """
             Change a Zeeq-owned canonical document with a unified diff against the version you read.
@@ -49,12 +49,6 @@ public sealed partial class DocumentLibraryMcpTools
         CancellationToken cancellationToken = default
     )
     {
-        if (!BetaEnabled(http))
-            return Counted(
-                UpdateDocumentCounter,
-                "beta_required",
-                "status: rejected\ncode: beta_required\nsaved: false"
-            );
         if (
             string.IsNullOrWhiteSpace(path)
             || string.IsNullOrWhiteSpace(baseHash)
@@ -120,7 +114,7 @@ public sealed partial class DocumentLibraryMcpTools
     }
 
     /// <summary>Creates a new agent-authored document without overwriting.</summary>
-    [McpServerTool(Name = "create_document", Title = "Create Document (BETA)")]
+    [McpServerTool(Name = "create_document", Title = "Create Document")]
     [Description(
         """
             Create a new markdown document in a library. It is live on save, marked agent-authored, and never overwrites a document.
@@ -146,12 +140,6 @@ public sealed partial class DocumentLibraryMcpTools
         CancellationToken cancellationToken = default
     )
     {
-        if (!BetaEnabled(http))
-            return Counted(
-                CreateDocumentCounter,
-                "beta_required",
-                "status: rejected\ncode: beta_required\nsaved: false"
-            );
         if (
             string.IsNullOrWhiteSpace(path)
             || string.IsNullOrWhiteSpace(content)
@@ -203,9 +191,6 @@ public sealed partial class DocumentLibraryMcpTools
             );
         }
     }
-
-    private static bool BetaEnabled(IHttpContextAccessor http) =>
-        http.HttpContext?.Request.Headers.ContainsKey("x-zeeq-enable-beta") == true;
 
     private static CallToolResult TextResult(string text) =>
         new() { Content = [new TextContentBlock { Text = text }] };
