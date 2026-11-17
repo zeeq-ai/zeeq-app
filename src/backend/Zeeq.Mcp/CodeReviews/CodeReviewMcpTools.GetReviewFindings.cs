@@ -27,7 +27,12 @@ public sealed partial class CodeReviewMcpTools
     /// Retrieves findings for the newest completed review matching a repository and
     /// either a pull request number or branch name.
     /// </summary>
-    [McpServerTool(Name = "get_review_findings", Title = "Get Review Findings")]
+    [McpServerTool(
+        Name = "get_review_findings",
+        Title = "Get Review Findings",
+        ReadOnly = true,
+        OpenWorld = false
+    )]
     [Description(
         """
             Retrieves expert code-review findings for the newest completed review matching a repository

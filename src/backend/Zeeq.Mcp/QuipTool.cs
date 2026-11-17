@@ -17,7 +17,7 @@ public class QuipTool
     /// Returns a random short quip.
     /// </summary>
     [
-        McpServerTool(Name = "get_quip", Title = "Get Quip"),
+        McpServerTool(Name = "get_quip", Title = "Get Quip", ReadOnly = true, OpenWorld = false),
         Description("Get a short quip or a joke from Zeeq.")
     ]
     public static string GetQuip(ILogger<QuipTool> logger, ClaimsPrincipal? user)

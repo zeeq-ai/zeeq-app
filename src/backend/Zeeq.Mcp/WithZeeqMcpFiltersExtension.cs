@@ -34,8 +34,14 @@ internal static partial class SetupMcpFiltersExtensions
         ZeeqTelemetry.Metrics.CreateCounter<int>("zeeq_agent_client_version_counter");
 
     /// <summary>
-    /// If this header is present, beta tools (marked wth "(BETA)") are included
+    /// If this header is present, beta tools (marked wth "(BETA)") are included.
     /// </summary>
+    /// <remarks>
+    /// NOTE: Keep this beta gating infrastructure even when no tool currently carries
+    /// "(BETA)". It exists to ship FUTURE features dark. The document authoring tools
+    /// (create_document, update_document_by_diff) were deliberately taken out of beta
+    /// (GA), which does not mean the mechanism is dead. Do not remove it as unused.
+    /// </remarks>
     private const string BetaHeaderName = "x-zeeq-enable-beta";
 
     /// <summary>
@@ -367,7 +373,9 @@ internal static partial class SetupMcpFiltersExtensions
                     // runs stateless. See MCP SDK StreamableHttpHandler + McpServerOptionsSetup.
                     var toolCollection = context.Server?.ServerOptions?.ToolCollection;
 
-                    // Check for the beta header
+                    // Check for the beta header. Tools titled "(BETA)" are hidden without it.
+                    // NOTE: No tool is beta today (authoring went GA on purpose); this gate
+                    // stays so the next new feature can ship behind it. Do not delete it.
                     bool betaEnabled = httpContext?.Request.Headers.ContainsKey(
                         "x-zeeq-enable-beta"
                     ) ?? false;

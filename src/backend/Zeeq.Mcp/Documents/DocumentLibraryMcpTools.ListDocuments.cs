@@ -60,7 +60,12 @@ public sealed partial class DocumentLibraryMcpTools
     /// A TOON-encoded path tree of the library's documents, keyed by folded path segment,
     /// preceded by a <c>Path root:</c> line when a common root directory chain was stripped.
     /// </returns>
-    [McpServerTool(Name = "list_documents", Title = "List Documents")]
+    [McpServerTool(
+        Name = "list_documents",
+        Title = "List Documents",
+        ReadOnly = true,
+        OpenWorld = false
+    )]
     [Description(
         """
             Use once near the start of an agent session, or before first knowledge-base library
