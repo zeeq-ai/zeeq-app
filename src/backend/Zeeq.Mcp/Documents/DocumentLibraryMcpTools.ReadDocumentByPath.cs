@@ -1,9 +1,11 @@
 using System.ComponentModel;
 using System.Diagnostics.Metrics;
 using System.Security.Claims;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
+using Zeeq.Platform.Documents.Editing;
 
 namespace Zeeq.Mcp.Documents;
 
@@ -24,6 +26,7 @@ public sealed partial class DocumentLibraryMcpTools
     /// document, and the most specific candidate wins.
     /// </remarks>
     /// <param name="store">The injected document-library store.</param>
+    /// <param name="authoring">Resolves local and public documents.</param>
     /// <param name="user">The authenticated caller; the active organization is read from its claims.</param>
     /// <param name="library">The library name that contains the document.</param>
     /// <param name="path">The document path, suffix path, or file name to resolve.</param>
@@ -45,11 +48,12 @@ public sealed partial class DocumentLibraryMcpTools
             </read_document_by_path.triggers>
 
             Use `list_documents` to discover available paths.
-            Do NOT re-read a document you already retrieved in this session.
+            The second content block contains document ownership and contentHash. Re-read after a stale edit; use update_document_by_diff for editable documents.
             """
     )]
-    public static async Task<string> ReadDocumentByPath(
+    public static async Task<CallToolResult> ReadDocumentByPath(
         ILibraryDocumentStore store,
+        DocumentAuthoringService authoring,
         ClaimsPrincipal? user,
         [Description("Required library name; use `list_libraries` to see available libraries.")]
             string library,
@@ -62,12 +66,14 @@ public sealed partial class DocumentLibraryMcpTools
     {
         if (string.IsNullOrWhiteSpace(path))
         {
-            return RecordToolCall(
-                ReadDocumentByPathCounter,
-                user,
-                "missing_path",
-                [("library", library)],
-                "path is required."
+            return TextResult(
+                RecordToolCall(
+                    ReadDocumentByPathCounter,
+                    user,
+                    "missing_path",
+                    [("library", library)],
+                    "path is required."
+                )
             );
         }
 
@@ -79,18 +85,20 @@ public sealed partial class DocumentLibraryMcpTools
 
         if (resolved.Error is not null)
         {
-            return RecordToolCall(
-                ReadDocumentByPathCounter,
-                user,
-                "library_error",
-                [("library", library)],
-                resolved.Error
+            return TextResult(
+                RecordToolCall(
+                    ReadDocumentByPathCounter,
+                    user,
+                    "library_error",
+                    [("library", library)],
+                    resolved.Error
+                )
             );
         }
 
-        var document = await store.GetByPathAsync(
+        var document = await authoring.ResolveAsync(
             resolved.OrganizationId,
-            resolved.Library!.Id,
+            resolved.Library!,
             normalizedPath,
             cancellationToken
         );
@@ -103,12 +111,14 @@ public sealed partial class DocumentLibraryMcpTools
 
         if (document is null)
         {
-            return RecordToolCall(
-                ReadDocumentByPathCounter,
-                user,
-                "not_found",
-                scope,
-                $"Document '{path}' was not found in library '{library}'."
+            return TextResult(
+                RecordToolCall(
+                    ReadDocumentByPathCounter,
+                    user,
+                    "not_found",
+                    scope,
+                    $"Document '{path}' was not found in library '{library}'."
+                )
             );
         }
 
@@ -123,7 +133,7 @@ public sealed partial class DocumentLibraryMcpTools
                 Library: resolved.Library!.Name,
                 DocumentPath: document.Path,
                 DocumentTitle: document.Title,
-                DocumentId: document.Id
+                DocumentId: document.Local?.Id ?? document.Public!.Id
             )
         );
 
@@ -136,6 +146,14 @@ public sealed partial class DocumentLibraryMcpTools
             document.Path
         );
 
-        return RecordToolCall(ReadDocumentByPathCounter, user, "success", scope, document.Content);
+        RecordToolCall(ReadDocumentByPathCounter, user, "success", scope, string.Empty);
+        return new CallToolResult
+        {
+            Content =
+            [
+                new TextContentBlock { Text = document.Content },
+                new TextContentBlock { Text = DocumentAuthoringMetadata.Render(library, document) },
+            ],
+        };
     }
 }

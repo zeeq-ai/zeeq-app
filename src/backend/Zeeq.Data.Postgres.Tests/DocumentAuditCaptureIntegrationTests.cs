@@ -254,14 +254,11 @@ public sealed class DocumentAuditCaptureIntegrationTests(PgDatabaseFixture postg
         await seedDb.SaveChangesAsync();
         var recorder = new CommandRecorder();
         var options = new DbContextOptionsBuilder<PostgresDbContext>()
-            .UseNpgsql(
-                isolated.ConnectionString,
-                n =>
-                {
-                    n.SetPostgresVersion(18, 0);
-                    n.UseVector();
-                }
-            )
+            .UseNpgsql(isolated.ConnectionString, n =>
+            {
+                n.SetPostgresVersion(18, 0);
+                n.UseVector();
+            })
             .UseOpenIddict()
             .UseSnakeCaseNamingConvention()
             .AddInterceptors(recorder)
@@ -348,6 +345,7 @@ public sealed class DocumentAuditCaptureIntegrationTests(PgDatabaseFixture postg
             "hash"
         );
         document.SyncRunId = "old-run";
+        document.Authoring = LibraryDocumentAuthoring.Synced;
         seedDb.LibraryDocuments.Add(document);
         await seedDb.SaveChangesAsync();
 
@@ -425,6 +423,7 @@ public sealed class DocumentAuditCaptureIntegrationTests(PgDatabaseFixture postg
         {
             var document = NewDocument(org, library, $"/sweep/{i}.md", "body", $"hash-{i}");
             document.SyncRunId = "old-run";
+            document.Authoring = LibraryDocumentAuthoring.Synced;
             _context.LibraryDocuments.Add(document);
         }
         await _context.SaveChangesAsync();
@@ -664,14 +663,11 @@ public sealed class DocumentAuditCaptureIntegrationTests(PgDatabaseFixture postg
         };
         var interceptor = new ThrowAfterSave();
         var options = new DbContextOptionsBuilder<PostgresDbContext>()
-            .UseNpgsql(
-                _context.Database.GetDbConnection(),
-                n =>
-                {
-                    n.SetPostgresVersion(18, 0);
-                    n.UseVector();
-                }
-            )
+            .UseNpgsql(_context.Database.GetDbConnection(), n =>
+            {
+                n.SetPostgresVersion(18, 0);
+                n.UseVector();
+            })
             .UseOpenIddict()
             .UseSnakeCaseNamingConvention()
             .AddInterceptors(interceptor)
@@ -864,6 +860,134 @@ public sealed class DocumentAuditCaptureIntegrationTests(PgDatabaseFixture postg
             default
         );
         return (store, seed.Organization.Id, library.Id);
+    }
+
+    [Test]
+    public async Task SyncCollisionAndSweep_PreserveLocalAndExistingNotionDocument()
+    {
+        var (store, org, library) = await SetupAsync();
+        var local = NewDocument(org, library, "/local.md", "local", "local-hash");
+        await store.UpsertDocumentAsync(local, default);
+        var agent = NewDocument(org, library, "/agent.md", "agent", "agent-hash");
+        agent.Authoring = LibraryDocumentAuthoring.Agent;
+        _context.LibraryDocuments.Add(agent);
+        await _context.SaveChangesAsync();
+        var synced = NewDocument(org, library, "/old.md", "upstream", "sync-hash");
+        synced.SourceExternalId = "page-1";
+        synced.SyncRunId = "run-1";
+        await store.UpsertSyncedDocumentAsync(synced, default);
+        var moved = NewDocument(org, library, "/local.md", "changed", "other-hash");
+        moved.SourceExternalId = "page-1";
+        moved.SyncRunId = "run-2";
+        var result = await store.UpsertSyncedDocumentAsync(moved, default);
+        await store.DeleteUnstampedAsync(org, library, "run-2", default);
+        _context.ChangeTracker.Clear();
+        var rows = await _context
+            .LibraryDocuments.Where(d => d.LibraryId == library)
+            .ToArrayAsync();
+        await Assert.That(result.Kind).IsEqualTo(DocumentUpsertKind.SkippedLocalOwned);
+        await Assert.That(rows.Length).IsEqualTo(3);
+        await Assert
+            .That(rows.Single(d => d.Id == agent.Id).Authoring)
+            .IsEqualTo(LibraryDocumentAuthoring.Agent);
+        await Assert.That(rows.Single(d => d.Id == local.Id).Content).IsEqualTo("local");
+        await Assert.That(rows.Single(d => d.Id == synced.Id).Path).IsEqualTo("/old.md");
+        await Assert.That(rows.Single(d => d.Id == synced.Id).Content).IsEqualTo("upstream");
+    }
+
+    [Test]
+    public async Task SameHashHumanWrite_AdoptsAgentAndAuditsOwnership()
+    {
+        var (store, org, library) = await SetupAsync();
+        var writer = new LibraryDocumentWriteService(store);
+        var document = await writer.UpsertDocumentAsync(
+            org,
+            null,
+            library,
+            "/agent.md",
+            "body",
+            default
+        );
+        document.Authoring = LibraryDocumentAuthoring.Agent;
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+        await writer.UpsertDocumentAsync(org, null, library, "/agent.md", "body", default);
+        _context.ChangeTracker.Clear();
+        var saved = await _context.LibraryDocuments.SingleAsync(d => d.Id == document.Id);
+        var audit = (await EventsAsync(org)).Single(e => e.EventType == "document.updated");
+        await Assert.That(saved.Authoring).IsEqualTo(LibraryDocumentAuthoring.Manual);
+        await Assert
+            .That(AuditSnapshotSerializer.Deserialize(audit.BeforeSnapshot)!.Fields["authoring"])
+            .IsEqualTo("Agent");
+        await Assert
+            .That(AuditSnapshotSerializer.Deserialize(audit.AfterSnapshot)!.Fields["authoring"])
+            .IsEqualTo("Manual");
+    }
+
+    [Test]
+    public async Task HashMatchAndHumanEdit_PreserveLocalAndSyncedOwnership()
+    {
+        var (store, org, library) = await SetupAsync();
+        var local = NewDocument(org, library, "/local.md", "local", "shared-hash");
+        await store.UpsertDocumentAsync(local, default);
+        var synced = NewDocument(org, library, "/remote.md", "remote", "remote-hash");
+        synced.SyncRunId = "run-1";
+        await store.UpsertSyncedDocumentAsync(synced, default);
+        var incoming = NewDocument(org, library, "/new.md", "other", "shared-hash");
+        incoming.SyncRunId = "run-2";
+        var added = await store.UpsertSyncedDocumentAsync(incoming, default);
+        var edit = NewDocument(org, library, "/remote.md", "edited", "changed-hash");
+        await store.UpsertDocumentAsync(edit, default);
+        _context.ChangeTracker.Clear();
+        var rows = await _context
+            .LibraryDocuments.Where(d => d.LibraryId == library)
+            .ToArrayAsync();
+        await Assert.That(added.Kind).IsEqualTo(DocumentUpsertKind.Added);
+        await Assert.That(rows.Single(d => d.Id == local.Id).Path).IsEqualTo("/local.md");
+        await Assert
+            .That(rows.Single(d => d.Id == synced.Id).Authoring)
+            .IsEqualTo(LibraryDocumentAuthoring.Synced);
+    }
+
+    [Test]
+    public async Task LocalDocumentInSourcedLibrary_StoresRevertibleSnapshot()
+    {
+        var (store, org, library) = await SetupAsync();
+        await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE zeeq.docs_libraries SET source_kind = {"GitHub"} WHERE organization_id = {org} AND id = {library}"
+        );
+        var local = NewDocument(org, library, "/manual.md", "local content", "hash");
+        await store.UpsertDocumentAsync(local, default);
+        var created = (await EventsAsync(org)).Single(e => e.EventType == "document.created");
+        await Assert
+            .That(AuditSnapshotSerializer.Deserialize(created.AfterSnapshot)!.Content)
+            .IsEqualTo("local content");
+    }
+
+    [Test]
+    public async Task SyncRestamp_RefreshesOriginalPathWithoutChangingContent()
+    {
+        var (store, org, library) = await SetupAsync();
+        var original = NewDocument(org, library, "/docs/readme.md", "body", "hash");
+        original.SyncRunId = "run-1";
+        original.SourceOrigin = new LibraryDocumentSourceOrigin(
+            "GitHub",
+            "https://github.com/acme/docs.git"
+        );
+        await store.UpsertSyncedDocumentAsync(original, default);
+        var resynced = NewDocument(org, library, "/docs/readme.md", "body", "hash");
+        resynced.SyncRunId = "run-2";
+        resynced.SourceOrigin = new LibraryDocumentSourceOrigin(
+            "GitHub",
+            "https://github.com/acme/docs.git",
+            "Docs/README.md"
+        );
+        var result = await store.UpsertSyncedDocumentAsync(resynced, default);
+        _context.ChangeTracker.Clear();
+        var saved = await _context.LibraryDocuments.SingleAsync(d => d.Id == original.Id);
+        await Assert.That(result.Kind).IsEqualTo(DocumentUpsertKind.Unchanged);
+        await Assert.That(saved.SourceOrigin!.SourcePath).IsEqualTo("Docs/README.md");
+        await Assert.That(saved.Content).IsEqualTo("body");
     }
 
     private static LibraryDocument NewDocument(

@@ -1,7 +1,7 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Dispatch;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Zeeq.Platform.Ingest.Tests;
 
@@ -368,9 +368,7 @@ public sealed class RepositoryIngestRunnerTests
         await Assert.That(run.FilesTotal).IsEqualTo(2);
         await Assert.That(run.FilesAdded).IsEqualTo(2);
         await Assert.That(libraryDocumentStore.Documents.Count).IsEqualTo(2);
-        await Assert
-            .That(libraryDocumentStore.Documents.Select(d => d.Path))
-            .Contains("/guide.md");
+        await Assert.That(libraryDocumentStore.Documents.Select(d => d.Path)).Contains("/guide.md");
         await Assert
             .That(libraryDocumentStore.Documents.All(d => d.SyncRunId == job.RunId))
             .IsTrue();
@@ -402,6 +400,7 @@ public sealed class RepositoryIngestRunnerTests
                 Content = "# Removed\n\nBody.",
                 ContentHash = "removed-hash",
                 SyncRunId = "run_prior",
+                Authoring = LibraryDocumentAuthoring.Synced,
                 CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
                 UpdatedAt = DateTimeOffset.UtcNow.AddDays(-1),
             }
@@ -424,8 +423,6 @@ public sealed class RepositoryIngestRunnerTests
         await Assert
             .That(libraryDocumentStore.Documents.Select(d => d.Path))
             .DoesNotContain("/removed.md");
-        await Assert
-            .That(libraryDocumentStore.Documents.Select(d => d.Path))
-            .Contains("/kept.md");
+        await Assert.That(libraryDocumentStore.Documents.Select(d => d.Path)).Contains("/kept.md");
     }
 }

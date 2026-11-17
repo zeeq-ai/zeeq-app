@@ -79,7 +79,6 @@ public interface IDocsPublicDocumentStore : IIndexableDocumentStore<DocsPublicDo
         string currentSyncRunId,
         CancellationToken ct
     );
-
 }
 
 /// <summary>Outcome of one <see cref="IDocsPublicDocumentStore.UpsertAsync"/> call.</summary>
@@ -96,6 +95,9 @@ public enum DocumentUpsertKind
 
     /// <summary>An existing row matched with identical content; only the sync stamp changed.</summary>
     Unchanged,
+
+    /// <summary>A locally owned document occupies the incoming path.</summary>
+    SkippedLocalOwned,
 }
 
 /// <summary>Persisted document plus the upsert outcome that produced it.</summary>

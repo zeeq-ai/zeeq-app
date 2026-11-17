@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Zeeq.Core.Documents;
 using Zeeq.Platform.Ingest;
 
@@ -22,10 +23,11 @@ namespace Zeeq.Platform.Documents;
 /// itself (circular reference), but the type is reachable because it's
 /// physically in an already-referenced project.
 /// </remarks>
-public sealed class ListDocumentsHandler(
+public sealed partial class ListDocumentsHandler(
     ILibraryDocumentStore store,
     IDocsPublicDocumentStore publicDocuments,
-    IDocsPublicSourceStore publicSources
+    IDocsPublicSourceStore publicSources,
+    ILogger<ListDocumentsHandler>? logger = null
 ) : IEndpointHandler
 {
     /// <summary>
@@ -58,11 +60,28 @@ public sealed class ListDocumentsHandler(
                 IngestFileFilter.IsIncluded(document.Path, filter)
             );
 
-            return TypedResults.Ok(visible.Select(LibraryEndpointMapping.ToResponse).ToArray());
+            var publicRows = visible.Select(LibraryEndpointMapping.ToResponse).ToArray();
+            var localRows = await store.ListDocumentsAsync(context.OrganizationId, library.Id, ct);
+            var localPaths = localRows.Select(row => row.Path).ToHashSet(StringComparer.Ordinal);
+            if (logger is not null)
+                foreach (var row in publicRows.Where(row => localPaths.Contains(row.Path)))
+                    LogPublicCollision(logger, library.Name, row.Path);
+            return TypedResults.Ok(
+                localRows
+                    .Select(LibraryEndpointMapping.ToResponse)
+                    .Concat(publicRows.Where(row => !localPaths.Contains(row.Path)))
+                    .ToArray()
+            );
         }
 
         var documents = await store.ListDocumentsAsync(context.OrganizationId, library.Id, ct);
 
         return TypedResults.Ok(documents.Select(LibraryEndpointMapping.ToResponse).ToArray());
     }
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Local document owns path {Path} in subscribed library {Library}; shared source remains unchanged"
+    )]
+    private static partial void LogPublicCollision(ILogger logger, string library, string path);
 }

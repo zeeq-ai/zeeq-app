@@ -7,6 +7,7 @@ using ModelContextProtocol.Server;
 using ToonSharp;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
+using Zeeq.Platform.Documents.Editing;
 
 namespace Zeeq.Mcp.Documents;
 
@@ -49,6 +50,7 @@ public sealed partial class DocumentLibraryMcpTools
     /// </remarks>
     /// <param name="store">The injected document-library store.</param>
     /// <param name="cache">The injected hybrid cache backing the 120-second response cache.</param>
+    /// <param name="authoring">Resolves local and public documents.</param>
     /// <param name="user">The authenticated caller; the active organization is read from its claims.</param>
     /// <param name="library">The library name to list documents from.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
@@ -79,6 +81,7 @@ public sealed partial class DocumentLibraryMcpTools
     public static async Task<string> ListDocuments(
         ILibraryDocumentStore store,
         HybridCache cache,
+        DocumentAuthoringService authoring,
         ClaimsPrincipal? user,
         [Description("Required library name; use `list_libraries` to see available libraries.")]
             string library,
@@ -122,16 +125,23 @@ public sealed partial class DocumentLibraryMcpTools
             null
         );
 
-        var cacheKey = $"mcp:list_documents:{resolved.OrganizationId}:{resolved.Library.Id}";
+        var cacheKey = DocumentAuthoringService.ListCacheKey(
+            resolved.OrganizationId,
+            resolved.Library.Id
+        );
 
         var body = await cache.GetOrCreateAsync(
             cacheKey,
-            (Store: store, OrganizationId: resolved.OrganizationId, LibraryId: resolved.Library.Id),
+            (
+                Authoring: authoring,
+                OrganizationId: resolved.OrganizationId,
+                Library: resolved.Library
+            ),
             static async (state, ct) =>
             {
-                var documents = await state.Store.ListDocumentsAsync(
+                var documents = await state.Authoring.ListAsync(
                     state.OrganizationId,
-                    state.LibraryId,
+                    state.Library,
                     ct
                 );
 

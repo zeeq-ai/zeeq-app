@@ -1,3 +1,5 @@
+using Zeeq.Core.Auditing;
+
 namespace Zeeq.Core.Documents;
 
 /// <summary>
@@ -210,6 +212,26 @@ public interface ILibraryDocumentStore : IIndexableDocumentStore<LibraryDocument
     {
         throw new NotSupportedException();
     }
+
+    /// <summary>Inserts an agent document without overwriting an existing path.</summary>
+    /// <remarks>The supplied document must be untracked; unsuccessful attempts leave its values unchanged.</remarks>
+    Task<CreateDocumentResult> CreateAgentDocumentAsync(
+        LibraryDocument document,
+        string rationale,
+        AuditActor actor,
+        string? clientName,
+        CancellationToken ct
+    ) => throw new NotSupportedException();
+
+    /// <summary>Replaces content only if the same editable document still has the expected hash.</summary>
+    Task<ReplaceContentResult> TryReplaceContentAsync(
+        LibraryDocument document,
+        string expectedHash,
+        string rationale,
+        AuditActor actor,
+        string? clientName,
+        CancellationToken ct
+    ) => throw new NotSupportedException();
 
     /// <summary>
     /// Inserts or updates a document by normalized path.

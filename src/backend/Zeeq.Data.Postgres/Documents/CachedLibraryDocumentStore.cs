@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Hybrid;
+using Zeeq.Core.Auditing;
 using Zeeq.Core.Documents;
 
 namespace Zeeq.Data.Postgres.Documents;
@@ -203,6 +204,56 @@ internal sealed class CachedLibraryDocumentStore(ILibraryDocumentStore inner, Hy
         int limit,
         CancellationToken ct
     ) => inner.ResetStalledSyncsAsync(now, queuedStaleAfter, runningStaleAfter, limit, ct);
+
+    /// <inheritdoc />
+    public async Task<CreateDocumentResult> CreateAgentDocumentAsync(
+        LibraryDocument document,
+        string rationale,
+        AuditActor actor,
+        string? clientName,
+        CancellationToken ct
+    )
+    {
+        var result = await inner.CreateAgentDocumentAsync(
+            document,
+            rationale,
+            actor,
+            clientName,
+            ct
+        );
+        if (result is CreateDocumentResult.Created)
+            await cache.RemoveByTagAsync(
+                LibraryPathCacheTag(document.OrganizationId, document.LibraryId),
+                ct
+            );
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<ReplaceContentResult> TryReplaceContentAsync(
+        LibraryDocument document,
+        string expectedHash,
+        string rationale,
+        AuditActor actor,
+        string? clientName,
+        CancellationToken ct
+    )
+    {
+        var result = await inner.TryReplaceContentAsync(
+            document,
+            expectedHash,
+            rationale,
+            actor,
+            clientName,
+            ct
+        );
+        if (result is ReplaceContentResult.Applied)
+            await cache.RemoveByTagAsync(
+                LibraryPathCacheTag(document.OrganizationId, document.LibraryId),
+                ct
+            );
+        return result;
+    }
 
     /// <inheritdoc />
     public async Task<LibraryDocument> UpsertDocumentAsync(

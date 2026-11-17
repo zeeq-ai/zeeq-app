@@ -56,8 +56,8 @@ public sealed partial class RepositoryIngestRunner(
     // tests inject a failing Func to exercise per-file failure isolation
     // deterministically instead of relying on OS-specific filesystem tricks
     // (locks, broken symlinks) to force a real I/O error.
-    private readonly Func<string, CancellationToken, Task<string>> _readFile =
-        readFile ?? ((path, ct) => File.ReadAllTextAsync(path, Encoding.UTF8, ct));
+    private readonly Func<string, CancellationToken, Task<string>> _readFile = readFile
+        ?? ((path, ct) => File.ReadAllTextAsync(path, Encoding.UTF8, ct));
 
     /// <summary>
     /// Runs one repository ingest job to completion and returns the finalized run record.
@@ -213,7 +213,12 @@ public sealed partial class RepositoryIngestRunner(
 
                 try
                 {
-                    var kind = await UpsertFileAsync(job, file, normalizedPath, cancellationToken);
+                    var (kind, owner) = await UpsertFileAsync(
+                        job,
+                        file,
+                        normalizedPath,
+                        cancellationToken
+                    );
 
                     switch (kind)
                     {
@@ -225,6 +230,16 @@ public sealed partial class RepositoryIngestRunner(
                             break;
                         case DocumentUpsertKind.Moved:
                             moved++;
+                            break;
+                        case DocumentUpsertKind.SkippedLocalOwned:
+                            DocumentAuthoringTelemetry.SyncSkippedLocal.Add(1);
+                            LogLocalCollision(
+                                logger,
+                                job.LibraryId,
+                                normalizedPath,
+                                owner?.ToString() ?? "unknown"
+                            );
+                            skipped++;
                             break;
                         case DocumentUpsertKind.Unchanged:
                             skipped++;
@@ -293,7 +308,7 @@ public sealed partial class RepositoryIngestRunner(
     /// <summary>
     /// Reads, hashes, parses, and upserts one file, returning the resolved upsert branch.
     /// </summary>
-    private async Task<DocumentUpsertKind> UpsertFileAsync(
+    private async Task<(DocumentUpsertKind Kind, LibraryDocumentAuthoring? Owner)> UpsertFileAsync(
         RepositoryIngestJob job,
         IngestFileEntry file,
         string normalizedPath,
@@ -342,14 +357,13 @@ public sealed partial class RepositoryIngestRunner(
                 ContentHash = fields.ContentHash,
                 TokenCount = fields.TokenCount,
                 SyncRunId = job.RunId,
-                // SourceOrigin is what LibraryEndpointMapping's OriginOf uses to
-                // mark a document "remote" (read-only in the editor) vs. "local"
-                // (hand-authored, editable). Init-only on LibraryDocument, so
-                // this only takes effect on first insert — an update to an
-                // already-ingested row (the ContentHash-differs branch in
-                // UpsertSyncedDocumentAsync) never touches it, which is correct:
-                // it was already stamped remote on its original insert.
-                SourceOrigin = new LibraryDocumentSourceOrigin("GitHub", job.RepoUrl),
+                Authoring = LibraryDocumentAuthoring.Synced,
+                // Preserve repository casing for usable origin links; persisted document paths are normalized.
+                SourceOrigin = new LibraryDocumentSourceOrigin(
+                    "GitHub",
+                    job.RepoUrl,
+                    file.RelativePath.Replace('\\', '/')
+                ),
                 CreatedAt = now,
                 UpdatedAt = now,
             };
@@ -359,7 +373,12 @@ public sealed partial class RepositoryIngestRunner(
                 cancellationToken
             );
 
-            return libraryResult.Kind;
+            return (
+                libraryResult.Kind,
+                libraryResult.Kind == DocumentUpsertKind.SkippedLocalOwned
+                    ? libraryResult.Document.Authoring
+                    : null
+            );
         }
 
         var document = new DocsPublicDocument
@@ -381,7 +400,7 @@ public sealed partial class RepositoryIngestRunner(
 
         var result = await publicDocumentStore.UpsertAsync(document, cancellationToken);
 
-        return result.Kind;
+        return (result.Kind, null);
     }
 
     /// <summary>
@@ -538,5 +557,16 @@ public sealed partial class RepositoryIngestRunner(
         string runId,
         string sourcePath,
         string normalizedPath
+    );
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Skipping repository path {Path} in library {LibraryId}: document owner {Authoring}"
+    )]
+    private static partial void LogLocalCollision(
+        ILogger logger,
+        string? libraryId,
+        string path,
+        string authoring
     );
 }

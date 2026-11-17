@@ -345,11 +345,7 @@ internal sealed partial class PostgresLibraryDocumentStore
                 documentCount += deleted;
                 foreach (var document in documents)
                 {
-                    var sourced =
-                        library.SourceKind is not null
-                        || library.PublicSourceId is not null
-                        || document.SyncRunId is not null
-                        || document.SourceExternalId is not null;
+                    var sourced = IsSourced(document);
                     audit.AppendOrganization(
                         organizationId,
                         document.TeamId,

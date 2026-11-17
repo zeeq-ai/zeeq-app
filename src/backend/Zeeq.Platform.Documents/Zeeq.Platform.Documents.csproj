@@ -16,6 +16,7 @@
     <PackageReference Include="Nanoid" />
     <PackageReference Include="Open.ChannelExtensions" />
     <PackageReference Include="Pgvector" />
+    <PackageReference Include="TextDiff.Sharp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Zeeq.Core.Common.AspNetCore\Zeeq.Core.Common.AspNetCore.csproj" />

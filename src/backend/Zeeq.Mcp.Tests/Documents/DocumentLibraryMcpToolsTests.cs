@@ -1,8 +1,12 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Logging.Abstractions;
+using ModelContextProtocol.Protocol;
+using NSubstitute;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
+using Zeeq.Platform.Documents.Editing;
 
 namespace Zeeq.Mcp.Documents.Tests;
 
@@ -39,6 +43,7 @@ public sealed class DocumentLibraryMcpToolsTests
         var response = await DocumentLibraryMcpTools.ListDocuments(
             new TestLibraryDocumentStore(),
             new TestHybridCache(),
+            null!,
             TestUser(),
             ""
         );
@@ -57,6 +62,7 @@ public sealed class DocumentLibraryMcpToolsTests
         var response = await DocumentLibraryMcpTools.ListDocuments(
             store,
             new TestHybridCache(),
+            CreateAuthoring(store),
             TestUser(),
             "kb"
         );
@@ -79,6 +85,7 @@ public sealed class DocumentLibraryMcpToolsTests
         var response = await DocumentLibraryMcpTools.ListDocuments(
             store,
             new TestHybridCache(),
+            CreateAuthoring(store),
             TestUser(),
             "kb"
         );
@@ -99,6 +106,7 @@ public sealed class DocumentLibraryMcpToolsTests
         var response = await DocumentLibraryMcpTools.ListDocuments(
             store,
             new TestHybridCache(),
+            CreateAuthoring(store),
             TestUser(),
             "kb"
         );
@@ -118,6 +126,7 @@ public sealed class DocumentLibraryMcpToolsTests
         var response = await DocumentLibraryMcpTools.ListDocuments(
             store,
             new TestHybridCache(),
+            CreateAuthoring(store),
             TestUser(),
             "kb"
         );
@@ -135,11 +144,23 @@ public sealed class DocumentLibraryMcpToolsTests
         store.Documents.Add(PathDocument("one.md", ["x"]));
         var cache = new TestHybridCache();
 
-        var first = await DocumentLibraryMcpTools.ListDocuments(store, cache, TestUser(), "kb");
+        var first = await DocumentLibraryMcpTools.ListDocuments(
+            store,
+            cache,
+            CreateAuthoring(store),
+            TestUser(),
+            "kb"
+        );
 
         // Mutates the store after the first call; a fresh (uncached) call would see this.
         store.Documents.Add(PathDocument("two.md", ["y"]));
-        var second = await DocumentLibraryMcpTools.ListDocuments(store, cache, TestUser(), "kb");
+        var second = await DocumentLibraryMcpTools.ListDocuments(
+            store,
+            cache,
+            CreateAuthoring(store),
+            TestUser(),
+            "kb"
+        );
 
         await Assert.That(second).IsEqualTo(first);
         await Assert.That(second).DoesNotContain("two.md");
@@ -158,8 +179,20 @@ public sealed class DocumentLibraryMcpToolsTests
         store.Documents.Add(PathDocument("two.md", ["y"], libraryId: "lib_upper"));
         var cache = new TestHybridCache();
 
-        var lower = await DocumentLibraryMcpTools.ListDocuments(store, cache, TestUser(), "kb");
-        var upper = await DocumentLibraryMcpTools.ListDocuments(store, cache, TestUser(), "KB");
+        var lower = await DocumentLibraryMcpTools.ListDocuments(
+            store,
+            cache,
+            CreateAuthoring(store),
+            TestUser(),
+            "kb"
+        );
+        var upper = await DocumentLibraryMcpTools.ListDocuments(
+            store,
+            cache,
+            CreateAuthoring(store),
+            TestUser(),
+            "KB"
+        );
 
         await Assert.That(lower).Contains("one.md");
         await Assert.That(lower).DoesNotContain("two.md");
@@ -176,12 +209,19 @@ public sealed class DocumentLibraryMcpToolsTests
 
         var response = await DocumentLibraryMcpTools.ReadDocumentByPath(
             store,
+            CreateAuthoring(store),
             TestUser(),
             "kb",
             "guide.md"
         );
 
-        await Assert.That(response).IsEqualTo("# Guide\n\nBody");
+        await Assert.That(response.Content.Count).IsEqualTo(2);
+        await Assert
+            .That(((TextContentBlock)response.Content[0]).Text)
+            .IsEqualTo("# Guide\n\nBody");
+        await Assert
+            .That(((TextContentBlock)response.Content[1]).Text)
+            .Contains("zeeq_document_meta");
     }
 
     [Test]
@@ -229,6 +269,15 @@ public sealed class DocumentLibraryMcpToolsTests
         await Assert.That(hit.GetProperty("fuzzyScore").GetDouble()).IsEqualTo(0.7);
         await Assert.That(hit.TryGetProperty("document", out _)).IsFalse();
     }
+
+    private static DocumentAuthoringService CreateAuthoring(ILibraryDocumentStore store) =>
+        new(
+            store,
+            Substitute.For<IDocsPublicDocumentStore>(),
+            Substitute.For<IDocsPublicSourceStore>(),
+            DocumentDiffEditor.CreateDefault(),
+            NullLogger<DocumentAuthoringService>.Instance
+        );
 
     private static ClaimsPrincipal TestUser() =>
         new(new ClaimsIdentity([new Claim(AuthClaims.OrganizationId, "org_123")], "test"));

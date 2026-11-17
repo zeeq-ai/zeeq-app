@@ -22,13 +22,13 @@ internal sealed partial class PostgresLibraryDocumentStore
             // excludes rows with a SourceExternalId). External-source (Notion) documents can
             // legitimately share a resolved breadcrumb path, so a SingleOrDefaultAsync here
             // would throw on that collision instead of returning a reasonable match.
-            .FirstOrDefaultAsync(
-                document =>
-                    document.OrganizationId == organizationId
-                    && document.LibraryId == libraryId
-                    && document.Path == path,
-                ct
-            );
+            .Where(document =>
+                document.OrganizationId == organizationId
+                && document.LibraryId == libraryId
+                && document.Path == path
+            )
+            .OrderBy(document => document.Authoring == LibraryDocumentAuthoring.Synced)
+            .FirstOrDefaultAsync(ct);
 
     /// <summary>
     /// Finds the best suffix match across all candidates in a single round trip.
