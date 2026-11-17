@@ -924,6 +924,13 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                         .HasDefaultValue(0)
                         .HasColumnName("as_scoped_skill");
 
+                    b.Property<string>("Authoring")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("Manual")
+                        .HasColumnName("authoring");
+
                     b.Property<string>("Content")
                         .IsRequired()
                         .HasColumnType("text")
@@ -5199,6 +5206,9 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                             b1.Property<string>("RepoRef")
                                 .IsRequired()
                                 .HasMaxLength(512);
+
+                            b1.Property<string>("SourcePath")
+                                .HasMaxLength(2048);
 
                             b1.HasKey("LibraryDocumentOrganizationId", "LibraryDocumentLibraryId", "LibraryDocumentId");
 

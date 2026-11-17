@@ -107,8 +107,8 @@ internal static partial class SetupMcpFiltersExtensions
                             requestMethod = request.Method;
                             if (request.Method == RequestMethods.ToolsCall)
                             {
-                                toolName =
-                                    request.Params?["name"]?.GetValue<string>() ?? string.Empty;
+                                toolName = request.Params?["name"]?.GetValue<string>()
+                                    ?? string.Empty;
                             }
                             requestLooksLikeCodex = request.LooksLikeCodex();
                         }
@@ -198,20 +198,18 @@ internal static partial class SetupMcpFiltersExtensions
                         }
                         catch (Exception ex)
                         {
-                            var requestParams = context.JsonRpcMessage
-                                is JsonRpcRequest failedRequest
-                                ? failedRequest.Params?.ToJsonString()
+                            var sensitive = IsAuthoringTool(toolName);
+                            var requestParams =
+                                sensitive ? null
+                                : context.JsonRpcMessage is JsonRpcRequest failedRequest
+                                    ? failedRequest.Params?.ToJsonString()
                                 : string.Empty;
-
-                            Activity.Current?.AddException(
+                            RecordMcpFailure(
+                                Activity.Current,
                                 ex,
-                                tags:
-                                [
-                                    new("exception_message", ex.Message),
-                                    new("user_agent", userAgent),
-                                    new("tool_name", toolName),
-                                    new("request_params", requestParams),
-                                ]
+                                toolName,
+                                userAgent,
+                                requestParams
                             );
 
                             await context.Server.SendMessageAsync(
@@ -220,7 +218,9 @@ internal static partial class SetupMcpFiltersExtensions
                                     Error = new JsonRpcErrorDetail
                                     {
                                         Code = -1,
-                                        Message = ex.Message,
+                                        Message = sensitive
+                                            ? "Document authoring request failed."
+                                            : ex.Message,
                                     },
                                 },
                                 cancellationToken
@@ -255,8 +255,7 @@ internal static partial class SetupMcpFiltersExtensions
                         // this guard is what keeps this filter from misreporting a real
                         // validation failure as "the argument was not supplied."
                         catch (ArgumentException exception)
-                            when (
-                                string.Equals(
+                            when (string.Equals(
                                     exception.ParamName,
                                     "arguments",
                                     StringComparison.Ordinal
@@ -268,14 +267,12 @@ internal static partial class SetupMcpFiltersExtensions
 
                             // Still surfaced on the trace: this is a real failed call, it just
                             // is not an unhandled server exception.
-                            Activity.Current?.AddException(
+                            RecordMcpFailure(
+                                Activity.Current,
                                 exception,
-                                tags:
-                                [
-                                    new("exception_message", exception.Message),
-                                    new("tool_name", toolName),
-                                    new("missing_parameter", missingParameter),
-                                ]
+                                toolName,
+                                "argument_binding",
+                                null
                             );
 
                             return new CallToolResult
@@ -314,15 +311,15 @@ internal static partial class SetupMcpFiltersExtensions
                     var toolCollection = context.Server?.ServerOptions?.ToolCollection;
 
                     // Check for the beta header
-                    bool betaEnabled =
-                        httpContext?.Request.Headers.ContainsKey("x-zeeq-enable-beta") ?? false;
+                    bool betaEnabled = httpContext?.Request.Headers.ContainsKey(
+                        "x-zeeq-enable-beta"
+                    ) ?? false;
 
                     if (!betaEnabled)
                     {
-                        var betaTools =
-                            toolCollection?.Where(tool =>
-                                tool.ProtocolTool.Title?.Contains("(BETA)") ?? false
-                            )
+                        var betaTools = toolCollection?.Where(tool =>
+                            tool.ProtocolTool.Title?.Contains("(BETA)") ?? false
+                        )
                             ?? [];
 
                         foreach (var tool in betaTools.ToList())
@@ -332,11 +329,10 @@ internal static partial class SetupMcpFiltersExtensions
                     }
 
                     // Filter out memory tools.
-                    var memoryToolsMode =
-                        httpContext
-                            ?.Request.Headers[MemoryModeHeaderName]
-                            .FirstOrDefault()
-                            ?.ToLowerInvariant()
+                    var memoryToolsMode = httpContext
+                        ?.Request.Headers[MemoryModeHeaderName]
+                        .FirstOrDefault()
+                        ?.ToLowerInvariant()
                         ?? "all";
 
                     Func<McpServerTool, bool> toolFilter = memoryToolsMode switch
@@ -409,6 +405,44 @@ internal static partial class SetupMcpFiltersExtensions
             : string.Empty;
 
         return $"`{toolName}` requires the `{missingParameter}` argument, which was not supplied. Call it again including `{missingParameter}`.{hint}";
+    }
+
+    internal static bool IsAuthoringTool(string name) =>
+        name is "update_document_by_diff" or "create_document";
+
+    internal static void RecordMcpFailure(
+        Activity? activity,
+        Exception exception,
+        string toolName,
+        string userAgent,
+        string? requestParams
+    )
+    {
+        if (IsAuthoringTool(toolName))
+        {
+            // Never attach arguments, exception text, or a stack containing authoring content.
+            activity?.AddEvent(
+                new ActivityEvent(
+                    "authoring.failure",
+                    tags: new ActivityTagsCollection
+                    {
+                        { "tool_name", toolName },
+                        { "exception.type", exception.GetType().Name },
+                    }
+                )
+            );
+            return;
+        }
+        activity?.AddException(
+            exception,
+            tags:
+            [
+                new("exception_message", exception.Message),
+                new("user_agent", userAgent),
+                new("tool_name", toolName),
+                new("request_params", requestParams),
+            ]
+        );
     }
 
     [GeneratedRegex(

@@ -32,7 +32,8 @@ internal static class LibraryDocumentAudit
             document.Title,
             document.Content,
             document.ExcludedFromCodeReviews,
-            document.AsScopedSkill
+            document.AsScopedSkill,
+            document.Authoring
         );
 
     internal static AuditSnapshot Snapshot(
@@ -40,7 +41,8 @@ internal static class LibraryDocumentAudit
         string title,
         string content,
         bool excludedFromCodeReviews,
-        LibraryDocumentScopedSkill scopedSkill
+        LibraryDocumentScopedSkill scopedSkill,
+        LibraryDocumentAuthoring authoring
     ) =>
         new()
         {
@@ -51,6 +53,7 @@ internal static class LibraryDocumentAudit
             {
                 ["excludedFromCodeReviews"] = excludedFromCodeReviews ? "true" : "false",
                 ["scopedSkill"] = scopedSkill.ToString(),
+                ["authoring"] = authoring.ToString(),
             },
         };
 

@@ -1435,6 +1435,7 @@ public sealed class LibraryAuditCaptureIntegrationTests(PgDatabaseFixture postgr
                     Content = "private body",
                     ContentHash = $"hash-{i}",
                     SyncRunId = i == 0 ? "run1" : null,
+                    Authoring = i == 0 ? LibraryDocumentAuthoring.Synced : LibraryDocumentAuthoring.Manual,
                     Keywords = [],
                     Headings = [],
                     CreatedAt = now,

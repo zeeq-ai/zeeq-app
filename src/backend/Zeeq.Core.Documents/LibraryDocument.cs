@@ -129,7 +129,7 @@ public class LibraryDocument
     /// <summary>
     /// Optional external source metadata for future ingestion flows.
     /// </summary>
-    public LibraryDocumentSourceOrigin? SourceOrigin { get; init; }
+    public LibraryDocumentSourceOrigin? SourceOrigin { get; set; }
 
     /// <summary>
     /// Stable identifier for this document in its external source (e.g. a Notion page UUID).
@@ -150,6 +150,9 @@ public class LibraryDocument
     /// hand-authored documents.
     /// </summary>
     public string? SyncRunId { get; set; }
+
+    /// <summary>Content ownership; synchronized documents are owned by their upstream source.</summary>
+    public LibraryDocumentAuthoring Authoring { get; set; }
 
     /// <summary>
     /// When true, this document is operational/informational content that code-review

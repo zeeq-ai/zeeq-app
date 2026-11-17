@@ -150,6 +150,11 @@ internal sealed class LibraryDocumentConfiguration : IEntityTypeConfiguration<Li
         entity.Property(document => document.TokenCount).IsRequired();
         entity.Property(document => document.ContentHash).HasMaxLength(64);
         entity.Property(document => document.SyncRunId).HasMaxLength(128);
+        entity
+            .Property(document => document.Authoring)
+            .HasConversion<string>()
+            .HasDefaultValue(LibraryDocumentAuthoring.Manual)
+            .IsRequired();
         entity.Property(document => document.SourceExternalId).HasMaxLength(128);
 
         // Review-exclusion flag: NOT NULL DEFAULT FALSE so existing rows stay visible to code
@@ -183,6 +188,7 @@ internal sealed class LibraryDocumentConfiguration : IEntityTypeConfiguration<Li
             {
                 sourceOrigin.ToJson("source_origin");
                 sourceOrigin.Property(origin => origin.Kind).HasMaxLength(64);
+                sourceOrigin.Property(origin => origin.SourcePath).HasMaxLength(2048);
                 sourceOrigin.Property(origin => origin.RepoRef).HasMaxLength(512);
             }
         );
@@ -430,7 +436,6 @@ internal sealed class DocsIngestRunConfiguration : IEntityTypeConfiguration<Docs
         entity.Property(run => run.FailureMessage).HasMaxLength(4096);
         entity.Property(run => run.CreatedAtUtc).IsRequired();
         entity.Property(run => run.UpdatedAtUtc).IsRequired();
-
 
         // Find runs for a given public source, ordered by recency.
         entity.HasIndex(run => new { run.PublicSourceId, run.CreatedAtUtc });

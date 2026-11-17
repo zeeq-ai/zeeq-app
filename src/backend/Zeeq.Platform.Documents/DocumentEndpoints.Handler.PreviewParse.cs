@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Parsing;
@@ -21,8 +22,9 @@ public sealed class PreviewDocumentParseHandler(
     ILibraryDocumentStore store,
     IDocsPublicDocumentStore publicDocuments,
     IDocsPublicSourceStore publicSources,
-    SnippetIndexingSettings snippetIndexingSettings
-) : DocumentContentResolvingHandler(store, publicDocuments, publicSources), IEndpointHandler
+    SnippetIndexingSettings snippetIndexingSettings,
+    ILogger<DocumentContentResolvingHandler>? logger = null
+) : DocumentContentResolvingHandler(store, publicDocuments, publicSources, logger), IEndpointHandler
 {
     /// <summary>Handles the parse-preview request.</summary>
     public async Task<
@@ -46,7 +48,11 @@ public sealed class PreviewDocumentParseHandler(
         var snippets = SnippetComposer.Compose(parsed, snippetIndexingSettings);
 
         return TypedResults.Ok(
-            LibraryEndpointMapping.ToParsePreviewResponse(resolution.ResolvedPath!, parsed, snippets)
+            LibraryEndpointMapping.ToParsePreviewResponse(
+                resolution.ResolvedPath!,
+                parsed,
+                snippets
+            )
         );
     }
 }

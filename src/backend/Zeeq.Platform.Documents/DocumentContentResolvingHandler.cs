@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Zeeq.Core.Documents;
 using Zeeq.Platform.Ingest;
 
@@ -40,7 +41,15 @@ public sealed record DocumentResolution(
         string content,
         LibraryDocument? localDocument,
         DocsPublicDocument? publicDocument
-    ) => new(DocumentResolutionKind.Found, resolvedPath, content, localDocument, publicDocument, null);
+    ) =>
+        new(
+            DocumentResolutionKind.Found,
+            resolvedPath,
+            content,
+            localDocument,
+            publicDocument,
+            null
+        );
 
     /// <summary>Builds a <see cref="DocumentResolutionKind.NotFound"/> result.</summary>
     public static DocumentResolution NotFound() =>
@@ -64,10 +73,11 @@ public sealed record DocumentResolution(
 /// list endpoint would never surface it. Centralizing it here means that check can only be fixed
 /// or broken once, not once per handler that happens to also need document content.
 /// </remarks>
-public abstract class DocumentContentResolvingHandler(
+public abstract partial class DocumentContentResolvingHandler(
     ILibraryDocumentStore store,
     IDocsPublicDocumentStore publicDocuments,
-    IDocsPublicSourceStore publicSources
+    IDocsPublicSourceStore publicSources,
+    ILogger<DocumentContentResolvingHandler>? logger = null
 )
 {
     /// <summary>Resolves a document's path and content for one org/library/path.</summary>
@@ -101,18 +111,42 @@ public abstract class DocumentContentResolvingHandler(
             }
 
             var doc = await publicDocuments.GetByPathAsync(publicSourceId, path, ct);
-            if (doc is null)
-            {
-                return DocumentResolution.NotFound();
-            }
-
             var filter = LibraryEndpointMapping.ResolveEffectiveFilter(library, source);
-            if (!IngestFileFilter.IsIncluded(doc.Path, filter))
+            if (doc is not null && !IngestFileFilter.IsIncluded(doc.Path, filter))
+                doc = null;
+            var normalizedPath = DocumentNormalizer.NormalizePath(path);
+            var overlay = await store.GetByPathAsync(
+                context.OrganizationId,
+                library.Id,
+                normalizedPath,
+                ct
+            );
+            if (overlay is not null && overlay.Path == normalizedPath)
             {
-                return DocumentResolution.NotFound();
+                if (doc is not null && doc.Path == normalizedPath && logger is not null)
+                    LogPublicCollision(logger, library.Name, normalizedPath);
+                return DocumentResolution.Found(
+                    overlay.Path,
+                    overlay.Content,
+                    localDocument: overlay,
+                    publicDocument: null
+                );
             }
-
-            return DocumentResolution.Found(doc.Path, doc.Content, localDocument: null, publicDocument: doc);
+            if (doc is not null)
+                return DocumentResolution.Found(
+                    doc.Path,
+                    doc.Content,
+                    localDocument: null,
+                    publicDocument: doc
+                );
+            return overlay is null
+                ? DocumentResolution.NotFound()
+                : DocumentResolution.Found(
+                    overlay.Path,
+                    overlay.Content,
+                    localDocument: overlay,
+                    publicDocument: null
+                );
         }
 
         var localDoc = await store.GetByPathAsync(context.OrganizationId, library.Id, path, ct);
@@ -126,4 +160,10 @@ public abstract class DocumentContentResolvingHandler(
                 publicDocument: null
             );
     }
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Local document owns path {Path} in subscribed library {Library}; shared source remains unchanged"
+    )]
+    private static partial void LogPublicCollision(ILogger logger, string library, string path);
 }

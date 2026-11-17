@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Zeeq.Core.Documents;
 
 namespace Zeeq.Platform.Documents;
@@ -18,8 +19,9 @@ namespace Zeeq.Platform.Documents;
 public sealed class GetDocumentContentHandler(
     ILibraryDocumentStore store,
     IDocsPublicDocumentStore publicDocuments,
-    IDocsPublicSourceStore publicSources
-) : DocumentContentResolvingHandler(store, publicDocuments, publicSources), IEndpointHandler
+    IDocsPublicSourceStore publicSources,
+    ILogger<DocumentContentResolvingHandler>? logger = null
+) : DocumentContentResolvingHandler(store, publicDocuments, publicSources, logger), IEndpointHandler
 {
     /// <summary>
     /// Handles the get document content request.

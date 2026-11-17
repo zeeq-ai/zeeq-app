@@ -12,7 +12,15 @@ internal sealed partial class PostgresLibraryDocumentStore
     public Task<LibraryDocumentUpsertResult> UpsertSyncedDocumentAsync(
         LibraryDocument document,
         CancellationToken ct
-    ) => RunDocumentMutationAsync(() => UpsertSyncedDocumentAsyncCore(document, ct), document, ct);
+    )
+    {
+        document.Authoring = LibraryDocumentAuthoring.Synced;
+        return RunDocumentMutationAsync(
+            () => UpsertSyncedDocumentAsyncCore(document, ct),
+            document,
+            ct
+        );
+    }
 
     private async Task<LibraryDocumentUpsertResult> UpsertSyncedDocumentAsyncCore(
         LibraryDocument document,
@@ -32,6 +40,35 @@ internal sealed partial class PostgresLibraryDocumentStore
         CancellationToken ct
     )
     {
+        // Protect local rows even when an external source uses a separate identity key.
+        var localBlocker = await LockLocalByPathAsync(
+            document.OrganizationId,
+            document.LibraryId,
+            document.Path,
+            ct
+        );
+        if (localBlocker is not null)
+        {
+            if (document.SourceExternalId is not null)
+            {
+                var previous = await LockByExternalIdAsync(
+                    document.OrganizationId,
+                    document.LibraryId,
+                    document.SourceExternalId,
+                    ct
+                );
+                if (previous is not null && previous.Authoring == LibraryDocumentAuthoring.Synced)
+                {
+                    RememberDocumentPreimage(previous);
+                    var tracked = await TrackLockedAsync(previous, ct);
+                    tracked.SyncRunId = document.SyncRunId;
+                    await db.SaveChangesAsync(ct);
+                }
+            }
+
+            return new(localBlocker, DocumentUpsertKind.SkippedLocalOwned);
+        }
+
         // External sources (Notion) are identified by a stable id, not path — those pages are
         // renamed/reparented without their id changing, so resolving by path here would create
         // a duplicate row on every rename (spec §3.10). Skip the path/content-hash move-detection
@@ -52,6 +89,11 @@ internal sealed partial class PostgresLibraryDocumentStore
         {
             RememberDocumentPreimage(lockedByPath);
             var byPath = await TrackLockedAsync(lockedByPath, ct);
+            // Refresh source-relative casing even when content has not changed.
+            if (document.SourceOrigin is not null)
+            {
+                byPath.SourceOrigin = document.SourceOrigin;
+            }
             if (lockedByPath.ContentHash == document.ContentHash)
             {
                 // Content unchanged — re-stamp only. UpdatedAt intentionally does not
@@ -110,6 +152,10 @@ internal sealed partial class PostgresLibraryDocumentStore
             var lockedByHash = hashMatches[0];
             RememberDocumentPreimage(lockedByHash);
             var byHash = await TrackLockedAsync(lockedByHash, ct);
+            if (document.SourceOrigin is not null)
+            {
+                byHash.SourceOrigin = document.SourceOrigin;
+            }
             var oldPath = lockedByHash.Path;
             byHash.PreviousPaths = byHash.PreviousPaths.Contains(byHash.Path)
                 ? byHash.PreviousPaths
@@ -157,6 +203,14 @@ internal sealed partial class PostgresLibraryDocumentStore
             document.SourceExternalId!,
             ct
         );
+
+        if (
+            lockedExisting is not null
+            && lockedExisting.Authoring != LibraryDocumentAuthoring.Synced
+        )
+        {
+            return new(lockedExisting, DocumentUpsertKind.SkippedLocalOwned);
+        }
 
         if (lockedExisting is null)
         {
@@ -352,6 +406,7 @@ internal sealed partial class PostgresLibraryDocumentStore
                         FROM zeeq.docs_library_documents
                         WHERE organization_id = {organizationId}
                           AND library_id = {libraryId}
+                          AND authoring = 'Synced'
                           AND sync_run_id IS DISTINCT FROM {currentSyncRunId}
                           AND ({lastId}::text IS NULL OR id > {lastId})
                         ORDER BY id

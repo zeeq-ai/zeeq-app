@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Hybrid;
+using Zeeq.Core.Auditing;
 using Zeeq.Core.Documents;
 using Zeeq.Data.Postgres.Documents;
 
@@ -140,6 +141,35 @@ public sealed class CachedLibraryDocumentStoreTests
         await Assert.That(cache.RemovedTags).IsEquivalentTo(["doc:path:library:org_1:library_1"]);
     }
 
+    [Test]
+    public async Task AuthoringWrites_InvalidateCachedLibraryPaths()
+    {
+        var inner = new CountingLibraryDocumentStore(CreateDocument("library_1", "old"));
+        var cache = new TestHybridCache();
+        var store = new CachedLibraryDocumentStore(inner, cache);
+        await store.GetByPathAsync("org_1", "library_1", "doc", default);
+        await store.TryReplaceContentAsync(
+            CreateDocument("library_1", "new"),
+            "hash",
+            "reason",
+            AuditActor.Worker("test"),
+            "client",
+            default
+        );
+        var refreshed = await store.GetByPathAsync("org_1", "library_1", "doc", default);
+        await Assert.That(refreshed!.Content).IsEqualTo("new");
+        await store.CreateAgentDocumentAsync(
+            CreateDocument("library_1", "created"),
+            "reason",
+            AuditActor.Worker("test"),
+            "client",
+            default
+        );
+        var afterCreate = await store.GetByPathAsync("org_1", "library_1", "doc", default);
+        await Assert.That(afterCreate!.Content).IsEqualTo("created");
+        await Assert.That(inner.PathLookupCount).IsEqualTo(3);
+    }
+
     private static LibraryDocument CreateDocument(
         string libraryId,
         string content = "Doc content."
@@ -247,6 +277,35 @@ public sealed class CachedLibraryDocumentStoreTests
             string currentSyncRunId,
             CancellationToken ct
         ) => throw new NotSupportedException();
+
+        public Task<CreateDocumentResult> CreateAgentDocumentAsync(
+            LibraryDocument document,
+            string rationale,
+            AuditActor actor,
+            string? clientName,
+            CancellationToken ct
+        )
+        {
+            _document = document;
+            return Task.FromResult<CreateDocumentResult>(
+                new CreateDocumentResult.Created(document)
+            );
+        }
+
+        public Task<ReplaceContentResult> TryReplaceContentAsync(
+            LibraryDocument document,
+            string expectedHash,
+            string rationale,
+            AuditActor actor,
+            string? clientName,
+            CancellationToken ct
+        )
+        {
+            _document = document;
+            return Task.FromResult<ReplaceContentResult>(
+                new ReplaceContentResult.Applied(document)
+            );
+        }
 
         public Task<LibraryDocument> UpsertDocumentAsync(
             LibraryDocument document,

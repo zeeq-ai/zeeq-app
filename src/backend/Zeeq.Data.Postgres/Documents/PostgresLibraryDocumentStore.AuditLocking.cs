@@ -10,19 +10,10 @@ internal sealed partial class PostgresLibraryDocumentStore
 {
     // --- Audit support -----------------------------------------------------------------------
 
-    // Manual edit/delete endpoints can also reach sourced libraries. Snapshot policy follows
-    // content provenance, not the caller's channel, so a manual request cannot retain synced text.
-    private async Task<bool> IsSourcedAsync(LibraryDocument document, CancellationToken ct) =>
-        document.SourceExternalId is not null
-        || document.SyncRunId is not null
-        || await db
-            .Libraries.AsNoTracking()
-            .Where(library =>
-                library.OrganizationId == document.OrganizationId
-                && library.Id == document.LibraryId
-            )
-            .Select(library => library.SourceKind != null || library.PublicSourceId != null)
-            .SingleAsync(ct);
+    // NOTE: Local rows in sourced libraries still need full, revertible snapshots.
+    // Only rows marked Synced are redacted; library provenance alone is insufficient.
+    private static bool IsSourced(LibraryDocument document) =>
+        document.Authoring == LibraryDocumentAuthoring.Synced;
 
     private static AuditSnapshot SnapshotForAudit(LibraryDocument document, bool sourced) =>
         SnapshotForAudit(
@@ -32,6 +23,7 @@ internal sealed partial class PostgresLibraryDocumentStore
             document.ExcludedFromCodeReviews,
             document.AsScopedSkill,
             document.SourceExternalId,
+            document.Authoring,
             sourced
         );
 
@@ -42,6 +34,7 @@ internal sealed partial class PostgresLibraryDocumentStore
         bool excluded,
         LibraryDocumentScopedSkill skill,
         string? externalId,
+        LibraryDocumentAuthoring authoring,
         bool sourced
     ) =>
         sourced
@@ -55,9 +48,10 @@ internal sealed partial class PostgresLibraryDocumentStore
                     ["externalId"] = externalId,
                     ["excludedFromCodeReviews"] = excluded ? "true" : "false",
                     ["scopedSkill"] = skill.ToString(),
+                    ["authoring"] = authoring.ToString(),
                 },
             }
-            : LibraryDocumentAudit.Snapshot(path, title, content, excluded, skill);
+            : LibraryDocumentAudit.Snapshot(path, title, content, excluded, skill, authoring);
 
     /// <summary>
     /// Starts a transaction unless the caller already owns one, in which case the mutation and
@@ -108,6 +102,26 @@ internal sealed partial class PostgresLibraryDocumentStore
                 .TagWithOperationCallSite("documents.library_document.lock_by_path")
                 .ToArrayAsync(ct)
         ).SingleOrDefault();
+
+    private async Task<LibraryDocument?> LockLocalByPathAsync(
+        string organizationId,
+        string libraryId,
+        string path,
+        CancellationToken ct
+    ) =>
+        (
+            await db
+                .LibraryDocuments.FromSql(
+                    $"""
+                    SELECT * FROM zeeq.docs_library_documents
+                    WHERE organization_id = {organizationId} AND library_id = {libraryId}
+                      AND path = {path} AND authoring <> 'Synced'
+                    LIMIT 1 FOR UPDATE
+                    """
+                )
+                .AsNoTracking()
+                .ToArrayAsync(ct)
+        ).FirstOrDefault();
 
     private async Task<LibraryDocument?> LockByIdAsync(
         string organizationId,
@@ -166,6 +180,7 @@ internal sealed partial class PostgresLibraryDocumentStore
                 WHERE organization_id = {organizationId}
                   AND library_id = {libraryId}
                   AND content_hash = {contentHash}
+                  AND authoring = 'Synced'
                 LIMIT 2
                 FOR UPDATE
                 """

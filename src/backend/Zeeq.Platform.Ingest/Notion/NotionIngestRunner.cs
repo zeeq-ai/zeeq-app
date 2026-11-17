@@ -277,6 +277,7 @@ public sealed partial class NotionIngestRunner(
                 ContentHash = ComputeSha256Hex(normalizedMarkdown),
                 TokenCount = TiktokenCounter.CountTokens(parsed.Content),
                 SyncRunId = job.RunId,
+                Authoring = LibraryDocumentAuthoring.Synced,
                 SourceExternalId = pageId,
                 SourceOrigin = new LibraryDocumentSourceOrigin("Notion", job.SourceReference),
                 CreatedAt = now,
@@ -284,6 +285,12 @@ public sealed partial class NotionIngestRunner(
             },
             cancellationToken
         );
+
+        if (result.Kind == DocumentUpsertKind.SkippedLocalOwned)
+        {
+            DocumentAuthoringTelemetry.SyncSkippedLocal.Add(1);
+            LogLocalCollision(logger, job.LibraryId, path, result.Document.Authoring.ToString());
+        }
 
         await ClearIncrementalAsync(job, pageId, cancellationToken);
         activity?.AddEvent([new("upsert.kind", result.Kind.ToString())]);
@@ -408,7 +415,31 @@ public sealed partial class NotionIngestRunner(
         CancellationToken cancellationToken
     )
     {
-        if (await IsPathAvailableAsync(job, page.Path, page.PageId, pathOwners, cancellationToken))
+        // Check local ownership before in-run disambiguation: every source page at this
+        // path must reach the store's skip logic, including the second page in a run.
+        // Notion slugs can contain Unicode while local document paths use the canonical normalizer.
+        var localPath = DocumentNormalizer.NormalizePath(page.Path);
+        var existing = await libraries.GetByPathAsync(
+            job.OrganizationId,
+            job.LibraryId,
+            localPath,
+            cancellationToken
+        );
+        if (
+            existing is not null
+            && existing.Path == localPath
+            && existing.Authoring != LibraryDocumentAuthoring.Synced
+        )
+        {
+            return localPath;
+        }
+
+        var naturalPathAvailable = pathOwners.TryGetValue(page.Path, out var owner)
+            ? owner == page.PageId
+            : existing is null
+                || existing.Path != localPath
+                || existing.SourceExternalId == page.PageId;
+        if (naturalPathAvailable)
         {
             pathOwners[page.Path] = page.PageId;
             return page.Path;
@@ -788,4 +819,15 @@ public sealed partial class NotionIngestRunner(
         Message = "Notion ingest run failed during page discovery. RunId={RunId}"
     )]
     private static partial void LogRunFatalError(ILogger logger, string runId, Exception ex);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Skipping Notion path {Path} in library {LibraryId}: document owner {Authoring}"
+    )]
+    private static partial void LogLocalCollision(
+        ILogger logger,
+        string libraryId,
+        string path,
+        string authoring
+    );
 }

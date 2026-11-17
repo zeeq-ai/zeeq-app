@@ -122,7 +122,7 @@ internal sealed partial class PostgresLibraryDocumentStore
 
         if (locked is null)
         {
-            var sourced = await IsSourcedAsync(document, ct);
+            var sourced = IsSourced(document);
             audit.AppendOrganization(
                 document.OrganizationId,
                 document.TeamId,
@@ -168,9 +168,10 @@ internal sealed partial class PostgresLibraryDocumentStore
             document.UpdatedAt
         );
         var existing = await TrackLockedAsync(locked, ct);
-        var sourcedUpdate = await IsSourcedAsync(locked, ct);
+        var sourcedUpdate = IsSourced(locked);
         var beforeSnapshot = SnapshotForAudit(locked, sourcedUpdate);
         var beforeHash = locked.ContentHash;
+        var adopted = locked.Authoring == LibraryDocumentAuthoring.Agent;
         var changedFields = new List<string>(2);
         if (contentChanged)
         {
@@ -180,6 +181,12 @@ internal sealed partial class PostgresLibraryDocumentStore
         if (titleChanged)
         {
             changedFields.Add("title");
+        }
+
+        if (adopted)
+        {
+            existing.Authoring = LibraryDocumentAuthoring.Manual;
+            changedFields.Add("authoring");
         }
 
         existing.Title = requested.Title;
@@ -196,7 +203,7 @@ internal sealed partial class PostgresLibraryDocumentStore
 
         // Parsing or indexing metadata can change without an audit-worthy content change.
         // Persist those fields while keeping the history free of empty content events.
-        if (!contentChanged && !titleChanged)
+        if (!contentChanged && !titleChanged && !adopted)
         {
             await db.SaveChangesAsync(ct);
             await CommitAsync(transaction, ct);
@@ -243,7 +250,7 @@ internal sealed partial class PostgresLibraryDocumentStore
         }
 
         RememberDocumentPreimage(locked);
-        var sourced = await IsSourcedAsync(locked, ct);
+        var sourced = IsSourced(locked);
         var document = await TrackLockedAsync(locked, ct);
         audit.AppendOrganization(
             organizationId,
@@ -278,7 +285,7 @@ internal sealed partial class PostgresLibraryDocumentStore
             return;
         var locked = await LockByExternalIdAsync(organizationId, libraryId, sourceExternalId, ct);
 
-        if (locked is null)
+        if (locked is null || locked.Authoring != LibraryDocumentAuthoring.Synced)
         {
             return;
         }
@@ -340,7 +347,7 @@ internal sealed partial class PostgresLibraryDocumentStore
         }
 
         var now = DateTimeOffset.UtcNow;
-        var sourced = await IsSourcedAsync(document, ct);
+        var sourced = IsSourced(document);
         var before = SnapshotForAudit(document, sourced);
         var after = SnapshotForAudit(
             document.Path,
@@ -349,6 +356,7 @@ internal sealed partial class PostgresLibraryDocumentStore
             excluded,
             document.AsScopedSkill,
             document.SourceExternalId,
+            document.Authoring,
             sourced
         );
         audit.AppendOrganization(
@@ -418,7 +426,7 @@ internal sealed partial class PostgresLibraryDocumentStore
         }
 
         var now = DateTimeOffset.UtcNow;
-        var sourced = await IsSourcedAsync(document, ct);
+        var sourced = IsSourced(document);
         var before = SnapshotForAudit(document, sourced);
         var after = SnapshotForAudit(
             document.Path,
@@ -427,6 +435,7 @@ internal sealed partial class PostgresLibraryDocumentStore
             document.ExcludedFromCodeReviews,
             scopedSkill,
             document.SourceExternalId,
+            document.Authoring,
             sourced
         );
         audit.AppendOrganization(
@@ -529,7 +538,7 @@ internal sealed partial class PostgresLibraryDocumentStore
             throw new DuplicateDocumentPathException(normalizedTo);
         }
 
-        var sourced = await IsSourcedAsync(locked, ct);
+        var sourced = IsSourced(locked);
         var before = SnapshotForAudit(locked, sourced);
         var doc = await TrackLockedAsync(locked, ct);
         doc.RenameTo(normalizedTo);

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents.Snippets;
+using Zeeq.Platform.Documents.Editing;
 
 namespace Zeeq.Platform.Documents;
 
@@ -38,6 +39,16 @@ public static class SetupZeeqDocuments
             services.AddSingleton(appSettings.Llm.Embeddings);
 
             // Scoped: depends on the scoped ISnippetStore<T>/ILibraryDocumentStore stores.
+            services.AddSingleton<IDiffGuard, EligibilityGuard>();
+            services.AddSingleton<IDiffGuard, BaseHashGuard>();
+            services.AddSingleton<IDiffGuard, ParseGuard>();
+            services.AddSingleton<IDiffGuard, EmptyBaseGuard>();
+            services.AddSingleton<IDiffGuard, ContextLinesGuard>();
+            services.AddSingleton<IDiffGuard, UniqueOldSideGuard>();
+            services.AddSingleton<IDiffGuard, ResultCheckGuard>();
+            services.AddSingleton<IDiffGuard, TextDiffApplier>();
+            services.AddSingleton<DocumentDiffEditor>();
+            services.AddScoped<DocumentAuthoringService>();
             services.AddScoped<SnippetSearchService>();
             services.AddSingleton<LibraryExportPackageProtector>();
             services.AddSingleton<LibraryExportPackageService>();

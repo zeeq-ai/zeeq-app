@@ -3,10 +3,13 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using ModelContextProtocol.Protocol;
+using NSubstitute;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Snippets;
 using Zeeq.Core.Identity;
+using Zeeq.Platform.Documents.Editing;
 
 namespace Zeeq.Mcp.Documents.Tests;
 
@@ -156,6 +159,7 @@ public sealed class DocumentLibraryMcpToolsTelemetryTests
         {
             await DocumentLibraryMcpTools.ReadDocumentByPath(
                 store,
+                CreateAuthoring(store),
                 TestUser(),
                 "kb",
                 "/docs/guide.md"
@@ -186,6 +190,7 @@ public sealed class DocumentLibraryMcpToolsTelemetryTests
         {
             await DocumentLibraryMcpTools.ReadDocumentByPath(
                 store,
+                CreateAuthoring(store),
                 TestUser(),
                 "kb",
                 "/docs/missing.md"
@@ -248,6 +253,15 @@ public sealed class DocumentLibraryMcpToolsTelemetryTests
         await Assert.That(miss.Tool).IsEqualTo("search_documents");
         await Assert.That(miss.Query).IsEqualTo("no hits");
     }
+
+    private static DocumentAuthoringService CreateAuthoring(ILibraryDocumentStore store) =>
+        new(
+            store,
+            Substitute.For<IDocsPublicDocumentStore>(),
+            Substitute.For<IDocsPublicSourceStore>(),
+            DocumentDiffEditor.CreateDefault(),
+            NullLogger<DocumentAuthoringService>.Instance
+        );
 
     private static ClaimsPrincipal TestUser() =>
         new(new ClaimsIdentity([new Claim(AuthClaims.OrganizationId, "org_123")], "test"));

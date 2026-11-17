@@ -7,6 +7,9 @@
     <NoWarn>CS1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <None Update="Editing/diff-cases.zip" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="TUnit" />
   </ItemGroup>
   <ItemGroup>

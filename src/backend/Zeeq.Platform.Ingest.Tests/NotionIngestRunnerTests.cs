@@ -197,6 +197,61 @@ public sealed class NotionIngestRunnerTests
     }
 
     [Test]
+    public async Task FullScope_TwoPagesAtLocalPath_BothSkipAndPreserveOldRows()
+    {
+        var local = Document("local", "/roadmap.md", "old-run");
+        local.SourceExternalId = null;
+        local.Authoring = LibraryDocumentAuthoring.Manual;
+        _libraries.Documents.Add(local);
+        _libraries.Documents.Add(Document("aaaaaaaa-1111", "/old-a.md", "old-run"));
+        _libraries.Documents.Add(Document("bbbbbbbb-2222", "/old-b.md", "old-run"));
+        _client.SearchResults.Add(Summary("aaaaaaaa-1111", "Roadmap"));
+        _client.SearchResults.Add(Summary("bbbbbbbb-2222", "Roadmap"));
+        _client.Markdown["aaaaaaaa-1111"] = new NotionPageMarkdown("# First", false, 0);
+        _client.Markdown["bbbbbbbb-2222"] = new NotionPageMarkdown("# Second", false, 0);
+        var run = await Runner().RunAsync(Job(ExternalSyncScope.Full), _client, default);
+        await Assert.That(run.FilesSkipped).IsEqualTo(2);
+        await Assert.That(run.FilesDeleted).IsEqualTo(0);
+        await Assert
+            .That(_libraries.Documents.Select(d => d.Path))
+            .IsEquivalentTo(["/roadmap.md", "/old-a.md", "/old-b.md"]);
+    }
+
+    [Test]
+    public async Task FullScope_NonExactLocalSuffix_DoesNotBlockNaturalPath()
+    {
+        _libraries.ResolveSuffixMatches = true;
+        var local = Document("local", "/nested/roadmap.md", "old-run");
+        local.SourceExternalId = null;
+        local.Authoring = LibraryDocumentAuthoring.Manual;
+        _libraries.Documents.Add(local);
+        _client.SearchResults.Add(Summary("page-1", "Roadmap"));
+        _client.Markdown["page-1"] = new NotionPageMarkdown("# Roadmap", false, 0);
+
+        var run = await Runner().RunAsync(Job(ExternalSyncScope.Full), _client, default);
+
+        await Assert.That(run.FilesAdded).IsEqualTo(1);
+        await Assert
+            .That(_libraries.Documents.Select(d => d.Path))
+            .IsEquivalentTo(["/nested/roadmap.md", "/roadmap.md"]);
+    }
+
+    [Test]
+    public async Task FullScope_UnicodePagePath_CollidesWithNormalizedLocalPath()
+    {
+        var local = Document("local", "/caf.md", "old-run");
+        local.SourceExternalId = null;
+        local.Authoring = LibraryDocumentAuthoring.Manual;
+        _libraries.Documents.Add(local);
+        _client.SearchResults.Add(Summary("page-1", "Café"));
+        _client.Markdown["page-1"] = new NotionPageMarkdown("# Café", false, 0);
+        var run = await Runner().RunAsync(Job(ExternalSyncScope.Full), _client, default);
+        await Assert.That(run.FilesSkipped).IsEqualTo(1);
+        await Assert.That(_libraries.Documents).HasSingleItem();
+        await Assert.That(_libraries.Documents[0].Content).IsEqualTo("local");
+    }
+
+    [Test]
     public async Task FullScope_NotionBlockMarkdown_InsertsMarkdownBlockSpacing()
     {
         _client.SearchResults.Add(Summary("page-1", "Q3"));
@@ -333,6 +388,7 @@ public sealed class NotionIngestRunnerTests
             ContentHash = pageId,
             SourceExternalId = pageId,
             SyncRunId = runId,
+            Authoring = LibraryDocumentAuthoring.Synced,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
         };

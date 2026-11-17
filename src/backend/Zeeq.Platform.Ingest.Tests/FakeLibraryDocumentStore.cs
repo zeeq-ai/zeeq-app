@@ -25,6 +25,8 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
     /// </summary>
     public List<LibraryDocument> Documents { get; } = [];
 
+    public bool ResolveSuffixMatches { get; set; }
+
     public Task<Library?> GetLibraryAsync(
         string organizationId,
         string name,
@@ -230,6 +232,27 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
         CancellationToken ct
     )
     {
+        var blocker = Documents.FirstOrDefault(row =>
+            row.OrganizationId == document.OrganizationId
+            && row.LibraryId == document.LibraryId
+            && row.Path == document.Path
+            && row.Authoring != LibraryDocumentAuthoring.Synced
+        );
+        if (blocker is not null)
+        {
+            var previous = Documents.FirstOrDefault(row =>
+                row.OrganizationId == document.OrganizationId
+                && row.LibraryId == document.LibraryId
+                && row.SourceExternalId != null
+                && row.SourceExternalId == document.SourceExternalId
+                && row.Authoring == LibraryDocumentAuthoring.Synced
+            );
+            if (previous is not null)
+                previous.SyncRunId = document.SyncRunId;
+            return Task.FromResult(
+                new LibraryDocumentUpsertResult(blocker, DocumentUpsertKind.SkippedLocalOwned)
+            );
+        }
         if (document.SourceExternalId is not null)
         {
             var byExternalId = Documents.SingleOrDefault(row =>
@@ -338,6 +361,7 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
             .Where(d =>
                 d.OrganizationId == organizationId
                 && d.LibraryId == libraryId
+                && d.Authoring == LibraryDocumentAuthoring.Synced
                 && d.SyncRunId != currentSyncRunId
             )
             .ToList();
@@ -379,11 +403,23 @@ internal sealed class FakeLibraryDocumentStore : ILibraryDocumentStore
         CancellationToken ct
     ) =>
         Task.FromResult(
-            Documents.SingleOrDefault(row =>
-                row.OrganizationId == organizationId
-                && row.LibraryId == libraryId
-                && row.Path == input
-            )
+            Documents
+                .Where(row =>
+                    row.OrganizationId == organizationId
+                    && row.LibraryId == libraryId
+                    && row.Path == input
+                )
+                .OrderBy(row => row.Authoring == LibraryDocumentAuthoring.Synced)
+                .FirstOrDefault()
+                ?? (
+                    ResolveSuffixMatches
+                        ? Documents.FirstOrDefault(row =>
+                            row.OrganizationId == organizationId
+                            && row.LibraryId == libraryId
+                            && row.Path.EndsWith(input, StringComparison.Ordinal)
+                        )
+                        : null
+                )
         );
 
     public Task<LibraryDocument?> GetByExternalIdAsync(
