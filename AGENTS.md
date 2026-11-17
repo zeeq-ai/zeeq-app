@@ -83,6 +83,11 @@ Pause and ask to connect to an authenticated session if needed; if the applicati
 - The configuration is set to local for both gcloud and aws CLI tools via mise
 - Use the `zeeq` profile with `aws`
 
+### 0factor Local Auth
+
+- Local E2E login on the UI use 0factor and user profiles for login
+- Add more profiles as needed to test different authz/authn scenarios; reuse where possible
+
 ## Workflow
 
 Important workflow notes:
@@ -92,7 +97,7 @@ Important workflow notes:
   - When planning: small changes do not need full plan.
   - Use expert code review as needed throughout coding lifecycle to check work get feedback
   - Can create synthetic PRs that separate frontend from backend or subsets of code to review
-- Use CSharpRepl to evaluate C# code inside the running local `zeeq-server` process, debug, test hypotheses, inspect DI state, invoke code while bypassing auth, write dynamic wrappers (logging, etc.).  Access via `zeeq-dotnet-repl` skill.  See the full reference guide as needed.
+- Use CSharpRepl to evaluate C# code inside the *running* local `zeeq-server` process, debug, test hypotheses, inspect DI state, invoke code while bypassing auth, write dynamic wrappers (logging, etc.).  Access via `zeeq-dotnet-repl` skill.  See the full reference guide as needed.
 
 ### .NET baseline and formatting
 
