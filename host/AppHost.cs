@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Aspire.Hosting.Dotnet;
 using Aspire.Hosting.Yarp;
 using DeviceId;
 
@@ -125,8 +126,9 @@ else
 }
 
 // Start the server
+const string serverProjectPath = "../src/backend/Zeeq.Runtime.Server/Zeeq.Runtime.Server.csproj";
 var backend = builder
-    .AddProject<Projects.Zeeq_Runtime_Server>("zeeq-server")
+    .AddDotnetProject("zeeq-server", serverProjectPath)
     .WaitFor(postgresdb)
     .WithReference(postgresdb)
     .WithEnvironment("ZEEQ_MESSAGING_ROLE", standaloneWorkerMode ? "producer" : "producer-consumer")
@@ -152,8 +154,9 @@ if (csharpReplConnectEnabled)
 if (standaloneWorkerMode)
 {
     var worker = builder
-        .AddProject<Projects.Zeeq_Runtime_Server>(
+        .AddDotnetProject(
             "zeeq-worker",
+            serverProjectPath,
             options =>
             {
                 options.ExcludeLaunchProfile = true;
@@ -172,7 +175,7 @@ if (standaloneWorkerMode)
 }
 
 // Apply the same emulator configuration to both messaging process roles.
-void ConfigureCloudEmulator(IResourceBuilder<ProjectResource> project)
+void ConfigureCloudEmulator(IResourceBuilder<DotnetProjectResource> project)
 {
     if (floci is not null)
     {
@@ -332,15 +335,13 @@ if (
     )
 )
 {
-#pragma warning disable ASPIRECSHARPAPPS001
     builder
-        .AddCSharpApp("auth-e2e-fixtures", "../build/0factor/seed.cs")
+        .AddDotnetProject("auth-e2e-fixtures", "../build/0factor/seed.cs")
         .WithReference(postgresdb, connectionName: "zeeq")
         .WaitFor(backend)
         .WithEnvironment("DOTNET_ENVIRONMENT", builder.Environment.EnvironmentName)
         .WithExplicitStart()
         .WithParentRelationship(mockOidc);
-#pragma warning restore ASPIRECSHARPAPPS001
 }
 
 // Add glider MCP server (need HTTP for Codex...)
