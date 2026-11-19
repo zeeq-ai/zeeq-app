@@ -327,7 +327,12 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
+import {
+  onBeforeRouteLeave,
+  onBeforeRouteUpdate,
+  useRoute,
+  useRouter,
+} from "vue-router";
 import type {
   CodeReviewerAgentDto,
   CodeReviewerAgentRevisionConfiguration,
@@ -490,11 +495,23 @@ onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", handleBeforeUnload);
 });
 
-onBeforeRouteLeave(() => {
+function canLeaveDatasetWorkspace() {
   if (!datasetDraftDirty.value) return true;
   datasetEditorOpen.value = true;
   return false;
+}
+
+onBeforeRouteLeave(canLeaveDatasetWorkspace);
+onBeforeRouteUpdate((to, from) => {
+  if (
+    to.params.orgId !== from.params.orgId ||
+    to.params.agentId !== from.params.agentId
+  ) {
+    return canLeaveDatasetWorkspace();
+  }
 });
+
+defineExpose({ canLeaveDatasetWorkspace });
 
 watch(
   () => props.agentId,

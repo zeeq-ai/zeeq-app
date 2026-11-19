@@ -474,9 +474,11 @@ const {
   save: triggerAgentSaveAction,
 });
 
-const confirmRepositoryChangeWithUnsavedAgentGuard = (
-  action: () => void | Promise<void>,
-) => confirmAgentUnsavedChangesBefore(action);
+function confirmRepositoryChange(action: () => void | Promise<void>) {
+  // Check the dataset before an accepted repository change remounts Evals.
+  if (agentConfigPanelRef.value?.canLeaveDatasetWorkspace() === false) return;
+  return confirmAgentUnsavedChangesBefore(action);
+}
 
 const copyPendingTargetRepoLabel = computed(() => {
   const repo = configuredRepositories.value.find(
@@ -510,6 +512,7 @@ async function confirmCopyAgentTo() {
  *  opens the config panel pre-filled with the copied agent data. */
 async function onCopyAgentTo(targetRepositoryId: string) {
   if (!selectedAgent.value || !canManageOrganization.value) return;
+  if (agentConfigPanelRef.value?.canLeaveDatasetWorkspace() === false) return;
 
   copiedAgentForm.value = agentToForm(selectedAgent.value);
   editingAgent.value = null;
@@ -527,18 +530,14 @@ watch(copyConfirmOpen, (isOpen) => {
 });
 
 onMounted(async () => {
-  setManageAgentsRepositoryChangeGuard(
-    confirmRepositoryChangeWithUnsavedAgentGuard,
-  );
+  setManageAgentsRepositoryChangeGuard(confirmRepositoryChange);
   await loadAgentManagement();
   await applyRouteAgentSelection();
   window.addEventListener("keydown", handleGlobalKeydown);
 });
 
 onBeforeUnmount(() => {
-  clearManageAgentsRepositoryChangeGuard(
-    confirmRepositoryChangeWithUnsavedAgentGuard,
-  );
+  clearManageAgentsRepositoryChangeGuard(confirmRepositoryChange);
   window.removeEventListener("keydown", handleGlobalKeydown);
 });
 

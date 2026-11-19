@@ -180,6 +180,7 @@
           <EvaluationWorkspace
             v-if="repositoryId && hasOpenedEvals"
             :key="repositoryId"
+            ref="evaluationWorkspace"
             :repository-id="repositoryId"
             :repository-name="repositoryName"
             :agent-id="agent?.id ?? null"
@@ -515,6 +516,9 @@ const isRunWorkspace = computed(
 const selectedAgentTestPullRequest = ref<CodeReviewPullRequestDto | null>(null);
 // Keep an opened evaluation workspace mounted so tab switches preserve drafts.
 const hasOpenedEvals = ref(false);
+const evaluationWorkspace = ref<InstanceType<
+  typeof EvaluationWorkspace
+> | null>(null);
 const compactWorkspace = useMediaQuery("(max-width: 1439px)");
 const reviewerItems = computed(() =>
   props.reviewers.map((reviewer) => ({
@@ -802,7 +806,11 @@ function serializeAgentForm(form: CodeReviewerAgentForm): string {
   return JSON.stringify(form);
 }
 
-defineExpose({ triggerSave, canSave, hasChanges });
+function canLeaveDatasetWorkspace() {
+  return evaluationWorkspace.value?.canLeaveDatasetWorkspace() ?? true;
+}
+
+defineExpose({ triggerSave, canSave, hasChanges, canLeaveDatasetWorkspace });
 </script>
 
 <style scoped>
