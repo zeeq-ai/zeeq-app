@@ -7,7 +7,11 @@
       :revisions="revisions"
       :selected-revision-id="selectedRevisionId"
       :disabled="
-        !canManage || !agentId || datasetDraftDirty || loadingAvailability
+        !canManage ||
+        !agentId ||
+        datasetDraftDirty ||
+        loadingAvailability ||
+        loadingDatasets
       "
       :running="submittingRun"
       @select-dataset="selectDataset"
@@ -539,7 +543,7 @@ onBeforeUnmount(() => {
   workspaceUnmounted = true;
   inboxIntentRequestId += 1;
   invalidateDatasetCaptureRequests();
-  store.invalidateDatasetLoad();
+  store.invalidateDatasetLoad(null);
   endPolling();
   window.removeEventListener("beforeunload", handleBeforeUnload);
 });
@@ -554,11 +558,14 @@ onBeforeRouteLeave(canLeaveDatasetWorkspace);
 onBeforeRouteUpdate((to, from) => {
   // Removing the already handled inbox intent only cleans up the URL.
   const removingHandledIntent = to.fullPath === pendingInboxCleanupPath;
+  const inboxIntentChanged =
+    to.query.repositoryId !== from.query.repositoryId ||
+    to.query.datasetId !== from.query.datasetId ||
+    to.query.prNumber !== from.query.prNumber;
   if (
     to.params.orgId !== from.params.orgId ||
     to.params.agentId !== from.params.agentId ||
-    (to.query.repositoryId !== from.query.repositoryId &&
-      !removingHandledIntent)
+    (inboxIntentChanged && !removingHandledIntent)
   ) {
     return canLeaveDatasetWorkspace();
   }
@@ -697,8 +704,7 @@ async function openInboxDatasetIntent() {
     clearInboxDatasetIntent();
     return;
   }
-  if (datasetDraftDirty.value) {
-    datasetEditorOpen.value = true;
+  if (!canLeaveDatasetWorkspace()) {
     showInboxIntentNotice(
       "Save or discard the open dataset draft before opening another dataset.",
     );
