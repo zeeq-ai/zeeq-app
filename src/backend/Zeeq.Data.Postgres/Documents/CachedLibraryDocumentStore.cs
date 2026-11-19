@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Logging;
 using Zeeq.Core.Auditing;
 using Zeeq.Core.Documents;
+using ILogger = Microsoft.Extensions.Logging.ILogger;
 
 namespace Zeeq.Data.Postgres.Documents;
 
@@ -14,8 +16,11 @@ namespace Zeeq.Data.Postgres.Documents;
 /// L2-only because local in-process entries can survive distributed invalidation timing and make
 /// editor saves appear inconsistent.
 /// </remarks>
-internal sealed class CachedLibraryDocumentStore(ILibraryDocumentStore inner, HybridCache cache)
-    : ILibraryDocumentStore
+internal sealed partial class CachedLibraryDocumentStore(
+    ILibraryDocumentStore inner,
+    HybridCache cache,
+    ILogger<CachedLibraryDocumentStore> logger
+) : ILibraryDocumentStore
 {
     internal static readonly TimeSpan PathCacheTtl = TimeSpan.FromSeconds(60);
 
@@ -489,11 +494,39 @@ internal sealed class CachedLibraryDocumentStore(ILibraryDocumentStore inner, Hy
         );
         if (updated is not null)
         {
-            await cache.RemoveByTagAsync(LibraryPathCacheTag(organizationId, libraryId), ct);
+            // The write has committed. A cache timeout must not turn it into an apparent failure.
+            try
+            {
+                await cache.RemoveAsync(
+                    McpDocumentIndexCache.Key(organizationId, libraryId),
+                    CancellationToken.None
+                );
+            }
+            catch (Exception ex)
+            {
+                LogDocumentIndexEvictionFailed(logger, organizationId, libraryId, ex);
+            }
+
+            await cache.RemoveByTagAsync(
+                LibraryPathCacheTag(organizationId, libraryId),
+                CancellationToken.None
+            );
         }
 
         return updated;
     }
+
+    [LoggerMessage(
+        EventId = 1502,
+        Level = LogLevel.Warning,
+        Message = "Failed to evict the MCP document index. OrganizationId={OrganizationId}, LibraryId={LibraryId}"
+    )]
+    private static partial void LogDocumentIndexEvictionFailed(
+        ILogger logger,
+        string organizationId,
+        string libraryId,
+        Exception exception
+    );
 
     private static string PathCacheKey(
         string organizationId,

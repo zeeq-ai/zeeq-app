@@ -26,7 +26,7 @@ Reports show the requested Zeeq model tier and recorded provider/model identity 
 
 ## Rollout
 
-`AppSettings:CodeReview:EvaluationsEnabled` (environment variable `AppSettings__CodeReview__EvaluationsEnabled`) defaults to `false`. Enable it only after the additive migration and evaluation consumer are ready. Disabling it stops new dataset actions/admissions while accepted runs can finish; quick single-PR testing and ordinary reviews remain available. Roll back by disabling admissions, cancelling or draining active runs, then reverting compatible web and worker binaries. Keep additive schema and artifacts.
+`AppSettings:CodeReview:EvaluationsEnabled` (environment variable `AppSettings__CodeReview__EvaluationsEnabled`) defaults to `true`. If the additive migration or evaluation consumer is pending, set it to `false` until both are ready. Disabling it stops new dataset actions and run admissions while accepted runs can finish. Single-PR testing and ordinary reviews remain available. Roll back by disabling admissions, cancelling or draining active runs, then reverting compatible web and worker binaries. Keep additive schema and artifacts.
 
 ## Verification
 

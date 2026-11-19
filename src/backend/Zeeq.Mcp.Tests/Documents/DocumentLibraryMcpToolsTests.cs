@@ -75,6 +75,37 @@ public sealed class DocumentLibraryMcpToolsTests
     }
 
     [Test]
+    public async Task ListDocuments_ExcludesOrganizationSkillsBeforeFoldingPaths()
+    {
+        var store = new TestLibraryDocumentStore();
+        store.Libraries.Add(TestLibrary());
+        store.Documents.Add(PathDocument("guides/setup.md", ["setup"]));
+        var organizationSkill = PathDocument("skills/deploy.md", ["skill-keyword"]);
+        organizationSkill.AsScopedSkill = LibraryDocumentScopedSkill.Organization;
+        store.Documents.Add(organizationSkill);
+        var librarySkill = PathDocument("guides/library-tools.md", []);
+        librarySkill.AsScopedSkill = LibraryDocumentScopedSkill.Library;
+        store.Documents.Add(librarySkill);
+        var cache = new TestHybridCache();
+        // An index written by the previous version can still be in the distributed cache.
+        await cache.SetAsync("mcp:list_documents:org_123:lib_123", "skills/deploy.md");
+
+        var response = await DocumentLibraryMcpTools.ListDocuments(
+            store,
+            cache,
+            CreateAuthoring(store),
+            TestUser(),
+            "kb"
+        );
+
+        await Assert.That(response).Contains("Path root: zeeq://guides");
+        await Assert.That(response).Contains("setup.md");
+        await Assert.That(response).Contains("library-tools.md");
+        await Assert.That(response).DoesNotContain("deploy.md");
+        await Assert.That(response).DoesNotContain("skill-keyword");
+    }
+
+    [Test]
     public async Task ListDocuments_WithoutSharedRoot_OmitsPathRootLine()
     {
         var store = new TestLibraryDocumentStore();

@@ -43,7 +43,7 @@
         <section
           class="min-h-0 shrink-0 basis-60 flex-col border-r border-default lg:max-w-72 lg:basis-72"
           :class="
-            testWorkspaceActive &&
+            runWorkspaceActive &&
             selectedManagementItemId !== managementFiltersItemId
               ? 'hidden min-[1440px]:flex'
               : 'hidden lg:flex'
@@ -139,7 +139,7 @@
             :repository-name="originRepoLabel"
             :reviewers="agents"
             :saving="savingAgent"
-            :disabled="!canManageOrganization || !selectedRepositoryId"
+            :can-manage-organization="canManageOrganization"
             :initial-form="copiedAgentForm"
             :copy-target-repository-items="copyTargetRepositoryItems"
             :agent-test-targets="agentTestTargets"
@@ -163,7 +163,7 @@
             @load-more-test-targets="loadMoreAgentTestTargets"
             @run-test="runAgentTest"
             @preview-activation-filters="previewActivationFilters"
-            @workspace-mode="testWorkspaceActive = $event"
+            @workspace-mode="runWorkspaceActive = $event"
             @select-reviewer="selectReviewerById"
           />
 
@@ -320,7 +320,7 @@ const props = defineProps<{
 }>();
 
 const toast = useToast();
-const testWorkspaceActive = ref(true);
+const runWorkspaceActive = ref(true);
 const route = useRoute();
 const router = useRouter();
 const appStore = useAppStore();
@@ -474,9 +474,15 @@ const {
   save: triggerAgentSaveAction,
 });
 
-const confirmRepositoryChangeWithUnsavedAgentGuard = (
-  action: () => void | Promise<void>,
-) => confirmAgentUnsavedChangesBefore(action);
+function confirmRepositoryChange(action: () => void | Promise<void>) {
+  // Check the dataset before an accepted repository change remounts Evals.
+  if (!canChangeEvaluationRepository()) return;
+  return confirmAgentUnsavedChangesBefore(action);
+}
+
+function canChangeEvaluationRepository() {
+  return agentConfigPanelRef.value?.canLeaveDatasetWorkspace() ?? true;
+}
 
 const copyPendingTargetRepoLabel = computed(() => {
   const repo = configuredRepositories.value.find(
@@ -500,16 +506,17 @@ function cancelCopy() {
 /** Confirms the copy, switches to the target repository, and opens the config
  *  panel pre-filled with the copied agent data. */
 async function confirmCopyAgentTo() {
+  const targetRepositoryId = copyPendingTargetRepoId.value;
   copyConfirmOpen.value = false;
-
-  await onCopyAgentTo(copyPendingTargetRepoId.value!);
   copyPendingTargetRepoId.value = null;
-}
 
-/** Captures the selected agent's form, switches to the target repository, and
- *  opens the config panel pre-filled with the copied agent data. */
-async function onCopyAgentTo(targetRepositoryId: string) {
-  if (!selectedAgent.value || !canManageOrganization.value) return;
+  if (
+    !targetRepositoryId ||
+    !selectedAgent.value ||
+    !canManageOrganization.value
+  )
+    return;
+  if (!canChangeEvaluationRepository()) return;
 
   copiedAgentForm.value = agentToForm(selectedAgent.value);
   editingAgent.value = null;
@@ -527,18 +534,14 @@ watch(copyConfirmOpen, (isOpen) => {
 });
 
 onMounted(async () => {
-  setManageAgentsRepositoryChangeGuard(
-    confirmRepositoryChangeWithUnsavedAgentGuard,
-  );
+  setManageAgentsRepositoryChangeGuard(confirmRepositoryChange);
   await loadAgentManagement();
   await applyRouteAgentSelection();
   window.addEventListener("keydown", handleGlobalKeydown);
 });
 
 onBeforeUnmount(() => {
-  clearManageAgentsRepositoryChangeGuard(
-    confirmRepositoryChangeWithUnsavedAgentGuard,
-  );
+  clearManageAgentsRepositoryChangeGuard(confirmRepositoryChange);
   window.removeEventListener("keydown", handleGlobalKeydown);
 });
 
@@ -910,7 +913,23 @@ async function applyRouteAgentSelection() {
     const linkedAgent = await codeReviewStore.getAgent(props.agentId);
     if (!isCurrentSync()) return;
 
+    const linkedRepositoryId = route.query.repositoryId;
+    if (
+      typeof route.query.datasetId === "string" &&
+      typeof linkedRepositoryId === "string" &&
+      linkedRepositoryId !== linkedAgent.repositoryId
+    ) {
+      showError(
+        "Could not open dataset",
+        new Error(
+          "The link points to a different repository than the reviewer.",
+        ),
+      );
+      return;
+    }
+
     if (selectedRepositoryId.value !== linkedAgent.repositoryId) {
+      if (!canChangeEvaluationRepository()) return;
       await codeReviewStore.setSelectedRepository(linkedAgent.repositoryId);
       if (!isCurrentSync()) return;
     } else if (agents.value.length === 0) {

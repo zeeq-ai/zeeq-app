@@ -7,7 +7,11 @@
       :revisions="revisions"
       :selected-revision-id="selectedRevisionId"
       :disabled="
-        !canManage || !agentId || datasetDraftDirty || loadingAvailability
+        !canManage ||
+        !agentId ||
+        datasetDraftDirty ||
+        loadingAvailability ||
+        loadingDatasets
       "
       :running="submittingRun"
       @select-dataset="selectDataset"
@@ -46,7 +50,7 @@
     >
       <UAlert
         title="Reviewer evaluations are disabled"
-        description="Quick test remains available. Contact your administrator if you need reusable datasets and run history."
+        description="Contact your administrator to enable reusable datasets and run history. You can still run a single-PR test from the Test tab."
         color="neutral"
         variant="subtle"
       />
@@ -62,66 +66,12 @@
       </div>
 
       <div
-        v-else-if="quickTestOpen"
-        class="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+        v-else-if="loadingAvailability || availability?.enabled"
+        class="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4"
       >
-        <div
-          class="flex items-center justify-between border-b border-default px-3 py-2"
-        >
-          <h3 class="text-sm font-semibold text-highlighted">
-            Quick test · one PR · ephemeral
-          </h3>
-          <UButton
-            label="Back to evaluation"
-            color="neutral"
-            variant="ghost"
-            @click="quickTestOpen = false"
-          />
-        </div>
-        <div
-          class="grid min-h-0 gap-3 overflow-hidden p-3 lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]"
-        >
-          <AgentTestPanel
-            v-model:selected-pull-request="selectedQuickTestPullRequest"
-            :targets="quickTestTargets"
-            :loading="quickTestLoading"
-            :loading-more="quickTestLoadingMore"
-            :running="quickTestRunning"
-            :disabled="!canManage || quickTestRunning"
-            :has-more="quickTestHasMore"
-            @load-targets="emits('loadQuickTestTargets')"
-            @load-more-targets="emits('loadMoreQuickTestTargets')"
-            @run="runQuickTest"
-          />
-          <AgentTestResultsPanel :result="quickTestResult" />
-        </div>
-      </div>
-
-      <div v-else class="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
         <div v-if="loadingAvailability" class="grid gap-3 p-4">
           <USkeleton class="h-10" />
           <USkeleton class="h-48" />
-        </div>
-
-        <div
-          v-else-if="!availability?.enabled"
-          class="flex h-full items-center justify-center"
-        >
-          <UEmpty
-            icon="i-hugeicons-test-tube-01"
-            title="Run a quick test"
-            description="Use the single PR quick test to inspect the current draft without creating durable history."
-          >
-            <template #actions>
-              <UButton
-                label="Quick test"
-                icon="i-hugeicons-play"
-                color="neutral"
-                variant="subtle"
-                @click="openQuickTest"
-              />
-            </template>
-          </UEmpty>
         </div>
 
         <div v-else-if="loadingDatasets" class="grid gap-3">
@@ -282,23 +232,14 @@
                 <span v-else> · Run uses current draft</span>
               </p>
             </div>
-            <div class="flex flex-wrap gap-2">
-              <UButton
-                label="Quick test"
-                icon="i-hugeicons-play"
-                color="neutral"
-                variant="ghost"
-                @click="openQuickTest"
-              />
-              <UButton
-                label="Refresh history"
-                icon="i-hugeicons-refresh"
-                color="neutral"
-                variant="ghost"
-                :loading="loadingRuns"
-                @click="refreshHistory"
-              />
-            </div>
+            <UButton
+              label="Refresh history"
+              icon="i-hugeicons-refresh"
+              color="neutral"
+              variant="ghost"
+              :loading="loadingRuns"
+              @click="refreshHistory"
+            />
           </header>
 
           <UAlert
@@ -345,7 +286,7 @@
       v-model:open="datasetEditorOpen"
       v-model:draft="datasetDraft"
       :dataset="selectedDataset"
-      :repository-name="repositoryName"
+      :repository-name="workspaceRepository.name"
       :reviewers="reviewers"
       :selected-reviewer-id="selectedReviewerId"
       :targets="targetRows"
@@ -390,10 +331,13 @@
 <script setup lang="ts">
 import { storeToRefs } from "pinia";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
+import {
+  onBeforeRouteLeave,
+  onBeforeRouteUpdate,
+  useRoute,
+  useRouter,
+} from "vue-router";
 import type {
-  CodeReviewAgentTestRunResponse,
-  CodeReviewPullRequestDto,
   CodeReviewerAgentDto,
   CodeReviewerAgentRevisionConfiguration,
   CodeReviewEvaluationFindingSeverity,
@@ -403,8 +347,6 @@ import type {
 } from "@/api/generated";
 import { useCodeReviewEvaluationStore } from "@/stores/code-review-evaluation-store";
 import { CodeReviews } from "@/api/generated";
-import AgentTestPanel from "./AgentTestPanel.vue";
-import AgentTestResultsPanel from "./AgentTestResultsPanel.vue";
 import DatasetSlideover from "./DatasetSlideover.vue";
 import EvaluationCreateDataset from "./EvaluationCreateDataset.vue";
 import EvaluationRunCases from "./EvaluationRunCases.vue";
@@ -419,24 +361,11 @@ import {
 } from "./evaluation-view-models";
 
 const props = defineProps<{
-  repositoryId: string;
-  repositoryName: string;
+  workspaceRepository: { id: string; name: string };
   agentId: string | null;
   reviewers: CodeReviewerAgentDto[];
   reviewerConfiguration: CodeReviewerAgentRevisionConfiguration;
   canManage: boolean;
-  quickTestTargets: CodeReviewPullRequestDto[];
-  quickTestLoading: boolean;
-  quickTestLoadingMore: boolean;
-  quickTestHasMore: boolean;
-  quickTestRunning: boolean;
-  quickTestResult: CodeReviewAgentTestRunResponse | null;
-}>();
-
-const emits = defineEmits<{
-  loadQuickTestTargets: [];
-  loadMoreQuickTestTargets: [];
-  runQuickTest: [pullRequest: CodeReviewPullRequestDto];
 }>();
 
 const store = useCodeReviewEvaluationStore();
@@ -496,11 +425,13 @@ const datasetDraft = ref<EvaluationDatasetDraft | null>(null);
 const datasetDraftEditEpoch = ref(0);
 const datasetEditorOpen = ref(false);
 const showCreateDataset = ref(false);
-const quickTestOpen = ref(false);
-const selectedQuickTestPullRequest = ref<CodeReviewPullRequestDto | null>(null);
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let inboxIntentRequestId = 0;
 let inboxIntentReady = false;
+let pendingInboxCleanupPath: string | null = null;
+let repositoryLoadRequestId = 0;
+let repositoryLoadDeferred = false;
+let workspaceUnmounted = false;
 
 watch(
   datasetDraft,
@@ -532,19 +463,86 @@ const datasetSaveError = computed(() => {
 });
 const refreshingCaseId = ref<string | null>(null);
 
-onMounted(async () => {
+onMounted(() => {
   window.addEventListener("beforeunload", handleBeforeUnload);
-  await store.loadAvailability();
-  if (availability.value?.enabled) {
-    await store.loadDatasets(props.repositoryId);
-    selectedDatasetId.value = datasets.value[0]?.id ?? null;
-    if (selectedDatasetId.value) {
-      await selectDataset(selectedDatasetId.value);
+  beginPolling();
+  void store.loadAvailability();
+});
+
+async function loadRepositoryDatasets(repositoryId: string, enabled: boolean) {
+  const requestId = ++repositoryLoadRequestId;
+  const isCurrentRepository = () =>
+    !workspaceUnmounted &&
+    requestId === repositoryLoadRequestId &&
+    repositoryId === props.workspaceRepository.id;
+  if (!isCurrentRepository()) return;
+  if (!canLeaveDatasetWorkspace()) {
+    store.invalidateDatasetLoad();
+    repositoryLoadDeferred = true;
+    return;
+  }
+  repositoryLoadDeferred = false;
+  inboxIntentReady = false;
+  invalidateDatasetCaptureRequests();
+  store.invalidateDatasetLoad(repositoryId);
+  if (!isCurrentRepository()) return;
+  const originalInboxIntentId = ++inboxIntentRequestId;
+  datasetEditorOpen.value = false;
+  showCreateDataset.value = false;
+  datasets.value = [];
+  selectedDatasetId.value = null;
+  selectedDataset.value = null;
+  datasetDraft.value = null;
+  selectedRun.value = null;
+  runs.value = [];
+  runNextCursorId.value = null;
+
+  if (enabled) {
+    const initialEditEpoch = datasetDraftEditEpoch.value;
+    const canApplyDefault = () =>
+      isCurrentRepository() &&
+      originalInboxIntentId === inboxIntentRequestId &&
+      datasetDraftEditEpoch.value === initialEditEpoch &&
+      !datasetDraftDirty.value;
+    const loadedDatasets = await store.loadDatasets(repositoryId);
+    if (!isCurrentRepository()) return;
+    const firstDatasetId = loadedDatasets[0]?.id;
+    const hasLinkedDataset =
+      route.query.repositoryId === repositoryId &&
+      typeof route.query.datasetId === "string" &&
+      Number.isInteger(Number(route.query.prNumber)) &&
+      Number(route.query.prNumber) > 0 &&
+      props.canManage &&
+      loadedDatasets.some((dataset) => dataset.id === route.query.datasetId);
+    // Inbox links take precedence over the repository's default selection.
+    if (
+      !hasLinkedDataset &&
+      firstDatasetId &&
+      canApplyDefault() &&
+      selectedDatasetId.value === null
+    ) {
+      await selectDataset(firstDatasetId, canApplyDefault);
     }
   }
+  if (!isCurrentRepository()) return;
   inboxIntentReady = true;
   await openInboxDatasetIntent();
-  beginPolling();
+}
+
+// Load the latest repository when availability resolves.
+watch(
+  [() => props.workspaceRepository.id, () => availability.value?.enabled],
+  ([repositoryId, enabled]) => {
+    if (enabled !== undefined)
+      void loadRepositoryDatasets(repositoryId, enabled);
+  },
+  { immediate: true },
+);
+watch(datasetDraftDirty, (dirty) => {
+  const enabled = availability.value?.enabled;
+  if (!dirty && repositoryLoadDeferred && enabled !== undefined) {
+    void loadRepositoryDatasets(props.workspaceRepository.id, enabled);
+  }
 });
 
 watch(
@@ -555,39 +553,39 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  workspaceUnmounted = true;
+  inboxIntentRequestId += 1;
   invalidateDatasetCaptureRequests();
-  store.invalidateDatasetLoad();
+  store.invalidateDatasetLoad(null);
   endPolling();
   window.removeEventListener("beforeunload", handleBeforeUnload);
 });
 
-onBeforeRouteLeave(() => {
+function canLeaveDatasetWorkspace() {
   if (!datasetDraftDirty.value) return true;
   datasetEditorOpen.value = true;
   return false;
+}
+
+onBeforeRouteLeave(canLeaveDatasetWorkspace);
+onBeforeRouteUpdate((to, from) => {
+  // Removing the already handled inbox intent only cleans up the URL.
+  const removingHandledIntent = to.fullPath === pendingInboxCleanupPath;
+  const repositoryChanged = to.query.repositoryId !== from.query.repositoryId;
+  const linkedCaseChanged =
+    to.query.datasetId !== from.query.datasetId ||
+    to.query.prNumber !== from.query.prNumber;
+  if (
+    to.params.orgId !== from.params.orgId ||
+    to.params.agentId !== from.params.agentId ||
+    (repositoryChanged && !removingHandledIntent) ||
+    (linkedCaseChanged && !removingHandledIntent)
+  ) {
+    return canLeaveDatasetWorkspace();
+  }
 });
 
-watch(
-  () => props.repositoryId,
-  async (repositoryId) => {
-    if (datasetDraftDirty.value) {
-      datasetEditorOpen.value = true;
-      return;
-    }
-    invalidateDatasetCaptureRequests();
-    store.invalidateDatasetLoad();
-    selectedDatasetId.value = null;
-    selectedDataset.value = null;
-    datasetDraft.value = null;
-    selectedRun.value = null;
-    if (!availability.value?.enabled) return;
-    await store.loadDatasets(repositoryId);
-    selectedDatasetId.value = datasets.value[0]?.id ?? null;
-    if (selectedDatasetId.value) {
-      await selectDataset(selectedDatasetId.value);
-    }
-  },
-);
+defineExpose({ canLeaveDatasetWorkspace, datasetDraftDirty });
 
 watch(
   () => props.agentId,
@@ -605,11 +603,24 @@ watch(
 function beginPolling() {
   endPolling();
   pollHandle = setInterval(() => {
-    if (!document.hidden && runs.value.some((run) => isActiveRun(run.state))) {
-      void store.loadRuns(props.repositoryId, selectedDatasetId.value ?? "");
-      if (selectedRun.value && isActiveRun(selectedRun.value.run.state)) {
-        void store.loadRun(props.repositoryId, selectedRun.value.run.id);
-      }
+    const dataset = selectedDataset.value;
+    if (
+      !dataset ||
+      document.hidden ||
+      !runs.value.some((run) => isActiveRun(run.state))
+    ) {
+      return;
+    }
+    // Poll the loaded dataset, including while a dirty draft keeps its repository open.
+    if (!loadingRuns.value) {
+      void store.loadRuns(dataset.repositoryId, dataset.id);
+    }
+    if (
+      !loadingRun.value &&
+      selectedRun.value &&
+      isActiveRun(selectedRun.value.run.state)
+    ) {
+      void store.loadRun(dataset.repositoryId, selectedRun.value.run.id);
     }
   }, 2000);
 }
@@ -627,18 +638,22 @@ function endPolling() {
   }
 }
 
-async function selectDataset(datasetId: string) {
+async function selectDataset(datasetId: string, shouldApply?: () => boolean) {
   invalidateDatasetCaptureRequests();
+  const repositoryId = props.workspaceRepository.id;
+  const requestId = repositoryLoadRequestId;
+  const canApplySelection = () =>
+    !workspaceUnmounted &&
+    requestId === repositoryLoadRequestId &&
+    props.workspaceRepository.id === repositoryId &&
+    shouldApply?.() !== false;
+  const loaded = await store.loadDataset(
+    repositoryId,
+    datasetId,
+    canApplySelection,
+  );
+  if (!loaded || !canApplySelection()) return;
   selectedDatasetId.value = datasetId;
-  const repositoryId = props.repositoryId;
-  const loaded = await store.loadDataset(repositoryId, datasetId);
-  if (
-    !loaded ||
-    selectedDatasetId.value !== datasetId ||
-    props.repositoryId !== repositoryId
-  ) {
-    return;
-  }
   datasetDraft.value = createEvaluationDatasetDraft(loaded);
   selectedRun.value = null;
   await store.loadRuns(repositoryId, datasetId);
@@ -654,7 +669,7 @@ async function openDatasetEditor(focusPullRequestNumber: number | null = null) {
   if (datasetDraft.value?.datasetId === selectedDatasetId.value) {
     datasetEditorOpen.value = true;
     await store.searchTargets(
-      props.repositoryId,
+      props.workspaceRepository.id,
       "",
       undefined,
       false,
@@ -663,7 +678,7 @@ async function openDatasetEditor(focusPullRequestNumber: number | null = null) {
     return;
   }
   const loaded = await store.loadDataset(
-    props.repositoryId,
+    props.workspaceRepository.id,
     selectedDatasetId.value,
   );
   if (loaded) {
@@ -673,7 +688,7 @@ async function openDatasetEditor(focusPullRequestNumber: number | null = null) {
     resolutionResults.value = [];
     refreshCaptures.value = {};
     await store.searchTargets(
-      props.repositoryId,
+      props.workspaceRepository.id,
       "",
       undefined,
       false,
@@ -696,7 +711,7 @@ async function openInboxDatasetIntent() {
   ) {
     return;
   }
-  if (repositoryId !== props.repositoryId) {
+  if (repositoryId !== props.workspaceRepository.id) {
     showInboxIntentNotice(
       "The repository changed before the dataset could open. Select the repository and try again.",
     );
@@ -713,8 +728,7 @@ async function openInboxDatasetIntent() {
     clearInboxDatasetIntent();
     return;
   }
-  if (datasetDraftDirty.value) {
-    datasetEditorOpen.value = true;
+  if (!canLeaveDatasetWorkspace()) {
     showInboxIntentNotice(
       "Save or discard the open dataset draft before opening another dataset.",
     );
@@ -739,7 +753,7 @@ async function openInboxDatasetIntent() {
     route.query.repositoryId === repositoryId &&
     route.query.datasetId === datasetId &&
     route.query.prNumber === String(prNumber) &&
-    props.repositoryId === repositoryId &&
+    props.workspaceRepository.id === repositoryId &&
     datasetDraft.value === originalDraft &&
     datasetDraftEditEpoch.value === initialEditEpoch &&
     selectedDatasetId.value === originalSelectedDatasetId;
@@ -802,13 +816,19 @@ async function openInboxDatasetIntent() {
 }
 
 function clearInboxDatasetIntent() {
-  void router.replace({
+  const cleanupPath = router.resolve({
     query: {
       ...route.query,
       repositoryId: undefined,
       datasetId: undefined,
       prNumber: undefined,
     },
+  }).fullPath;
+  pendingInboxCleanupPath = cleanupPath;
+  void router.replace(cleanupPath).finally(() => {
+    if (pendingInboxCleanupPath === cleanupPath) {
+      pendingInboxCleanupPath = null;
+    }
   });
 }
 
@@ -823,7 +843,7 @@ function showInboxIntentNotice(description: string) {
 
 function createDataset(name: string, description?: string) {
   void store
-    .createDataset(props.repositoryId, name, description)
+    .createDataset(props.workspaceRepository.id, name, description)
     .then((created) => {
       if (!created) {
         return;
@@ -837,13 +857,13 @@ function createDataset(name: string, description?: string) {
       showCreateDataset.value = false;
       resolutionResults.value = [];
       void store.searchTargets(
-        props.repositoryId,
+        props.workspaceRepository.id,
         "",
         undefined,
         false,
         created.id,
       );
-      void store.loadRuns(props.repositoryId, created.id);
+      void store.loadRuns(props.workspaceRepository.id, created.id);
     });
 }
 
@@ -856,7 +876,10 @@ async function saveDatasetDraft(closeAfterSuccess = false) {
       .filter((item) => item.captureToken)
       .map((item) => item.pullRequestNumber),
   );
-  const saved = await store.saveDataset(props.repositoryId, datasetDraft.value);
+  const saved = await store.saveDataset(
+    props.workspaceRepository.id,
+    datasetDraft.value,
+  );
   if (saved) {
     invalidateDatasetCaptureRequests();
     const recapturedCaseIds = new Set(
@@ -897,7 +920,10 @@ async function saveDatasetDraft(closeAfterSuccess = false) {
 async function archiveDataset() {
   const datasetId = selectedDatasetId.value;
   if (!datasetId) return;
-  const archived = await store.archiveDataset(props.repositoryId, datasetId);
+  const archived = await store.archiveDataset(
+    props.workspaceRepository.id,
+    datasetId,
+  );
   if (!archived) return;
   closeDatasetEditor();
   datasetDraft.value = null;
@@ -929,7 +955,7 @@ function invalidateDatasetCaptureRequests() {
 async function loadCaseSnapshot(caseId: string) {
   const datasetId = selectedDatasetId.value;
   if (!datasetId || !caseId) return;
-  await store.loadCaseSnapshot(props.repositoryId, datasetId, caseId);
+  await store.loadCaseSnapshot(props.workspaceRepository.id, datasetId, caseId);
 }
 
 async function loadHistoricalFindings(caseId: string) {
@@ -957,7 +983,7 @@ async function loadHistoricalFindings(caseId: string) {
     historicalScope.value.reviewerId === scope.reviewerId;
   try {
     const pullRequest = await CodeReviews.getPullRequestByNumber(orgId, {
-      repositoryId: props.repositoryId,
+      repositoryId: props.workspaceRepository.id,
       pullRequestNumber: evaluationCase.pullRequestNumber,
     });
     const reviews = await CodeReviews.listPullRequestCodeReviews(
@@ -1065,7 +1091,7 @@ function referenceSeverity(
 
 function searchTargets(query: string) {
   void store.searchTargets(
-    props.repositoryId,
+    props.workspaceRepository.id,
     query,
     undefined,
     false,
@@ -1076,7 +1102,7 @@ function searchTargets(query: string) {
 function loadMoreTargets() {
   if (targetNextCursor.value) {
     void store.searchTargets(
-      props.repositoryId,
+      props.workspaceRepository.id,
       "",
       targetNextCursor.value,
       true,
@@ -1090,7 +1116,7 @@ function resolvePrs(entries: string[]) {
     return;
   }
   void store.resolvePrs(
-    props.repositoryId,
+    props.workspaceRepository.id,
     datasetDraft.value.datasetId,
     datasetDraft.value.expectedVersion,
     entries,
@@ -1105,7 +1131,7 @@ async function refreshCase(caseId: string) {
   const requestId = ++refreshUiRequestId;
   refreshingCaseId.value = caseId;
   try {
-    await store.refreshCase(props.repositoryId, datasetId, caseId);
+    await store.refreshCase(props.workspaceRepository.id, datasetId, caseId);
   } finally {
     if (requestId === refreshUiRequestId) refreshingCaseId.value = null;
   }
@@ -1132,7 +1158,7 @@ async function runEvaluation() {
     return;
   }
   const savedRevisionId = selectedRevisionId.value;
-  const run = await store.createRun(props.repositoryId, {
+  const run = await store.createRun(props.workspaceRepository.id, {
     datasetId: selectedDataset.value.id,
     expectedVersion: Number(selectedDataset.value.version),
     agentId: props.agentId,
@@ -1140,37 +1166,33 @@ async function runEvaluation() {
     draft: savedRevisionId ? null : props.reviewerConfiguration,
   });
   if (run) {
-    selectedRun.value = await store.loadRun(props.repositoryId, run.id);
+    selectedRun.value = await store.loadRun(
+      props.workspaceRepository.id,
+      run.id,
+    );
   }
 }
 
 function viewRun(runId: string) {
-  void store.loadRun(props.repositoryId, runId);
+  void store.loadRun(props.workspaceRepository.id, runId);
 }
 
 function refreshHistory() {
-  void store.loadRuns(props.repositoryId, selectedDatasetId.value ?? "");
+  void store.loadRuns(
+    props.workspaceRepository.id,
+    selectedDatasetId.value ?? "",
+  );
 }
 
 function loadMoreRuns() {
   if (runNextCursorId.value) {
     void store.loadRuns(
-      props.repositoryId,
+      props.workspaceRepository.id,
       selectedDatasetId.value ?? "",
       runNextCursorId.value,
       true,
     );
   }
-}
-
-function openQuickTest() {
-  if (props.quickTestTargets.length === 0) emits("loadQuickTestTargets");
-  quickTestOpen.value = true;
-  selectedRun.value = null;
-}
-
-function runQuickTest(pullRequest: CodeReviewPullRequestDto) {
-  emits("runQuickTest", pullRequest);
 }
 
 function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
@@ -1192,13 +1214,13 @@ function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
         return;
       }
       const loaded = await store.loadDataset(
-        props.repositoryId,
+        props.workspaceRepository.id,
         sourceDatasetId,
       );
       if (!loaded) return;
       draft = createEvaluationDatasetDraft(loaded);
       selectedDatasetId.value = loaded.id;
-      await store.loadRuns(props.repositoryId, loaded.id);
+      await store.loadRuns(props.workspaceRepository.id, loaded.id);
     }
     const evaluationCase = draft.cases.find(
       (item) => item.caseId === caseResult.caseId,
@@ -1249,15 +1271,15 @@ function toReferenceSeverity(value: CodeReviewEvaluationFindingSeverity) {
 }
 
 function cancelRun(runId: string) {
-  void store.cancelRun(props.repositoryId, runId);
+  void store.cancelRun(props.workspaceRepository.id, runId);
 }
 
 function abandonRun(runId: string) {
-  void store.abandonRun(props.repositoryId, runId);
+  void store.abandonRun(props.workspaceRepository.id, runId);
 }
 
 function retryFailedRun(runId: string) {
-  void store.retryFailedRun(props.repositoryId, runId);
+  void store.retryFailedRun(props.workspaceRepository.id, runId);
 }
 
 function isActiveRun(state: EvaluationRunDto["state"]): boolean {

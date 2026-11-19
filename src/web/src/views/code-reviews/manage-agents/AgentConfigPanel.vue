@@ -3,16 +3,14 @@
   Single editing surface for both create and update. The side panel carries
   metadata/actions so the prompt editor keeps the vertical space.
   -->
-  <div class="flex h-full min-h-0 flex-1 overflow-hidden">
+  <div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
     <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
       <div
         class="flex h-[45px] shrink-0 items-center gap-3 border-b border-default px-3"
       >
         <div class="flex min-w-0 flex-1 items-center gap-2">
           <USelectMenu
-            v-if="
-              activeConfigurationTab === 'test' && compactWorkspace && agent
-            "
+            v-if="isRunWorkspace && compactWorkspace && agent"
             :model-value="agent.id"
             :items="reviewerItems"
             value-key="value"
@@ -45,26 +43,49 @@
           size="sm"
           class="rounded-full"
         />
-        <UTooltip
-          text="Toggle editor theme"
-          :content="{ side: 'bottom' }"
-          :delay-duration="0"
-        >
-          <UButton
-            icon="i-hugeicons-gibbous-moon"
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            aria-label="Toggle editor theme"
-            @click="toggleTheme"
-          />
-        </UTooltip>
+        <div class="flex shrink-0 items-center gap-1">
+          <UTooltip
+            v-if="activeConfigurationTab === 'prompt'"
+            text="Toggle editor theme"
+            :content="{ side: 'bottom' }"
+            :delay-duration="0"
+          >
+            <UButton
+              icon="i-hugeicons-gibbous-moon"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              aria-label="Toggle editor theme"
+              @click="toggleTheme"
+            />
+          </UTooltip>
+          <UTooltip
+            :text="rightRailToggleLabel"
+            :content="{ side: 'bottom' }"
+            :delay-duration="0"
+          >
+            <UButton
+              :icon="
+                rightRailOpen
+                  ? 'i-hugeicons-panel-right-close'
+                  : 'i-hugeicons-panel-right-open'
+              "
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              :aria-label="rightRailToggleLabel"
+              :aria-expanded="rightRailOpen"
+              :aria-controls="rightRailId"
+              @click="rightRailOpen = !rightRailOpen"
+            />
+          </UTooltip>
+        </div>
       </div>
 
-      <!-- Prompt and activation rules are tabs because both edit the same draft. -->
       <UTabs
         v-model="activeConfigurationTab"
         :items="agentConfigurationTabs"
+        :unmount-on-hide="false"
         color="neutral"
         variant="link"
         class="agent-config-tabs min-h-0 flex-1 px-3"
@@ -131,28 +152,44 @@
         </template>
 
         <template #test>
-          <EvaluationWorkspace
+          <AgentTestPanel
             v-if="repositoryId"
-            :repository-id="repositoryId"
-            :repository-name="repositoryName"
-            :agent-id="agent?.id ?? null"
-            :reviewers="reviewers"
-            :reviewer-configuration="reviewerConfiguration"
-            :can-manage="!disabled && !saving"
-            :quick-test-targets="agentTestTargets"
-            :quick-test-loading="agentTestTargetsLoading"
-            :quick-test-loading-more="agentTestTargetsLoadingMore"
-            :quick-test-has-more="agentTestTargetsHasMore"
-            :quick-test-running="agentTestRunning"
-            :quick-test-result="agentTestResult"
-            @load-quick-test-targets="emits('loadTestTargets')"
-            @load-more-quick-test-targets="emits('loadMoreTestTargets')"
-            @run-quick-test="runAgentTest"
+            v-model:selected-pull-request="selectedAgentTestPullRequest"
+            :targets="agentTestTargets"
+            :loading="agentTestTargetsLoading"
+            :loading-more="agentTestTargetsLoadingMore"
+            :running="agentTestRunning"
+            :disabled="disabled || saving"
+            :has-more="agentTestTargetsHasMore"
+            @load-targets="emits('loadTestTargets')"
+            @load-more-targets="emits('loadMoreTestTargets')"
+            @run="runAgentTest"
           />
           <UEmpty
             v-else
             title="Select a repository"
             description="Choose a repository to test this reviewer."
+          />
+        </template>
+
+        <template #results>
+          <AgentTestResultsPanel :result="agentTestResult" />
+        </template>
+
+        <template #evals>
+          <EvaluationWorkspace
+            v-if="evaluationRepository.id && hasOpenedEvals"
+            ref="evaluationWorkspace"
+            :workspace-repository="evaluationRepository"
+            :agent-id="agent?.id ?? null"
+            :reviewers="reviewers"
+            :reviewer-configuration="reviewerConfiguration"
+            :can-manage="canManageOrganization && !saving"
+          />
+          <UEmpty
+            v-else-if="!evaluationRepository.id"
+            title="Select a repository"
+            description="Choose a repository to manage evaluation datasets and runs."
           />
         </template>
       </UTabs>
@@ -164,6 +201,9 @@
     -->
     <FilterPreviewSidePanel
       v-if="activeConfigurationTab === 'filters'"
+      v-show="rightRailOpen"
+      :id="rightRailId"
+      class="min-h-0 overflow-y-auto max-sm:max-h-[45%] max-sm:w-full max-sm:border-t max-sm:border-l-0"
       :disabled="disabled || saving"
       :preview-result="activationFilterPreviewResult"
       :preview-loading="activationFilterPreviewLoading"
@@ -177,8 +217,10 @@
     />
 
     <aside
-      v-else-if="activeConfigurationTab !== 'test'"
-      class="flex w-72 shrink-0 flex-col border-l border-default bg-default"
+      v-else
+      v-show="rightRailOpen"
+      :id="rightRailId"
+      class="flex min-h-0 max-h-[45%] shrink-0 flex-col border-t border-default bg-default sm:max-h-none sm:w-72 sm:border-t-0 sm:border-l"
     >
       <div class="min-h-0 flex-1 overflow-y-auto p-4">
         <div class="grid gap-4">
@@ -327,7 +369,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref, useId, watch } from "vue";
+import { useRoute } from "vue-router";
 import { useMediaQuery } from "@vueuse/core";
 import { MdEditor, type ToolbarNames } from "md-editor-v3";
 import "md-editor-v3/lib/style.css";
@@ -351,6 +394,8 @@ import { useMarkdownEditorTheme } from "@/composables/useMarkdownEditorTheme";
 import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 
 import AgentActivationFiltersEditor from "./AgentActivationFiltersEditor.vue";
+import AgentTestPanel from "./AgentTestPanel.vue";
+import AgentTestResultsPanel from "./AgentTestResultsPanel.vue";
 import FilterPreviewSidePanel from "./FilterPreviewSidePanel.vue";
 import EvaluationWorkspace from "./EvaluationWorkspace.vue";
 import { formatAgentFormForDiff } from "./agent-diff-format";
@@ -362,7 +407,7 @@ const props = withDefaults(
     repositoryName?: string;
     reviewers?: CodeReviewerAgentDto[];
     saving: boolean;
-    disabled: boolean;
+    canManageOrganization: boolean;
     initialForm?: CodeReviewerAgentForm | null;
     copyTargetRepositoryItems?: { label: string; value: string }[];
     agentTestTargets?: CodeReviewPullRequestDto[];
@@ -394,7 +439,7 @@ const props = withDefaults(
 );
 
 const emits = defineEmits<{
-  workspaceMode: [isTest: boolean];
+  workspaceMode: [isRunWorkspace: boolean];
   selectReviewer: [agentId: string];
   cancel: [];
   save: [agentId: string | null, form: CodeReviewerAgentForm];
@@ -417,7 +462,89 @@ const emits = defineEmits<{
 }>();
 
 const { editorTheme, toggleTheme } = useMarkdownEditorTheme();
-const activeConfigurationTab = ref(props.agent ? "test" : "prompt");
+const route = useRoute();
+const disabled = computed(
+  () => !props.canManageOrganization || !props.repositoryId,
+);
+const linkedEvaluationCase = computed(() => {
+  const { repositoryId, datasetId, prNumber } = route.query;
+  if (
+    !props.repositoryId ||
+    props.repositoryId !== repositoryId ||
+    typeof datasetId !== "string" ||
+    typeof prNumber !== "string"
+  ) {
+    return null;
+  }
+  const pullRequestNumber = Number(prNumber);
+  return Number.isInteger(pullRequestNumber) && pullRequestNumber > 0
+    ? { datasetId, pullRequestNumber }
+    : null;
+});
+const activeConfigurationTab = ref(
+  linkedEvaluationCase.value ? "evals" : props.agent ? "test" : "prompt",
+);
+const rightRailId = useId();
+const editorRailOpen = ref(true);
+const evalsRailOpen = ref(false);
+const rightRailOpen = computed({
+  get: () =>
+    activeConfigurationTab.value === "evals"
+      ? evalsRailOpen.value
+      : editorRailOpen.value,
+  set: (open) => {
+    if (activeConfigurationTab.value === "evals") {
+      evalsRailOpen.value = open;
+    } else {
+      editorRailOpen.value = open;
+    }
+  },
+});
+const rightRailToggleLabel = computed(() => {
+  const panel =
+    activeConfigurationTab.value === "filters"
+      ? "filter preview"
+      : "reviewer settings";
+  return rightRailOpen.value ? `Hide ${panel}` : `Show ${panel}`;
+});
+
+const isRunWorkspace = computed(
+  () =>
+    activeConfigurationTab.value === "test" ||
+    activeConfigurationTab.value === "results" ||
+    activeConfigurationTab.value === "evals",
+);
+const selectedAgentTestPullRequest = ref<CodeReviewPullRequestDto | null>(null);
+// Keep an opened evaluation workspace mounted so tab switches preserve drafts.
+const hasOpenedEvals = ref(false);
+const evaluationWorkspace = ref<InstanceType<
+  typeof EvaluationWorkspace
+> | null>(null);
+// Keep a dirty workspace bound to the repository its draft belongs to.
+const evaluationRepository = ref({
+  id: props.repositoryId,
+  name: props.repositoryName,
+});
+watch(
+  [
+    () => props.repositoryId,
+    () => props.repositoryName,
+    () => evaluationWorkspace.value?.datasetDraftDirty,
+  ],
+  ([id, name, dirty]) => {
+    if (
+      id === evaluationRepository.value.id &&
+      name === evaluationRepository.value.name
+    )
+      return;
+    if (dirty && id !== evaluationRepository.value.id) {
+      evaluationWorkspace.value?.canLeaveDatasetWorkspace();
+      return;
+    }
+    // A save or discard reruns this watcher with the latest repository prop.
+    evaluationRepository.value = { id, name };
+  },
+);
 const compactWorkspace = useMediaQuery("(max-width: 1439px)");
 const reviewerItems = computed(() =>
   props.reviewers.map((reviewer) => ({
@@ -425,7 +552,7 @@ const reviewerItems = computed(() =>
     value: reviewer.id,
   })),
 );
-watch(activeConfigurationTab, (tab) => emits("workspaceMode", tab === "test"), {
+watch(isRunWorkspace, (active) => emits("workspaceMode", active), {
   immediate: true,
 });
 const copyTargetRepositoryId = ref<string | undefined>(undefined);
@@ -440,11 +567,13 @@ const {
   serialize: serializeAgentForm,
 });
 
+type AgentConfigurationTabName =
+  "prompt" | "filters" | "test" | "results" | "evals";
 type AgentConfigurationTab = {
   label: string;
   icon: string;
-  value: "prompt" | "filters" | "test";
-  slot: "prompt" | "filters" | "test";
+  value: AgentConfigurationTabName;
+  slot: AgentConfigurationTabName;
 };
 
 const agentConfigurationTabs = computed<AgentConfigurationTab[]>(() => {
@@ -468,6 +597,22 @@ const agentConfigurationTabs = computed<AgentConfigurationTab[]>(() => {
       slot: "test" as const,
     },
   ];
+
+  if (props.agentTestResult) {
+    tabs.push({
+      label: "Results",
+      icon: "i-hugeicons-message-programming",
+      value: "results",
+      slot: "results",
+    });
+  }
+
+  tabs.push({
+    label: "Evals",
+    icon: "i-hugeicons-chart-evaluation",
+    value: "evals",
+    slot: "evals",
+  });
 
   return tabs;
 });
@@ -494,12 +639,12 @@ const enabledTabItems = computed(() => [
   {
     label: "Enabled",
     value: "enabled",
-    disabled: props.disabled || props.saving,
+    disabled: disabled.value || props.saving,
   },
   {
     label: "Disabled",
     value: "disabled",
-    disabled: props.disabled || props.saving,
+    disabled: disabled.value || props.saving,
   },
 ]);
 
@@ -526,7 +671,7 @@ const promptToolbarsExclude: ToolbarNames[] = [
 /** Required fields mirror backend validation before submitting a mutation. */
 const formValid = computed(
   () =>
-    !props.disabled &&
+    !disabled.value &&
     !props.saving &&
     draft.value.displayName.trim().length > 0 &&
     draft.value.reviewFacet.trim().length > 0 &&
@@ -571,9 +716,25 @@ watch(
  * back-testing flow. The root view owns the store call; this panel only signals
  * intent when the tab becomes visible.
  */
-watch(activeConfigurationTab, (tab) => {
-  if (tab === "test" && props.agentTestTargets.length === 0) {
-    emits("loadTestTargets");
+watch(
+  [activeConfigurationTab, () => props.repositoryId],
+  ([tab, repositoryId], previous) => {
+    if (previous && previous[1] !== repositoryId) {
+      selectedAgentTestPullRequest.value = null;
+    }
+    if (tab === "test" && repositoryId && props.agentTestTargets.length === 0) {
+      emits("loadTestTargets");
+    }
+    if (tab === "evals") {
+      hasOpenedEvals.value = true;
+    }
+  },
+  { immediate: true },
+);
+
+watch(linkedEvaluationCase, (linkedCase) => {
+  if (linkedCase) {
+    activeConfigurationTab.value = "evals";
   }
 });
 
@@ -581,6 +742,21 @@ watch(activeConfigurationTab, (tab) => {
  * A completed synthetic run should reveal its browser-local result immediately.
  * Subsequent runs replace the same result surface without becoming review history.
  */
+watch(
+  () => props.agentTestResult,
+  (result) => {
+    if (
+      result &&
+      activeConfigurationTab.value !== "evals" &&
+      !linkedEvaluationCase.value
+    ) {
+      activeConfigurationTab.value = "results";
+    } else if (!result && activeConfigurationTab.value === "results") {
+      activeConfigurationTab.value = "test";
+    }
+  },
+);
+
 /** Replaces activation rules with a cloned value from the shared rule editor. */
 function updateActivationConfiguration(
   value: CodeReviewerActivationConfigurationDto,
@@ -656,12 +832,16 @@ function serializeAgentForm(form: CodeReviewerAgentForm): string {
   return JSON.stringify(form);
 }
 
-defineExpose({ triggerSave, canSave, hasChanges });
+function canLeaveDatasetWorkspace() {
+  return evaluationWorkspace.value?.canLeaveDatasetWorkspace() ?? true;
+}
+
+defineExpose({ triggerSave, canSave, hasChanges, canLeaveDatasetWorkspace });
 </script>
 
 <style scoped>
 /* UTabs content must carry height through to the markdown editor. */
-.agent-config-tabs :deep([data-slot="content"]) {
+.agent-config-tabs :deep([data-slot="content"]:not([hidden])) {
   display: flex;
   flex-direction: column;
 }

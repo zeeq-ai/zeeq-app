@@ -404,6 +404,70 @@ describe("evaluation dataset loading scope", () => {
     useAppStore().user = testUser();
   });
 
+  it("keeps pending dataset and evaluation reads from a previous repository out of the new workspace", async () => {
+    const datasetList = deferred<{ items: { id: string }[] }>();
+    const runList = deferred<{
+      items: { id: string }[];
+      nextCursorId: string;
+    }>();
+    const runDetail = deferred<{ run: { id: string }; cases: [] }>();
+    apiMocks.listDatasets
+      .mockReturnValueOnce(datasetList.promise)
+      .mockResolvedValueOnce({ items: [{ id: "dataset_B" }] });
+    apiMocks.listRuns
+      .mockReturnValueOnce(runList.promise)
+      .mockResolvedValueOnce({ items: [{ id: "run_B" }] });
+    apiMocks.getRun
+      .mockReturnValueOnce(runDetail.promise)
+      .mockResolvedValueOnce({ run: { id: "run_B" }, cases: [] });
+    const store = useCodeReviewEvaluationStore();
+
+    const staleReads = [
+      store.loadDatasets("repo_A"),
+      store.loadRuns("repo_A", "dataset_A"),
+      store.loadRun("repo_A", "run_A"),
+    ];
+    store.invalidateDatasetLoad("repo_B");
+    await Promise.all([
+      store.loadDatasets("repo_B"),
+      store.loadRuns("repo_B", "dataset_B"),
+      store.loadRun("repo_B", "run_B"),
+    ]);
+
+    datasetList.resolve({ items: [{ id: "dataset_A" }] });
+    runList.resolve({ items: [{ id: "run_A" }], nextCursorId: "stale" });
+    runDetail.resolve({ run: { id: "run_A" }, cases: [] });
+    await Promise.all(staleReads);
+
+    expect(store.datasets.map((item) => item.id)).toEqual(["dataset_B"]);
+    expect(store.runs.map((item) => item.id)).toEqual(["run_B"]);
+    expect(store.runNextCursorId).toBeNull();
+    expect(store.selectedRun?.run.id).toBe("run_B");
+    await expect(store.loadDatasets("repo_A")).resolves.toEqual([]);
+    await expect(store.loadRun("repo_A", "run_A")).resolves.toBeNull();
+    expect(apiMocks.listDatasets).toHaveBeenCalledTimes(2);
+    expect(apiMocks.getRun).toHaveBeenCalledTimes(2);
+  });
+
+  it("discards pending reads without changing the repository scope", async () => {
+    const dataset = deferred<{ dataset: { id: string } }>();
+    apiMocks.getDataset
+      .mockReturnValueOnce(dataset.promise)
+      .mockResolvedValueOnce({ dataset: { id: "active" } });
+    const store = useCodeReviewEvaluationStore();
+    store.invalidateDatasetLoad("repo_A");
+
+    const obsolete = store.loadDataset("repo_A", "old");
+    store.invalidateDatasetLoad();
+    await expect(store.loadDataset("repo_B", "outside")).resolves.toBeNull();
+    await store.loadDataset("repo_A", "active");
+
+    dataset.resolve({ dataset: { id: "old" } });
+    await expect(obsolete).resolves.toBeNull();
+    expect(store.selectedDataset?.id).toBe("active");
+    expect(apiMocks.getDataset).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps a late dataset response from replacing the latest selection", async () => {
     const first = deferred<{ dataset: { id: string } }>();
     const second = deferred<{ dataset: { id: string } }>();

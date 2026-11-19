@@ -100,7 +100,11 @@ export const useCodeReviewEvaluationStore = defineStore(
       payload: string;
       key: string;
     } | null = null;
+    let workspaceRepositoryId: string | null = null;
+    let datasetListRequestId = 0;
     let datasetLoadRequestId = 0;
+    let runListRequestId = 0;
+    let runLoadRequestId = 0;
     let targetRequestId = 0;
     let targetRequestScope: string | null = null;
     let resolutionRequestId = 0;
@@ -417,14 +421,27 @@ export const useCodeReviewEvaluationStore = defineStore(
       availabilityError.value = null;
     }
 
+    function isWorkspaceRepository(repositoryId: string) {
+      return (
+        workspaceRepositoryId === null || repositoryId === workspaceRepositoryId
+      );
+    }
+
     async function loadDatasets(repositoryId: string) {
+      if (!isWorkspaceRepository(repositoryId)) return [];
+      const requestId = ++datasetListRequestId;
       const orgId = activeOrganizationId.value;
       if (!orgId || !repositoryId) {
         datasets.value = [];
         selectedDataset.value = null;
-        return;
+        loadingDatasets.value = false;
+        return [];
       }
 
+      const isCurrent = () =>
+        requestId === datasetListRequestId &&
+        orgId === activeOrganizationId.value &&
+        isWorkspaceRepository(repositoryId);
       loadingDatasets.value = true;
       datasetError.value = null;
       try {
@@ -433,14 +450,19 @@ export const useCodeReviewEvaluationStore = defineStore(
             orgId,
             repositoryId,
           );
+        if (!isCurrent()) return [];
         datasets.value = response.items;
+        return response.items;
       } catch (err: unknown) {
-        datasetError.value = evaluationErrorMessage(
-          err,
-          "Could not load datasets.",
-        );
+        if (isCurrent()) {
+          datasetError.value = evaluationErrorMessage(
+            err,
+            "Could not load datasets.",
+          );
+        }
+        return [];
       } finally {
-        loadingDatasets.value = false;
+        if (isCurrent()) loadingDatasets.value = false;
       }
     }
 
@@ -449,6 +471,7 @@ export const useCodeReviewEvaluationStore = defineStore(
       datasetId: string,
       shouldApply?: () => boolean,
     ) {
+      if (!isWorkspaceRepository(repositoryId)) return null;
       const requestId = ++datasetLoadRequestId;
       const orgId = activeOrganizationId.value;
       if (!orgId || !repositoryId || !datasetId) {
@@ -459,6 +482,11 @@ export const useCodeReviewEvaluationStore = defineStore(
         return null;
       }
 
+      const canPublish = () =>
+        requestId === datasetLoadRequestId &&
+        activeOrganizationId.value === orgId &&
+        isWorkspaceRepository(repositoryId) &&
+        shouldApply?.() !== false;
       loadingDataset.value = true;
       datasetError.value = null;
       try {
@@ -468,23 +496,12 @@ export const useCodeReviewEvaluationStore = defineStore(
             repositoryId,
             datasetId,
           );
-        if (
-          requestId !== datasetLoadRequestId ||
-          activeOrganizationId.value !== orgId ||
-          shouldApply?.() === false
-        ) {
-          return null;
-        }
+        // Check the caller's draft guard before changing the shared selection.
+        if (!canPublish()) return null;
         selectedDataset.value = response.dataset;
         return response.dataset;
       } catch (err: unknown) {
-        if (
-          requestId !== datasetLoadRequestId ||
-          activeOrganizationId.value !== orgId ||
-          shouldApply?.() === false
-        ) {
-          return null;
-        }
+        if (!canPublish()) return null;
         datasetError.value = evaluationErrorMessage(
           err,
           "Could not load this dataset.",
@@ -741,9 +758,18 @@ export const useCodeReviewEvaluationStore = defineStore(
       targetError.value = null;
     }
 
-    function invalidateDatasetLoad() {
+    function invalidateDatasetLoad(
+      repositoryId: string | null = workspaceRepositoryId,
+    ) {
+      workspaceRepositoryId = repositoryId;
+      datasetListRequestId += 1;
       datasetLoadRequestId += 1;
+      runListRequestId += 1;
+      runLoadRequestId += 1;
+      loadingDatasets.value = false;
       loadingDataset.value = false;
+      loadingRuns.value = false;
+      loadingRun.value = false;
     }
 
     async function refreshCase(
@@ -887,12 +913,20 @@ export const useCodeReviewEvaluationStore = defineStore(
       cursorId?: string | null,
       append = false,
     ) {
+      if (!isWorkspaceRepository(repositoryId)) return;
+      const requestId = ++runListRequestId;
       const orgId = activeOrganizationId.value;
       if (!orgId || !repositoryId) {
         runs.value = [];
+        runNextCursorId.value = null;
+        loadingRuns.value = false;
         return;
       }
 
+      const isCurrent = () =>
+        requestId === runListRequestId &&
+        orgId === activeOrganizationId.value &&
+        isWorkspaceRepository(repositoryId);
       loadingRuns.value = true;
       runError.value = null;
       try {
@@ -906,27 +940,37 @@ export const useCodeReviewEvaluationStore = defineStore(
               pageSize: 25,
             },
           );
+        if (!isCurrent()) return;
         runs.value = append
           ? [...runs.value, ...response.items]
           : response.items;
         runNextCursorId.value = response.nextCursorId ?? null;
       } catch (err: unknown) {
-        runError.value = evaluationErrorMessage(
-          err,
-          "Could not load evaluation history.",
-        );
+        if (isCurrent()) {
+          runError.value = evaluationErrorMessage(
+            err,
+            "Could not load evaluation history.",
+          );
+        }
       } finally {
-        loadingRuns.value = false;
+        if (isCurrent()) loadingRuns.value = false;
       }
     }
 
     async function loadRun(repositoryId: string, runId: string) {
+      if (!isWorkspaceRepository(repositoryId)) return null;
+      const requestId = ++runLoadRequestId;
       const orgId = activeOrganizationId.value;
       if (!orgId || !repositoryId || !runId) {
         selectedRun.value = null;
+        loadingRun.value = false;
         return null;
       }
 
+      const isCurrent = () =>
+        requestId === runLoadRequestId &&
+        orgId === activeOrganizationId.value &&
+        isWorkspaceRepository(repositoryId);
       loadingRun.value = true;
       runError.value = null;
       try {
@@ -935,16 +979,19 @@ export const useCodeReviewEvaluationStore = defineStore(
           repositoryId,
           runId,
         );
+        if (!isCurrent()) return null;
         selectedRun.value = detail;
         return detail;
       } catch (err: unknown) {
-        runError.value = evaluationErrorMessage(
-          err,
-          "Could not load this evaluation.",
-        );
+        if (isCurrent()) {
+          runError.value = evaluationErrorMessage(
+            err,
+            "Could not load this evaluation.",
+          );
+        }
         return null;
       } finally {
-        loadingRun.value = false;
+        if (isCurrent()) loadingRun.value = false;
       }
     }
 

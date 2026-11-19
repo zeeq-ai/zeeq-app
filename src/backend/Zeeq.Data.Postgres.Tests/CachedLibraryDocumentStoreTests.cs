@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Logging.Abstractions;
 using Zeeq.Core.Auditing;
 using Zeeq.Core.Documents;
 using Zeeq.Data.Postgres.Documents;
@@ -30,7 +31,11 @@ public sealed class CachedLibraryDocumentStoreTests
                 UpdatedAt = DateTimeOffset.UtcNow,
             }
         );
-        var store = new CachedLibraryDocumentStore(inner, new TestHybridCache());
+        var store = new CachedLibraryDocumentStore(
+            inner,
+            new TestHybridCache(),
+            NullLogger<CachedLibraryDocumentStore>.Instance
+        );
 
         var first = await store.GetByPathAsync(
             "org_1",
@@ -56,7 +61,11 @@ public sealed class CachedLibraryDocumentStoreTests
     {
         var inner = new CountingLibraryDocumentStore(CreateDocument("library_1"));
         var cache = new TestHybridCache();
-        var store = new CachedLibraryDocumentStore(inner, cache);
+        var store = new CachedLibraryDocumentStore(
+            inner,
+            cache,
+            NullLogger<CachedLibraryDocumentStore>.Instance
+        );
 
         await store.GetByPathAsync("org_1", "library_1", "doc", CancellationToken.None);
         await store.GetByPathAsync("org_1", "library_2", "doc", CancellationToken.None);
@@ -75,7 +84,11 @@ public sealed class CachedLibraryDocumentStoreTests
     {
         var inner = new CountingLibraryDocumentStore(CreateDocument("library_1"));
         var cache = new TestHybridCache();
-        var store = new CachedLibraryDocumentStore(inner, cache);
+        var store = new CachedLibraryDocumentStore(
+            inner,
+            cache,
+            NullLogger<CachedLibraryDocumentStore>.Instance
+        );
 
         await store.GetByPathAsync("org_1", "library_1", "doc", CancellationToken.None);
 
@@ -90,7 +103,11 @@ public sealed class CachedLibraryDocumentStoreTests
     {
         var inner = new CountingLibraryDocumentStore(null);
         var cache = new TestHybridCache();
-        var store = new CachedLibraryDocumentStore(inner, cache);
+        var store = new CachedLibraryDocumentStore(
+            inner,
+            cache,
+            NullLogger<CachedLibraryDocumentStore>.Instance
+        );
 
         var first = await store.GetByPathAsync(
             "org_1",
@@ -116,7 +133,11 @@ public sealed class CachedLibraryDocumentStoreTests
     {
         var inner = new CountingLibraryDocumentStore(CreateDocument("library_1", "Old content."));
         var cache = new TestHybridCache();
-        var store = new CachedLibraryDocumentStore(inner, cache);
+        var store = new CachedLibraryDocumentStore(
+            inner,
+            cache,
+            NullLogger<CachedLibraryDocumentStore>.Instance
+        );
 
         var cached = await store.GetByPathAsync(
             "org_1",
@@ -146,7 +167,11 @@ public sealed class CachedLibraryDocumentStoreTests
     {
         var inner = new CountingLibraryDocumentStore(CreateDocument("library_1", "old"));
         var cache = new TestHybridCache();
-        var store = new CachedLibraryDocumentStore(inner, cache);
+        var store = new CachedLibraryDocumentStore(
+            inner,
+            cache,
+            NullLogger<CachedLibraryDocumentStore>.Instance
+        );
         await store.GetByPathAsync("org_1", "library_1", "doc", default);
         await store.TryReplaceContentAsync(
             CreateDocument("library_1", "new"),
@@ -168,6 +193,77 @@ public sealed class CachedLibraryDocumentStoreTests
         var afterCreate = await store.GetByPathAsync("org_1", "library_1", "doc", default);
         await Assert.That(afterCreate!.Content).IsEqualTo("created");
         await Assert.That(inner.PathLookupCount).IsEqualTo(3);
+    }
+
+    [Test]
+    [Arguments(LibraryDocumentScopedSkill.Organization)]
+    [Arguments(LibraryDocumentScopedSkill.None)]
+    public async Task SetScopedSkill_InvalidatesCachedDocumentIndex(
+        LibraryDocumentScopedSkill scopedSkill
+    )
+    {
+        var document = CreateDocument("library_1");
+        var inner = new CountingLibraryDocumentStore(document);
+        var cache = new TestHybridCache();
+        var store = new CachedLibraryDocumentStore(
+            inner,
+            cache,
+            NullLogger<CachedLibraryDocumentStore>.Instance
+        );
+        var key = McpDocumentIndexCache.Key(document.OrganizationId, document.LibraryId);
+        await cache.SetAsync(key, "cached index");
+
+        await store.SetScopedSkillAsync(
+            document.OrganizationId,
+            document.LibraryId,
+            document.Id,
+            scopedSkill,
+            CancellationToken.None
+        );
+
+        var index = await cache.GetOrCreateAsync(key, _ => ValueTask.FromResult("fresh index"));
+        await Assert.That(index).IsEqualTo("fresh index");
+    }
+
+    [Test]
+    public async Task SetScopedSkill_DocumentIndexEvictionFailure_StillInvalidatesCachedPaths()
+    {
+        var document = CreateDocument("library_1");
+        var inner = new CountingLibraryDocumentStore(document);
+        var cache = new TestHybridCache { FailKeyRemoval = true };
+        var store = new CachedLibraryDocumentStore(
+            inner,
+            cache,
+            NullLogger<CachedLibraryDocumentStore>.Instance
+        );
+        await store.GetByPathAsync(
+            document.OrganizationId,
+            document.LibraryId,
+            document.Path,
+            default
+        );
+
+        var updated = await store.SetScopedSkillAsync(
+            document.OrganizationId,
+            document.LibraryId,
+            document.Id,
+            LibraryDocumentScopedSkill.Organization,
+            default
+        );
+        var reloaded = await store.GetByPathAsync(
+            document.OrganizationId,
+            document.LibraryId,
+            document.Path,
+            default
+        );
+
+        await Assert
+            .That(updated?.AsScopedSkill)
+            .IsEqualTo(LibraryDocumentScopedSkill.Organization);
+        await Assert
+            .That(reloaded?.AsScopedSkill)
+            .IsEqualTo(LibraryDocumentScopedSkill.Organization);
+        await Assert.That(inner.PathLookupCount).IsEqualTo(2);
     }
 
     private static LibraryDocument CreateDocument(
@@ -200,6 +296,23 @@ public sealed class CachedLibraryDocumentStoreTests
 
         public int PathLookupCount { get; private set; }
         public List<string> PathLookupInputs { get; } = [];
+
+        public Task<LibraryDocument?> SetScopedSkillAsync(
+            string organizationId,
+            string libraryId,
+            string documentId,
+            LibraryDocumentScopedSkill scopedSkill,
+            CancellationToken ct
+        )
+        {
+            if (_document is null)
+            {
+                return Task.FromResult<LibraryDocument?>(null);
+            }
+
+            _document.AsScopedSkill = scopedSkill;
+            return Task.FromResult<LibraryDocument?>(_document);
+        }
 
         public Task<Library?> GetLibraryAsync(
             string organizationId,
@@ -377,6 +490,7 @@ public sealed class CachedLibraryDocumentStoreTests
         public List<string> RemovedTags { get; } = [];
         public HybridCacheEntryOptions? LastOptions { get; private set; }
         public int RemoveCount { get; private set; }
+        public bool FailKeyRemoval { get; init; }
 
         public override async ValueTask<T> GetOrCreateAsync<TState, T>(
             string key,
@@ -421,6 +535,11 @@ public sealed class CachedLibraryDocumentStoreTests
         )
         {
             RemoveCount++;
+            if (FailKeyRemoval)
+            {
+                throw new InvalidOperationException("Cache unavailable.");
+            }
+
             _values.Remove(key);
 
             return ValueTask.CompletedTask;
