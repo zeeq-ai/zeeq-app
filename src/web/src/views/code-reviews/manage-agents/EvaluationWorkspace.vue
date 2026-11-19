@@ -558,14 +558,15 @@ onBeforeRouteLeave(canLeaveDatasetWorkspace);
 onBeforeRouteUpdate((to, from) => {
   // Removing the already handled inbox intent only cleans up the URL.
   const removingHandledIntent = to.fullPath === pendingInboxCleanupPath;
-  const inboxIntentChanged =
-    to.query.repositoryId !== from.query.repositoryId ||
+  const repositoryChanged = to.query.repositoryId !== from.query.repositoryId;
+  const linkedCaseChanged =
     to.query.datasetId !== from.query.datasetId ||
     to.query.prNumber !== from.query.prNumber;
   if (
     to.params.orgId !== from.params.orgId ||
     to.params.agentId !== from.params.agentId ||
-    (inboxIntentChanged && !removingHandledIntent)
+    (repositoryChanged && !removingHandledIntent) ||
+    (linkedCaseChanged && !removingHandledIntent)
   ) {
     return canLeaveDatasetWorkspace();
   }
