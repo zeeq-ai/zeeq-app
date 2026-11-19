@@ -30,6 +30,9 @@ public sealed class Team : MutableDomainEntityBase, IOrganizationScopedEntity
     /// </summary>
     public required string DisplayName { get; set; }
 
+    /// <summary>Optional description shown in the team directory.</summary>
+    public string? Description { get; set; }
+
     /// <summary>
     /// <see langword="true"/> for the automatically-created root team that
     /// represents org-wide access. Root teams cannot be deleted.

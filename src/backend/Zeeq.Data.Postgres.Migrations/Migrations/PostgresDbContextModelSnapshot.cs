@@ -4129,6 +4129,11 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("created_by_user_id");
 
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("description");
+
                     b.Property<DateTimeOffset?>("DisabledAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("disabled_at_utc");
@@ -4142,6 +4147,13 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                     b.Property<bool>("IsRootTeam")
                         .HasColumnType("boolean")
                         .HasColumnName("is_root_team");
+
+                    b.Property<string>("NormalizedName")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("normalized_name")
+                        .HasComputedColumnSql("lower(btrim(display_name))", true);
 
                     b.Property<string>("OrganizationId")
                         .IsRequired()
@@ -4164,6 +4176,20 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
 
                     b.HasIndex("DisabledAtUtc")
                         .HasDatabaseName("ix_core_teams_disabled_at_utc");
+
+                    b.HasIndex("OrganizationId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_core_teams_active_root")
+                        .HasFilter("is_root_team AND disabled_at_utc IS NULL");
+
+                    b.HasIndex("OrganizationId", "Id")
+                        .HasDatabaseName("ix_core_teams_active_directory")
+                        .HasFilter("NOT is_root_team AND disabled_at_utc IS NULL");
+
+                    b.HasIndex("OrganizationId", "NormalizedName")
+                        .IsUnique()
+                        .HasDatabaseName("ux_core_teams_active_name")
+                        .HasFilter("NOT is_root_team AND disabled_at_utc IS NULL");
 
                     b.ToTable("core_teams", "zeeq");
                 });
@@ -4216,6 +4242,10 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
 
                     b.HasIndex("OrganizationId", "TeamId", "DisabledAtUtc")
                         .HasDatabaseName("ix_core_team_memberships_organization_id_team_id_disabled_at_u");
+
+                    b.HasIndex("OrganizationId", "UserId", "TeamId")
+                        .HasDatabaseName("ix_core_team_memberships_organization_id_user_id_team_id")
+                        .HasFilter("disabled_at_utc IS NULL");
 
                     b.ToTable("core_team_memberships", "zeeq");
                 });

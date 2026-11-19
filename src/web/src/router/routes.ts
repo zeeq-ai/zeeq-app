@@ -200,6 +200,24 @@ export const routes: Array<RouteRecordRaw> = [
             meta: { title: "Members" },
           },
           {
+            path: "teams",
+            name: "SettingsTeams",
+            component: () => import("@/views/settings/teams/Teams.vue"),
+            meta: { title: "Teams" },
+          },
+          {
+            path: "teams/new",
+            name: "SettingsNewTeam",
+            component: () => import("@/views/settings/teams/Teams.vue"),
+            meta: { title: "Teams" },
+          },
+          {
+            path: "teams/:teamId",
+            name: "SettingsTeam",
+            component: () => import("@/views/settings/teams/Teams.vue"),
+            meta: { title: "Teams" },
+          },
+          {
             path: "memberships",
             name: "SettingsMyMemberships",
             component: () => import("@/views/settings/MyMemberships.vue"),

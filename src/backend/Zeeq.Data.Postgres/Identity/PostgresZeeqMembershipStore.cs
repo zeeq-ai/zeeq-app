@@ -18,8 +18,8 @@ internal sealed class PostgresZeeqMembershipStore(
     IAuditTrailWriter? auditWriter = null
 ) : IZeeqMembershipStore
 {
-    private readonly IAuditTrailWriter audit =
-        auditWriter ?? new PostgresAuditTrailWriter(db, new AuditActorContext());
+    private readonly IAuditTrailWriter audit = auditWriter
+        ?? new PostgresAuditTrailWriter(db, new AuditActorContext());
     private const string AutoInviteSameDomainIndexName =
         "ix_core_organizations_auto_invite_same_domain";
 
@@ -502,6 +502,18 @@ internal sealed class PostgresZeeqMembershipStore(
                         ct
                     );
 
+                await db
+                    .TeamMemberships.TagWithOperationCallSite(
+                        "membership.team.disable_departing_member"
+                    )
+                    .Where(m =>
+                        m.OrganizationId == orgId && m.UserId == userId && m.DisabledAtUtc == null
+                    )
+                    .ExecuteUpdateAsync(
+                        setters => setters.SetProperty(m => m.DisabledAtUtc, now),
+                        ct
+                    );
+
                 await AppendMembershipChangeAsync(
                     membership,
                     eventType: eventType,
@@ -889,32 +901,17 @@ internal sealed class PostgresZeeqMembershipStore(
                 .ExecuteUpdateAsync(setters => setters.SetProperty(m => m.IsDefault, true), ct);
         }
 
-        var hasRootTeamMembership = await db
-            .TeamMemberships.TagWithOperationCallSite(
-                "membership.invitation.accept_check_root_team_membership"
-            )
-            .AnyAsync(
-                m =>
-                    m.OrganizationId == invitation.OrganizationId
-                    && m.TeamId == rootTeamId
-                    && m.UserId == userId,
-                ct
-            );
-
-        if (!hasRootTeamMembership)
-        {
-            db.TeamMemberships.Add(
-                new TeamMembership
-                {
-                    OrganizationId = invitation.OrganizationId,
-                    TeamId = rootTeamId,
-                    UserId = userId,
-                    Role = invitation.Role,
-                    CreatedByUserId = invitation.CreatedByUserId,
-                    CreatedAtUtc = DateTimeOffset.UtcNow,
-                }
-            );
-        }
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO zeeq.core_team_memberships
+                (organization_id, team_id, user_id, role, created_by_user_id, created_at_utc)
+            VALUES ({invitation.OrganizationId}, {rootTeamId}, {userId},
+                {invitation.Role}, {invitation.CreatedByUserId}, now())
+            ON CONFLICT (organization_id, team_id, user_id) DO UPDATE
+            SET disabled_at_utc = NULL, role = EXCLUDED.role
+            """,
+            ct
+        );
 
         await db.SaveChangesAsync(ct);
         if (tx is not null)

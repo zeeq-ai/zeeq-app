@@ -4,7 +4,7 @@
     <li
       v-for="member in members"
       :key="member.userId"
-      class="flex items-center justify-between gap-3 px-4 py-3 sm:px-6"
+      class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6"
     >
       <div class="flex min-w-0 items-center gap-3">
         <UAvatar
@@ -23,7 +23,17 @@
         </div>
       </div>
 
-      <div class="flex shrink-0 items-center gap-2">
+      <div class="flex min-w-0 flex-wrap items-center gap-2">
+        <UButton
+          v-if="canManage"
+          type="button"
+          label="View teams"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          :aria-label="`View teams for ${member.displayName}`"
+          @click="emits('viewTeams', member)"
+        />
         <USelect
           :model-value="selectedRole(member.role)"
           :items="roleItems"
@@ -97,6 +107,7 @@ defineProps<{
 }>();
 
 const emits = defineEmits<{
+  viewTeams: [member: MemberResponse];
   roleChange: [userId: string, role: "owner" | "admin" | "member"];
   remove: [userId: string];
   cancelInvitation: [invitationId: string];

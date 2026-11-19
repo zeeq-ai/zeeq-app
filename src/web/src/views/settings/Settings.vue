@@ -13,14 +13,21 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
+import { useRoute } from "vue-router";
+import { storeToRefs } from "pinia";
 import ZeeqView from "@/components/ZeeqView.vue";
+import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
+
+const route = useRoute();
+const { canManageOrganization } = storeToRefs(useOrganizationSettingsStore());
 import type { NavigationMenuItem } from "@nuxt/ui";
 
 /**
  * Route-backed settings navigation mirrors the sidebar and matches the
  * dashboard toolbar pattern used by other nested sections.
  */
-const links: NavigationMenuItem[][] = [
+const links = computed<NavigationMenuItem[][]>(() => [
   [
     {
       label: "Organization",
@@ -32,6 +39,18 @@ const links: NavigationMenuItem[][] = [
       icon: "i-hugeicons-user-group",
       to: "/settings/members",
     },
+    ...(canManageOrganization.value
+      ? [
+          {
+            label: "Teams",
+            icon: "i-lucide-users-round",
+            to: "/settings/teams",
+            active:
+              route.path === "/settings/teams" ||
+              route.path.startsWith("/settings/teams/"),
+          },
+        ]
+      : []),
     {
       label: "My Memberships",
       icon: "i-hugeicons-id",
@@ -58,5 +77,5 @@ const links: NavigationMenuItem[][] = [
       to: "/settings/llm-config",
     },
   ],
-];
+]);
 </script>

@@ -85,6 +85,7 @@ public static class PostgresSetupExtension
                 IOrganizationActivationKeyStore,
                 PostgresOrganizationActivationKeyStore
             >();
+            services.AddScoped<ITeamManagementStore, PostgresTeamManagementStore>();
             services.AddScoped<PostgresZeeqMembershipStore>();
             services.AddScoped<IZeeqMembershipStore>(serviceProvider =>
             {
