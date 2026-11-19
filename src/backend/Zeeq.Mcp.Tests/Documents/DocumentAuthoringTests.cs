@@ -572,7 +572,9 @@ public sealed class DocumentAuthoringTests
             default
         );
         await Assert.That(result.Status).IsEqualTo(AuthoringStatus.Created);
-        await cache.Received(1).RemoveAsync("mcp:list_documents:org:lib", CancellationToken.None);
+        await cache
+            .Received(1)
+            .RemoveAsync(McpDocumentIndexCache.Key("org", "lib"), CancellationToken.None);
         cache
             .RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("cache failed"));

@@ -147,10 +147,6 @@ public sealed partial class DocumentAuthoringService(
     /// <summary>Maximum stored MCP client name length in UTF-16 characters.</summary>
     public const int MaxClientNameLength = 256;
 
-    /// <summary>Cache key for the MCP document index for an organization and library.</summary>
-    public static string ListCacheKey(string orgId, string libraryId) =>
-        $"mcp:list_documents:{orgId}:{libraryId}";
-
     /// <summary>Resolves visible public documents and local overlays.</summary>
     public async Task<AuthoringDocument?> ResolveAsync(
         string orgId,
@@ -294,7 +290,10 @@ public sealed partial class DocumentAuthoringService(
         {
             try
             {
-                await cache.RemoveAsync(ListCacheKey(orgId, library.Id), CancellationToken.None);
+                await cache.RemoveAsync(
+                    McpDocumentIndexCache.Key(orgId, library.Id),
+                    CancellationToken.None
+                );
             }
             catch (Exception)
             {

@@ -185,7 +185,13 @@ public static class PostgresSetupExtension
                 var store = serviceProvider.GetRequiredService<PostgresLibraryDocumentStore>();
                 var cache = serviceProvider.GetService<HybridCache>();
 
-                return cache is null ? store : new CachedLibraryDocumentStore(store, cache);
+                return cache is null
+                    ? store
+                    : new CachedLibraryDocumentStore(
+                        store,
+                        cache,
+                        serviceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<CachedLibraryDocumentStore>>()
+                    );
             });
             services.AddScoped<IDocsPublicSourceStore, PostgresDocsPublicSourceStore>();
             services.AddScoped<IDocsPublicDocumentStore, PostgresDocsPublicDocumentStore>();

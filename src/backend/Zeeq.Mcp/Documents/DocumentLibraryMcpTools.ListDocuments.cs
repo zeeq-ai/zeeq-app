@@ -24,6 +24,8 @@ public sealed partial class DocumentLibraryMcpTools
     private static readonly HybridCacheEntryOptions ListDocumentsCacheOptions = new()
     {
         Expiration = TimeSpan.FromSeconds(120),
+        // A skill toggle can invalidate the index from another server instance.
+        Flags = HybridCacheEntryFlags.DisableLocalCache,
     };
 
     /// <summary>
@@ -64,8 +66,8 @@ public sealed partial class DocumentLibraryMcpTools
             Use once near the start of an agent session, or before first knowledge-base library
             research, to discover what canonical documents are available.
 
-            Returns a dense TOON path-tree index of KB documents (not JSON, not flat); the
-            response itself explains how to reconstruct each document's full path.
+            Returns a dense TOON path-tree index of KB documents, excluding organization skills.
+            The response explains how to reconstruct each document's full path.
 
             <list_kb_documents.triggers>
             - Start of session, first KB lookup, project onboarding, or repo exploration
@@ -125,10 +127,7 @@ public sealed partial class DocumentLibraryMcpTools
             null
         );
 
-        var cacheKey = DocumentAuthoringService.ListCacheKey(
-            resolved.OrganizationId,
-            resolved.Library.Id
-        );
+        var cacheKey = McpDocumentIndexCache.Key(resolved.OrganizationId, resolved.Library.Id);
 
         var body = await cache.GetOrCreateAsync(
             cacheKey,
@@ -145,7 +144,11 @@ public sealed partial class DocumentLibraryMcpTools
                     ct
                 );
 
-                var (tree, rootPrefix) = BuildDocumentPathTree(documents);
+                var (tree, rootPrefix) = BuildDocumentPathTree(
+                    documents.Where(document =>
+                        document.AsScopedSkill != LibraryDocumentScopedSkill.Organization
+                    )
+                );
                 // TOON over the folded tree runs ~60-90% smaller than flat JSON, growing with
                 // library size/uniformity (measured against zeeq-app and zeeq-docs).
                 var toon = ToonSerializer.Serialize(tree, ListDocumentsToonOptions);
@@ -197,7 +200,7 @@ public sealed partial class DocumentLibraryMcpTools
     /// repeating it per document would undo the point of folding by path.
     /// </remarks>
     private static (JsonObject Tree, string? RootPrefix) BuildDocumentPathTree(
-        IReadOnlyList<LibraryDocument> documents
+        IEnumerable<LibraryDocument> documents
     )
     {
         var root = new DocumentPathNode();
