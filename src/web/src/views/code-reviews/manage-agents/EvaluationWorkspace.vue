@@ -286,7 +286,7 @@
       v-model:open="datasetEditorOpen"
       v-model:draft="datasetDraft"
       :dataset="selectedDataset"
-      :repository-name="repositoryName"
+      :repository-name="workspaceRepository.name"
       :reviewers="reviewers"
       :selected-reviewer-id="selectedReviewerId"
       :targets="targetRows"
@@ -361,8 +361,7 @@ import {
 } from "./evaluation-view-models";
 
 const props = defineProps<{
-  repositoryId: string;
-  repositoryName: string;
+  workspaceRepository: { id: string; name: string };
   agentId: string | null;
   reviewers: CodeReviewerAgentDto[];
   reviewerConfiguration: CodeReviewerAgentRevisionConfiguration;
@@ -471,7 +470,8 @@ onMounted(() => {
 
 async function loadRepositoryDatasets(repositoryId: string, enabled: boolean) {
   const requestId = ++repositoryLoadRequestId;
-  if (workspaceUnmounted || repositoryId !== props.repositoryId) return;
+  if (workspaceUnmounted || repositoryId !== props.workspaceRepository.id)
+    return;
   if (!canLeaveDatasetWorkspace()) return;
   inboxIntentReady = false;
   invalidateDatasetCaptureRequests();
@@ -490,7 +490,7 @@ async function loadRepositoryDatasets(repositoryId: string, enabled: boolean) {
   const isCurrentRepository = () =>
     !workspaceUnmounted &&
     requestId === repositoryLoadRequestId &&
-    repositoryId === props.repositoryId;
+    repositoryId === props.workspaceRepository.id;
   if (enabled) {
     const initialEditEpoch = datasetDraftEditEpoch.value;
     const canApplyDefault = () =>
@@ -524,7 +524,7 @@ async function loadRepositoryDatasets(repositoryId: string, enabled: boolean) {
 
 // A repository chosen before availability resolves must still load when it does.
 watch(
-  [() => props.repositoryId, () => availability.value?.enabled],
+  [() => props.workspaceRepository.id, () => availability.value?.enabled],
   ([repositoryId, enabled]) => {
     if (enabled !== undefined)
       void loadRepositoryDatasets(repositoryId, enabled);
@@ -627,12 +627,12 @@ function endPolling() {
 async function selectDataset(datasetId: string, shouldApply?: () => boolean) {
   invalidateDatasetCaptureRequests();
   selectedDatasetId.value = datasetId;
-  const repositoryId = props.repositoryId;
+  const repositoryId = props.workspaceRepository.id;
   const loaded = await store.loadDataset(repositoryId, datasetId, shouldApply);
   if (
     !loaded ||
     selectedDatasetId.value !== datasetId ||
-    props.repositoryId !== repositoryId ||
+    props.workspaceRepository.id !== repositoryId ||
     shouldApply?.() === false
   ) {
     return;
@@ -652,7 +652,7 @@ async function openDatasetEditor(focusPullRequestNumber: number | null = null) {
   if (datasetDraft.value?.datasetId === selectedDatasetId.value) {
     datasetEditorOpen.value = true;
     await store.searchTargets(
-      props.repositoryId,
+      props.workspaceRepository.id,
       "",
       undefined,
       false,
@@ -661,7 +661,7 @@ async function openDatasetEditor(focusPullRequestNumber: number | null = null) {
     return;
   }
   const loaded = await store.loadDataset(
-    props.repositoryId,
+    props.workspaceRepository.id,
     selectedDatasetId.value,
   );
   if (loaded) {
@@ -671,7 +671,7 @@ async function openDatasetEditor(focusPullRequestNumber: number | null = null) {
     resolutionResults.value = [];
     refreshCaptures.value = {};
     await store.searchTargets(
-      props.repositoryId,
+      props.workspaceRepository.id,
       "",
       undefined,
       false,
@@ -694,7 +694,7 @@ async function openInboxDatasetIntent() {
   ) {
     return;
   }
-  if (repositoryId !== props.repositoryId) {
+  if (repositoryId !== props.workspaceRepository.id) {
     showInboxIntentNotice(
       "The repository changed before the dataset could open. Select the repository and try again.",
     );
@@ -736,7 +736,7 @@ async function openInboxDatasetIntent() {
     route.query.repositoryId === repositoryId &&
     route.query.datasetId === datasetId &&
     route.query.prNumber === String(prNumber) &&
-    props.repositoryId === repositoryId &&
+    props.workspaceRepository.id === repositoryId &&
     datasetDraft.value === originalDraft &&
     datasetDraftEditEpoch.value === initialEditEpoch &&
     selectedDatasetId.value === originalSelectedDatasetId;
@@ -826,7 +826,7 @@ function showInboxIntentNotice(description: string) {
 
 function createDataset(name: string, description?: string) {
   void store
-    .createDataset(props.repositoryId, name, description)
+    .createDataset(props.workspaceRepository.id, name, description)
     .then((created) => {
       if (!created) {
         return;
@@ -840,13 +840,13 @@ function createDataset(name: string, description?: string) {
       showCreateDataset.value = false;
       resolutionResults.value = [];
       void store.searchTargets(
-        props.repositoryId,
+        props.workspaceRepository.id,
         "",
         undefined,
         false,
         created.id,
       );
-      void store.loadRuns(props.repositoryId, created.id);
+      void store.loadRuns(props.workspaceRepository.id, created.id);
     });
 }
 
@@ -859,7 +859,10 @@ async function saveDatasetDraft(closeAfterSuccess = false) {
       .filter((item) => item.captureToken)
       .map((item) => item.pullRequestNumber),
   );
-  const saved = await store.saveDataset(props.repositoryId, datasetDraft.value);
+  const saved = await store.saveDataset(
+    props.workspaceRepository.id,
+    datasetDraft.value,
+  );
   if (saved) {
     invalidateDatasetCaptureRequests();
     const recapturedCaseIds = new Set(
@@ -900,7 +903,10 @@ async function saveDatasetDraft(closeAfterSuccess = false) {
 async function archiveDataset() {
   const datasetId = selectedDatasetId.value;
   if (!datasetId) return;
-  const archived = await store.archiveDataset(props.repositoryId, datasetId);
+  const archived = await store.archiveDataset(
+    props.workspaceRepository.id,
+    datasetId,
+  );
   if (!archived) return;
   closeDatasetEditor();
   datasetDraft.value = null;
@@ -932,7 +938,7 @@ function invalidateDatasetCaptureRequests() {
 async function loadCaseSnapshot(caseId: string) {
   const datasetId = selectedDatasetId.value;
   if (!datasetId || !caseId) return;
-  await store.loadCaseSnapshot(props.repositoryId, datasetId, caseId);
+  await store.loadCaseSnapshot(props.workspaceRepository.id, datasetId, caseId);
 }
 
 async function loadHistoricalFindings(caseId: string) {
@@ -960,7 +966,7 @@ async function loadHistoricalFindings(caseId: string) {
     historicalScope.value.reviewerId === scope.reviewerId;
   try {
     const pullRequest = await CodeReviews.getPullRequestByNumber(orgId, {
-      repositoryId: props.repositoryId,
+      repositoryId: props.workspaceRepository.id,
       pullRequestNumber: evaluationCase.pullRequestNumber,
     });
     const reviews = await CodeReviews.listPullRequestCodeReviews(
@@ -1068,7 +1074,7 @@ function referenceSeverity(
 
 function searchTargets(query: string) {
   void store.searchTargets(
-    props.repositoryId,
+    props.workspaceRepository.id,
     query,
     undefined,
     false,
@@ -1079,7 +1085,7 @@ function searchTargets(query: string) {
 function loadMoreTargets() {
   if (targetNextCursor.value) {
     void store.searchTargets(
-      props.repositoryId,
+      props.workspaceRepository.id,
       "",
       targetNextCursor.value,
       true,
@@ -1093,7 +1099,7 @@ function resolvePrs(entries: string[]) {
     return;
   }
   void store.resolvePrs(
-    props.repositoryId,
+    props.workspaceRepository.id,
     datasetDraft.value.datasetId,
     datasetDraft.value.expectedVersion,
     entries,
@@ -1108,7 +1114,7 @@ async function refreshCase(caseId: string) {
   const requestId = ++refreshUiRequestId;
   refreshingCaseId.value = caseId;
   try {
-    await store.refreshCase(props.repositoryId, datasetId, caseId);
+    await store.refreshCase(props.workspaceRepository.id, datasetId, caseId);
   } finally {
     if (requestId === refreshUiRequestId) refreshingCaseId.value = null;
   }
@@ -1135,7 +1141,7 @@ async function runEvaluation() {
     return;
   }
   const savedRevisionId = selectedRevisionId.value;
-  const run = await store.createRun(props.repositoryId, {
+  const run = await store.createRun(props.workspaceRepository.id, {
     datasetId: selectedDataset.value.id,
     expectedVersion: Number(selectedDataset.value.version),
     agentId: props.agentId,
@@ -1143,22 +1149,28 @@ async function runEvaluation() {
     draft: savedRevisionId ? null : props.reviewerConfiguration,
   });
   if (run) {
-    selectedRun.value = await store.loadRun(props.repositoryId, run.id);
+    selectedRun.value = await store.loadRun(
+      props.workspaceRepository.id,
+      run.id,
+    );
   }
 }
 
 function viewRun(runId: string) {
-  void store.loadRun(props.repositoryId, runId);
+  void store.loadRun(props.workspaceRepository.id, runId);
 }
 
 function refreshHistory() {
-  void store.loadRuns(props.repositoryId, selectedDatasetId.value ?? "");
+  void store.loadRuns(
+    props.workspaceRepository.id,
+    selectedDatasetId.value ?? "",
+  );
 }
 
 function loadMoreRuns() {
   if (runNextCursorId.value) {
     void store.loadRuns(
-      props.repositoryId,
+      props.workspaceRepository.id,
       selectedDatasetId.value ?? "",
       runNextCursorId.value,
       true,
@@ -1185,13 +1197,13 @@ function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
         return;
       }
       const loaded = await store.loadDataset(
-        props.repositoryId,
+        props.workspaceRepository.id,
         sourceDatasetId,
       );
       if (!loaded) return;
       draft = createEvaluationDatasetDraft(loaded);
       selectedDatasetId.value = loaded.id;
-      await store.loadRuns(props.repositoryId, loaded.id);
+      await store.loadRuns(props.workspaceRepository.id, loaded.id);
     }
     const evaluationCase = draft.cases.find(
       (item) => item.caseId === caseResult.caseId,
@@ -1242,15 +1254,15 @@ function toReferenceSeverity(value: CodeReviewEvaluationFindingSeverity) {
 }
 
 function cancelRun(runId: string) {
-  void store.cancelRun(props.repositoryId, runId);
+  void store.cancelRun(props.workspaceRepository.id, runId);
 }
 
 function abandonRun(runId: string) {
-  void store.abandonRun(props.repositoryId, runId);
+  void store.abandonRun(props.workspaceRepository.id, runId);
 }
 
 function retryFailedRun(runId: string) {
-  void store.retryFailedRun(props.repositoryId, runId);
+  void store.retryFailedRun(props.workspaceRepository.id, runId);
 }
 
 function isActiveRun(state: EvaluationRunDto["state"]): boolean {

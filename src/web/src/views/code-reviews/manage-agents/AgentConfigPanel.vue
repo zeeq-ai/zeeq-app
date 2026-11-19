@@ -178,17 +178,16 @@
 
         <template #evals>
           <EvaluationWorkspace
-            v-if="evaluationRepositoryId && hasOpenedEvals"
+            v-if="evaluationRepository.id && hasOpenedEvals"
             ref="evaluationWorkspace"
-            :repository-id="evaluationRepositoryId"
-            :repository-name="repositoryName"
+            :workspace-repository="evaluationRepository"
             :agent-id="agent?.id ?? null"
             :reviewers="reviewers"
             :reviewer-configuration="reviewerConfiguration"
             :can-manage="!disabled && !saving"
           />
           <UEmpty
-            v-else-if="!evaluationRepositoryId"
+            v-else-if="!evaluationRepository.id"
             title="Select a repository"
             description="Choose a repository to manage evaluation datasets and runs."
           />
@@ -519,20 +518,28 @@ const evaluationWorkspace = ref<InstanceType<
   typeof EvaluationWorkspace
 > | null>(null);
 // Keep a dirty workspace bound to the repository its draft belongs to.
-const evaluationRepositoryId = ref(props.repositoryId);
+const evaluationRepository = ref({
+  id: props.repositoryId,
+  name: props.repositoryName,
+});
 watch(
   [
     () => props.repositoryId,
+    () => props.repositoryName,
     () => evaluationWorkspace.value?.datasetDraftDirty,
   ],
-  ([repositoryId, dirty]) => {
-    if (repositoryId === evaluationRepositoryId.value) return;
-    if (dirty) {
+  ([id, name, dirty]) => {
+    if (
+      id === evaluationRepository.value.id &&
+      name === evaluationRepository.value.name
+    )
+      return;
+    if (dirty && id !== evaluationRepository.value.id) {
       evaluationWorkspace.value?.canLeaveDatasetWorkspace();
       return;
     }
     // A save or discard reruns this watcher with the latest repository prop.
-    evaluationRepositoryId.value = repositoryId;
+    evaluationRepository.value = { id, name };
   },
 );
 const compactWorkspace = useMediaQuery("(max-width: 1439px)");
