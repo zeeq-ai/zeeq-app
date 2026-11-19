@@ -474,6 +474,7 @@ async function loadRepositoryDatasets(repositoryId: string, enabled: boolean) {
   if (workspaceUnmounted || repositoryId !== props.workspaceRepository.id)
     return;
   if (!canLeaveDatasetWorkspace()) {
+    store.invalidateDatasetLoad();
     repositoryLoadDeferred = true;
     return;
   }

@@ -758,7 +758,9 @@ export const useCodeReviewEvaluationStore = defineStore(
       targetError.value = null;
     }
 
-    function invalidateDatasetLoad(repositoryId: string | null) {
+    function invalidateDatasetLoad(
+      repositoryId: string | null = workspaceRepositoryId,
+    ) {
       workspaceRepositoryId = repositoryId;
       datasetListRequestId += 1;
       datasetLoadRequestId += 1;

@@ -449,6 +449,25 @@ describe("evaluation dataset loading scope", () => {
     expect(apiMocks.getRun).toHaveBeenCalledTimes(2);
   });
 
+  it("discards pending reads without changing the repository scope", async () => {
+    const dataset = deferred<{ dataset: { id: string } }>();
+    apiMocks.getDataset
+      .mockReturnValueOnce(dataset.promise)
+      .mockResolvedValueOnce({ dataset: { id: "active" } });
+    const store = useCodeReviewEvaluationStore();
+    store.invalidateDatasetLoad("repo_A");
+
+    const obsolete = store.loadDataset("repo_A", "old");
+    store.invalidateDatasetLoad();
+    await expect(store.loadDataset("repo_B", "outside")).resolves.toBeNull();
+    await store.loadDataset("repo_A", "active");
+
+    dataset.resolve({ dataset: { id: "old" } });
+    await expect(obsolete).resolves.toBeNull();
+    expect(store.selectedDataset?.id).toBe("active");
+    expect(apiMocks.getDataset).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps a late dataset response from replacing the latest selection", async () => {
     const first = deferred<{ dataset: { id: string } }>();
     const second = deferred<{ dataset: { id: string } }>();
