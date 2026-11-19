@@ -182,16 +182,17 @@ const rosterQuery = ref("");
 const rosterSearch = refDebounced(rosterQuery, 220);
 const rosterScope = computed(() =>
   props.teamId
-    ? JSON.stringify([props.orgId, props.teamId, rosterSearch.value])
+    ? {
+        orgId: props.orgId,
+        teamId: props.teamId,
+        q: rosterSearch.value.trim() || undefined,
+      }
     : null,
 );
-const roster = useTeamPages(rosterScope, (after, signal) =>
-  Teams.listTeamMembers(
-    props.orgId,
-    props.teamId!,
-    { q: rosterSearch.value.trim() || undefined, after },
-    { signal },
-  ),
+const roster = useTeamPages(
+  rosterScope,
+  ({ orgId, teamId, q }, after, signal) =>
+    Teams.listTeamMembers(orgId, teamId, { q, after }, { signal }),
 );
 const requests = new AbortController();
 let detailRequest: AbortController | undefined;

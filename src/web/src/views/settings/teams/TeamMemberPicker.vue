@@ -80,9 +80,11 @@ const selectedPeople = new Map<string, string>();
 const filterId = useId();
 const query = ref("");
 const search = refDebounced(query, 220);
-const scope = computed(() =>
-  JSON.stringify([props.orgId, props.teamId, search.value]),
-);
+const scope = computed(() => ({
+  orgId: props.orgId,
+  teamId: props.teamId,
+  q: search.value.trim() || undefined,
+}));
 const {
   items: people,
   nextCursor,
@@ -90,12 +92,11 @@ const {
   error,
   loadMore,
   reload,
-} = useTeamPages(scope, (after, signal) => {
-  const params = { q: search.value.trim() || undefined, after };
-  return props.teamId
-    ? Teams.listTeamCandidates(props.orgId, props.teamId, params, { signal })
-    : Teams.listNewTeamCandidates(props.orgId, params, { signal });
-});
+} = useTeamPages(scope, ({ orgId, teamId, q }, after, signal) =>
+  teamId
+    ? Teams.listTeamCandidates(orgId, teamId, { q, after }, { signal })
+    : Teams.listNewTeamCandidates(orgId, { q, after }, { signal }),
+);
 
 const items = computed(() =>
   people.value.map((person) => ({

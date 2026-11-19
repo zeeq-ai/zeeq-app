@@ -6,9 +6,10 @@ interface Page<T> {
 }
 
 /** Loads a scoped page and discards results from a superseded search or organization. */
-export function useTeamPages<T>(
-  scope: Readonly<Ref<string | null>>,
+export function useTeamPages<T, Scope>(
+  scope: Readonly<Ref<Scope | null>>,
   fetchPage: (
+    criteria: Scope,
     after: string | undefined,
     signal: AbortSignal,
   ) => Promise<Page<T>>,
@@ -26,7 +27,8 @@ export function useTeamPages<T>(
       nextCursor.value = null;
     }
 
-    if (!scope.value) {
+    const criteria = scope.value;
+    if (criteria === null) {
       loading.value = false;
       error.value = null;
       return;
@@ -37,7 +39,7 @@ export function useTeamPages<T>(
     loading.value = true;
     error.value = null;
     try {
-      const page = await fetchPage(after, request.signal);
+      const page = await fetchPage(criteria, after, request.signal);
       if (!request.signal.aborted) {
         items.value = after ? [...items.value, ...page.items] : page.items;
         nextCursor.value = page.nextCursor;

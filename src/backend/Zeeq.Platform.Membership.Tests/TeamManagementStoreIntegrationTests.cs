@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
@@ -36,6 +37,15 @@ public sealed class TeamManagementStoreIntegrationTests(PgDatabaseFixture postgr
 
         var mixed = await store.UpdateAsync(orgId, supportId, owner, [owner, outsider], [], ct);
         await Assert.That(mixed is UpdateTeamResult.IneligibleMember).IsTrue();
+        var handler = new TeamManagementHandler(store);
+        var overlap = await handler.UpdateAsync(
+            orgId,
+            supportId,
+            TestUser(owner),
+            new UpdateTeamMembersRequest([owner, owner], [owner]),
+            ct
+        );
+        await Assert.That(overlap.Result is BadRequest<TeamError>).IsTrue();
         var empty = await store.GetTeamAsync(orgId, supportId, ct);
         await Assert.That(empty!.MemberCount).IsEqualTo(0);
 
@@ -73,10 +83,7 @@ public sealed class TeamManagementStoreIntegrationTests(PgDatabaseFixture postgr
         var owner = graph.Organization.CreatedByUserId;
         var store = new PostgresTeamManagementStore(_context);
         for (var i = 42; i > 0; i--)
-        {
-            var assigned = i == 42 ? new[] { owner } : [];
-            await store.CreateAsync(orgId, owner, $"Team {i:D2}", null, assigned, ct);
-        }
+            await store.CreateAsync(orgId, owner, $"Team {i:D2}", null, [owner], ct);
 
         var first = await store.ListTeamsAsync(orgId, null, null, ct);
         await Assert.That(first.Items).Count().IsEqualTo(40);
@@ -93,6 +100,85 @@ public sealed class TeamManagementStoreIntegrationTests(PgDatabaseFixture postgr
 
         var search = await store.ListTeamsAsync(orgId, "TEAM 42", null, ct);
         await Assert.That(search.Items.Single().Name).IsEqualTo("Team 42");
+
+        var firstAssignments = await store.ListMemberTeamsAsync(orgId, owner, null, ct);
+        await Assert.That(firstAssignments.Items).Count().IsEqualTo(40);
+        await Assert.That(firstAssignments.NextCursor).IsEqualTo(firstAssignments.Items[^1].Id);
+        var lastAssignments = await store.ListMemberTeamsAsync(
+            orgId,
+            owner,
+            firstAssignments.NextCursor,
+            ct
+        );
+        await Assert.That(lastAssignments.Items).Count().IsEqualTo(2);
+        await Assert.That(lastAssignments.NextCursor).IsNull();
+        await Assert
+            .That(
+                firstAssignments
+                    .Items.Concat(lastAssignments.Items)
+                    .Select(x => x.Id)
+                    .Distinct()
+                    .Count()
+            )
+            .IsEqualTo(42);
+    }
+
+    [Test]
+    public async Task People_PagesCandidatesAndRosterByUserId()
+    {
+        var ct = CancellationToken.None;
+        await TestBiome.Start(_context, out _).AddOrganization(out var graph).BuildAsync();
+        var orgId = graph.Organization.Id;
+        var owner = graph.Organization.CreatedByUserId;
+        var now = DateTimeOffset.UtcNow;
+        var ids = new[] { owner }
+            .Concat(Enumerable.Range(0, 41).Select(_ => NewId("user")))
+            .ToArray();
+        foreach (var id in ids.Skip(1))
+        {
+            _context.Users.Add(
+                new User
+                {
+                    Id = id,
+                    DisplayName = id,
+                    CreatedAtUtc = now,
+                }
+            );
+            _context.OrganizationMemberships.Add(
+                new OrganizationMembership
+                {
+                    Id = NewId("mem"),
+                    OrganizationId = orgId,
+                    UserId = id,
+                    Role = "member",
+                    Status = MembershipStatus.Active,
+                    CreatedByUserId = owner,
+                    CreatedAtUtc = now,
+                }
+            );
+        }
+        await _context.SaveChangesAsync(ct);
+
+        var store = new PostgresTeamManagementStore(_context);
+        var created = await store.CreateAsync(orgId, owner, "Engineering", null, [], ct);
+        var teamId = ((CreateTeamResult.Saved)created).TeamId;
+        var result = await store.UpdateAsync(orgId, teamId, owner, ids, [], ct);
+        await Assert.That(result is UpdateTeamResult.Saved).IsTrue();
+
+        foreach (var (scope, candidates) in new (string?, bool)[] { (null, true), (teamId, false) })
+        {
+            var first = (await store.ListPeopleAsync(orgId, scope, candidates, null, null, ct))!;
+            await Assert.That(first.Items).Count().IsEqualTo(40);
+            await Assert.That(first.NextCursor).IsEqualTo(first.Items[^1].UserId);
+            var last = (
+                await store.ListPeopleAsync(orgId, scope, candidates, null, first.NextCursor, ct)
+            )!;
+            await Assert.That(last.Items).Count().IsEqualTo(2);
+            await Assert.That(last.NextCursor).IsNull();
+            await Assert
+                .That(first.Items.Concat(last.Items).Select(person => person.UserId))
+                .IsEquivalentTo(ids);
+        }
     }
 
     [Test]

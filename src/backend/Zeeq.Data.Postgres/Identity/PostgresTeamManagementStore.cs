@@ -47,14 +47,12 @@ internal sealed class PostgresTeamManagementStore(PostgresDbContext db) : ITeamM
         CancellationToken ct
     )
     {
+        // The membership primary key guarantees one row per organization, team and user.
         var assignments = db
             .TeamMemberships.AsNoTracking()
             .TagWithOperationCallSite("membership.team.list_member_teams")
             .Where(m => m.OrganizationId == orgId && m.UserId == userId && m.DisabledAtUtc == null);
-        if (after is not null)
-            assignments = assignments.Where(m => string.Compare(m.TeamId, after) > 0);
-
-        var rows = await assignments
+        var teams = assignments
             .Join(
                 ActiveMembers(orgId),
                 assignment => assignment.UserId,
@@ -71,11 +69,15 @@ internal sealed class PostgresTeamManagementStore(PostgresDbContext db) : ITeamM
                 Teams(orgId),
                 assignment => assignment.TeamId,
                 team => team.Id,
-                (assignment, team) => new { Id = assignment.TeamId, Name = team.DisplayName }
-            )
-            .OrderBy(row => row.Id)
+                (assignment, team) => new { assignment.TeamId, Name = team.DisplayName }
+            );
+        if (after is not null)
+            teams = teams.Where(team => string.Compare(team.TeamId, after) > 0);
+
+        var rows = await teams
+            .OrderBy(team => team.TeamId)
             .Take(PageSize + 1)
-            .Select(row => new TeamReference(row.Id, row.Name))
+            .Select(team => new TeamReference(team.TeamId, team.Name))
             .ToArrayAsync(ct);
         var page = rows.Take(PageSize).ToArray();
         return new TeamPage<TeamReference>(page, rows.Length > PageSize ? page[^1].Id : null);
@@ -105,8 +107,6 @@ internal sealed class PostgresTeamManagementStore(PostgresDbContext db) : ITeamM
             return null;
 
         var members = ActiveMembers(orgId);
-        if (after is not null)
-            members = members.Where(m => string.Compare(m.UserId, after) > 0);
         if (teamId is not null)
         {
             var assigned = db.TeamMemberships.Where(m =>
@@ -117,26 +117,40 @@ internal sealed class PostgresTeamManagementStore(PostgresDbContext db) : ITeamM
                 : members.Where(m => assigned.Any(a => a.UserId == m.UserId));
         }
 
-        var users = members.Join(
+        var people = members.Join(
             db.Users.AsNoTracking().Where(u => u.DisabledAtUtc == null),
             member => member.UserId,
             user => user.Id,
-            (_, user) => user
+            (_, user) =>
+                new
+                {
+                    UserId = user.Id,
+                    user.DisplayName,
+                    user.Email,
+                    user.PictureUrl,
+                }
         );
+        if (after is not null)
+            people = people.Where(person => string.Compare(person.UserId, after) > 0);
         if (search is not null)
         {
             var pattern = SearchPattern(search);
-            users = users.Where(u =>
-                EF.Functions.ILike(u.DisplayName, pattern, "\\")
-                || (u.Email != null && EF.Functions.ILike(u.Email, pattern, "\\"))
+            people = people.Where(person =>
+                EF.Functions.ILike(person.DisplayName, pattern, "\\")
+                || (person.Email != null && EF.Functions.ILike(person.Email, pattern, "\\"))
             );
         }
 
-        var rows = await users
+        var rows = await people
             .TagWithOperationCallSite("membership.team.list_people")
-            .OrderBy(u => u.Id)
+            .OrderBy(person => person.UserId)
             .Take(PageSize + 1)
-            .Select(u => new TeamPerson(u.Id, u.DisplayName, u.Email, u.PictureUrl))
+            .Select(person => new TeamPerson(
+                person.UserId,
+                person.DisplayName,
+                person.Email,
+                person.PictureUrl
+            ))
             .ToArrayAsync(ct);
         var page = rows.Take(PageSize).ToArray();
         return new TeamPage<TeamPerson>(page, rows.Length > PageSize ? page[^1].UserId : null);

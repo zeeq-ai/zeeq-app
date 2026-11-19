@@ -109,17 +109,13 @@ const query = ref("");
 const search = refDebounced(query, 220);
 const scope = computed(() =>
   orgId.value && canManageOrganization.value
-    ? JSON.stringify([orgId.value, search.value])
+    ? { orgId: orgId.value, q: search.value.trim() || undefined }
     : null,
 );
 const { items, loading, error, nextCursor, reload, loadMore } = useTeamPages(
   scope,
-  (after, signal) =>
-    Teams.listTeams(
-      orgId.value!,
-      { q: search.value.trim() || undefined, after },
-      { signal },
-    ),
+  ({ orgId, q }, after, signal) =>
+    Teams.listTeams(orgId, { q, after }, { signal }),
 );
 const teamId = computed(() =>
   typeof route.params.teamId === "string" ? route.params.teamId : undefined,

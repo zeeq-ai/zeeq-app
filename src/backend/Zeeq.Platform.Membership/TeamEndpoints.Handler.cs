@@ -115,11 +115,18 @@ public sealed class TeamManagementHandler(ITeamManagementStore store) : IEndpoin
         CancellationToken ct
     )
     {
-        var add = request.Add ?? [];
-        var remove = request.Remove ?? [];
-        if (!ValidIds(add) || !ValidIds(remove) || add.Intersect(remove).Any())
+        var requestedAdd = request.Add ?? [];
+        var requestedRemove = request.Remove ?? [];
+        if (!ValidIds(requestedAdd) || !ValidIds(requestedRemove))
             return TypedResults.BadRequest(
-                new TeamError("Supply up to 100 distinct additions and removals.")
+                new TeamError("Supply up to 100 valid user IDs in each list.")
+            );
+
+        var additions = requestedAdd.ToHashSet(StringComparer.Ordinal);
+        var removals = requestedRemove.ToHashSet(StringComparer.Ordinal);
+        if (additions.Overlaps(removals))
+            return TypedResults.BadRequest(
+                new TeamError("A member cannot be both added and removed.")
             );
 
         var actor = user.FindFirstValue(OpenIddictConstants.Claims.Subject)!;
@@ -127,8 +134,8 @@ public sealed class TeamManagementHandler(ITeamManagementStore store) : IEndpoin
             orgId,
             teamId,
             actor,
-            add.Distinct().ToArray(),
-            remove.Distinct().ToArray(),
+            additions.ToArray(),
+            removals.ToArray(),
             ct
         );
         return result switch

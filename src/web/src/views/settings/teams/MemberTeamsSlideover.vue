@@ -58,17 +58,13 @@ import { useTeamPages } from "./useTeamPages";
 const props = defineProps<{ orgId: string; member: MemberResponse }>();
 const emits = defineEmits<{ close: [] }>();
 
-const scope = computed(() =>
-  JSON.stringify([props.orgId, props.member.userId]),
-);
+const scope = computed(() => ({
+  orgId: props.orgId,
+  userId: props.member.userId,
+}));
 const { items, loading, error, nextCursor, loadMore } = useTeamPages(
   scope,
-  (after, signal) =>
-    Teams.listMemberTeams(
-      props.orgId,
-      props.member.userId,
-      { after },
-      { signal },
-    ),
+  ({ orgId, userId }, after, signal) =>
+    Teams.listMemberTeams(orgId, userId, { after }, { signal }),
 );
 </script>
