@@ -27,10 +27,10 @@ public sealed record CodeReviewSettings
     /// Enables dataset curation and admission of reviewer backtesting runs.
     /// </summary>
     /// <remarks>
-    /// Disabled by default for additive rollouts. Already admitted evaluations can
-    /// finish when this is disabled; ordinary reviews and quick tests are unaffected.
+    /// Enabled by default. Already admitted evaluations can finish when this is
+    /// disabled. Ordinary reviews and single-PR tests are unaffected.
     /// </remarks>
-    public bool EvaluationsEnabled { get; init; }
+    public bool EvaluationsEnabled { get; init; } = true;
 
     /// <summary>
     /// Stable identity used by automated code-review agents.

@@ -46,7 +46,7 @@
     >
       <UAlert
         title="Reviewer evaluations are disabled"
-        description="Quick test remains available. Contact your administrator if you need reusable datasets and run history."
+        description="Contact your administrator to enable reusable datasets and run history. You can still run a single-PR test from the Test tab."
         color="neutral"
         variant="subtle"
       />
@@ -62,66 +62,12 @@
       </div>
 
       <div
-        v-else-if="quickTestOpen"
-        class="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+        v-else-if="loadingAvailability || availability?.enabled"
+        class="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4"
       >
-        <div
-          class="flex items-center justify-between border-b border-default px-3 py-2"
-        >
-          <h3 class="text-sm font-semibold text-highlighted">
-            Quick test · one PR · ephemeral
-          </h3>
-          <UButton
-            label="Back to evaluation"
-            color="neutral"
-            variant="ghost"
-            @click="quickTestOpen = false"
-          />
-        </div>
-        <div
-          class="grid min-h-0 gap-3 overflow-hidden p-3 lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]"
-        >
-          <AgentTestPanel
-            v-model:selected-pull-request="selectedQuickTestPullRequest"
-            :targets="quickTestTargets"
-            :loading="quickTestLoading"
-            :loading-more="quickTestLoadingMore"
-            :running="quickTestRunning"
-            :disabled="!canManage || quickTestRunning"
-            :has-more="quickTestHasMore"
-            @load-targets="emits('loadQuickTestTargets')"
-            @load-more-targets="emits('loadMoreQuickTestTargets')"
-            @run="runQuickTest"
-          />
-          <AgentTestResultsPanel :result="quickTestResult" />
-        </div>
-      </div>
-
-      <div v-else class="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
         <div v-if="loadingAvailability" class="grid gap-3 p-4">
           <USkeleton class="h-10" />
           <USkeleton class="h-48" />
-        </div>
-
-        <div
-          v-else-if="!availability?.enabled"
-          class="flex h-full items-center justify-center"
-        >
-          <UEmpty
-            icon="i-hugeicons-test-tube-01"
-            title="Run a quick test"
-            description="Use the single PR quick test to inspect the current draft without creating durable history."
-          >
-            <template #actions>
-              <UButton
-                label="Quick test"
-                icon="i-hugeicons-play"
-                color="neutral"
-                variant="subtle"
-                @click="openQuickTest"
-              />
-            </template>
-          </UEmpty>
         </div>
 
         <div v-else-if="loadingDatasets" class="grid gap-3">
@@ -282,23 +228,14 @@
                 <span v-else> · Run uses current draft</span>
               </p>
             </div>
-            <div class="flex flex-wrap gap-2">
-              <UButton
-                label="Quick test"
-                icon="i-hugeicons-play"
-                color="neutral"
-                variant="ghost"
-                @click="openQuickTest"
-              />
-              <UButton
-                label="Refresh history"
-                icon="i-hugeicons-refresh"
-                color="neutral"
-                variant="ghost"
-                :loading="loadingRuns"
-                @click="refreshHistory"
-              />
-            </div>
+            <UButton
+              label="Refresh history"
+              icon="i-hugeicons-refresh"
+              color="neutral"
+              variant="ghost"
+              :loading="loadingRuns"
+              @click="refreshHistory"
+            />
           </header>
 
           <UAlert
@@ -392,8 +329,6 @@ import { storeToRefs } from "pinia";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
 import type {
-  CodeReviewAgentTestRunResponse,
-  CodeReviewPullRequestDto,
   CodeReviewerAgentDto,
   CodeReviewerAgentRevisionConfiguration,
   CodeReviewEvaluationFindingSeverity,
@@ -403,8 +338,6 @@ import type {
 } from "@/api/generated";
 import { useCodeReviewEvaluationStore } from "@/stores/code-review-evaluation-store";
 import { CodeReviews } from "@/api/generated";
-import AgentTestPanel from "./AgentTestPanel.vue";
-import AgentTestResultsPanel from "./AgentTestResultsPanel.vue";
 import DatasetSlideover from "./DatasetSlideover.vue";
 import EvaluationCreateDataset from "./EvaluationCreateDataset.vue";
 import EvaluationRunCases from "./EvaluationRunCases.vue";
@@ -425,18 +358,6 @@ const props = defineProps<{
   reviewers: CodeReviewerAgentDto[];
   reviewerConfiguration: CodeReviewerAgentRevisionConfiguration;
   canManage: boolean;
-  quickTestTargets: CodeReviewPullRequestDto[];
-  quickTestLoading: boolean;
-  quickTestLoadingMore: boolean;
-  quickTestHasMore: boolean;
-  quickTestRunning: boolean;
-  quickTestResult: CodeReviewAgentTestRunResponse | null;
-}>();
-
-const emits = defineEmits<{
-  loadQuickTestTargets: [];
-  loadMoreQuickTestTargets: [];
-  runQuickTest: [pullRequest: CodeReviewPullRequestDto];
 }>();
 
 const store = useCodeReviewEvaluationStore();
@@ -496,11 +417,10 @@ const datasetDraft = ref<EvaluationDatasetDraft | null>(null);
 const datasetDraftEditEpoch = ref(0);
 const datasetEditorOpen = ref(false);
 const showCreateDataset = ref(false);
-const quickTestOpen = ref(false);
-const selectedQuickTestPullRequest = ref<CodeReviewPullRequestDto | null>(null);
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let inboxIntentRequestId = 0;
 let inboxIntentReady = false;
+let workspaceUnmounted = false;
 
 watch(
   datasetDraft,
@@ -534,17 +454,24 @@ const refreshingCaseId = ref<string | null>(null);
 
 onMounted(async () => {
   window.addEventListener("beforeunload", handleBeforeUnload);
+  selectedDataset.value = null;
+  selectedRun.value = null;
   await store.loadAvailability();
+  if (workspaceUnmounted) return;
+
   if (availability.value?.enabled) {
     await store.loadDatasets(props.repositoryId);
+    if (workspaceUnmounted) return;
     selectedDatasetId.value = datasets.value[0]?.id ?? null;
     if (selectedDatasetId.value) {
       await selectDataset(selectedDatasetId.value);
     }
   }
+  if (workspaceUnmounted) return;
+
   inboxIntentReady = true;
-  await openInboxDatasetIntent();
   beginPolling();
+  await openInboxDatasetIntent();
 });
 
 watch(
@@ -555,6 +482,8 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  workspaceUnmounted = true;
+  inboxIntentRequestId += 1;
   invalidateDatasetCaptureRequests();
   store.invalidateDatasetLoad();
   endPolling();
@@ -566,28 +495,6 @@ onBeforeRouteLeave(() => {
   datasetEditorOpen.value = true;
   return false;
 });
-
-watch(
-  () => props.repositoryId,
-  async (repositoryId) => {
-    if (datasetDraftDirty.value) {
-      datasetEditorOpen.value = true;
-      return;
-    }
-    invalidateDatasetCaptureRequests();
-    store.invalidateDatasetLoad();
-    selectedDatasetId.value = null;
-    selectedDataset.value = null;
-    datasetDraft.value = null;
-    selectedRun.value = null;
-    if (!availability.value?.enabled) return;
-    await store.loadDatasets(repositoryId);
-    selectedDatasetId.value = datasets.value[0]?.id ?? null;
-    if (selectedDatasetId.value) {
-      await selectDataset(selectedDatasetId.value);
-    }
-  },
-);
 
 watch(
   () => props.agentId,
@@ -1161,16 +1068,6 @@ function loadMoreRuns() {
       true,
     );
   }
-}
-
-function openQuickTest() {
-  if (props.quickTestTargets.length === 0) emits("loadQuickTestTargets");
-  quickTestOpen.value = true;
-  selectedRun.value = null;
-}
-
-function runQuickTest(pullRequest: CodeReviewPullRequestDto) {
-  emits("runQuickTest", pullRequest);
 }
 
 function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {

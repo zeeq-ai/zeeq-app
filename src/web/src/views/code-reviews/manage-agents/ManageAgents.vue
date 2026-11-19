@@ -43,7 +43,7 @@
         <section
           class="min-h-0 shrink-0 basis-60 flex-col border-r border-default lg:max-w-72 lg:basis-72"
           :class="
-            testWorkspaceActive &&
+            runWorkspaceActive &&
             selectedManagementItemId !== managementFiltersItemId
               ? 'hidden min-[1440px]:flex'
               : 'hidden lg:flex'
@@ -163,7 +163,7 @@
             @load-more-test-targets="loadMoreAgentTestTargets"
             @run-test="runAgentTest"
             @preview-activation-filters="previewActivationFilters"
-            @workspace-mode="testWorkspaceActive = $event"
+            @workspace-mode="runWorkspaceActive = $event"
             @select-reviewer="selectReviewerById"
           />
 
@@ -320,7 +320,7 @@ const props = defineProps<{
 }>();
 
 const toast = useToast();
-const testWorkspaceActive = ref(true);
+const runWorkspaceActive = ref(true);
 const route = useRoute();
 const router = useRouter();
 const appStore = useAppStore();
