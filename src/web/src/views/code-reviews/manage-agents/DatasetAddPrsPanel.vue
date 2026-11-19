@@ -66,10 +66,12 @@
               :key="target.pullRequestNumber"
               class="border-t border-default"
               :class="{
+                'cursor-pointer hover:bg-elevated/50': canSelectTarget(target),
                 'bg-primary/5': selectedForDisplay.has(
                   Number(target.pullRequestNumber),
                 ),
               }"
+              @click="toggleTarget(target)"
             >
               <td class="px-3 py-2">
                 <UCheckbox
@@ -77,11 +79,8 @@
                     selectedForDisplay.has(Number(target.pullRequestNumber))
                   "
                   :aria-label="`Select PR #${target.pullRequestNumber} ${target.title}`"
-                  :disabled="
-                    disabled ||
-                    target.alreadyInDataset ||
-                    capturedNumbers.has(Number(target.pullRequestNumber))
-                  "
+                  :disabled="!canSelectTarget(target)"
+                  @click.stop
                   @update:model-value="toggleTarget(target)"
                 />
               </td>
@@ -229,6 +228,9 @@ import type {
   CodeReviewEvaluationPrTargetDto,
 } from "@/api/generated";
 
+const selectedNumbers = defineModel<Set<number>>("selectedNumbers", {
+  required: true,
+});
 const props = defineProps<{
   targets: CodeReviewEvaluationPrTargetDto[];
   stagedPullRequestNumbers: number[];
@@ -248,7 +250,6 @@ const emits = defineEmits<{
 
 const searchText = ref("");
 const manualEntries = ref("");
-const selectedNumbers = ref(new Set<number>());
 const capturedNumbers = computed(() => new Set(props.stagedPullRequestNumbers));
 const selectedForDisplay = computed(
   () =>
@@ -272,11 +273,16 @@ function requestTargets() {
   emits("searchTargets", searchText.value);
 }
 
-function toggleTarget(target: CodeReviewEvaluationPrTargetDto) {
-  if (props.disabled || target.alreadyInDataset) {
-    return;
-  }
+function canSelectTarget(target: CodeReviewEvaluationPrTargetDto) {
+  return (
+    !props.disabled &&
+    !target.alreadyInDataset &&
+    !capturedNumbers.value.has(Number(target.pullRequestNumber))
+  );
+}
 
+function toggleTarget(target: CodeReviewEvaluationPrTargetDto) {
+  if (!canSelectTarget(target)) return;
   const next = new Set(selectedNumbers.value);
   const pullRequestNumber = Number(target.pullRequestNumber);
   if (next.has(pullRequestNumber)) {

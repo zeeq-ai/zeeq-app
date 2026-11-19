@@ -33,6 +33,18 @@
             @click="emits('manageDatasets')"
           />
         </UTooltip>
+        <UTooltip text="New dataset">
+          <UButton
+            aria-label="New dataset"
+            icon="i-hugeicons-plus-sign"
+            color="neutral"
+            variant="outline"
+            size="md"
+            class="shrink-0"
+            :disabled="disabled"
+            @click="emits('createDataset')"
+          />
+        </UTooltip>
       </UFieldGroup>
     </UFormField>
     <USeparator orientation="vertical" class="hidden h-8 self-end lg:block" />
@@ -105,6 +117,7 @@ const emits = defineEmits<{
   selectDataset: [datasetId: string];
   selectRevision: [revisionId: string];
   manageDatasets: [];
+  createDataset: [];
   viewRevision: [];
   run: [revisionId: string | null];
 }>();

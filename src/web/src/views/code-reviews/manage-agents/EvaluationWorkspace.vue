@@ -17,6 +17,7 @@
       @select-dataset="selectDataset"
       @select-revision="selectRevision"
       @manage-datasets="openDatasetEditor"
+      @create-dataset="startNewDataset"
       @view-revision="openRevisionDiff"
       @run="runEvaluation"
     />
@@ -285,6 +286,7 @@
       v-if="selectedDataset && datasetDraft"
       v-model:open="datasetEditorOpen"
       v-model:draft="datasetDraft"
+      v-model:selected-numbers="selectedPullRequestNumbers"
       :dataset="selectedDataset"
       :repository-name="workspaceRepository.name"
       :reviewers="reviewers"
@@ -304,7 +306,7 @@
       :has-more-targets="!!targetNextCursor"
       :refreshing-case-id="refreshingCaseId"
       :saving="savingDataset"
-      :save-error="datasetSaveError"
+      :save-error="selectionSaveError ?? datasetSaveError"
       @select-reviewer="selectReviewer"
       @search-targets="searchTargets"
       @load-more-targets="loadMoreTargets"
@@ -354,6 +356,7 @@ import EvaluationRunHistory from "./EvaluationRunHistory.vue";
 import EvaluationRevisionDiff from "./EvaluationRevisionDiff.vue";
 import EvaluationToolbar from "./EvaluationToolbar.vue";
 import {
+  addCapturedEvaluationCase,
   countEvaluationDatasetDraftChanges,
   createEvaluationDatasetDraft,
   updateEvaluationCaseReferenceSet,
@@ -422,8 +425,11 @@ let historicalRequestId = 0;
 let refreshUiRequestId = 0;
 const revisionDiffOpen = ref(false);
 const datasetDraft = ref<EvaluationDatasetDraft | null>(null);
+const selectedPullRequestNumbers = ref(new Set<number>());
+const selectionSaveError = ref<string | null>(null);
 const datasetDraftEditEpoch = ref(0);
 const datasetEditorOpen = ref(false);
+let datasetEditorSessionId = 0;
 const showCreateDataset = ref(false);
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let inboxIntentRequestId = 0;
@@ -432,6 +438,14 @@ let pendingInboxCleanupPath: string | null = null;
 let repositoryLoadRequestId = 0;
 let repositoryLoadDeferred = false;
 let workspaceUnmounted = false;
+
+watch(
+  datasetEditorOpen,
+  () => {
+    datasetEditorSessionId += 1;
+  },
+  { flush: "sync" },
+);
 
 watch(
   datasetDraft,
@@ -446,6 +460,7 @@ const datasetDraftDirty = computed(() => {
     return false;
   }
   return (
+    selectedPullRequestNumbers.value.size > 0 ||
     datasetDraft.value.name !== selectedDataset.value.name ||
     datasetDraft.value.description !==
       (selectedDataset.value.description ?? "") ||
@@ -488,6 +503,8 @@ async function loadRepositoryDatasets(repositoryId: string, enabled: boolean) {
   if (!isCurrentRepository()) return;
   const originalInboxIntentId = ++inboxIntentRequestId;
   datasetEditorOpen.value = false;
+  selectedPullRequestNumbers.value = new Set();
+  selectionSaveError.value = null;
   showCreateDataset.value = false;
   datasets.value = [];
   selectedDatasetId.value = null;
@@ -868,9 +885,31 @@ function createDataset(name: string, description?: string) {
 }
 
 async function saveDatasetDraft(closeAfterSuccess = false) {
-  if (!datasetDraft.value || resolvingPrs.value || refreshingCaseId.value) {
+  if (
+    !datasetDraft.value ||
+    savingDataset.value ||
+    resolvingPrs.value ||
+    refreshingCaseId.value
+  ) {
     return;
   }
+  selectionSaveError.value = null;
+  const submittedSelection = [...selectedPullRequestNumbers.value];
+  if (submittedSelection.length > 0) {
+    if (!(await resolvePrs(submittedSelection.map(String)))) return;
+    const staged = new Set(
+      datasetDraft.value?.cases.map((item) => item.pullRequestNumber),
+    );
+    if (
+      selectedPullRequestNumbers.value.size > 0 ||
+      submittedSelection.some((number) => !staged.has(number))
+    ) {
+      selectionSaveError.value =
+        "Some selected PRs could not be captured. Check the results in Add PRs, then retry or uncheck those PRs.";
+      return;
+    }
+  }
+  if (!datasetDraft.value) return;
   const stagedPullRequestNumbers = new Set(
     datasetDraft.value.cases
       .filter((item) => item.captureToken)
@@ -943,6 +982,8 @@ function startNewDataset() {
 
 function closeDatasetEditor() {
   invalidateDatasetCaptureRequests();
+  selectedPullRequestNumbers.value = new Set();
+  selectionSaveError.value = null;
   datasetEditorOpen.value = false;
 }
 
@@ -1111,16 +1152,56 @@ function loadMoreTargets() {
   }
 }
 
-function resolvePrs(entries: string[]) {
-  if (!datasetDraft.value) {
-    return;
-  }
-  void store.resolvePrs(
-    props.workspaceRepository.id,
-    datasetDraft.value.datasetId,
-    datasetDraft.value.expectedVersion,
+async function resolvePrs(entries: string[]) {
+  const original = datasetDraft.value;
+  if (!original || !datasetEditorOpen.value) return false;
+  const sessionId = datasetEditorSessionId;
+  const repositoryId = props.workspaceRepository.id;
+  selectionSaveError.value = null;
+  const items = await store.resolvePrs(
+    repositoryId,
+    original.datasetId,
+    original.expectedVersion,
     entries,
   );
+  const current = datasetDraft.value;
+  const dataset = selectedDataset.value;
+  if (
+    items.length === 0 ||
+    sessionId !== datasetEditorSessionId ||
+    !current ||
+    !dataset ||
+    !datasetEditorOpen.value ||
+    props.workspaceRepository.id !== repositoryId ||
+    dataset.id !== original.datasetId ||
+    current.datasetId !== original.datasetId ||
+    current.expectedVersion !== original.expectedVersion
+  )
+    return false;
+
+  let updated = current;
+  const pending = new Set(selectedPullRequestNumbers.value);
+  for (const item of items) {
+    if (!item.captureToken || !item.preview) continue;
+    const pullRequestNumber = Number(item.preview.pullRequestNumber);
+    updated = addCapturedEvaluationCase(
+      updated,
+      {
+        pullRequestNumber,
+        title: item.target?.title ?? item.preview.title,
+        captureToken: item.captureToken,
+        preview: item.preview,
+      },
+      dataset.cases.find(
+        (item) => Number(item.pullRequestNumber) === pullRequestNumber,
+      ),
+      props.reviewers.map((reviewer) => reviewer.id),
+    );
+    pending.delete(pullRequestNumber);
+  }
+  datasetDraft.value = updated;
+  selectedPullRequestNumbers.value = pending;
+  return true;
 }
 
 async function refreshCase(caseId: string) {
