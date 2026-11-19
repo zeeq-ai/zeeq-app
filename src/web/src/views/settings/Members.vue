@@ -7,12 +7,22 @@
       orientation="horizontal"
       class="mb-4"
     >
-      <USelect
-        v-model="statusFilter"
-        :items="statusFilterItems"
-        color="neutral"
-        class="w-36 lg:ms-auto"
-      />
+      <div class="flex flex-wrap items-center gap-2 lg:ms-auto">
+        <UButton
+          v-if="canManageOrganization"
+          :to="{ name: 'SettingsTeams' }"
+          label="Manage teams"
+          icon="i-lucide-users-round"
+          color="neutral"
+          variant="ghost"
+        />
+        <USelect
+          v-model="statusFilter"
+          :items="statusFilterItems"
+          color="neutral"
+          class="w-36"
+        />
+      </div>
     </UPageCard>
 
     <UPageCard
@@ -78,6 +88,7 @@
         :can-manage="canManageOrganization"
         :saving
         :current-user-id="currentUserId"
+        @view-teams="teamMember = $event"
         @role-change="changeRole"
         @remove="removeMember"
         @cancel-invitation="cancelInvitation"
@@ -99,6 +110,12 @@
         />
       </div>
     </UPageCard>
+    <MemberTeamsSlideover
+      v-if="teamMember && me?.organizationId && canManageOrganization"
+      :org-id="me.organizationId"
+      :member="teamMember"
+      @close="teamMember = null"
+    />
   </div>
 </template>
 
@@ -109,6 +126,7 @@ import { useFuse } from "@vueuse/integrations/useFuse";
 import type { InvitationResponse } from "@/api/generated/types/InvitationResponse";
 import type { MemberResponse } from "@/api/generated/types/MemberResponse";
 import MembersList from "./components/MembersList.vue";
+import MemberTeamsSlideover from "./teams/MemberTeamsSlideover.vue";
 import {
   organizationRoleOptions,
   useOrganizationSettingsStore,
@@ -137,6 +155,14 @@ const settingsStore = useOrganizationSettingsStore();
 const { user: me } = storeToRefs(appStore);
 const { members, organizationInvitations, saving, canManageOrganization } =
   storeToRefs(settingsStore);
+
+const teamMember = ref<MemberResponse | null>(null);
+watch(
+  () => me.value?.organizationId,
+  () => {
+    teamMember.value = null;
+  },
+);
 
 const pageSize = 10;
 const query = ref("");

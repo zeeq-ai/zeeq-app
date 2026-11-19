@@ -174,6 +174,25 @@ internal sealed class TeamConfiguration : IEntityTypeConfiguration<Team>
         entity.Property(team => team.Id).HasMaxLength(128);
         entity.Property(team => team.OrganizationId).IsRequired().HasMaxLength(128);
         entity.Property(team => team.DisplayName).IsRequired().HasMaxLength(200);
+        entity.Property(team => team.Description).HasMaxLength(500);
+        entity
+            .Property<string>("NormalizedName")
+            .HasMaxLength(200)
+            .HasComputedColumnSql("lower(btrim(display_name))", stored: true);
+        entity
+            .HasIndex(nameof(Team.OrganizationId), "NormalizedName")
+            .IsUnique()
+            .HasDatabaseName("ux_core_teams_active_name")
+            .HasFilter("NOT is_root_team AND disabled_at_utc IS NULL");
+        entity
+            .HasIndex(team => team.OrganizationId)
+            .IsUnique()
+            .HasFilter("is_root_team AND disabled_at_utc IS NULL")
+            .HasDatabaseName("ux_core_teams_active_root");
+        entity
+            .HasIndex(team => new { team.OrganizationId, team.Id })
+            .HasFilter("NOT is_root_team AND disabled_at_utc IS NULL")
+            .HasDatabaseName("ix_core_teams_active_directory");
         entity.Property(team => team.CreatedByUserId).IsRequired().HasMaxLength(128);
         entity.Property(team => team.CreatedAtUtc).IsRequired();
         entity.Property(team => team.UpdatedAtUtc).IsRequired();
@@ -270,6 +289,14 @@ internal sealed class TeamMembershipConfiguration : IEntityTypeConfiguration<Tea
         entity.Property(membership => membership.CreatedByUserId).IsRequired().HasMaxLength(128);
         entity.Property(membership => membership.CreatedAtUtc).IsRequired();
         entity.HasIndex(membership => new { membership.UserId, membership.OrganizationId });
+        entity
+            .HasIndex(membership => new
+            {
+                membership.OrganizationId,
+                membership.UserId,
+                membership.TeamId,
+            })
+            .HasFilter("disabled_at_utc IS NULL");
         entity.HasIndex(membership => new
         {
             membership.OrganizationId,

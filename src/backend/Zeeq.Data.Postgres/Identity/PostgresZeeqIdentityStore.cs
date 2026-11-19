@@ -872,7 +872,14 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db, AppSettings 
                     )
                     .AsNoTracking()
                     .Where(membership =>
-                        membership.UserId == userId && membership.DisabledAtUtc == null
+                        membership.UserId == userId
+                        && membership.DisabledAtUtc == null
+                        && db.Teams.Any(team =>
+                            team.OrganizationId == membership.OrganizationId
+                            && team.Id == membership.TeamId
+                            && team.IsRootTeam
+                            && team.DisabledAtUtc == null
+                        )
                     ),
                 organizationId => organizationId,
                 teamMembership => teamMembership.OrganizationId,
@@ -928,7 +935,14 @@ public sealed class PostgresZeeqIdentityStore(PostgresDbContext db, AppSettings 
                     )
                     .AsNoTracking()
                     .Where(membership =>
-                        membership.UserId == userId && membership.DisabledAtUtc == null
+                        membership.UserId == userId
+                        && membership.DisabledAtUtc == null
+                        && db.Teams.Any(team =>
+                            team.OrganizationId == membership.OrganizationId
+                            && team.Id == membership.TeamId
+                            && team.IsRootTeam
+                            && team.DisabledAtUtc == null
+                        )
                     ),
                 membership => membership.OrganizationId,
                 teamMembership => teamMembership.OrganizationId,
