@@ -506,16 +506,16 @@ function cancelCopy() {
 /** Confirms the copy, switches to the target repository, and opens the config
  *  panel pre-filled with the copied agent data. */
 async function confirmCopyAgentTo() {
+  const targetRepositoryId = copyPendingTargetRepoId.value;
   copyConfirmOpen.value = false;
-
-  await onCopyAgentTo(copyPendingTargetRepoId.value!);
   copyPendingTargetRepoId.value = null;
-}
 
-/** Captures the selected agent's form, switches to the target repository, and
- *  opens the config panel pre-filled with the copied agent data. */
-async function onCopyAgentTo(targetRepositoryId: string) {
-  if (!selectedAgent.value || !canManageOrganization.value) return;
+  if (
+    !targetRepositoryId ||
+    !selectedAgent.value ||
+    !canManageOrganization.value
+  )
+    return;
   if (!canChangeEvaluationRepository()) return;
 
   copiedAgentForm.value = agentToForm(selectedAgent.value);
