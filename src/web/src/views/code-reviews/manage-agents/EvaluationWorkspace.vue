@@ -430,6 +430,7 @@ let inboxIntentRequestId = 0;
 let inboxIntentReady = false;
 let pendingInboxCleanupPath: string | null = null;
 let repositoryLoadRequestId = 0;
+let repositoryLoadDeferred = false;
 let workspaceUnmounted = false;
 
 watch(
@@ -472,7 +473,11 @@ async function loadRepositoryDatasets(repositoryId: string, enabled: boolean) {
   const requestId = ++repositoryLoadRequestId;
   if (workspaceUnmounted || repositoryId !== props.workspaceRepository.id)
     return;
-  if (!canLeaveDatasetWorkspace()) return;
+  if (!canLeaveDatasetWorkspace()) {
+    repositoryLoadDeferred = true;
+    return;
+  }
+  repositoryLoadDeferred = false;
   inboxIntentReady = false;
   invalidateDatasetCaptureRequests();
   store.invalidateDatasetLoad(repositoryId);
@@ -522,12 +527,23 @@ async function loadRepositoryDatasets(repositoryId: string, enabled: boolean) {
   await openInboxDatasetIntent();
 }
 
-// A repository chosen before availability resolves must still load when it does.
+// Load when availability resolves. Retry a blocked load once the draft is clean.
 watch(
-  [() => props.workspaceRepository.id, () => availability.value?.enabled],
-  ([repositoryId, enabled]) => {
-    if (enabled !== undefined)
-      void loadRepositoryDatasets(repositoryId, enabled);
+  [
+    () => props.workspaceRepository.id,
+    () => availability.value?.enabled,
+    datasetDraftDirty,
+  ],
+  ([repositoryId, enabled, dirty], [previousRepositoryId, previousEnabled]) => {
+    if (
+      enabled === undefined ||
+      (repositoryId === previousRepositoryId &&
+        enabled === previousEnabled &&
+        (!repositoryLoadDeferred || dirty))
+    ) {
+      return;
+    }
+    void loadRepositoryDatasets(repositoryId, enabled);
   },
   { immediate: true },
 );
