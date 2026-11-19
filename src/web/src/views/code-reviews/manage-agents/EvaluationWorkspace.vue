@@ -425,7 +425,7 @@ const showCreateDataset = ref(false);
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let inboxIntentRequestId = 0;
 let inboxIntentReady = false;
-let clearingInboxIntent = false;
+let pendingInboxCleanupPath: string | null = null;
 let repositoryLoadRequestId = 0;
 let workspaceUnmounted = false;
 
@@ -477,7 +477,7 @@ async function loadRepositoryDatasets(repositoryId: string) {
   if (workspaceUnmounted || repositoryId !== props.repositoryId) return;
   if (!canLeaveDatasetWorkspace()) return;
   invalidateDatasetCaptureRequests();
-  store.invalidateDatasetLoad();
+  store.invalidateDatasetLoad(repositoryId);
   inboxIntentRequestId += 1;
   datasetEditorOpen.value = false;
   showCreateDataset.value = false;
@@ -530,8 +530,7 @@ function canLeaveDatasetWorkspace() {
 onBeforeRouteLeave(canLeaveDatasetWorkspace);
 onBeforeRouteUpdate((to, from) => {
   // Removing the already handled inbox intent only cleans up the URL.
-  const removingHandledIntent =
-    clearingInboxIntent && to.query.repositoryId === undefined;
+  const removingHandledIntent = to.fullPath === pendingInboxCleanupPath;
   if (
     to.params.orgId !== from.params.orgId ||
     to.params.agentId !== from.params.agentId ||
@@ -764,19 +763,20 @@ async function openInboxDatasetIntent() {
 }
 
 function clearInboxDatasetIntent() {
-  clearingInboxIntent = true;
-  void router
-    .replace({
-      query: {
-        ...route.query,
-        repositoryId: undefined,
-        datasetId: undefined,
-        prNumber: undefined,
-      },
-    })
-    .finally(() => {
-      clearingInboxIntent = false;
-    });
+  const cleanupPath = router.resolve({
+    query: {
+      ...route.query,
+      repositoryId: undefined,
+      datasetId: undefined,
+      prNumber: undefined,
+    },
+  }).fullPath;
+  pendingInboxCleanupPath = cleanupPath;
+  void router.replace(cleanupPath).finally(() => {
+    if (pendingInboxCleanupPath === cleanupPath) {
+      pendingInboxCleanupPath = null;
+    }
+  });
 }
 
 function showInboxIntentNotice(description: string) {

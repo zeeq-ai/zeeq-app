@@ -476,8 +476,12 @@ const {
 
 function confirmRepositoryChange(action: () => void | Promise<void>) {
   // Check the dataset before an accepted repository change remounts Evals.
-  if (agentConfigPanelRef.value?.canLeaveDatasetWorkspace() === false) return;
+  if (!canChangeEvaluationRepository()) return;
   return confirmAgentUnsavedChangesBefore(action);
+}
+
+function canChangeEvaluationRepository() {
+  return agentConfigPanelRef.value?.canLeaveDatasetWorkspace() ?? true;
 }
 
 const copyPendingTargetRepoLabel = computed(() => {
@@ -512,7 +516,7 @@ async function confirmCopyAgentTo() {
  *  opens the config panel pre-filled with the copied agent data. */
 async function onCopyAgentTo(targetRepositoryId: string) {
   if (!selectedAgent.value || !canManageOrganization.value) return;
-  if (agentConfigPanelRef.value?.canLeaveDatasetWorkspace() === false) return;
+  if (!canChangeEvaluationRepository()) return;
 
   copiedAgentForm.value = agentToForm(selectedAgent.value);
   editingAgent.value = null;
@@ -909,9 +913,23 @@ async function applyRouteAgentSelection() {
     const linkedAgent = await codeReviewStore.getAgent(props.agentId);
     if (!isCurrentSync()) return;
 
+    const linkedRepositoryId = route.query.repositoryId;
+    if (
+      typeof route.query.datasetId === "string" &&
+      typeof linkedRepositoryId === "string" &&
+      linkedRepositoryId !== linkedAgent.repositoryId
+    ) {
+      showError(
+        "Could not open dataset",
+        new Error(
+          "The link points to a different repository than the reviewer.",
+        ),
+      );
+      return;
+    }
+
     if (selectedRepositoryId.value !== linkedAgent.repositoryId) {
-      if (agentConfigPanelRef.value?.canLeaveDatasetWorkspace() === false)
-        return;
+      if (!canChangeEvaluationRepository()) return;
       await codeReviewStore.setSelectedRepository(linkedAgent.repositoryId);
       if (!isCurrentSync()) return;
     } else if (agents.value.length === 0) {

@@ -100,6 +100,7 @@ export const useCodeReviewEvaluationStore = defineStore(
       payload: string;
       key: string;
     } | null = null;
+    let workspaceRepositoryId: string | null = null;
     let datasetListRequestId = 0;
     let datasetLoadRequestId = 0;
     let runListRequestId = 0;
@@ -420,7 +421,14 @@ export const useCodeReviewEvaluationStore = defineStore(
       availabilityError.value = null;
     }
 
+    function isWorkspaceRepository(repositoryId: string) {
+      return (
+        workspaceRepositoryId === null || repositoryId === workspaceRepositoryId
+      );
+    }
+
     async function loadDatasets(repositoryId: string) {
+      if (!isWorkspaceRepository(repositoryId)) return [];
       const requestId = ++datasetListRequestId;
       const orgId = activeOrganizationId.value;
       if (!orgId || !repositoryId) {
@@ -432,7 +440,8 @@ export const useCodeReviewEvaluationStore = defineStore(
 
       const isCurrent = () =>
         requestId === datasetListRequestId &&
-        orgId === activeOrganizationId.value;
+        orgId === activeOrganizationId.value &&
+        isWorkspaceRepository(repositoryId);
       loadingDatasets.value = true;
       datasetError.value = null;
       try {
@@ -462,6 +471,7 @@ export const useCodeReviewEvaluationStore = defineStore(
       datasetId: string,
       shouldApply?: () => boolean,
     ) {
+      if (!isWorkspaceRepository(repositoryId)) return null;
       const requestId = ++datasetLoadRequestId;
       const orgId = activeOrganizationId.value;
       if (!orgId || !repositoryId || !datasetId) {
@@ -475,6 +485,7 @@ export const useCodeReviewEvaluationStore = defineStore(
       const canPublish = () =>
         requestId === datasetLoadRequestId &&
         activeOrganizationId.value === orgId &&
+        isWorkspaceRepository(repositoryId) &&
         shouldApply?.() !== false;
       loadingDataset.value = true;
       datasetError.value = null;
@@ -747,7 +758,8 @@ export const useCodeReviewEvaluationStore = defineStore(
       targetError.value = null;
     }
 
-    function invalidateDatasetLoad() {
+    function invalidateDatasetLoad(repositoryId: string | null = null) {
+      workspaceRepositoryId = repositoryId;
       datasetListRequestId += 1;
       datasetLoadRequestId += 1;
       runListRequestId += 1;
@@ -899,6 +911,7 @@ export const useCodeReviewEvaluationStore = defineStore(
       cursorId?: string | null,
       append = false,
     ) {
+      if (!isWorkspaceRepository(repositoryId)) return;
       const requestId = ++runListRequestId;
       const orgId = activeOrganizationId.value;
       if (!orgId || !repositoryId) {
@@ -909,7 +922,9 @@ export const useCodeReviewEvaluationStore = defineStore(
       }
 
       const isCurrent = () =>
-        requestId === runListRequestId && orgId === activeOrganizationId.value;
+        requestId === runListRequestId &&
+        orgId === activeOrganizationId.value &&
+        isWorkspaceRepository(repositoryId);
       loadingRuns.value = true;
       runError.value = null;
       try {
@@ -941,6 +956,7 @@ export const useCodeReviewEvaluationStore = defineStore(
     }
 
     async function loadRun(repositoryId: string, runId: string) {
+      if (!isWorkspaceRepository(repositoryId)) return null;
       const requestId = ++runLoadRequestId;
       const orgId = activeOrganizationId.value;
       if (!orgId || !repositoryId || !runId) {
@@ -950,7 +966,9 @@ export const useCodeReviewEvaluationStore = defineStore(
       }
 
       const isCurrent = () =>
-        requestId === runLoadRequestId && orgId === activeOrganizationId.value;
+        requestId === runLoadRequestId &&
+        orgId === activeOrganizationId.value &&
+        isWorkspaceRepository(repositoryId);
       loadingRun.value = true;
       runError.value = null;
       try {

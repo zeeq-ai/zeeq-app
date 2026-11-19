@@ -427,7 +427,7 @@ describe("evaluation dataset loading scope", () => {
       store.loadRuns("repo_A", "dataset_A"),
       store.loadRun("repo_A", "run_A"),
     ];
-    store.invalidateDatasetLoad();
+    store.invalidateDatasetLoad("repo_B");
     await Promise.all([
       store.loadDatasets("repo_B"),
       store.loadRuns("repo_B", "dataset_B"),
@@ -443,6 +443,10 @@ describe("evaluation dataset loading scope", () => {
     expect(store.runs.map((item) => item.id)).toEqual(["run_B"]);
     expect(store.runNextCursorId).toBeNull();
     expect(store.selectedRun?.run.id).toBe("run_B");
+    await expect(store.loadDatasets("repo_A")).resolves.toEqual([]);
+    await expect(store.loadRun("repo_A", "run_A")).resolves.toBeNull();
+    expect(apiMocks.listDatasets).toHaveBeenCalledTimes(2);
+    expect(apiMocks.getRun).toHaveBeenCalledTimes(2);
   });
 
   it("keeps a late dataset response from replacing the latest selection", async () => {
