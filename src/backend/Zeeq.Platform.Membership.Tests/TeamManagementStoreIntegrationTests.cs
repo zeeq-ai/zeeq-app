@@ -85,6 +85,8 @@ public sealed class TeamManagementStoreIntegrationTests(PgDatabaseFixture postgr
         for (var i = 42; i > 0; i--)
             await store.CreateAsync(orgId, owner, $"Team {i:D2}", null, [owner], ct);
 
+        await store.CreateAsync(orgId, owner, "Team 40é", null, [owner], ct);
+
         var first = await store.ListTeamsAsync(orgId, null, null, ct);
         await Assert.That(first.Items).Count().IsEqualTo(40);
         await Assert.That(first.Items[0].Name).IsEqualTo("Team 01");
@@ -92,7 +94,7 @@ public sealed class TeamManagementStoreIntegrationTests(PgDatabaseFixture postgr
         var last = await store.ListTeamsAsync(orgId, null, first.NextCursor, ct);
         await Assert
             .That(last.Items.Select(team => team.Name))
-            .IsEquivalentTo(["Team 41", "Team 42"]);
+            .IsEquivalentTo(["Team 40é", "Team 41", "Team 42"]);
         await Assert
             .That(last.Items.Single(team => team.Name == "Team 42").MemberCount)
             .IsEqualTo(1);
@@ -110,7 +112,7 @@ public sealed class TeamManagementStoreIntegrationTests(PgDatabaseFixture postgr
             firstAssignments.NextCursor,
             ct
         );
-        await Assert.That(lastAssignments.Items).Count().IsEqualTo(2);
+        await Assert.That(lastAssignments.Items).Count().IsEqualTo(3);
         await Assert.That(lastAssignments.NextCursor).IsNull();
         await Assert
             .That(
@@ -120,7 +122,7 @@ public sealed class TeamManagementStoreIntegrationTests(PgDatabaseFixture postgr
                     .Distinct()
                     .Count()
             )
-            .IsEqualTo(42);
+            .IsEqualTo(43);
     }
 
     [Test]

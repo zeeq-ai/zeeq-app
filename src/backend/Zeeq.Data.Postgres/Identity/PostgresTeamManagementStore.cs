@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
 
@@ -22,16 +21,19 @@ internal sealed class PostgresTeamManagementStore(PostgresDbContext db) : ITeamM
             var pattern = SearchPattern(search);
             query = query.Where(t => EF.Functions.ILike(t.DisplayName, pattern, "\\"));
         }
+        // Match the directory index's database-default collation for paging and ordering.
+        var directory = query.Select(team => new
+        {
+            Team = team,
+            Cursor = EF.Functions.Collate(EF.Property<string>(team, "NormalizedName"), "default"),
+        });
         if (after is not null)
-            query = query.Where(t =>
-                string.Compare(EF.Property<string>(t, "NormalizedName"), after) > 0
-            );
+            directory = directory.Where(row => string.Compare(row.Cursor, after) > 0);
 
-        var rows = await query
+        var rows = await directory
             .TagWithOperationCallSite("membership.team.list")
-            .OrderBy(t => EF.Property<string>(t, "NormalizedName"))
+            .OrderBy(row => row.Cursor)
             .Take(PageSize + 1)
-            .Select(t => new { Team = t, Cursor = EF.Property<string>(t, "NormalizedName") })
             .ToArrayAsync(ct);
         var page = rows.Take(PageSize).ToArray();
         return new TeamPage<TeamSummary>(
@@ -171,39 +173,26 @@ internal sealed class PostgresTeamManagementStore(PostgresDbContext db) : ITeamM
         if (!await LockEligibleMembersAsync(orgId, userIds, ct))
             return new CreateTeamResult.IneligibleMember();
 
-        var now = DateTimeOffset.UtcNow;
-        var team = new Team
-        {
-            Id = "team_" + Guid.NewGuid().ToString("N"),
-            OrganizationId = orgId,
-            DisplayName = name,
-            Description = description,
-            CreatedByUserId = actorId,
-            CreatedAtUtc = now,
-            UpdatedAtUtc = now,
-        };
-        db.Teams.Add(team);
-        try
-        {
-            await db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException ex)
-            when (ex.InnerException
-                    is PostgresException
-                    {
-                        SqlState: PostgresErrorCodes.UniqueViolation,
-                        ConstraintName: "ux_core_teams_active_name"
-                    }
-            )
-        {
-            db.Entry(team).State = EntityState.Detached;
+        var teamId = "team_" + Guid.NewGuid().ToString("N");
+        var inserted = await db.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+            INSERT INTO zeeq.core_teams
+                (id, organization_id, display_name, description, is_root_team,
+                    created_by_user_id, created_at_utc, updated_at_utc)
+            VALUES ({teamId}, {orgId}, {name}, {description}, false, {actorId}, now(), now())
+            ON CONFLICT (organization_id, normalized_name)
+                WHERE NOT is_root_team AND disabled_at_utc IS NULL
+            DO NOTHING
+            """,
+            ct
+        );
+        if (inserted == 0)
             return new CreateTeamResult.NameTaken();
-        }
 
-        await AddMembersAsync(orgId, team.Id, actorId, userIds, ct);
+        await AddMembersAsync(orgId, teamId, actorId, userIds, ct);
         if (tx is not null)
             await tx.CommitAsync(ct);
-        return new CreateTeamResult.Saved(team.Id);
+        return new CreateTeamResult.Saved(teamId);
     }
 
     public async Task<UpdateTeamResult> UpdateAsync(
