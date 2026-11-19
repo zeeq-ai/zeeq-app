@@ -539,7 +539,7 @@ onBeforeRouteUpdate((to, from) => {
   }
 });
 
-defineExpose({ canLeaveDatasetWorkspace });
+defineExpose({ canLeaveDatasetWorkspace, datasetDraftDirty });
 
 watch(
   () => props.agentId,

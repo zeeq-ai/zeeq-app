@@ -178,9 +178,9 @@
 
         <template #evals>
           <EvaluationWorkspace
-            v-if="repositoryId && hasOpenedEvals"
+            v-if="evaluationRepositoryId && hasOpenedEvals"
             ref="evaluationWorkspace"
-            :repository-id="repositoryId"
+            :repository-id="evaluationRepositoryId"
             :repository-name="repositoryName"
             :agent-id="agent?.id ?? null"
             :reviewers="reviewers"
@@ -188,7 +188,7 @@
             :can-manage="!disabled && !saving"
           />
           <UEmpty
-            v-else-if="!repositoryId"
+            v-else-if="!evaluationRepositoryId"
             title="Select a repository"
             description="Choose a repository to manage evaluation datasets and runs."
           />
@@ -518,6 +518,22 @@ const hasOpenedEvals = ref(false);
 const evaluationWorkspace = ref<InstanceType<
   typeof EvaluationWorkspace
 > | null>(null);
+// Keep a dirty workspace bound to the repository its draft belongs to.
+const evaluationRepositoryId = ref(props.repositoryId);
+watch(
+  [
+    () => props.repositoryId,
+    () => evaluationWorkspace.value?.datasetDraftDirty,
+  ],
+  ([repositoryId]) => {
+    if (
+      repositoryId !== evaluationRepositoryId.value &&
+      canLeaveDatasetWorkspace()
+    ) {
+      evaluationRepositoryId.value = repositoryId;
+    }
+  },
+);
 const compactWorkspace = useMediaQuery("(max-width: 1439px)");
 const reviewerItems = computed(() =>
   props.reviewers.map((reviewer) => ({
