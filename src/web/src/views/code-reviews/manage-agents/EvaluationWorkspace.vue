@@ -478,7 +478,7 @@ async function loadRepositoryDatasets(repositoryId: string) {
   if (!canLeaveDatasetWorkspace()) return;
   invalidateDatasetCaptureRequests();
   store.invalidateDatasetLoad(repositoryId);
-  inboxIntentRequestId += 1;
+  const originalInboxIntentId = ++inboxIntentRequestId;
   datasetEditorOpen.value = false;
   showCreateDataset.value = false;
   datasets.value = [];
@@ -491,9 +491,11 @@ async function loadRepositoryDatasets(repositoryId: string) {
   if (!availability.value?.enabled) return;
 
   const initialEditEpoch = datasetDraftEditEpoch.value;
+  // Starting a linked selection supersedes this default before either publishes.
   const isCurrent = () =>
     !workspaceUnmounted &&
     requestId === repositoryLoadRequestId &&
+    originalInboxIntentId === inboxIntentRequestId &&
     repositoryId === props.repositoryId &&
     datasetDraftEditEpoch.value === initialEditEpoch &&
     !datasetDraftDirty.value;
