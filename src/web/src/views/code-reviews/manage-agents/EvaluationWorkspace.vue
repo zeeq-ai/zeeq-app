@@ -503,9 +503,15 @@ function canLeaveDatasetWorkspace() {
 
 onBeforeRouteLeave(canLeaveDatasetWorkspace);
 onBeforeRouteUpdate((to, from) => {
+  const linkedRepositoryId = to.query.repositoryId;
+  const linksToAnotherRepository =
+    typeof linkedRepositoryId === "string" &&
+    linkedRepositoryId !== from.query.repositoryId &&
+    linkedRepositoryId !== props.repositoryId;
   if (
     to.params.orgId !== from.params.orgId ||
-    to.params.agentId !== from.params.agentId
+    to.params.agentId !== from.params.agentId ||
+    linksToAnotherRepository
   ) {
     return canLeaveDatasetWorkspace();
   }

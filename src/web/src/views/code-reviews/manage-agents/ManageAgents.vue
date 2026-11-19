@@ -910,6 +910,8 @@ async function applyRouteAgentSelection() {
     if (!isCurrentSync()) return;
 
     if (selectedRepositoryId.value !== linkedAgent.repositoryId) {
+      if (agentConfigPanelRef.value?.canLeaveDatasetWorkspace() === false)
+        return;
       await codeReviewStore.setSelectedRepository(linkedAgent.repositoryId);
       if (!isCurrentSync()) return;
     } else if (agents.value.length === 0) {
