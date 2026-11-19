@@ -459,23 +459,17 @@ const datasetSaveError = computed(() => {
 });
 const refreshingCaseId = ref<string | null>(null);
 
-onMounted(async () => {
+onMounted(() => {
   window.addEventListener("beforeunload", handleBeforeUnload);
-  await store.loadAvailability();
-  if (workspaceUnmounted) return;
-
-  await loadRepositoryDatasets(props.repositoryId);
-  if (workspaceUnmounted) return;
-
-  inboxIntentReady = true;
   beginPolling();
-  await openInboxDatasetIntent();
+  void store.loadAvailability();
 });
 
-async function loadRepositoryDatasets(repositoryId: string) {
+async function loadRepositoryDatasets(repositoryId: string, enabled: boolean) {
   const requestId = ++repositoryLoadRequestId;
   if (workspaceUnmounted || repositoryId !== props.repositoryId) return;
   if (!canLeaveDatasetWorkspace()) return;
+  inboxIntentReady = false;
   invalidateDatasetCaptureRequests();
   store.invalidateDatasetLoad(repositoryId);
   const originalInboxIntentId = ++inboxIntentRequestId;
@@ -488,24 +482,51 @@ async function loadRepositoryDatasets(repositoryId: string) {
   selectedRun.value = null;
   runs.value = [];
   runNextCursorId.value = null;
-  if (!availability.value?.enabled) return;
 
-  const initialEditEpoch = datasetDraftEditEpoch.value;
-  // Starting a linked selection supersedes this default before either publishes.
-  const isCurrent = () =>
+  const isCurrentRepository = () =>
     !workspaceUnmounted &&
     requestId === repositoryLoadRequestId &&
-    originalInboxIntentId === inboxIntentRequestId &&
-    repositoryId === props.repositoryId &&
-    datasetDraftEditEpoch.value === initialEditEpoch &&
-    !datasetDraftDirty.value;
-  const loadedDatasets = await store.loadDatasets(repositoryId);
-  if (!isCurrent() || selectedDatasetId.value !== null) return;
-  const firstDatasetId = loadedDatasets[0]?.id;
-  if (firstDatasetId) await selectDataset(firstDatasetId, isCurrent);
+    repositoryId === props.repositoryId;
+  if (enabled) {
+    const initialEditEpoch = datasetDraftEditEpoch.value;
+    const canApplyDefault = () =>
+      isCurrentRepository() &&
+      originalInboxIntentId === inboxIntentRequestId &&
+      datasetDraftEditEpoch.value === initialEditEpoch &&
+      !datasetDraftDirty.value;
+    const loadedDatasets = await store.loadDatasets(repositoryId);
+    const firstDatasetId = loadedDatasets[0]?.id;
+    const hasLinkedDataset =
+      route.query.repositoryId === repositoryId &&
+      typeof route.query.datasetId === "string" &&
+      Number.isInteger(Number(route.query.prNumber)) &&
+      Number(route.query.prNumber) > 0 &&
+      props.canManage &&
+      loadedDatasets.some((dataset) => dataset.id === route.query.datasetId);
+    // Inbox links take precedence over the repository's default selection.
+    if (
+      !hasLinkedDataset &&
+      firstDatasetId &&
+      canApplyDefault() &&
+      selectedDatasetId.value === null
+    ) {
+      await selectDataset(firstDatasetId, canApplyDefault);
+    }
+  }
+  if (!isCurrentRepository()) return;
+  inboxIntentReady = true;
+  await openInboxDatasetIntent();
 }
 
-watch(() => props.repositoryId, loadRepositoryDatasets);
+// A repository chosen before availability resolves must still load when it does.
+watch(
+  [() => props.repositoryId, () => availability.value?.enabled],
+  ([repositoryId, enabled]) => {
+    if (enabled !== undefined)
+      void loadRepositoryDatasets(repositoryId, enabled);
+  },
+  { immediate: true },
+);
 
 watch(
   () => [route.query.repositoryId, route.query.datasetId, route.query.prNumber],
