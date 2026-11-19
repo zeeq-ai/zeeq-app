@@ -139,7 +139,7 @@
             :repository-name="originRepoLabel"
             :reviewers="agents"
             :saving="savingAgent"
-            :disabled="!canManageOrganization || !selectedRepositoryId"
+            :can-manage-organization="canManageOrganization"
             :initial-form="copiedAgentForm"
             :copy-target-repository-items="copyTargetRepositoryItems"
             :agent-test-targets="agentTestTargets"

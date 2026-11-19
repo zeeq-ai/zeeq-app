@@ -184,7 +184,7 @@
             :agent-id="agent?.id ?? null"
             :reviewers="reviewers"
             :reviewer-configuration="reviewerConfiguration"
-            :can-manage="!disabled && !saving"
+            :can-manage="canManageOrganization && !saving"
           />
           <UEmpty
             v-else-if="!evaluationRepository.id"
@@ -407,7 +407,7 @@ const props = withDefaults(
     repositoryName?: string;
     reviewers?: CodeReviewerAgentDto[];
     saving: boolean;
-    disabled: boolean;
+    canManageOrganization: boolean;
     initialForm?: CodeReviewerAgentForm | null;
     copyTargetRepositoryItems?: { label: string; value: string }[];
     agentTestTargets?: CodeReviewPullRequestDto[];
@@ -463,6 +463,9 @@ const emits = defineEmits<{
 
 const { editorTheme, toggleTheme } = useMarkdownEditorTheme();
 const route = useRoute();
+const disabled = computed(
+  () => !props.canManageOrganization || !props.repositoryId,
+);
 const linkedEvaluationCase = computed(() => {
   const { repositoryId, datasetId, prNumber } = route.query;
   if (
@@ -636,12 +639,12 @@ const enabledTabItems = computed(() => [
   {
     label: "Enabled",
     value: "enabled",
-    disabled: props.disabled || props.saving,
+    disabled: disabled.value || props.saving,
   },
   {
     label: "Disabled",
     value: "disabled",
-    disabled: props.disabled || props.saving,
+    disabled: disabled.value || props.saving,
   },
 ]);
 
@@ -668,7 +671,7 @@ const promptToolbarsExclude: ToolbarNames[] = [
 /** Required fields mirror backend validation before submitting a mutation. */
 const formValid = computed(
   () =>
-    !props.disabled &&
+    !disabled.value &&
     !props.saving &&
     draft.value.displayName.trim().length > 0 &&
     draft.value.reviewFacet.trim().length > 0 &&

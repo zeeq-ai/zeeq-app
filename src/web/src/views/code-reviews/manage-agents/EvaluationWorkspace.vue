@@ -471,8 +471,11 @@ onMounted(() => {
 
 async function loadRepositoryDatasets(repositoryId: string, enabled: boolean) {
   const requestId = ++repositoryLoadRequestId;
-  if (workspaceUnmounted || repositoryId !== props.workspaceRepository.id)
-    return;
+  const isCurrentRepository = () =>
+    !workspaceUnmounted &&
+    requestId === repositoryLoadRequestId &&
+    repositoryId === props.workspaceRepository.id;
+  if (!isCurrentRepository()) return;
   if (!canLeaveDatasetWorkspace()) {
     store.invalidateDatasetLoad();
     repositoryLoadDeferred = true;
@@ -482,6 +485,7 @@ async function loadRepositoryDatasets(repositoryId: string, enabled: boolean) {
   inboxIntentReady = false;
   invalidateDatasetCaptureRequests();
   store.invalidateDatasetLoad(repositoryId);
+  if (!isCurrentRepository()) return;
   const originalInboxIntentId = ++inboxIntentRequestId;
   datasetEditorOpen.value = false;
   showCreateDataset.value = false;
@@ -493,10 +497,6 @@ async function loadRepositoryDatasets(repositoryId: string, enabled: boolean) {
   runs.value = [];
   runNextCursorId.value = null;
 
-  const isCurrentRepository = () =>
-    !workspaceUnmounted &&
-    requestId === repositoryLoadRequestId &&
-    repositoryId === props.workspaceRepository.id;
   if (enabled) {
     const initialEditEpoch = datasetDraftEditEpoch.value;
     const canApplyDefault = () =>
@@ -529,27 +529,21 @@ async function loadRepositoryDatasets(repositoryId: string, enabled: boolean) {
   await openInboxDatasetIntent();
 }
 
-// Load when availability resolves. Retry a blocked load once the draft is clean.
+// Load the latest repository when availability resolves.
 watch(
-  [
-    () => props.workspaceRepository.id,
-    () => availability.value?.enabled,
-    datasetDraftDirty,
-  ],
-  ([repositoryId, enabled, dirty], previous) => {
-    const [previousRepositoryId, previousEnabled] = previous ?? [];
-    if (
-      enabled === undefined ||
-      (repositoryId === previousRepositoryId &&
-        enabled === previousEnabled &&
-        (!repositoryLoadDeferred || dirty))
-    ) {
-      return;
-    }
-    void loadRepositoryDatasets(repositoryId, enabled);
+  [() => props.workspaceRepository.id, () => availability.value?.enabled],
+  ([repositoryId, enabled]) => {
+    if (enabled !== undefined)
+      void loadRepositoryDatasets(repositoryId, enabled);
   },
   { immediate: true },
 );
+watch(datasetDraftDirty, (dirty) => {
+  const enabled = availability.value?.enabled;
+  if (!dirty && repositoryLoadDeferred && enabled !== undefined) {
+    void loadRepositoryDatasets(props.workspaceRepository.id, enabled);
+  }
+});
 
 watch(
   () => [route.query.repositoryId, route.query.datasetId, route.query.prNumber],
@@ -646,17 +640,20 @@ function endPolling() {
 
 async function selectDataset(datasetId: string, shouldApply?: () => boolean) {
   invalidateDatasetCaptureRequests();
-  selectedDatasetId.value = datasetId;
   const repositoryId = props.workspaceRepository.id;
-  const loaded = await store.loadDataset(repositoryId, datasetId, shouldApply);
-  if (
-    !loaded ||
-    selectedDatasetId.value !== datasetId ||
-    props.workspaceRepository.id !== repositoryId ||
-    shouldApply?.() === false
-  ) {
-    return;
-  }
+  const requestId = repositoryLoadRequestId;
+  const canApplySelection = () =>
+    !workspaceUnmounted &&
+    requestId === repositoryLoadRequestId &&
+    props.workspaceRepository.id === repositoryId &&
+    shouldApply?.() !== false;
+  const loaded = await store.loadDataset(
+    repositoryId,
+    datasetId,
+    canApplySelection,
+  );
+  if (!loaded || !canApplySelection()) return;
+  selectedDatasetId.value = datasetId;
   datasetDraft.value = createEvaluationDatasetDraft(loaded);
   selectedRun.value = null;
   await store.loadRuns(repositoryId, datasetId);
