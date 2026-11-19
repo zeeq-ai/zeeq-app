@@ -115,13 +115,17 @@ const visibleIds = computed(
 const selection = computed({
   get: () => selected.value.filter((id) => visibleIds.value.has(id)),
   set: (ids: string[]) => {
-    // Listbox only owns the visible candidates. Keep selections from other searches.
+    // Apply changes to visible IDs only. Keep the complete selection in the parent model.
+    const proposed = new Set(ids);
     const offPage = selected.value.filter((id) => !visibleIds.value.has(id));
-    const next = [...offPage, ...ids];
+    const onPage = Array.from(visibleIds.value).filter((id) =>
+      proposed.has(id),
+    );
+    const next = [...offPage, ...onPage];
     if (next.length > 100) return;
 
     for (const person of people.value) {
-      if (ids.includes(person.userId)) {
+      if (proposed.has(person.userId)) {
         selectedPeople.set(person.userId, person.displayName);
       } else {
         selectedPeople.delete(person.userId);

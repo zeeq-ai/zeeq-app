@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
+using Zeeq.Data.Postgres.Auditing;
 
 namespace Zeeq.Data.Postgres.Identity;
 
@@ -158,88 +159,91 @@ internal sealed class PostgresTeamManagementStore(PostgresDbContext db) : ITeamM
         return new TeamPage<TeamPerson>(page, rows.Length > PageSize ? page[^1].UserId : null);
     }
 
-    public async Task<CreateTeamResult> CreateAsync(
+    public Task<CreateTeamResult> CreateAsync(
         string orgId,
         string actorId,
         string name,
         string? description,
         string[] userIds,
         CancellationToken ct
-    )
-    {
-        await using var tx = db.Database.CurrentTransaction is null
-            ? await db.Database.BeginTransactionAsync(ct)
-            : null;
-        if (!await LockEligibleMembersAsync(orgId, userIds, ct))
-            return new CreateTeamResult.IneligibleMember();
+    ) =>
+        AuditMutationCheckpoint.RunAsync<CreateTeamResult>(
+            db,
+            async () =>
+            {
+                if (!await LockEligibleMembersAsync(orgId, userIds, ct))
+                    return new CreateTeamResult.IneligibleMember();
 
-        var teamId = "team_" + Guid.NewGuid().ToString("N");
-        var inserted = await db.Database.ExecuteSqlInterpolatedAsync(
-            $"""
-            INSERT INTO zeeq.core_teams
-                (id, organization_id, display_name, description, is_root_team,
-                    created_by_user_id, created_at_utc, updated_at_utc)
-            VALUES ({teamId}, {orgId}, {name}, {description}, false, {actorId}, now(), now())
-            ON CONFLICT (organization_id, normalized_name)
-                WHERE NOT is_root_team AND disabled_at_utc IS NULL
-            DO NOTHING
-            """,
+                var teamId = "team_" + Guid.NewGuid().ToString("N");
+                var inserted = await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"""
+                    INSERT INTO zeeq.core_teams
+                        (id, organization_id, display_name, description, is_root_team,
+                            created_by_user_id, created_at_utc, updated_at_utc)
+                    VALUES ({teamId}, {orgId}, {name}, {description}, false, {actorId}, now(), now())
+                    ON CONFLICT (organization_id, normalized_name)
+                        WHERE NOT is_root_team AND disabled_at_utc IS NULL
+                    DO NOTHING
+                    """,
+                    ct
+                );
+                if (inserted == 0)
+                    return new CreateTeamResult.NameTaken();
+
+                await AddMembersAsync(orgId, teamId, actorId, userIds, ct);
+                return new CreateTeamResult.Saved(teamId);
+            },
             ct
         );
-        if (inserted == 0)
-            return new CreateTeamResult.NameTaken();
 
-        await AddMembersAsync(orgId, teamId, actorId, userIds, ct);
-        if (tx is not null)
-            await tx.CommitAsync(ct);
-        return new CreateTeamResult.Saved(teamId);
-    }
-
-    public async Task<UpdateTeamResult> UpdateAsync(
+    public Task<UpdateTeamResult> UpdateAsync(
         string orgId,
         string teamId,
         string actorId,
         string[] add,
         string[] remove,
         CancellationToken ct
-    )
-    {
-        await using var tx = db.Database.CurrentTransaction is null
-            ? await db.Database.BeginTransactionAsync(ct)
-            : null;
-        var teams = await db
-            .Database.SqlQuery<string>(
-                $"""
-                SELECT id AS "Value" FROM zeeq.core_teams
-                WHERE organization_id = {orgId} AND id = {teamId}
-                    AND NOT is_root_team AND disabled_at_utc IS NULL
-                FOR UPDATE
-                """
-            )
-            .ToArrayAsync(ct);
-        if (teams.Length == 0)
-            return new UpdateTeamResult.NotFound();
-        if (!await LockEligibleMembersAsync(orgId, add, ct))
-            return new UpdateTeamResult.IneligibleMember();
+    ) =>
+        AuditMutationCheckpoint.RunAsync<UpdateTeamResult>(
+            db,
+            async () =>
+            {
+                var teams = await db
+                    .Database.SqlQuery<string>(
+                        $"""
+                        SELECT id AS "Value" FROM zeeq.core_teams
+                        WHERE organization_id = {orgId} AND id = {teamId}
+                            AND NOT is_root_team AND disabled_at_utc IS NULL
+                        FOR UPDATE
+                        """
+                    )
+                    .ToArrayAsync(ct);
+                if (teams.Length == 0)
+                    return new UpdateTeamResult.NotFound();
+                if (!await LockEligibleMembersAsync(orgId, add, ct))
+                    return new UpdateTeamResult.IneligibleMember();
 
-        await AddMembersAsync(orgId, teamId, actorId, add, ct);
-        if (remove.Length != 0)
-        {
-            var now = DateTimeOffset.UtcNow;
-            await db
-                .TeamMemberships.TagWithOperationCallSite("membership.team.remove_members")
-                .Where(m =>
-                    m.OrganizationId == orgId
-                    && m.TeamId == teamId
-                    && m.DisabledAtUtc == null
-                    && remove.Contains(m.UserId)
-                )
-                .ExecuteUpdateAsync(setters => setters.SetProperty(m => m.DisabledAtUtc, now), ct);
-        }
-        if (tx is not null)
-            await tx.CommitAsync(ct);
-        return new UpdateTeamResult.Saved();
-    }
+                await AddMembersAsync(orgId, teamId, actorId, add, ct);
+                if (remove.Length != 0)
+                {
+                    var now = DateTimeOffset.UtcNow;
+                    await db
+                        .TeamMemberships.TagWithOperationCallSite("membership.team.remove_members")
+                        .Where(m =>
+                            m.OrganizationId == orgId
+                            && m.TeamId == teamId
+                            && m.DisabledAtUtc == null
+                            && remove.Contains(m.UserId)
+                        )
+                        .ExecuteUpdateAsync(
+                            setters => setters.SetProperty(m => m.DisabledAtUtc, now),
+                            ct
+                        );
+                }
+                return new UpdateTeamResult.Saved();
+            },
+            ct
+        );
 
     private IQueryable<Team> Teams(string orgId) =>
         db

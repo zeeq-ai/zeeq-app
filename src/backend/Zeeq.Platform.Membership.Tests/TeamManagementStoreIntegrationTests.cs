@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
 using Zeeq.Data.Postgres.Identity;
@@ -72,6 +73,27 @@ public sealed class TeamManagementStoreIntegrationTests(PgDatabaseFixture postgr
         await store.UpdateAsync(orgId, supportId, owner, [], [owner], ct);
         inverse = await store.ListMemberTeamsAsync(orgId, owner, null, ct);
         await Assert.That(inverse.Items.Select(team => team.Name)).IsEquivalentTo(["Engineering"]);
+    }
+
+    [Test]
+    public async Task Create_WithFailedInsert_RestoresTheCallerTransaction()
+    {
+        var ct = CancellationToken.None;
+        await TestBiome.Start(_context, out _).AddOrganization(out var graph).BuildAsync();
+        var orgId = graph.Organization.Id;
+        var owner = graph.Organization.CreatedByUserId;
+        var store = new PostgresTeamManagementStore(_context);
+
+        await Assert
+            .That(async () =>
+                await store.CreateAsync(orgId, NewId("unknown"), "Support", null, [], ct)
+            )
+            .Throws<PostgresException>();
+
+        var created = await store.CreateAsync(orgId, owner, "Support", null, [owner], ct);
+        await Assert.That(created is CreateTeamResult.Saved).IsTrue();
+        var teams = await store.ListTeamsAsync(orgId, null, null, ct);
+        await Assert.That(teams.Items.Single().MemberCount).IsEqualTo(1);
     }
 
     [Test]
