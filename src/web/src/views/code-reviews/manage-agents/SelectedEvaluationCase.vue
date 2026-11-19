@@ -46,13 +46,6 @@
     </header>
 
     <UAlert
-      v-if="saveError"
-      title="Dataset changes were not saved"
-      :description="saveError"
-      color="error"
-      variant="subtle"
-    />
-    <UAlert
       v-if="evaluationCase.snapshot.omittedFileCount > 0"
       title="This snapshot omits some file patches"
       :description="`${evaluationCase.snapshot.omittedFileCount} changed files have no patch. The evaluation will use only the captured patches.`"
@@ -146,7 +139,9 @@
             :loading="loadingHistorical"
             @click="emits('importHistorical')"
           />
-          <p class="text-xs text-muted">Checks the latest 20 reviews for this PR.</p>
+          <p class="text-xs text-muted">
+            Checks the latest 20 reviews for this PR.
+          </p>
           <p
             v-if="
               historicalLookupComplete &&
@@ -213,7 +208,6 @@ const props = defineProps<{
   loadingHistorical: boolean;
   saving: boolean;
   refreshing: boolean;
-  saveError: string | null;
 }>();
 const emits = defineEmits<{
   refresh: [];

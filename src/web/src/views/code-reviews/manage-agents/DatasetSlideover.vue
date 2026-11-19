@@ -172,10 +172,15 @@
               <template #add-prs>
                 <div class="h-full overflow-auto">
                   <DatasetAddPrsPanel
+                    v-model:selected-numbers="selectedNumbers"
                     :targets="targets"
                     :staged-pull-request-numbers="
                       draft.cases
-                        .filter((item) => !item.caseId)
+                        .filter(
+                          (item) =>
+                            !item.caseId ||
+                            !draft.baselineCaseIds.includes(item.caseId),
+                        )
                         .map((item) => item.pullRequestNumber)
                     "
                     :resolution-results="resolutionResults"
@@ -183,7 +188,7 @@
                     :loading-more="loadingMoreTargets"
                     :resolving="resolvingPrs"
                     :has-more="hasMoreTargets"
-                    :disabled="saving"
+                    :disabled="saving || resolvingPrs"
                     @search-targets="searchTargets"
                     @load-more-targets="emits('loadMoreTargets')"
                     @resolve="emits('resolvePrs', $event)"
@@ -240,6 +245,14 @@
           </section>
         </div>
 
+        <UAlert
+          v-if="saveError"
+          title="Dataset changes were not saved"
+          :description="saveError"
+          color="error"
+          variant="subtle"
+          class="mx-4 sm:mx-6"
+        />
         <footer
           class="sticky bottom-0 z-10 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-default bg-default px-4 py-3 sm:px-6"
         >
@@ -382,7 +395,6 @@ import type {
 import DatasetAddPrsPanel from "./DatasetAddPrsPanel.vue";
 import SelectedEvaluationCase from "./SelectedEvaluationCase.vue";
 import {
-  addCapturedEvaluationCase,
   countEvaluationDatasetDraftChanges,
   createEvaluationDatasetDraft,
   refreshEvaluationCase,
@@ -394,6 +406,9 @@ import {
 
 const open = defineModel<boolean>("open", { required: true });
 const draft = defineModel<EvaluationDatasetDraft>("draft", { required: true });
+const selectedNumbers = defineModel<Set<number>>("selectedNumbers", {
+  required: true,
+});
 const props = defineProps<{
   dataset: CodeReviewEvaluationDatasetDetailDto;
   repositoryName: string;
@@ -451,6 +466,7 @@ const dirty = computed(() => changeCount.value > 0);
 const changeCount = computed(
   () =>
     countEvaluationDatasetDraftChanges(draft.value) +
+    selectedNumbers.value.size +
     Number(draft.value.name !== props.dataset.name) +
     Number(draft.value.description !== (props.dataset.description ?? "")),
 );
@@ -524,7 +540,6 @@ const caseProps = computed(() => ({
   loadingHistorical: props.loadingHistorical,
   saving: props.saving,
   refreshing: props.refreshingCaseId === selectedCase.value?.caseId,
-  saveError: props.saveError,
 }));
 
 watch(
@@ -584,27 +599,10 @@ watch(
 watch(
   () => props.resolutionResults,
   (items) => {
-    let nextDraft = draft.value;
     for (const item of items) {
       if (!item.captureToken || !item.preview) continue;
-      const pullRequestNumber = Number(item.preview.pullRequestNumber);
-      nextDraft = addCapturedEvaluationCase(
-        nextDraft,
-        {
-          pullRequestNumber,
-          title: item.target?.title ?? item.preview.title,
-          captureToken: item.captureToken,
-          preview: item.preview,
-        },
-        props.dataset.cases.find(
-          (evaluationCase) =>
-            Number(evaluationCase.pullRequestNumber) === pullRequestNumber,
-        ),
-        props.reviewers.map((reviewer) => reviewer.id),
-      );
-      selectedPullRequestNumber.value = pullRequestNumber;
+      selectedPullRequestNumber.value = Number(item.preview.pullRequestNumber);
     }
-    draft.value = nextDraft;
   },
 );
 
