@@ -589,17 +589,24 @@ watch(
 function beginPolling() {
   endPolling();
   pollHandle = setInterval(() => {
-    if (!document.hidden && runs.value.some((run) => isActiveRun(run.state))) {
-      if (!loadingRuns.value) {
-        void store.loadRuns(props.repositoryId, selectedDatasetId.value ?? "");
-      }
-      if (
-        !loadingRun.value &&
-        selectedRun.value &&
-        isActiveRun(selectedRun.value.run.state)
-      ) {
-        void store.loadRun(props.repositoryId, selectedRun.value.run.id);
-      }
+    const dataset = selectedDataset.value;
+    if (
+      !dataset ||
+      document.hidden ||
+      !runs.value.some((run) => isActiveRun(run.state))
+    ) {
+      return;
+    }
+    // Poll the loaded dataset, including while a dirty draft keeps its repository open.
+    if (!loadingRuns.value) {
+      void store.loadRuns(dataset.repositoryId, dataset.id);
+    }
+    if (
+      !loadingRun.value &&
+      selectedRun.value &&
+      isActiveRun(selectedRun.value.run.state)
+    ) {
+      void store.loadRun(dataset.repositoryId, selectedRun.value.run.id);
     }
   }, 2000);
 }
