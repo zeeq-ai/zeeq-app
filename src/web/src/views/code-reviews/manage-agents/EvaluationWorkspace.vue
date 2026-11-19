@@ -425,6 +425,7 @@ const showCreateDataset = ref(false);
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 let inboxIntentRequestId = 0;
 let inboxIntentReady = false;
+let clearingInboxIntent = false;
 let workspaceUnmounted = false;
 
 watch(
@@ -459,25 +460,44 @@ const refreshingCaseId = ref<string | null>(null);
 
 onMounted(async () => {
   window.addEventListener("beforeunload", handleBeforeUnload);
-  selectedDataset.value = null;
-  selectedRun.value = null;
   await store.loadAvailability();
   if (workspaceUnmounted) return;
 
-  if (availability.value?.enabled) {
-    await store.loadDatasets(props.repositoryId);
-    if (workspaceUnmounted) return;
-    selectedDatasetId.value = datasets.value[0]?.id ?? null;
-    if (selectedDatasetId.value) {
-      await selectDataset(selectedDatasetId.value);
-    }
-  }
+  await loadRepositoryDatasets(props.repositoryId);
   if (workspaceUnmounted) return;
 
   inboxIntentReady = true;
   beginPolling();
   await openInboxDatasetIntent();
 });
+
+async function loadRepositoryDatasets(repositoryId: string) {
+  invalidateDatasetCaptureRequests();
+  store.invalidateDatasetLoad();
+  inboxIntentRequestId += 1;
+  datasetEditorOpen.value = false;
+  showCreateDataset.value = false;
+  datasets.value = [];
+  selectedDatasetId.value = null;
+  selectedDataset.value = null;
+  datasetDraft.value = null;
+  selectedRun.value = null;
+  runs.value = [];
+  runNextCursorId.value = null;
+  if (!availability.value?.enabled) return;
+
+  const loadedDatasets = await store.loadDatasets(repositoryId);
+  if (workspaceUnmounted || repositoryId !== props.repositoryId) return;
+  const firstDatasetId = loadedDatasets[0]?.id;
+  if (firstDatasetId) await selectDataset(firstDatasetId);
+}
+
+watch(
+  () => props.repositoryId,
+  (repositoryId) => {
+    if (canLeaveDatasetWorkspace()) void loadRepositoryDatasets(repositoryId);
+  },
+);
 
 watch(
   () => [route.query.repositoryId, route.query.datasetId, route.query.prNumber],
@@ -503,15 +523,14 @@ function canLeaveDatasetWorkspace() {
 
 onBeforeRouteLeave(canLeaveDatasetWorkspace);
 onBeforeRouteUpdate((to, from) => {
-  const linkedRepositoryId = to.query.repositoryId;
-  const linksToAnotherRepository =
-    typeof linkedRepositoryId === "string" &&
-    linkedRepositoryId !== from.query.repositoryId &&
-    linkedRepositoryId !== props.repositoryId;
+  // Removing the already handled inbox intent only cleans up the URL.
+  const removingHandledIntent =
+    clearingInboxIntent && to.query.repositoryId === undefined;
   if (
     to.params.orgId !== from.params.orgId ||
     to.params.agentId !== from.params.agentId ||
-    linksToAnotherRepository
+    (to.query.repositoryId !== from.query.repositoryId &&
+      !removingHandledIntent)
   ) {
     return canLeaveDatasetWorkspace();
   }
@@ -536,8 +555,14 @@ function beginPolling() {
   endPolling();
   pollHandle = setInterval(() => {
     if (!document.hidden && runs.value.some((run) => isActiveRun(run.state))) {
-      void store.loadRuns(props.repositoryId, selectedDatasetId.value ?? "");
-      if (selectedRun.value && isActiveRun(selectedRun.value.run.state)) {
+      if (!loadingRuns.value) {
+        void store.loadRuns(props.repositoryId, selectedDatasetId.value ?? "");
+      }
+      if (
+        !loadingRun.value &&
+        selectedRun.value &&
+        isActiveRun(selectedRun.value.run.state)
+      ) {
         void store.loadRun(props.repositoryId, selectedRun.value.run.id);
       }
     }
@@ -732,14 +757,19 @@ async function openInboxDatasetIntent() {
 }
 
 function clearInboxDatasetIntent() {
-  void router.replace({
-    query: {
-      ...route.query,
-      repositoryId: undefined,
-      datasetId: undefined,
-      prNumber: undefined,
-    },
-  });
+  clearingInboxIntent = true;
+  void router
+    .replace({
+      query: {
+        ...route.query,
+        repositoryId: undefined,
+        datasetId: undefined,
+        prNumber: undefined,
+      },
+    })
+    .finally(() => {
+      clearingInboxIntent = false;
+    });
 }
 
 function showInboxIntentNotice(description: string) {

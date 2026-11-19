@@ -179,7 +179,6 @@
         <template #evals>
           <EvaluationWorkspace
             v-if="repositoryId && hasOpenedEvals"
-            :key="repositoryId"
             ref="evaluationWorkspace"
             :repository-id="repositoryId"
             :repository-name="repositoryName"
