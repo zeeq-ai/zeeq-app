@@ -426,6 +426,7 @@ let pollHandle: ReturnType<typeof setInterval> | null = null;
 let inboxIntentRequestId = 0;
 let inboxIntentReady = false;
 let clearingInboxIntent = false;
+let repositoryLoadRequestId = 0;
 let workspaceUnmounted = false;
 
 watch(
@@ -474,6 +475,11 @@ onMounted(async () => {
 async function loadRepositoryDatasets(repositoryId: string) {
   if (workspaceUnmounted || repositoryId !== props.repositoryId) return;
   if (!canLeaveDatasetWorkspace()) return;
+  const requestId = ++repositoryLoadRequestId;
+  const isCurrent = () =>
+    !workspaceUnmounted &&
+    requestId === repositoryLoadRequestId &&
+    repositoryId === props.repositoryId;
   invalidateDatasetCaptureRequests();
   store.invalidateDatasetLoad();
   inboxIntentRequestId += 1;
@@ -489,9 +495,9 @@ async function loadRepositoryDatasets(repositoryId: string) {
   if (!availability.value?.enabled) return;
 
   const loadedDatasets = await store.loadDatasets(repositoryId);
-  if (workspaceUnmounted || repositoryId !== props.repositoryId) return;
+  if (!isCurrent()) return;
   const firstDatasetId = loadedDatasets[0]?.id;
-  if (firstDatasetId) await selectDataset(firstDatasetId);
+  if (firstDatasetId) await selectDataset(firstDatasetId, isCurrent);
 }
 
 watch(() => props.repositoryId, loadRepositoryDatasets);
@@ -579,15 +585,16 @@ function endPolling() {
   }
 }
 
-async function selectDataset(datasetId: string) {
+async function selectDataset(datasetId: string, shouldApply?: () => boolean) {
   invalidateDatasetCaptureRequests();
   selectedDatasetId.value = datasetId;
   const repositoryId = props.repositoryId;
-  const loaded = await store.loadDataset(repositoryId, datasetId);
+  const loaded = await store.loadDataset(repositoryId, datasetId, shouldApply);
   if (
     !loaded ||
     selectedDatasetId.value !== datasetId ||
-    props.repositoryId !== repositoryId
+    props.repositoryId !== repositoryId ||
+    shouldApply?.() === false
   ) {
     return;
   }
