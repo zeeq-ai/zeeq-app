@@ -472,6 +472,8 @@ onMounted(async () => {
 });
 
 async function loadRepositoryDatasets(repositoryId: string) {
+  if (workspaceUnmounted || repositoryId !== props.repositoryId) return;
+  if (!canLeaveDatasetWorkspace()) return;
   invalidateDatasetCaptureRequests();
   store.invalidateDatasetLoad();
   inboxIntentRequestId += 1;
@@ -492,12 +494,7 @@ async function loadRepositoryDatasets(repositoryId: string) {
   if (firstDatasetId) await selectDataset(firstDatasetId);
 }
 
-watch(
-  () => props.repositoryId,
-  (repositoryId) => {
-    if (canLeaveDatasetWorkspace()) void loadRepositoryDatasets(repositoryId);
-  },
-);
+watch(() => props.repositoryId, loadRepositoryDatasets);
 
 watch(
   () => [route.query.repositoryId, route.query.datasetId, route.query.prNumber],
