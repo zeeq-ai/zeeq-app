@@ -473,13 +473,9 @@ onMounted(async () => {
 });
 
 async function loadRepositoryDatasets(repositoryId: string) {
+  const requestId = ++repositoryLoadRequestId;
   if (workspaceUnmounted || repositoryId !== props.repositoryId) return;
   if (!canLeaveDatasetWorkspace()) return;
-  const requestId = ++repositoryLoadRequestId;
-  const isCurrent = () =>
-    !workspaceUnmounted &&
-    requestId === repositoryLoadRequestId &&
-    repositoryId === props.repositoryId;
   invalidateDatasetCaptureRequests();
   store.invalidateDatasetLoad();
   inboxIntentRequestId += 1;
@@ -494,8 +490,15 @@ async function loadRepositoryDatasets(repositoryId: string) {
   runNextCursorId.value = null;
   if (!availability.value?.enabled) return;
 
+  const initialEditEpoch = datasetDraftEditEpoch.value;
+  const isCurrent = () =>
+    !workspaceUnmounted &&
+    requestId === repositoryLoadRequestId &&
+    repositoryId === props.repositoryId &&
+    datasetDraftEditEpoch.value === initialEditEpoch &&
+    !datasetDraftDirty.value;
   const loadedDatasets = await store.loadDatasets(repositoryId);
-  if (!isCurrent()) return;
+  if (!isCurrent() || selectedDatasetId.value !== null) return;
   const firstDatasetId = loadedDatasets[0]?.id;
   if (firstDatasetId) await selectDataset(firstDatasetId, isCurrent);
 }
