@@ -525,13 +525,14 @@ watch(
     () => props.repositoryId,
     () => evaluationWorkspace.value?.datasetDraftDirty,
   ],
-  ([repositoryId]) => {
-    if (
-      repositoryId !== evaluationRepositoryId.value &&
-      canLeaveDatasetWorkspace()
-    ) {
-      evaluationRepositoryId.value = repositoryId;
+  ([repositoryId, dirty]) => {
+    if (repositoryId === evaluationRepositoryId.value) return;
+    if (dirty) {
+      evaluationWorkspace.value?.canLeaveDatasetWorkspace();
+      return;
     }
+    // A save or discard reruns this watcher with the latest repository prop.
+    evaluationRepositoryId.value = repositoryId;
   },
 );
 const compactWorkspace = useMediaQuery("(max-width: 1439px)");

@@ -472,6 +472,10 @@ export const useCodeReviewEvaluationStore = defineStore(
         return null;
       }
 
+      const canPublish = () =>
+        requestId === datasetLoadRequestId &&
+        activeOrganizationId.value === orgId &&
+        shouldApply?.() !== false;
       loadingDataset.value = true;
       datasetError.value = null;
       try {
@@ -481,23 +485,12 @@ export const useCodeReviewEvaluationStore = defineStore(
             repositoryId,
             datasetId,
           );
-        if (
-          requestId !== datasetLoadRequestId ||
-          activeOrganizationId.value !== orgId ||
-          shouldApply?.() === false
-        ) {
-          return null;
-        }
+        // Check the caller's draft guard before changing the shared selection.
+        if (!canPublish()) return null;
         selectedDataset.value = response.dataset;
         return response.dataset;
       } catch (err: unknown) {
-        if (
-          requestId !== datasetLoadRequestId ||
-          activeOrganizationId.value !== orgId ||
-          shouldApply?.() === false
-        ) {
-          return null;
-        }
+        if (!canPublish()) return null;
         datasetError.value = evaluationErrorMessage(
           err,
           "Could not load this dataset.",
