@@ -41,7 +41,7 @@ internal sealed class GitHubCommentResolver : IGitHubCommentResolver
                 && GitHubCommentDomParser.ContainsRootForTarget(target, comment.Body)
             )
             {
-                return new(comment.CommentId, GitHubCommentDomParser.Parse(target, comment.Body));
+                return GitHubCommentResolution.FromBody(target, comment.CommentId, comment.Body);
             }
 
             // Missing, deleted, or wrong-target comments fall through to the
@@ -63,7 +63,7 @@ internal sealed class GitHubCommentResolver : IGitHubCommentResolver
                 continue;
             }
 
-            return new(comment.CommentId, GitHubCommentDomParser.Parse(target, comment.Body));
+            return GitHubCommentResolution.FromBody(target, comment.CommentId, comment.Body);
         }
 
         return null;

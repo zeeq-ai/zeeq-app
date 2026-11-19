@@ -1,6 +1,6 @@
+using Microsoft.Extensions.Logging;
 using Zeeq.Core.Common;
 using Zeeq.Core.Models;
-using Microsoft.Extensions.Logging;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -211,6 +211,17 @@ public sealed partial class CheckRunService(
                 operation = "create";
             }
 
+            LogCheckRunGitHubWriteAcknowledged(
+                logger,
+                pr.OrganizationId,
+                pr.OwnerQualifiedRepoName,
+                pr.PullRequestNumber,
+                pr.HeadSha,
+                review.Id,
+                checkRunId,
+                conclusion?.ToString()
+            );
+
             pr.CheckRunState!.State = state;
             if (blocking)
             {
@@ -231,6 +242,7 @@ public sealed partial class CheckRunService(
                 pr.OwnerQualifiedRepoName,
                 pr.PullRequestNumber,
                 pr.HeadSha,
+                review.Id,
                 checkRunId,
                 operation,
                 conclusion?.ToString(),
@@ -245,7 +257,8 @@ public sealed partial class CheckRunService(
                 pr.OrganizationId,
                 pr.OwnerQualifiedRepoName,
                 pr.PullRequestNumber,
-                pr.HeadSha
+                pr.HeadSha,
+                review.Id
             );
         }
     }
@@ -514,9 +527,25 @@ public sealed partial class CheckRunService(
     );
 
     [LoggerMessage(
+        EventId = 3314,
+        Level = LogLevel.Information,
+        Message = "GitHub acknowledged check-run resolution. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, HeadSha={HeadSha}, CodeReviewId={CodeReviewId}, CheckRunId={CheckRunId}, Conclusion={Conclusion}"
+    )]
+    private static partial void LogCheckRunGitHubWriteAcknowledged(
+        ILogger logger,
+        string organizationId,
+        string ownerQualifiedRepoName,
+        int pullRequestNumber,
+        string headSha,
+        string codeReviewId,
+        long checkRunId,
+        string? conclusion
+    );
+
+    [LoggerMessage(
         EventId = 3302,
         Level = LogLevel.Information,
-        Message = "Resolved check run. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, HeadSha={HeadSha}, CheckRunId={CheckRunId}, Operation={Operation}, Conclusion={Conclusion}, Blocking={Blocking}"
+        Message = "Resolved check run. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, HeadSha={HeadSha}, CodeReviewId={CodeReviewId}, CheckRunId={CheckRunId}, Operation={Operation}, Conclusion={Conclusion}, Blocking={Blocking}"
     )]
     private static partial void LogCheckRunResolved(
         ILogger logger,
@@ -524,6 +553,7 @@ public sealed partial class CheckRunService(
         string ownerQualifiedRepoName,
         int pullRequestNumber,
         string headSha,
+        string codeReviewId,
         long checkRunId,
         string operation,
         string? conclusion,
@@ -533,7 +563,7 @@ public sealed partial class CheckRunService(
     [LoggerMessage(
         EventId = 3303,
         Level = LogLevel.Warning,
-        Message = "Failed to resolve check run. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, HeadSha={HeadSha}"
+        Message = "Failed to resolve check run. OrganizationId={OrganizationId}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, HeadSha={HeadSha}, CodeReviewId={CodeReviewId}"
     )]
     private static partial void LogCheckRunResolveFailed(
         ILogger logger,
@@ -541,7 +571,8 @@ public sealed partial class CheckRunService(
         string organizationId,
         string ownerQualifiedRepoName,
         int pullRequestNumber,
-        string headSha
+        string headSha,
+        string codeReviewId
     );
 
     [LoggerMessage(

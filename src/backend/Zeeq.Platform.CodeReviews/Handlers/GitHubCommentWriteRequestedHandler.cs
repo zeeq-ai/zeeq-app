@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Zeeq.Core.Common;
 using Zeeq.Core.Models;
 using Zeeq.Platform.Messaging;
-using Microsoft.Extensions.Logging;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -77,7 +77,10 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
             message.Kind,
             message.OwnerQualifiedRepoName,
             message.PullRequestNumber,
-            message.SignalId
+            message.SignalId,
+            message.Id.Value,
+            workerId,
+            message.CodeReviewRecordId
         );
         if (!await TryAcquireLeaseAsync(leaseKey, workerId, leaseDuration, cancellationToken))
         {
@@ -89,7 +92,7 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
                 ],
                 "github.comment.lease_unavailable"
             );
-            LogLeaseUnavailable(logger, targetKey, message.SignalId);
+            LogLeaseUnavailable(logger, targetKey, message.SignalId, workerId);
 
             throw new GitHubCommentLeaseUnavailableException(leaseKey);
         }
@@ -104,7 +107,7 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
         );
 
         using var workCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var workTask = RenderAndWriteAsync(message, workCts.Token);
+        var workTask = RenderAndWriteAsync(message, workerId, workCts.Token);
         var renewalTask = RunLeaseRenewalAsync(leaseKey, workerId, leaseDuration, workCts);
 
         try
@@ -137,6 +140,8 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
                 message.OwnerQualifiedRepoName,
                 message.PullRequestNumber,
                 message.SignalId,
+                message.Id.Value,
+                workerId,
                 ex.GetType().Name
             );
 
@@ -311,6 +316,7 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
     /// </remarks>
     private async Task RenderAndWriteAsync(
         GitHubCommentWriteRequested message,
+        string workerId,
         CancellationToken cancellationToken
     )
     {
@@ -340,6 +346,7 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
             cancellationToken
         );
 
+        var commentReadCompletedAtUtc = DateTimeOffset.UtcNow;
         var anchorRepaired =
             resolution is not null && anchor?.GitHubCommentId != resolution.CommentId;
 
@@ -409,6 +416,32 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
             "github.comment.rendered"
         );
 
+        // Trace a stale comment by TargetKey. Join receipt (3227), submit (3248), and
+        // GitHub acknowledgement (3241) by MessageId and AttemptId. A repeated MessageId
+        // with a new AttemptId is a redelivery. Join check acknowledgement (3314) by CodeReviewId.
+        // Compare PreviousBodySha256 with the last acknowledged SubmittedBodySha256 for that comment ID.
+        // A mismatch is a clue. Without an acknowledgement, the write outcome is unknown.
+        var submittedBodySha256 = logger.IsEnabled(LogLevel.Information)
+            ? GitHubCommentResolution.ComputeBodySha256(body)
+            : null;
+        LogCommentWriteSubmitting(
+            logger,
+            targetKey,
+            message.Kind,
+            message.SignalId,
+            message.Id.Value,
+            workerId,
+            context.Review?.Id,
+            context.Review?.CreatedAtUtc,
+            context.Review?.Status,
+            context.Findings is not null,
+            context.FindingsLoadError is not null,
+            commentReadCompletedAtUtc,
+            resolution?.CommentId,
+            resolution?.BodySha256,
+            submittedBodySha256
+        );
+
         var commentId = await writer.UpsertAsync(
             client,
             message.Target,
@@ -418,7 +451,16 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
             cancellationToken
         );
 
-        LogCommentGitHubUpsertReturned(logger, targetKey, message.Kind, commentId);
+        LogCommentGitHubUpsertReturned(
+            logger,
+            targetKey,
+            message.Kind,
+            message.SignalId,
+            message.Id.Value,
+            workerId,
+            commentId,
+            submittedBodySha256
+        );
 
         await anchors.UpsertResolvedAsync(
             message.Target,
@@ -757,19 +799,20 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
 
     [LoggerMessage(
         EventId = 3220,
-        Level = LogLevel.Debug,
-        Message = "GitHub comment lease unavailable. Target={TargetKey}, SignalId={SignalId}"
+        Level = LogLevel.Information,
+        Message = "GitHub comment lease unavailable. Target={TargetKey}, SignalId={SignalId}, AttemptId={AttemptId}"
     )]
     private static partial void LogLeaseUnavailable(
         ILogger logger,
         string targetKey,
-        string signalId
+        string signalId,
+        string attemptId
     );
 
     [LoggerMessage(
         EventId = 3227,
         Level = LogLevel.Information,
-        Message = "Started GitHub comment write. Target={TargetKey}, Kind={Kind}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, SignalId={SignalId}"
+        Message = "Started GitHub comment write. Target={TargetKey}, Kind={Kind}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, SignalId={SignalId}, MessageId={MessageId}, AttemptId={AttemptId}, CodeReviewId={CodeReviewId}"
     )]
     private static partial void LogCommentWriteStarted(
         ILogger logger,
@@ -777,7 +820,10 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
         string kind,
         string ownerQualifiedRepoName,
         int pullRequestNumber,
-        string signalId
+        string signalId,
+        string messageId,
+        string attemptId,
+        string? codeReviewId
     );
 
     [LoggerMessage(
@@ -833,7 +879,7 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
     [LoggerMessage(
         EventId = 3222,
         Level = LogLevel.Error,
-        Message = "Failed GitHub comment write. Target={TargetKey}, Kind={Kind}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, SignalId={SignalId}, ErrorType={ErrorType}"
+        Message = "Failed GitHub comment write. Target={TargetKey}, Kind={Kind}, Repo={OwnerQualifiedRepoName}, PullRequestNumber={PullRequestNumber}, SignalId={SignalId}, MessageId={MessageId}, AttemptId={AttemptId}, ErrorType={ErrorType}"
     )]
     private static partial void LogCommentWriteFailed(
         ILogger logger,
@@ -842,6 +888,8 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
         string ownerQualifiedRepoName,
         int pullRequestNumber,
         string signalId,
+        string messageId,
+        string attemptId,
         string errorType
     );
 
@@ -896,15 +944,42 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
     );
 
     [LoggerMessage(
+        EventId = 3248,
+        Level = LogLevel.Information,
+        Message = "Submitting GitHub comment write. Target={TargetKey}, Kind={Kind}, SignalId={SignalId}, MessageId={MessageId}, AttemptId={AttemptId}, CodeReviewId={CodeReviewId}, ReviewCreatedAtUtc={ReviewCreatedAtUtc:O}, ReviewStatus={ReviewStatus}, FindingsLoaded={FindingsLoaded}, HasFindingsLoadError={HasFindingsLoadError}, CommentReadCompletedAtUtc={CommentReadCompletedAtUtc:O}, PreviousCommentId={PreviousCommentId}, PreviousBodySha256={PreviousBodySha256}, SubmittedBodySha256={SubmittedBodySha256}"
+    )]
+    private static partial void LogCommentWriteSubmitting(
+        ILogger logger,
+        string targetKey,
+        string kind,
+        string signalId,
+        string messageId,
+        string attemptId,
+        string? codeReviewId,
+        DateTimeOffset? reviewCreatedAtUtc,
+        CodeReviewStatus? reviewStatus,
+        bool findingsLoaded,
+        bool hasFindingsLoadError,
+        DateTimeOffset commentReadCompletedAtUtc,
+        long? previousCommentId,
+        string? previousBodySha256,
+        string? submittedBodySha256
+    );
+
+    [LoggerMessage(
         EventId = 3241,
-        Level = LogLevel.Debug,
-        Message = "GitHub comment upsert returned. Target={TargetKey}, Kind={Kind}, CommentId={CommentId}"
+        Level = LogLevel.Information,
+        Message = "GitHub comment upsert returned. Target={TargetKey}, Kind={Kind}, SignalId={SignalId}, MessageId={MessageId}, AttemptId={AttemptId}, CommentId={CommentId}, SubmittedBodySha256={SubmittedBodySha256}"
     )]
     private static partial void LogCommentGitHubUpsertReturned(
         ILogger logger,
         string targetKey,
         string kind,
-        long commentId
+        string signalId,
+        string messageId,
+        string attemptId,
+        long commentId,
+        string? submittedBodySha256
     );
 
     [LoggerMessage(

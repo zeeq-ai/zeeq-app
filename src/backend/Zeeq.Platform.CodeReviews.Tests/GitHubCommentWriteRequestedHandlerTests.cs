@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -145,6 +147,80 @@ public sealed class GitHubCommentWriteRequestedHandlerTests
                 "rendered body",
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Test]
+    public async Task HandleAsync_LogsTheObservedAndSubmittedCommentWithoutLoggingItsBody()
+    {
+        const string previousBody = "previous private findings";
+        const string submittedBody = "new private findings and https://example.test/?token=secret";
+        var logger = new RecordingLogger();
+        var fixture = HandlerFixture.Create(logger: logger);
+        var review = ReviewRecord();
+        review.FindingsStorageUri = fixture.Artifacts.StorageUri;
+        fixture.Artifacts.StoredXml = SampleFindingsXml();
+        fixture
+            .CodeReviews.FindAsync(review.Id, review.CreatedAtUtc, Arg.Any<CancellationToken>())
+            .Returns(review);
+        fixture
+            .Resolver.ResolveAsync(
+                fixture.CommentClient,
+                Target(),
+                "zeeq-ai/zeeq",
+                null,
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(GitHubCommentResolution.FromBody(Target(), 202L, previousBody));
+        fixture
+            .Renderer.Render(
+                GitHubCommentKinds.ReviewCompleted,
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<CodeReviewCommentRenderContext>(),
+                Arg.Any<GitHubCommentDom>()
+            )
+            .Returns(submittedBody);
+        fixture
+            .Writer.UpsertAsync(
+                fixture.CommentClient,
+                Target(),
+                "zeeq-ai/zeeq",
+                202L,
+                submittedBody,
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(202L);
+
+        var message = Message(GitHubCommentKinds.ReviewCompleted, review.Id, review.CreatedAtUtc);
+        await fixture.Handler.HandleAsync(message, CancellationToken.None);
+
+        var receipt = logger.Entries.Single(entry => entry.Event.Id == 3227).Fields;
+        var submission = logger.Entries.Single(entry => entry.Event.Id == 3248).Fields;
+        var upsert = logger.Entries.Single(entry => entry.Event.Id == 3241).Fields;
+        var expectedPreviousHash = Convert.ToHexStringLower(
+            SHA256.HashData(Encoding.UTF8.GetBytes(previousBody))
+        );
+        var expectedSubmittedHash = Convert.ToHexStringLower(
+            SHA256.HashData(Encoding.UTF8.GetBytes(submittedBody))
+        );
+
+        await Assert.That(submission["CodeReviewId"]).IsEqualTo(review.Id);
+        await Assert.That(submission["ReviewCreatedAtUtc"]).IsEqualTo(review.CreatedAtUtc);
+        await Assert.That(submission["SignalId"]).IsEqualTo("signal_123");
+        await Assert.That(receipt["MessageId"]).IsEqualTo(message.Id.Value);
+        await Assert.That(submission["MessageId"]).IsEqualTo(message.Id.Value);
+        await Assert.That(submission["AttemptId"]).IsEqualTo(receipt["AttemptId"]);
+        await Assert.That(submission["CommentReadCompletedAtUtc"]).IsTypeOf<DateTimeOffset>();
+        await Assert.That(submission["PreviousCommentId"]).IsEqualTo(202L);
+        await Assert.That(submission["PreviousBodySha256"]).IsEqualTo(expectedPreviousHash);
+        await Assert.That(submission["SubmittedBodySha256"]).IsEqualTo(expectedSubmittedHash);
+        await Assert.That(upsert["AttemptId"]).IsEqualTo(submission["AttemptId"]);
+        await Assert.That(upsert["SignalId"]).IsEqualTo(submission["SignalId"]);
+        await Assert.That(upsert["MessageId"]).IsEqualTo(message.Id.Value);
+        await Assert.That(upsert["CommentId"]).IsEqualTo(202L);
+        await Assert.That(upsert["SubmittedBodySha256"]).IsEqualTo(expectedSubmittedHash);
+        var recordedMessages = string.Join("\n", logger.Entries.Select(entry => entry.Message));
+        await Assert.That(recordedMessages).DoesNotContain(previousBody);
+        await Assert.That(recordedMessages).DoesNotContain("token=secret");
     }
 
     [Test]
@@ -436,6 +512,37 @@ public sealed class GitHubCommentWriteRequestedHandlerTests
         return tcs.Task;
     }
 
+    private sealed class RecordingLogger : ILogger<GitHubCommentWriteRequestedHandler>
+    {
+        public List<(
+            EventId Event,
+            Dictionary<string, object?> Fields,
+            string Message
+        )> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Information;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            // Source-generated logging can reuse the state after Log returns.
+            var fields = ((IEnumerable<KeyValuePair<string, object?>>)state!).ToDictionary(
+                entry => entry.Key,
+                entry => entry.Value,
+                StringComparer.OrdinalIgnoreCase
+            );
+            Entries.Add((eventId, fields, formatter(state, exception)));
+        }
+    }
+
     private sealed class HandlerFixture
     {
         private HandlerFixture() { }
@@ -455,7 +562,10 @@ public sealed class GitHubCommentWriteRequestedHandlerTests
         public IGitHubCommentWriter Writer { get; } = Substitute.For<IGitHubCommentWriter>();
         public GitHubCommentWriteRequestedHandler Handler { get; private set; } = null!;
 
-        public static HandlerFixture Create(GitHubCommentWriteOptions? options = null)
+        public static HandlerFixture Create(
+            GitHubCommentWriteOptions? options = null,
+            ILogger<GitHubCommentWriteRequestedHandler>? logger = null
+        )
         {
             var fixture = new HandlerFixture();
             var deadLetters = Substitute.For<IDeadLetterWriter>();
@@ -529,7 +639,7 @@ public sealed class GitHubCommentWriteRequestedHandlerTests
                 linkFactory,
                 fixture.Writer,
                 options ?? new GitHubCommentWriteOptions(),
-                NullLogger<GitHubCommentWriteRequestedHandler>.Instance
+                logger ?? NullLogger<GitHubCommentWriteRequestedHandler>.Instance
             );
 
             return fixture;
