@@ -505,6 +505,7 @@ async function loadRepositoryDatasets(repositoryId: string, enabled: boolean) {
       datasetDraftEditEpoch.value === initialEditEpoch &&
       !datasetDraftDirty.value;
     const loadedDatasets = await store.loadDatasets(repositoryId);
+    if (!isCurrentRepository()) return;
     const firstDatasetId = loadedDatasets[0]?.id;
     const hasLinkedDataset =
       route.query.repositoryId === repositoryId &&
@@ -535,7 +536,8 @@ watch(
     () => availability.value?.enabled,
     datasetDraftDirty,
   ],
-  ([repositoryId, enabled, dirty], [previousRepositoryId, previousEnabled]) => {
+  ([repositoryId, enabled, dirty], previous) => {
+    const [previousRepositoryId, previousEnabled] = previous ?? [];
     if (
       enabled === undefined ||
       (repositoryId === previousRepositoryId &&
