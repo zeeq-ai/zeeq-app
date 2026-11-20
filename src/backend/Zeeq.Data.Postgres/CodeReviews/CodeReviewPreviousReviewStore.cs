@@ -154,8 +154,9 @@ internal sealed class CodeReviewPreviousReviewStore(
                 return [];
             }
 
-            // The limit is five records, not facets. Prompt rendering includes only summaries,
-            // bounding growth while preserving every reviewer perspective on both MCP and PR runs.
+            // The default is three records, capped at five, not a cap on facets or findings.
+            // Prompt rendering uses summaries to reduce growth while preserving every reviewer
+            // perspective on both MCP and PR runs; individual record size is not bounded here.
             // Ship this with the independent-pass rule to avoid increasing anchoring.
             return validation
                 .Output.Reviews.Select(facet => new CodeReviewPreviousReview(

@@ -38,6 +38,8 @@ public sealed partial class CodeReviewMcpTools
     /// NOTE: DI will inject the ILoggerFactory for the tool type
     /// </remarks>
     [McpServerTool(Name = "expert_code_review", Title = "Expert Code Review")]
+    // NOTE: `git diff <commit>` compares the commit with the working tree, including
+    // staged and unstaged changes; intent-to-add also includes new files.
     [Description(
         """
             Request an expert code review by uploading a git diff and providing context about the change.
@@ -52,7 +54,8 @@ public sealed partial class CodeReviewMcpTools
             1. Call with action=`create_upload_url` to get a signed URL + `curl` instructions; no other parameters at this step
             2. Generate a raw unified git diff into a temp file, for example:
                `git add -N . && git diff --binary $(git merge-base origin/HEAD HEAD) > /tmp/zeeq-review.diff`.
-               This marks new files as intent-to-add in the index. For a slice, add a pathspec such as `-- src/web`.
+               This marks new files as intent-to-add in the index. For a slice, use
+               `git add -N . && git diff --binary $(git merge-base origin/HEAD HEAD) -- src/web > /tmp/zeeq-review.diff`.
             3. Upload the file to the signed URL using `curl` use `--data-binary`; do not paste or transform the diff.
             4. Call with action=`run_review`, the returned jobId, remoteRepoNameUsingGit, activeOrPlannedBranchName, agentSessionId (if can be resolved from runtime environment), reviewGroupId (from previous result for re-review), and any title/description context.
             Review in slices or in chained rounds while you iterate. Before you open the PR, run one fresh review of the full branch diff.
