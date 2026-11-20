@@ -31,7 +31,12 @@ public sealed partial class DocumentLibraryMcpTools
     /// <param name="maxResults">Maximum results to return; defaults to 5, clamped to 1..15.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>Markdown results grouped by document, or a caller-facing error message.</returns>
-    [McpServerTool(Name = "search_code_snippets", Title = "Search Code Snippets")]
+    [McpServerTool(
+        Name = "search_code_snippets",
+        Title = "Search Code Snippets",
+        ReadOnly = true,
+        OpenWorld = false
+    )]
     [Description(
         """
             Efficient retrieval of indexed, canonical code samples.

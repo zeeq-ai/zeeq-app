@@ -32,7 +32,12 @@ public sealed partial class DocumentLibraryMcpTools
     /// <param name="path">The document path, suffix path, or file name to resolve.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>The markdown content of the document, or a not-found message.</returns>
-    [McpServerTool(Name = "read_document_by_path", Title = "Read Document By Path")]
+    [McpServerTool(
+        Name = "read_document_by_path",
+        Title = "Read Document By Path",
+        ReadOnly = true,
+        OpenWorld = false
+    )]
     [Description(
         """
             Use to read the full markdown content of a specific document in a document library.

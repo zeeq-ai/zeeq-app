@@ -20,7 +20,14 @@ public sealed partial class DocumentLibraryMcpTools
         ZeeqTelemetry.Metrics.CreateCounter<int>("zeeq_create_document_total");
 
     /// <summary>Applies an approved unified diff to a locally owned document.</summary>
-    [McpServerTool(Name = "update_document_by_diff", Title = "Update Document By Diff")]
+    [McpServerTool(
+        Name = "update_document_by_diff",
+        Title = "Update Document By Diff",
+        ReadOnly = false,
+        Destructive = true,
+        Idempotent = false,
+        OpenWorld = false
+    )]
     [Description(
         """
             Change a Zeeq-owned canonical document with a unified diff against the version you read.
@@ -94,9 +101,10 @@ public sealed partial class DocumentLibraryMcpTools
                         new TextContentBlock { Text = message },
                         new TextContentBlock { Text = current },
                     ],
+                    IsError = true,
                 };
             }
-            return TextResult(message);
+            return TextResult(message, isError: result.Status != AuthoringStatus.Applied);
         }
         catch (OperationCanceledException)
         {
@@ -114,7 +122,14 @@ public sealed partial class DocumentLibraryMcpTools
     }
 
     /// <summary>Creates a new agent-authored document without overwriting.</summary>
-    [McpServerTool(Name = "create_document", Title = "Create Document")]
+    [McpServerTool(
+        Name = "create_document",
+        Title = "Create Document",
+        ReadOnly = false,
+        Destructive = false,
+        Idempotent = false,
+        OpenWorld = false
+    )]
     [Description(
         """
             Create a new markdown document in a library. It is live on save, marked agent-authored, and never overwrites a document.
@@ -174,7 +189,8 @@ public sealed partial class DocumentLibraryMcpTools
                         result.ListMayBeStale
                             ? "\nwarning: the document list may be temporarily stale."
                             : string.Empty
-                    )
+                    ),
+                isError: result.Status != AuthoringStatus.Created
             );
         }
         catch (OperationCanceledException)
@@ -192,13 +208,20 @@ public sealed partial class DocumentLibraryMcpTools
         }
     }
 
-    private static CallToolResult TextResult(string text) =>
-        new() { Content = [new TextContentBlock { Text = text }] };
+    // NOTE: Spec says tool execution errors set isError so clients and models can detect
+    // a failed call. Rejected, stale, exists and unconfirmed outcomes are all unsaved.
+    private static CallToolResult TextResult(string text, bool isError = false) =>
+        new() { Content = [new TextContentBlock { Text = text }], IsError = isError };
 
-    private static CallToolResult Counted(Counter<int> counter, string outcome, string text)
+    private static CallToolResult Counted(
+        Counter<int> counter,
+        string outcome,
+        string text,
+        bool isError = true
+    )
     {
         counter.Add(1, new KeyValuePair<string, object?>("outcome", outcome));
-        return TextResult(text);
+        return TextResult(text, isError);
     }
 
     internal static string RenderUpdate(string library, AuthoringResult result, string rationale)

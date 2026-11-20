@@ -31,7 +31,12 @@ public sealed partial class DocumentLibraryMcpTools
     /// <param name="maxResults">Maximum results to return; defaults to 5, clamped to 1..15.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>Markdown results grouped by document, or a caller-facing error message.</returns>
-    [McpServerTool(Name = "search_sections", Title = "Search Document Sections")]
+    [McpServerTool(
+        Name = "search_sections",
+        Title = "Search Document Sections",
+        ReadOnly = true,
+        OpenWorld = false
+    )]
     [Description(
         """
             Efficient retrieval of indexed sections of canonical guidance.

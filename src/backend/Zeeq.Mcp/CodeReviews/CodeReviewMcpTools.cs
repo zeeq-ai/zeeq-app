@@ -37,7 +37,14 @@ public sealed partial class CodeReviewMcpTools
     /// can keep one workflow in their tool plan: create URL, upload diff, run review.
     /// NOTE: DI will inject the ILoggerFactory for the tool type
     /// </remarks>
-    [McpServerTool(Name = "expert_code_review", Title = "Expert Code Review")]
+    [McpServerTool(
+        Name = "expert_code_review",
+        Title = "Expert Code Review",
+        ReadOnly = false,
+        Destructive = false,
+        Idempotent = false,
+        OpenWorld = false
+    )]
     // NOTE: `git diff <commit>` compares the commit with the working tree, including
     // staged and unstaged changes; intent-to-add also includes new files.
     [Description(

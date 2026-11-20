@@ -31,7 +31,12 @@ public sealed partial class DocumentLibraryMcpTools
     /// <param name="user">The authenticated caller; the active organization is read from its claims.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>A JSON array of libraries in the active organization.</returns>
-    [McpServerTool(Name = "list_libraries", Title = "List Libraries")]
+    [McpServerTool(
+        Name = "list_libraries",
+        Title = "List Libraries",
+        ReadOnly = true,
+        OpenWorld = false
+    )]
     [Description(
         """
             Lists the document libraries that are available in the organization.

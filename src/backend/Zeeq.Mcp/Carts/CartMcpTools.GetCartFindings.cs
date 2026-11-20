@@ -19,7 +19,12 @@ public sealed partial class CartMcpTools
     /// are invisible here by construction: only rows that were persisted via
     /// <c>POST /carts</c> can be found.
     /// </summary>
-    [McpServerTool(Name = "get_cart_findings", Title = "Get Cart Findings")]
+    [McpServerTool(
+        Name = "get_cart_findings",
+        Title = "Get Cart Findings",
+        ReadOnly = true,
+        OpenWorld = false
+    )]
     [Description(
         """
             A human reviewer has created a saved cart of reviewer findings that needs to be fixed.

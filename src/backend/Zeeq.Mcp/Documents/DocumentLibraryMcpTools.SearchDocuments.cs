@@ -32,7 +32,12 @@ public sealed partial class DocumentLibraryMcpTools
     /// <param name="limit">The maximum number of results to return; defaults to 10, capped at 50.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>A JSON array of ranked search hits with match type and component scores.</returns>
-    [McpServerTool(Name = "search_documents", Title = "Search Documents")]
+    [McpServerTool(
+        Name = "search_documents",
+        Title = "Search Documents",
+        ReadOnly = true,
+        OpenWorld = false
+    )]
     [Description(
         """
             Use to find the most relevant documents in a manual in the document library.

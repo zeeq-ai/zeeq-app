@@ -780,6 +780,7 @@ public sealed class DocumentAuthoringTests
         );
         await Assert.That(stale.Content.Count).IsEqualTo(2);
         await Assert.That(((TextContentBlock)stale.Content[0]).Text).Contains("status: stale");
+        await Assert.That(stale.IsError).IsTrue();
         using var current = JsonDocument.Parse(((TextContentBlock)stale.Content[1]).Text);
         await Assert
             .That(current.RootElement.GetProperty("content").GetString())
@@ -797,6 +798,7 @@ public sealed class DocumentAuthoringTests
             "why"
         );
         await Assert.That(((TextContentBlock)applied.Content[0]).Text).Contains("status: applied");
+        await Assert.That(applied.IsError).IsNotEqualTo(true);
         await store
             .Received(1)
             .TryReplaceContentAsync(
@@ -884,6 +886,7 @@ public sealed class DocumentAuthoringTests
             "why"
         );
         await Assert.That(((TextContentBlock)exists.Content[0]).Text).Contains("status: exists");
+        await Assert.That(exists.IsError).IsTrue();
     }
 
     [Test]
