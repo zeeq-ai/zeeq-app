@@ -153,7 +153,11 @@ public sealed partial class ExpertCodeReviewRunner(
                 );
             }
 
-            var repository = await repositories.FindActiveAsync(
+            // Webhook ingress can look up a repository globally; MCP callers must never
+            // inherit another organization's configuration or store reviews under it.
+            // Keep the existing case-sensitive identity match; do not broaden it here.
+            var repository = await repositories.FindActiveForOrganizationByProviderIdentityAsync(
+                payload.OrganizationId,
                 "github",
                 request.OwnerQualifiedRepoName,
                 cancellationToken
@@ -367,7 +371,7 @@ public sealed partial class ExpertCodeReviewRunner(
     }
 
     private async Task<UploadedDiffReviewContext> BuildReviewContextAsync(
-        string fallbackOrganizationId,
+        string organizationId,
         CodeRepository? repository,
         string ownerQualifiedRepoName,
         IReadOnlyList<CodeReviewFileSnapshot> files,
@@ -376,14 +380,9 @@ public sealed partial class ExpertCodeReviewRunner(
     {
         if (repository is null)
         {
-            LogRepositoryNotFound(
-                logger,
-                fallbackOrganizationId,
-                ownerQualifiedRepoName,
-                files.Count
-            );
+            LogRepositoryNotFound(logger, organizationId, ownerQualifiedRepoName, files.Count);
             return new(
-                fallbackOrganizationId,
+                organizationId,
                 [CodeReviewerAgentResolver.CreateDefaultRuntimeAgent()],
                 NoAgentsActivated: false,
                 InScopeFiles: files,
@@ -396,14 +395,14 @@ public sealed partial class ExpertCodeReviewRunner(
             repository.ReviewConfiguration.FileFilter
         );
         var agentResolution = await agentResolver.ResolveAsync(
-            repository.OrganizationId,
+            organizationId,
             repository.Id,
             fileScope.InScopeFiles,
             cancellationToken
         );
 
         return new(
-            repository.OrganizationId,
+            organizationId,
             agentResolution.Agents,
             agentResolution.NoAgentsActivated,
             fileScope.InScopeFiles,
