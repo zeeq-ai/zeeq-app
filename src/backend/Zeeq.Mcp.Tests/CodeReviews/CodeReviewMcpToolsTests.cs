@@ -150,6 +150,62 @@ public sealed class CodeReviewMcpToolsTests
     }
 
     [Test]
+    public async Task RunReview_SliceScope_IsPassedAndIncludesFreshFullReviewNote()
+    {
+        var runner = new TestExpertCodeReviewRunner();
+
+        var response = await CodeReviewMcpTools.RunReview(
+            runner,
+            Options(),
+            LoggerFactory.Create(_ => { }),
+            TestUser(),
+            "run_review",
+            jobId: "job_123",
+            uploadToken: "token_123",
+            remoteRepoNameUsingGit: "owner/repo",
+            scope: "slice"
+        );
+
+        await Assert.That(runner.RunRequest!.Scope).IsEqualTo("slice");
+        await Assert.That(response).Contains("Omit `reviewGroupId`");
+    }
+
+    [Test]
+    public async Task RunReview_InvalidScope_ReturnsValidationError()
+    {
+        var response = await CodeReviewMcpTools.RunReview(
+            new TestExpertCodeReviewRunner(),
+            Options(),
+            LoggerFactory.Create(_ => { }),
+            TestUser(),
+            "run_review",
+            jobId: "job_123",
+            uploadToken: "token_123",
+            remoteRepoNameUsingGit: "owner/repo",
+            scope: "changed-files"
+        );
+
+        await Assert.That(response).IsEqualTo("scope must be either 'full' or 'slice'.");
+    }
+
+    [Test]
+    public async Task RunReview_FreshFullScope_OmitsFreshReviewNote()
+    {
+        var response = await CodeReviewMcpTools.RunReview(
+            new TestExpertCodeReviewRunner(),
+            Options(),
+            LoggerFactory.Create(_ => { }),
+            TestUser(),
+            "run_review",
+            jobId: "job_123",
+            uploadToken: "token_123",
+            remoteRepoNameUsingGit: "owner/repo"
+        );
+
+        await Assert.That(response).DoesNotContain("Before opening or updating the PR");
+    }
+
+    [Test]
     public async Task RunReview_RunReviewWithLibraries_ThreadsLibrariesToRunner()
     {
         var runner = new TestExpertCodeReviewRunner();

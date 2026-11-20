@@ -22,9 +22,9 @@ public interface ICodeReviewPreviousReviewStore
     );
 
     /// <summary>
-    /// Loads previous reviews for agent (MCP) runs by session id and/or group id (either).
-    /// Returns empty when both keys are null. Chains across resumed sessions where either
-    /// identifier is known, so an agent that only knows the group id still finds prior context.
+    /// Loads previous reviews for MCP runs only when a review group is supplied.
+    /// A session is attribution, not a chain: sessions can span unrelated work.
+    /// The record limit applies before expanding all reviewer facets.
     /// </summary>
     Task<IReadOnlyList<CodeReviewPreviousReview>> LoadForAgentAsync(
         string organizationId,

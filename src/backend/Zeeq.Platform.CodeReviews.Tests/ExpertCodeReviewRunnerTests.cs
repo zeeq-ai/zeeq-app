@@ -114,6 +114,43 @@ public sealed class ExpertCodeReviewRunnerTests
     }
 
     [Test]
+    public async Task RunReviewAsync_ReportsWhenPreviousReviewsWereUsed()
+    {
+        var fixture = Fixture.Create();
+        fixture
+            .Storage.ReadTextAsync(
+                fixture.Path,
+                StorageContainer.CodeReviewDiffs,
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult(Diff("src/App.cs")));
+        fixture
+            .PreviousReviews.LoadForAgentAsync(
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(
+                Task.FromResult<IReadOnlyList<CodeReviewPreviousReview>>([
+                    new("Security", "Prior", []),
+                ])
+            );
+
+        var response = Unwrap(
+            await fixture.Runner.RunReviewAsync(
+                fixture.Request(),
+                TestUser(),
+                CancellationToken.None
+            )
+        );
+
+        await Assert.That(response.UsedPreviousReviews).IsTrue();
+    }
+
+    [Test]
     public async Task RunReviewAsync_WithAuthenticatedUserEmail_StoresEmailAsAuthorLabel()
     {
         var fixture = Fixture.Create();
@@ -625,6 +662,7 @@ public sealed class ExpertCodeReviewRunnerTests
         public ILibraryDocumentStore Libraries { get; private init; } = null!;
 
         public ICodeReviewRecordStore CodeReviews { get; private init; } = null!;
+        public ICodeReviewPreviousReviewStore PreviousReviews { get; private init; } = null!;
 
         public TestCodeReviewAgentExecutor AgentExecutor { get; private init; } = null!;
 
@@ -747,6 +785,7 @@ public sealed class ExpertCodeReviewRunnerTests
                 AgentStore = agentStore,
                 Libraries = libraries,
                 CodeReviews = codeReviewStore,
+                PreviousReviews = previousReviewStore,
                 AgentExecutor = agentExecutor,
                 Token = tokenProtector.Protect(
                     CodeReviewDiffUploadTokenProtector.CreatePayload(

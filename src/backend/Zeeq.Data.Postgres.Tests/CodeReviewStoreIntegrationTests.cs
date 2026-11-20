@@ -175,15 +175,12 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
             )
             .Transient()
             .Under(seed.Owner)
-            .AddAliases(
-                out _,
-                alias =>
-                {
-                    alias.Kind = UserAliasKind.GitHub;
-                    alias.DisplayValue = "CharlieDigital";
-                    alias.NormalizedValue = "charliedigital";
-                }
-            )
+            .AddAliases(out _, alias =>
+            {
+                alias.Kind = UserAliasKind.GitHub;
+                alias.DisplayValue = "CharlieDigital";
+                alias.NormalizedValue = "charliedigital";
+            })
             .BuildAsync();
         var claimed = pullRequests[0];
         var aliased = pullRequests[1];
@@ -211,15 +208,11 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         await TestBiome
             .Start(_context, out var seed)
             .AddRepository(out _)
-            .Add(
-                CodeReviewBlueprints.PullRequest,
-                out var pullRequests,
-                (pullRequest, ctx) =>
-                {
-                    pullRequest.PullRequestNumber = 77;
-                    pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(4));
-                }
-            )
+            .Add(CodeReviewBlueprints.PullRequest, out var pullRequests, (pullRequest, ctx) =>
+            {
+                pullRequest.PullRequestNumber = 77;
+                pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(4));
+            })
             .Add(
                 CodeReviewBlueprints.Review,
                 out var reviews,
@@ -278,15 +271,11 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         await TestBiome
             .Start(_context, out var seed)
             .AddRepository(out _)
-            .Add(
-                CodeReviewBlueprints.PullRequest,
-                out var pullRequests,
-                (pullRequest, ctx) =>
-                {
-                    pullRequest.PullRequestNumber = 88;
-                    pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(10));
-                }
-            )
+            .Add(CodeReviewBlueprints.PullRequest, out var pullRequests, (pullRequest, ctx) =>
+            {
+                pullRequest.PullRequestNumber = 88;
+                pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(10));
+            })
             .Add(
                 CodeReviewBlueprints.Review,
                 out var reviews,
@@ -349,15 +338,11 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         await TestBiome
             .Start(_context, out var seed)
             .AddRepository(out _)
-            .Add(
-                CodeReviewBlueprints.PullRequest,
-                out var pullRequests,
-                (pullRequest, ctx) =>
-                {
-                    pullRequest.PullRequestNumber = 90;
-                    pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(10));
-                }
-            )
+            .Add(CodeReviewBlueprints.PullRequest, out var pullRequests, (pullRequest, ctx) =>
+            {
+                pullRequest.PullRequestNumber = 90;
+                pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(10));
+            })
             .Add(
                 CodeReviewBlueprints.Review,
                 out var reviews,
@@ -406,16 +391,12 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         await TestBiome
             .Start(_context, out var seed)
             .AddRepository(out var repository)
-            .Add(
-                CodeReviewBlueprints.PullRequest,
-                out _,
-                (pullRequest, ctx) =>
-                {
-                    pullRequest.PullRequestNumber = 91;
-                    pullRequest.Branch = "feature/target";
-                    pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(10));
-                }
-            )
+            .Add(CodeReviewBlueprints.PullRequest, out _, (pullRequest, ctx) =>
+            {
+                pullRequest.PullRequestNumber = 91;
+                pullRequest.Branch = "feature/target";
+                pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(10));
+            })
             .Add(
                 CodeReviewBlueprints.Review,
                 out var reviews,
@@ -467,14 +448,11 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         await TestBiome
             .Start(_context, out var seed)
             .AddRepository(out var repository)
-            .AddPullRequests(
-                out var pullRequests,
-                pullRequest =>
-                {
-                    pullRequest.PullRequestNumber = 89;
-                    pullRequest.CreatedAtUtc = pullRequestCreatedAt;
-                }
-            )
+            .AddPullRequests(out var pullRequests, pullRequest =>
+            {
+                pullRequest.PullRequestNumber = 89;
+                pullRequest.CreatedAtUtc = pullRequestCreatedAt;
+            })
             .Add(
                 CodeReviewBlueprints.Review,
                 out var reviews,
@@ -493,15 +471,12 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
             )
             .Transient()
             .Under(seed.Owner)
-            .AddAliases(
-                out _,
-                alias =>
-                {
-                    alias.Kind = UserAliasKind.GitHub;
-                    alias.DisplayValue = "CharlieDigital";
-                    alias.NormalizedValue = "charliedigital";
-                }
-            )
+            .AddAliases(out _, alias =>
+            {
+                alias.Kind = UserAliasKind.GitHub;
+                alias.DisplayValue = "CharlieDigital";
+                alias.NormalizedValue = "charliedigital";
+            })
             .BuildAsync();
         var pullRequest = pullRequests[0];
         var older = reviews[0];
@@ -617,24 +592,16 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         await TestBiome
             .Start(_context, out _)
             .AddRepository(out _)
-            .Add(
-                CodeReviewBlueprints.PullRequest,
-                out _,
-                (pullRequest, ctx) =>
-                {
-                    pullRequest.PullRequestNumber = 10;
-                    pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(5));
-                }
-            )
+            .Add(CodeReviewBlueprints.PullRequest, out _, (pullRequest, ctx) =>
+            {
+                pullRequest.PullRequestNumber = 10;
+                pullRequest.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(5));
+            })
             .Transient()
-            .Add(
-                CodeReviewBlueprints.Review,
-                out _,
-                (review, ctx) =>
-                {
-                    review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(4));
-                }
-            )
+            .Add(CodeReviewBlueprints.Review, out _, (review, ctx) =>
+            {
+                review.CreatedAtUtc = ctx.Ago(TimeSpan.FromMinutes(4));
+            })
             .Transient()
             .AddActiveLocks(out var activeLocks)
             .Transient()
@@ -723,34 +690,31 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     {
         await TestBiome
             .Start(_context, out var seed)
-            .AddRepository(
-                out var repository,
-                repository =>
+            .AddRepository(out var repository, repository =>
+            {
+                repository.ReviewConfiguration = new()
                 {
-                    repository.ReviewConfiguration = new()
+                    FileFilter = new()
                     {
-                        FileFilter = new()
-                        {
-                            IncludedFiles =
-                            [
-                                new()
-                                {
-                                    MatchType = CodeReviewFileNameMatchType.PathPrefix,
-                                    Pattern = "src/backend/",
-                                },
-                            ],
-                            ExcludedFiles =
-                            [
-                                new()
-                                {
-                                    MatchType = CodeReviewFileNameMatchType.Glob,
-                                    Pattern = "*.generated.cs",
-                                },
-                            ],
-                        },
-                    };
-                }
-            )
+                        IncludedFiles =
+                        [
+                            new()
+                            {
+                                MatchType = CodeReviewFileNameMatchType.PathPrefix,
+                                Pattern = "src/backend/",
+                            },
+                        ],
+                        ExcludedFiles =
+                        [
+                            new()
+                            {
+                                MatchType = CodeReviewFileNameMatchType.Glob,
+                                Pattern = "*.generated.cs",
+                            },
+                        ],
+                    },
+                };
+            })
             .BuildAsync();
         var store = new PostgresCodeRepositoryStore(_context);
 
@@ -799,14 +763,11 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     {
         await TestBiome
             .Start(_context, out var seed)
-            .AddRepository(
-                out var repository,
-                repository =>
-                {
-                    repository.OwnerQualifiedName = "zeeq-ai/paused";
-                    repository.Enabled = false;
-                }
-            )
+            .AddRepository(out var repository, repository =>
+            {
+                repository.OwnerQualifiedName = "zeeq-ai/paused";
+                repository.Enabled = false;
+            })
             .BuildAsync();
         var store = new PostgresCodeRepositoryStore(_context);
 
@@ -825,16 +786,14 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     {
         await TestBiome
             .Start(_context, out _)
-            .AddRepository(
-                out var repository,
-                repository => repository.OwnerQualifiedName = "zeeq-ai/shared"
+            .AddRepository(out var repository, repository =>
+                repository.OwnerQualifiedName = "zeeq-ai/shared"
             )
             .BuildAsync();
         await TestBiome
             .Start(_context, out var otherSeed)
-            .AddRepository(
-                out var otherRepository,
-                repository => repository.OwnerQualifiedName = "zeeq-ai/shared"
+            .AddRepository(out var otherRepository, repository =>
+                repository.OwnerQualifiedName = "zeeq-ai/shared"
             )
             .BuildAsync();
         var store = new PostgresCodeRepositoryStore(_context);
@@ -857,14 +816,11 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     {
         await TestBiome
             .Start(_context, out var seed)
-            .AddRepository(
-                out var repository,
-                repository =>
-                {
-                    repository.OwnerQualifiedName = "zeeq-ai/paused";
-                    repository.Enabled = false;
-                }
-            )
+            .AddRepository(out var repository, repository =>
+            {
+                repository.OwnerQualifiedName = "zeeq-ai/paused";
+                repository.Enabled = false;
+            })
             .BuildAsync();
         var store = new PostgresCodeRepositoryStore(_context);
 
@@ -1095,6 +1051,66 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     }
 
     [Test]
+    public async Task PreviousReviewStore_ChainsOnlyGroupAndCarriesAllFacetsForAgentAndPr()
+    {
+        await TestBiome.Start(_context, out var seed).BuildAsync();
+        var record = AgentReview(
+            seed.Organization.Id,
+            "session-a",
+            "group-a",
+            minutesAgo: 1,
+            ownerQualifiedRepoName: "owner/repo",
+            pullRequestNumber: 42
+        );
+        var artifacts = new PostgresCodeReviewArtifactStore(new PostgresStorageProvider(_context));
+        await using var xml = new MemoryStream(
+            """
+            <reviews noAgentsActivated="false">
+              <review facet="Security" agent="Security"><summary>Security summary</summary><details>Details</details><findings><finding level="MAJOR" file="a.cs" line="1" side="RIGHT"><summary>Issue A</summary><details>Details</details></finding></findings></review>
+              <review facet="Performance" agent="Performance"><summary>Performance summary</summary><details>Details</details><findings><finding level="MINOR" file="b.cs" line="1" side="RIGHT"><summary>Issue B</summary><details>Details</details></finding></findings></review>
+            </reviews>
+            """u8.ToArray()
+        );
+        record.FindingsStorageUri = await artifacts.WriteFindingsAsync(
+            record,
+            xml,
+            "application/xml",
+            CancellationToken.None
+        );
+        await new PostgresCodeReviewRecordStore(_context).AddAsync(record, CancellationToken.None);
+        var store = new CodeReviewPreviousReviewStore(
+            _context,
+            new CodeReviewXmlOutputValidator(),
+            artifacts,
+            NullLogger<CodeReviewPreviousReviewStore>.Instance
+        );
+
+        var sessionOnly = await store.LoadForAgentAsync(
+            seed.Organization.Id,
+            "session-a",
+            null,
+            "excluded"
+        );
+        var group = await store.LoadForAgentAsync(
+            seed.Organization.Id,
+            "different",
+            "group-a",
+            "excluded"
+        );
+        var pr = await store.LoadAsync(
+            seed.Organization.Id,
+            "owner/repo",
+            42,
+            "group-a",
+            "excluded"
+        );
+
+        await Assert.That(sessionOnly).IsEmpty();
+        await Assert.That(group.Select(r => r.Facet)).IsEquivalentTo(["Security", "Performance"]);
+        await Assert.That(pr.Select(r => r.Facet)).IsEquivalentTo(["Security", "Performance"]);
+    }
+
+    [Test]
     public async Task CodeReviewArtifactStore_WriteFindingsAsync_UsesStreamStorageAndGeneratedUri()
     {
         await TestBiome
@@ -1134,23 +1150,17 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
             .Start(_context, out _)
             .AddRepository(out var repository)
             .AddPullRequests(out var pullRequests)
-            .AddReview(
-                out var firstReview,
-                review =>
-                {
-                    review.Status = CodeReviewStatus.Pending;
-                    review.CreatedAtUtc = reviewCreatedAt;
-                }
-            )
+            .AddReview(out var firstReview, review =>
+            {
+                review.Status = CodeReviewStatus.Pending;
+                review.CreatedAtUtc = reviewCreatedAt;
+            })
             .Under(pullRequests[0])
-            .AddReview(
-                out var secondReview,
-                review =>
-                {
-                    review.Status = CodeReviewStatus.Pending;
-                    review.CreatedAtUtc = nextReviewCreatedAt;
-                }
-            )
+            .AddReview(out var secondReview, review =>
+            {
+                review.Status = CodeReviewStatus.Pending;
+                review.CreatedAtUtc = nextReviewCreatedAt;
+            })
             .Transient()
             .BuildAsync();
         var reviews = new[] { firstReview, secondReview };
@@ -1776,7 +1786,9 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         string organizationId,
         string? agentSessionId,
         string? reviewGroupId,
-        int minutesAgo
+        int minutesAgo,
+        string ownerQualifiedRepoName = "",
+        int pullRequestNumber = 0
     ) =>
         new()
         {
@@ -1784,8 +1796,8 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
             OrganizationId = organizationId,
             PullRequestRecordId = null,
             RepositoryId = null,
-            OwnerQualifiedRepoName = string.Empty,
-            PullRequestNumber = 0,
+            OwnerQualifiedRepoName = ownerQualifiedRepoName,
+            PullRequestNumber = pullRequestNumber,
             Branch = string.Empty,
             Title = "Agent review",
             AuthorLogin = string.Empty,
@@ -1803,17 +1815,14 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     {
         await TestBiome
             .Start(_context, out var seed)
-            .AddRepository(
-                out var repository,
-                repository =>
+            .AddRepository(out var repository, repository =>
+            {
+                repository.ReviewConfiguration = new()
                 {
-                    repository.ReviewConfiguration = new()
-                    {
-                        FileFilter = new(),
-                        CheckRun = new() { BlockOnCritical = true, BlockOnMajor = false },
-                    };
-                }
-            )
+                    FileFilter = new(),
+                    CheckRun = new() { BlockOnCritical = true, BlockOnMajor = false },
+                };
+            })
             .BuildAsync();
         var store = new PostgresCodeRepositoryStore(_context);
 
@@ -1835,13 +1844,10 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
     {
         await TestBiome
             .Start(_context, out var seed)
-            .AddRepository(
-                out var repository,
-                repository =>
-                {
-                    repository.ReviewConfiguration = new() { FileFilter = new() };
-                }
-            )
+            .AddRepository(out var repository, repository =>
+            {
+                repository.ReviewConfiguration = new() { FileFilter = new() };
+            })
             .BuildAsync();
         var store = new PostgresCodeRepositoryStore(_context);
 
@@ -1864,13 +1870,10 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         await TestBiome
             .Start(_context, out var seed)
             .AddRepository(out _)
-            .AddPullRequests(
-                out var pullRequests,
-                pullRequest =>
-                {
-                    pullRequest.PullRequestNumber = 42;
-                }
-            )
+            .AddPullRequests(out var pullRequests, pullRequest =>
+            {
+                pullRequest.PullRequestNumber = 42;
+            })
             .Transient()
             .BuildAsync();
         var pr = pullRequests[0];
@@ -1903,13 +1906,10 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         await TestBiome
             .Start(_context, out var seed)
             .AddRepository(out _)
-            .AddPullRequests(
-                out var pullRequests,
-                pullRequest =>
-                {
-                    pullRequest.PullRequestNumber = 43;
-                }
-            )
+            .AddPullRequests(out var pullRequests, pullRequest =>
+            {
+                pullRequest.PullRequestNumber = 43;
+            })
             .Transient()
             .BuildAsync();
         var pr = pullRequests[0];
@@ -1942,13 +1942,10 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         await TestBiome
             .Start(_context, out var seed)
             .AddRepository(out _)
-            .AddPullRequests(
-                out var pullRequests,
-                pullRequest =>
-                {
-                    pullRequest.PullRequestNumber = 44;
-                }
-            )
+            .AddPullRequests(out var pullRequests, pullRequest =>
+            {
+                pullRequest.PullRequestNumber = 44;
+            })
             .Transient()
             .BuildAsync();
         var pr = pullRequests[0];

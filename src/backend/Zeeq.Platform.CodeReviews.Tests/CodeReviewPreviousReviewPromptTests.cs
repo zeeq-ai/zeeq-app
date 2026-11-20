@@ -26,6 +26,19 @@ public sealed class CodeReviewPreviousReviewPromptTests
     // BuildPreviousReviewsSection tests
 
     [Test]
+    public async Task BuildPreviousReviewsSection_RequiresIndependentPassFirst()
+    {
+        var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection([
+            PreviousReview(
+                facet: "Security",
+                findings: [Finding(CodeReviewFindingLevel.Major, "Risk")]
+            ),
+        ]);
+        await Assert.That(section).Contains("First review the entire pr_diff independently");
+        await Assert.That(section).Contains("Never let previous reviews narrow your search");
+    }
+
+    [Test]
     public async Task BuildPreviousReviewsSection_EmptyList_ReturnsEmpty()
     {
         var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection([]);
@@ -36,9 +49,9 @@ public sealed class CodeReviewPreviousReviewPromptTests
     [Test]
     public async Task BuildPreviousReviewsSection_ReviewWithZeroFindings_ReturnsEmpty()
     {
-        var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection(
-            [PreviousReview(facet: "Security", findings: [])]
-        );
+        var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection([
+            PreviousReview(facet: "Security", findings: []),
+        ]);
 
         await Assert.That(section).IsEqualTo(string.Empty);
     }
@@ -46,20 +59,18 @@ public sealed class CodeReviewPreviousReviewPromptTests
     [Test]
     public async Task BuildPreviousReviewsSection_MultipleReviews_AggregatesXmlWithFacets()
     {
-        var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection(
-            [
-                PreviousReview(
-                    facet: "Security",
-                    summary: "Review 1",
-                    findings: [Finding(CodeReviewFindingLevel.Critical, "Issue 1")]
-                ),
-                PreviousReview(
-                    facet: "Security",
-                    summary: "Review 2",
-                    findings: [Finding(CodeReviewFindingLevel.Minor, "Issue 2")]
-                ),
-            ]
-        );
+        var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection([
+            PreviousReview(
+                facet: "Security",
+                summary: "Review 1",
+                findings: [Finding(CodeReviewFindingLevel.Critical, "Issue 1")]
+            ),
+            PreviousReview(
+                facet: "Security",
+                summary: "Review 2",
+                findings: [Finding(CodeReviewFindingLevel.Minor, "Issue 2")]
+            ),
+        ]);
 
         var doc = XElement.Parse(section);
         var reviews = doc.Elements("review").ToArray();
@@ -74,28 +85,30 @@ public sealed class CodeReviewPreviousReviewPromptTests
     [Test]
     public async Task BuildPreviousReviewsSection_IncludesFindingsFromAllFacets()
     {
-        var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection(
-            [
-                PreviousReview(
-                    facet: "Performance",
-                    summary: "Perf review",
-                    findings: [Finding(CodeReviewFindingLevel.Major, summary: "Perf issue")]
-                ),
-                PreviousReview(
-                    facet: "Security",
-                    summary: "Security review",
-                    findings: [Finding(CodeReviewFindingLevel.Critical, summary: "Security issue")]
-                ),
-            ]
-        );
+        var section = CodeReviewAgentExecutor.BuildPreviousReviewsSection([
+            PreviousReview(
+                facet: "Performance",
+                summary: "Perf review",
+                findings: [Finding(CodeReviewFindingLevel.Major, summary: "Perf issue")]
+            ),
+            PreviousReview(
+                facet: "Security",
+                summary: "Security review",
+                findings: [Finding(CodeReviewFindingLevel.Critical, summary: "Security issue")]
+            ),
+        ]);
 
         var doc = XElement.Parse(section);
         var reviews = doc.Elements("review").ToArray();
-        var findings = reviews.SelectMany(review => review.Element("findings")!.Elements()).ToArray();
+        var findings = reviews
+            .SelectMany(review => review.Element("findings")!.Elements())
+            .ToArray();
 
-        await Assert.That(reviews.Select(review => review.Attribute("facet")!.Value))
+        await Assert
+            .That(reviews.Select(review => review.Attribute("facet")!.Value))
             .IsEquivalentTo(["Performance", "Security"]);
-        await Assert.That(findings.Select(finding => finding.Element("summary")!.Value))
+        await Assert
+            .That(findings.Select(finding => finding.Element("summary")!.Value))
             .IsEquivalentTo(["Perf issue", "Security issue"]);
     }
 }

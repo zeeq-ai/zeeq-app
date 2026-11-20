@@ -202,9 +202,8 @@ public sealed partial class ExpertCodeReviewRunner(
                 )
             );
 
-            // Previous-review context replaces the old `previousReviews: []`. Chains by
-            // session id and/or group id (either). Group id is always present so chaining
-            // works even when the agent supplied no session id.
+            // Only an explicit group chains reviews. A session can span unrelated work;
+            // a generated group makes an omitted group a fresh review.
             var previousReviews = await previousReviewStore.LoadForAgentAsync(
                 payload.OrganizationId,
                 request.AgentSessionId,
@@ -329,7 +328,8 @@ public sealed partial class ExpertCodeReviewRunner(
                 ReviewId: review.Id,
                 ReviewCreatedAtUtc: review.CreatedAtUtc,
                 ReviewGroupId: reviewGroupId,
-                ReviewViewUrl: viewUrl
+                ReviewViewUrl: viewUrl,
+                UsedPreviousReviews: previousReviews.Count > 0
             );
         }
         catch (UploadedDiffNotFoundException)

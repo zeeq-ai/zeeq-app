@@ -103,7 +103,7 @@ public sealed class CodeReviewWorkflowFactory(
 /// <param name="Provider">Resolved LLM provider name (e.g. <c>Fireworks</c>) for diagnostic logging.</param>
 /// <param name="Model">Resolved LLM model identifier for diagnostic logging.</param>
 /// <param name="PreviousReviewsSection">
-/// Pre-rendered <c>&lt;previous_reviews&gt;</c> XML for this reviewer's facet, or empty when none.
+/// Pre-rendered <c>&lt;previous_reviews&gt;</c> XML for all prior reviewer facets, or empty when none.
 /// Injected into <see cref="CodeReviewReviewerValidatingExecutor"/> so it can compose the final
 /// per-reviewer user prompt at execution time.
 /// </param>
