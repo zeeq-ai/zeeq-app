@@ -72,6 +72,40 @@ describe("audit history API mappers", () => {
     expect(mismatchedRun.verifiedSyncRunId).toBeNull();
   });
 
+  it("shows the before and after audience of a library visibility change", () => {
+    const visibilityEvent: AuditEventSummaryDto = {
+      ...event,
+      eventType: "library.visibility_changed",
+      area: "Settings",
+      subjectType: "library",
+      subjectId: "library-1",
+      changedFields: ["visibility"],
+    };
+
+    expect(mapAuditEventSummary(visibilityEvent).actionLabel).toBe(
+      "changed visibility for library",
+    );
+    expect(
+      mapAuditEventDetail({
+        event: visibilityEvent,
+        before: {
+          fields: {
+            visibility: '["Engineering","Platform (archived)"]',
+            visibilityTeamIds: '["team-1","team-2"]',
+          },
+        },
+        after: { fields: { visibility: "[]", visibilityTeamIds: "[]" } },
+      }).changes,
+    ).toEqual([
+      {
+        label: "Visibility",
+        before: "Engineering, Platform (archived)",
+        after: "Everyone in this organization",
+        sensitive: false,
+      },
+    ]);
+  });
+
   it("formats library lifecycle configuration and committed deletion totals", () => {
     const libraryEvent: AuditEventSummaryDto = {
       ...event,

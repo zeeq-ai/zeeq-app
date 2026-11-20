@@ -1,11 +1,14 @@
 using Microsoft.EntityFrameworkCore;
+using Zeeq.Core.Auditing;
 using Zeeq.Core.Documents;
+using Zeeq.Data.Postgres.Auditing;
 
 namespace Zeeq.Data.Postgres.Documents;
 
 internal sealed class PostgresLibraryVisibilityStore(
     PostgresDbContext db,
-    PostgresLibraryDocumentStore documents
+    PostgresLibraryDocumentStore documents,
+    IAuditTrailWriter audit
 ) : ILibraryVisibilityStore
 {
     private DbSet<LibraryTeamGrant> Grants => db.Set<LibraryTeamGrant>();
@@ -110,7 +113,22 @@ internal sealed class PostgresLibraryVisibilityStore(
         return settings is null ? null : new(settings.TeamIds, settings.Teams);
     }
 
-    public async Task<(LibraryVisibilitySaveStatus Status, Library? Library)> SaveAsync(
+    public Task<(LibraryVisibilitySaveStatus Status, Library? Library)> SaveAsync(
+        Library library,
+        LibraryVisibilityChange change,
+        bool requestFullResync,
+        CancellationToken ct
+    ) =>
+        AuditMutationCheckpoint.RunAsync(
+            db,
+            () => SaveWithinTransactionAsync(library, change, requestFullResync, ct),
+            ct
+        );
+
+    private async Task<(
+        LibraryVisibilitySaveStatus Status,
+        Library? Library
+    )> SaveWithinTransactionAsync(
         Library library,
         LibraryVisibilityChange change,
         bool requestFullResync,
@@ -121,7 +139,6 @@ internal sealed class PostgresLibraryVisibilityStore(
         var organizationId = library.OrganizationId;
         var libraryId = library.Id;
 
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var locked = await db
             .Database.SqlQuery<string>(
                 $"""
@@ -162,7 +179,27 @@ internal sealed class PostgresLibraryVisibilityStore(
                 return (LibraryVisibilitySaveStatus.InvalidTeams, null);
         }
 
+        var updated = await documents.TryUpdateLibraryAsync(library, requestFullResync, ct);
+        if (updated is null)
+            return (LibraryVisibilitySaveStatus.Missing, null);
+
         var removals = current.Except(selected).ToArray();
+        if (additions.Length == 0 && removals.Length == 0)
+            return (LibraryVisibilitySaveStatus.Saved, updated);
+
+        var affectedTeams = current.Union(selected).ToArray();
+        var teamNames = await db
+            .Teams.AsNoTracking()
+            .Where(team => team.OrganizationId == organizationId && affectedTeams.Contains(team.Id))
+            .Select(team => new
+            {
+                team.Id,
+                Label = team.DisabledAtUtc == null
+                    ? team.DisplayName
+                    : team.DisplayName + " (archived)",
+            })
+            .ToDictionaryAsync(team => team.Id, team => team.Label, ct);
+
         if (removals.Length > 0)
             await grants.Where(grant => removals.Contains(grant.TeamId)).ExecuteDeleteAsync(ct);
 
@@ -175,19 +212,17 @@ internal sealed class PostgresLibraryVisibilityStore(
             })
             .ToArray();
         Grants.AddRange(addedGrants);
-        try
-        {
-            var updated = await documents.TryUpdateLibraryAsync(library, requestFullResync, ct);
-            if (updated is null)
-                return (LibraryVisibilitySaveStatus.Missing, null);
+        audit.AppendOrganization(
+            organizationId,
+            updated.TeamId,
+            LibraryAudit.Visibility(updated, current, selected, teamNames)
+        );
+        await db.SaveChangesAsync(ct);
 
-            await transaction.CommitAsync(ct);
-            return (LibraryVisibilitySaveStatus.Saved, updated);
-        }
-        finally
-        {
-            foreach (var grant in addedGrants)
-                db.Entry(grant).State = EntityState.Detached;
-        }
+        // Grants are replaced using set-based deletes. Keep the context free of tracked grant rows.
+        foreach (var grant in addedGrants)
+            db.Entry(grant).State = EntityState.Detached;
+
+        return (LibraryVisibilitySaveStatus.Saved, updated);
     }
 }

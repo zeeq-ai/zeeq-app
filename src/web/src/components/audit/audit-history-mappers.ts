@@ -80,6 +80,7 @@ const safeFieldLabels: Record<string, string> = {
   includefilters: "Include filters",
   excludefilters: "Exclude filters",
   sourcekind: "Source type",
+  visibility: "Visibility",
   publicsourceid: "Public source ID",
   documentcount: "Documents removed",
   repositorymappingcount: "Repository mappings removed",
@@ -341,14 +342,22 @@ function formatFieldValue(field: string, value: string | null | undefined) {
         ? "Not mapped"
         : value;
   }
-  if (field === "includefilters" || field === "excludefilters") {
+  if (
+    field === "includefilters" ||
+    field === "excludefilters" ||
+    field === "visibility"
+  ) {
     try {
       const parsed: unknown = JSON.parse(value);
       if (
         Array.isArray(parsed) &&
         parsed.every((item) => typeof item === "string")
       ) {
-        return parsed.length ? parsed.join(", ") : "None";
+        return parsed.length
+          ? parsed.join(", ")
+          : field === "visibility"
+            ? "Everyone in this organization"
+            : "None";
       }
     } catch {
       // Keep the stored value visible if it is not a valid JSON string array.
