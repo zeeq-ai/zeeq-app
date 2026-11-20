@@ -6,12 +6,32 @@ namespace Zeeq.Mcp.Tests;
 /// <summary>Every MCP tool declares explicit behavior hints; the spec defaults are wrong for Zeeq.</summary>
 public sealed class ToolAnnotationTests
 {
-    private static readonly string[] MutatingTools =
-    [
-        "create_document",
-        "update_document_by_diff",
-        "expert_code_review",
-    ];
+    /// <summary>
+    /// The full hint contract per tool. A new tool must add a row here, so its hints are a
+    /// deliberate choice rather than the spec defaults.
+    /// </summary>
+    /// <remarks>
+    /// NOTE: Read-only tools leave Destructive and Idempotent unset (null); the MCP spec only
+    /// gives those hints meaning when ReadOnly is false. No Zeeq tool is open-world.
+    /// </remarks>
+    private static readonly Dictionary<
+        string,
+        (bool ReadOnly, bool? Destructive, bool? Idempotent)
+    > ExpectedHints = new()
+    {
+        ["create_document"] = (false, false, false),
+        ["update_document_by_diff"] = (false, true, false),
+        ["expert_code_review"] = (false, false, false),
+        ["get_review_findings"] = (true, null, null),
+        ["get_cart_findings"] = (true, null, null),
+        ["get_quip"] = (true, null, null),
+        ["list_libraries"] = (true, null, null),
+        ["list_documents"] = (true, null, null),
+        ["read_document_by_path"] = (true, null, null),
+        ["search_documents"] = (true, null, null),
+        ["search_sections"] = (true, null, null),
+        ["search_code_snippets"] = (true, null, null),
+    };
 
     private static IEnumerable<McpServerTool> AllTools() =>
         typeof(QuipTool)
@@ -24,39 +44,30 @@ public sealed class ToolAnnotationTests
             .Select(m => McpServerTool.Create(m));
 
     [Test]
-    public async Task AllTools_DeclareExplicitHints_AndNoToolIsOpenWorld()
+    public async Task EveryTool_HasAnExpectedHintContract()
     {
-        var tools = AllTools().ToList();
+        var names = AllTools().Select(t => t.ProtocolTool.Name).Order().ToArray();
 
-        await Assert.That(tools.Count).IsEqualTo(12);
-        foreach (var tool in tools)
+        await Assert.That(names).IsEquivalentTo(ExpectedHints.Keys.Order().ToArray());
+    }
+
+    [Test]
+    public async Task EveryTool_DeclaresItsExpectedHints_AndIsNotOpenWorld()
+    {
+        foreach (var tool in AllTools())
         {
+            var name = tool.ProtocolTool.Name;
             var hints = tool.ProtocolTool.Annotations;
-            await Assert.That(hints?.ReadOnlyHint).IsNotNull();
-            await Assert.That(hints?.OpenWorldHint).IsFalse();
+            var expected = ExpectedHints[name];
+
+            await Assert.That(hints).IsNotNull().Because(name);
+            await Assert.That(hints!.ReadOnlyHint).IsEqualTo(expected.ReadOnly).Because(name);
+            await Assert
+                .That(hints.DestructiveHint)
+                .IsEqualTo(expected.Destructive)
+                .Because(name);
+            await Assert.That(hints.IdempotentHint).IsEqualTo(expected.Idempotent).Because(name);
+            await Assert.That(hints.OpenWorldHint).IsFalse().Because(name);
         }
-    }
-
-    [Test]
-    public async Task OnlyAuthoringAndReviewTools_AreNotReadOnly()
-    {
-        var writable = AllTools()
-            .Where(t => t.ProtocolTool.Annotations?.ReadOnlyHint == false)
-            .Select(t => t.ProtocolTool.Name)
-            .Order()
-            .ToArray();
-
-        await Assert.That(writable).IsEquivalentTo(MutatingTools.Order().ToArray());
-    }
-
-    [Test]
-    public async Task UpdateDocumentByDiff_IsDestructive_AndCreateDocumentIsAdditive()
-    {
-        var byName = AllTools()
-            .ToDictionary(t => t.ProtocolTool.Name, t => t.ProtocolTool.Annotations!);
-
-        await Assert.That(byName["update_document_by_diff"].DestructiveHint).IsTrue();
-        await Assert.That(byName["create_document"].DestructiveHint).IsFalse();
-        await Assert.That(byName["create_document"].IdempotentHint).IsFalse();
     }
 }
