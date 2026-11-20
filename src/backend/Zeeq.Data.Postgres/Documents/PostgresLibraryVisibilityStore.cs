@@ -179,9 +179,10 @@ internal sealed class PostgresLibraryVisibilityStore(
                 return (LibraryVisibilitySaveStatus.InvalidTeams, null);
         }
 
-        var updated = await documents.TryUpdateLibraryAsync(library, requestFullResync, ct);
-        if (updated is null)
-            return (LibraryVisibilitySaveStatus.Missing, null);
+        // The initial lookup already locked this row. A missing update is an invariant
+        // violation, so fail the transaction instead of committing a partial save.
+        var updated = await documents.TryUpdateLibraryAsync(library, requestFullResync, ct)
+            ?? throw new InvalidOperationException("The locked library could not be updated.");
 
         var removals = current.Except(selected).ToArray();
         if (additions.Length == 0 && removals.Length == 0)
