@@ -47,7 +47,12 @@ public sealed class ExpertCodeReviewRunnerTests
             )
             .Returns(Task.FromResult(Diff("src/App.cs")));
         fixture
-            .Repositories.FindActiveAsync("github", "owner/repo", Arg.Any<CancellationToken>())
+            .Repositories.FindActiveForOrganizationByProviderIdentityAsync(
+                "org_123",
+                "github",
+                "owner/repo",
+                Arg.Any<CancellationToken>()
+            )
             .Returns(Task.FromResult<CodeRepository?>(null));
 
         var result = await fixture.Runner.RunReviewAsync(
@@ -71,6 +76,44 @@ public sealed class ExpertCodeReviewRunnerTests
     }
 
     [Test]
+    public async Task RunReviewAsync_RepositoryInAnotherOrganization_UsesCallerDefaults()
+    {
+        var fixture = Fixture.Create();
+        fixture
+            .Storage.ReadTextAsync(
+                fixture.Path,
+                StorageContainer.CodeReviewDiffs,
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult(Diff("src/App.cs")));
+        // A global lookup would return the other tenant's repository; the scoped lookup must not.
+        fixture
+            .Repositories.FindActiveAsync("github", "owner/repo", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<CodeRepository?>(Repository(includeExtension: ".cs")));
+
+        Unwrap(
+            await fixture.Runner.RunReviewAsync(
+                fixture.Request(),
+                TestUser(),
+                CancellationToken.None
+            )
+        );
+
+        await fixture
+            .Repositories.DidNotReceive()
+            .FindActiveAsync("github", "owner/repo", Arg.Any<CancellationToken>());
+        await fixture
+            .CodeReviews.Received(1)
+            .AddAsync(
+                Arg.Is<CodeReviewRecord>(review => review.OrganizationId == "org_123"),
+                Arg.Any<CancellationToken>()
+            );
+        await Assert
+            .That(fixture.AgentExecutor.ActiveReviewers.Single().Id)
+            .IsEqualTo(CodeReviewerAgentResolver.DefaultReviewerId);
+    }
+
+    [Test]
     public async Task RunReviewAsync_WithAuthenticatedUserEmail_StoresEmailAsAuthorLabel()
     {
         var fixture = Fixture.Create();
@@ -82,7 +125,12 @@ public sealed class ExpertCodeReviewRunnerTests
             )
             .Returns(Task.FromResult(Diff("src/App.cs")));
         fixture
-            .Repositories.FindActiveAsync("github", "owner/repo", Arg.Any<CancellationToken>())
+            .Repositories.FindActiveForOrganizationByProviderIdentityAsync(
+                "org_123",
+                "github",
+                "owner/repo",
+                Arg.Any<CancellationToken>()
+            )
             .Returns(Task.FromResult<CodeRepository?>(null));
 
         await fixture.Runner.RunReviewAsync(fixture.Request(), TestUser(), CancellationToken.None);
@@ -107,11 +155,16 @@ public sealed class ExpertCodeReviewRunnerTests
             )
             .Returns(Task.FromResult(Diff("src/App.cs") + "\n" + Diff("docs/readme.md")));
         fixture
-            .Repositories.FindActiveAsync("github", "owner/repo", Arg.Any<CancellationToken>())
+            .Repositories.FindActiveForOrganizationByProviderIdentityAsync(
+                "org_123",
+                "github",
+                "owner/repo",
+                Arg.Any<CancellationToken>()
+            )
             .Returns(Task.FromResult<CodeRepository?>(Repository(includeExtension: ".cs")));
         fixture
             .AgentStore.ListEnabledForRepositoryAsync(
-                "repo_org",
+                "org_123",
                 "repo_123",
                 Arg.Any<CancellationToken>()
             )
@@ -126,7 +179,7 @@ public sealed class ExpertCodeReviewRunnerTests
 
         await Assert.That(response.ReviewedFiles).IsEquivalentTo(["src/App.cs"]);
         await Assert.That(response.OutOfScopeFiles).IsEquivalentTo(["docs/readme.md"]);
-        await Assert.That(fixture.AgentExecutor.OrganizationId).IsEqualTo("repo_org");
+        await Assert.That(fixture.AgentExecutor.OrganizationId).IsEqualTo("org_123");
         await Assert
             .That(fixture.AgentExecutor.ActiveReviewers.Single().Id)
             .IsEqualTo("agent_backend");
@@ -145,7 +198,12 @@ public sealed class ExpertCodeReviewRunnerTests
             )
             .Returns(Task.FromResult(Diff("src/App.cs")));
         fixture
-            .Repositories.FindActiveAsync("github", "owner/repo", Arg.Any<CancellationToken>())
+            .Repositories.FindActiveForOrganizationByProviderIdentityAsync(
+                "org_123",
+                "github",
+                "owner/repo",
+                Arg.Any<CancellationToken>()
+            )
             .Returns(
                 Task.FromResult<CodeRepository?>(
                     Repository(
@@ -156,7 +214,7 @@ public sealed class ExpertCodeReviewRunnerTests
             );
         fixture
             .AgentStore.ListEnabledForRepositoryAsync(
-                "repo_org",
+                "org_123",
                 "repo_123",
                 Arg.Any<CancellationToken>()
             )
@@ -184,11 +242,16 @@ public sealed class ExpertCodeReviewRunnerTests
             )
             .Returns(Task.FromResult(Diff("src/App.cs")));
         fixture
-            .Repositories.FindActiveAsync("github", "owner/repo", Arg.Any<CancellationToken>())
+            .Repositories.FindActiveForOrganizationByProviderIdentityAsync(
+                "org_123",
+                "github",
+                "owner/repo",
+                Arg.Any<CancellationToken>()
+            )
             .Returns(Task.FromResult<CodeRepository?>(Repository(includeExtension: ".cs")));
         fixture
             .AgentStore.ListEnabledForRepositoryAsync(
-                "repo_org",
+                "org_123",
                 "repo_123",
                 Arg.Any<CancellationToken>()
             )
@@ -233,18 +296,23 @@ public sealed class ExpertCodeReviewRunnerTests
             )
             .Returns(Task.FromResult(Diff("src/App.cs")));
         fixture
-            .Repositories.FindActiveAsync("github", "owner/repo", Arg.Any<CancellationToken>())
+            .Repositories.FindActiveForOrganizationByProviderIdentityAsync(
+                "org_123",
+                "github",
+                "owner/repo",
+                Arg.Any<CancellationToken>()
+            )
             .Returns(
                 Task.FromResult<CodeRepository?>(
                     Repository(includeExtension: ".cs", libraryIds: ["lib_configured"])
                 )
             );
         fixture
-            .Libraries.ListLibrariesAsync("repo_org", Arg.Any<CancellationToken>())
+            .Libraries.ListLibrariesAsync("org_123", Arg.Any<CancellationToken>())
             .Returns(
                 Task.FromResult<IReadOnlyList<Library>>([
-                    LibraryModel("lib_configured", "repo_org", "configured-library"),
-                    LibraryModel("lib_requested", "repo_org", "requested-library"),
+                    LibraryModel("lib_configured", "org_123", "configured-library"),
+                    LibraryModel("lib_requested", "org_123", "requested-library"),
                 ])
             );
 
@@ -270,17 +338,22 @@ public sealed class ExpertCodeReviewRunnerTests
             )
             .Returns(Task.FromResult(Diff("src/App.cs")));
         fixture
-            .Repositories.FindActiveAsync("github", "owner/repo", Arg.Any<CancellationToken>())
+            .Repositories.FindActiveForOrganizationByProviderIdentityAsync(
+                "org_123",
+                "github",
+                "owner/repo",
+                Arg.Any<CancellationToken>()
+            )
             .Returns(
                 Task.FromResult<CodeRepository?>(
                     Repository(includeExtension: ".cs", libraryIds: ["lib_configured"])
                 )
             );
         fixture
-            .Libraries.ListLibrariesAsync("repo_org", Arg.Any<CancellationToken>())
+            .Libraries.ListLibrariesAsync("org_123", Arg.Any<CancellationToken>())
             .Returns(
                 Task.FromResult<IReadOnlyList<Library>>([
-                    LibraryModel("lib_configured", "repo_org", "configured-library"),
+                    LibraryModel("lib_configured", "org_123", "configured-library"),
                 ])
             );
 
@@ -395,7 +468,12 @@ public sealed class ExpertCodeReviewRunnerTests
             )
             .Returns(Task.FromResult(Diff("src/App.cs")));
         fixture
-            .Repositories.FindActiveAsync("github", "owner/repo", Arg.Any<CancellationToken>())
+            .Repositories.FindActiveForOrganizationByProviderIdentityAsync(
+                "org_123",
+                "github",
+                "owner/repo",
+                Arg.Any<CancellationToken>()
+            )
             .Returns(Task.FromResult<CodeRepository?>(null));
 
         var result = await fixture.Runner.RunReviewAsync(
@@ -441,7 +519,7 @@ public sealed class ExpertCodeReviewRunnerTests
         new()
         {
             Id = "repo_123",
-            OrganizationId = "repo_org",
+            OrganizationId = "org_123",
             TeamId = null,
             Provider = "github",
             OwnerQualifiedName = "owner/repo",
@@ -483,7 +561,7 @@ public sealed class ExpertCodeReviewRunnerTests
         new()
         {
             Id = "agent_backend",
-            OrganizationId = "repo_org",
+            OrganizationId = "org_123",
             RepositoryId = "repo_123",
             DisplayName = "Backend Reviewer",
             ReviewFacet = "Backend",
