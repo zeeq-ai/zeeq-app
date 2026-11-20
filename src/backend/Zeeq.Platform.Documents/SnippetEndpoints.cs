@@ -25,6 +25,7 @@ public sealed class SnippetEndpoints : IEndpoint
                 }
             );
         group.RequireRouteOrganizationMatchesCookie();
+        group.AddEndpointFilter<RequireLibraryVisibilityFilter>();
         group.RequireActiveOrganization();
 
         // GET /api/v1/orgs/{orgId}/libraries/{name}/snippets/search?kind=section&query=...&excludeDocumentPaths=...&maxResults=...

@@ -28,7 +28,7 @@ public sealed record AuditReadScope(
 /// Historical actor roles and retained snapshots do not preserve a removed reader's access.
 /// This decision is shared by list and detail requests; hiding rows only in the UI is insufficient.
 /// </remarks>
-public class AuditReadAccess(IZeeqMembershipStore memberships, ILibraryDocumentStore libraries)
+public class AuditReadAccess(IZeeqMembershipStore memberships, ILibraryVisibilityStore visibility)
 {
     /// <summary>Resolves the caller's current scope, or <see langword="null"/> when they have no active membership.</summary>
     public virtual async Task<AuditReadScope?> ResolveAsync(
@@ -53,14 +53,18 @@ public class AuditReadAccess(IZeeqMembershipStore memberships, ILibraryDocumentS
         return await BuildScopeAsync(
             identity,
             membership?.Role,
-            token => libraries.ListLibrariesAsync(identity.OrganizationId, token),
+            token =>
+                visibility.ListVisibleAsync(
+                    new LibraryAudience(identity.OrganizationId, identity.OwnerUserId, false),
+                    token
+                ),
             ct
         );
     }
 
     /// <summary>
     /// Pure scope decision: no role means no access; owner/admin see everything in the organization;
-    /// other members are limited to libraries they can currently access (org-shared, or their team's).
+    /// other members are limited to the library IDs returned by current visibility.
     /// Libraries are only loaded when needed.
     /// </summary>
     internal static async Task<AuditReadScope?> BuildScopeAsync(
@@ -80,11 +84,8 @@ public class AuditReadAccess(IZeeqMembershipStore memberships, ILibraryDocumentS
             return new AuditReadScope(identity.OrganizationId, null, true, null);
         }
 
-        var accessible = (await loadLibraries(ct))
-            .Where(library => library.TeamId is null || library.TeamId == identity.TeamId)
-            .Select(library => library.Id)
-            .ToArray();
+        var accessible = (await loadLibraries(ct)).Select(library => library.Id).ToArray();
 
-        return new AuditReadScope(identity.OrganizationId, identity.TeamId, false, accessible);
+        return new AuditReadScope(identity.OrganizationId, null, false, accessible);
     }
 }

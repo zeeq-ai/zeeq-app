@@ -17,7 +17,10 @@ namespace Zeeq.Data.Postgres.Metrics;
 /// <c>Database.SqlQuery&lt;T&gt;</c> parameterizes every value; the only literal SQL fragments are
 /// group-by column names chosen from closed enums (never caller input).
 /// </remarks>
-internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetricsQueryStore
+internal sealed class PostgresMetricsQueryStore(
+    PostgresDbContext db,
+    LibraryMetricsScope? visibility = null
+) : IMetricsQueryStore
 {
     // Token usage samples store overlapping totals and subsets. Input includes cached tokens,
     // and output includes reasoning/tool tokens, so only the input/output dimensions are additive.
@@ -223,6 +226,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
               AND (cardinality({4}) = 0 OR {{NormalizedMetricUserEmailSql}} = ANY({7}))
               AND (cardinality({5}) = 0 OR metric.tool_name = ANY({5}))
               AND (cardinality({6}) = 0 OR metric.library = ANY({6}))
+              AND (NOT {9} OR metric.library IS NULL OR metric.library = ANY({10}))
             GROUP BY 1, 2
             ORDER BY 1
             """;
@@ -237,7 +241,9 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             tools,
             libraries,
             resolvedUserKeys,
-            range.EndExclusiveUtc
+            range.EndExclusiveUtc,
+            visibility?.VisibleNames is not null,
+            visibility?.VisibleNames ?? []
         );
 
         return await db
@@ -291,6 +297,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
               AND (cardinality({4}) = 0 OR {{NormalizedMetricUserEmailSql}} = ANY({7}))
               AND (cardinality({5}) = 0 OR metric.tool_name = ANY({5}))
               AND (cardinality({6}) = 0 OR metric.library = ANY({6}))
+              AND (NOT {9} OR metric.library IS NULL OR metric.library = ANY({10}))
             GROUP BY 1, 2, 3
             ORDER BY 1, 2, 3
             """;
@@ -305,7 +312,9 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             tools,
             libraries,
             resolvedUserKeys,
-            range.EndExclusiveUtc
+            range.EndExclusiveUtc,
+            visibility?.VisibleNames is not null,
+            visibility?.VisibleNames ?? []
         );
 
         return await db
@@ -409,6 +418,8 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
               AND created_at_utc < {range.EndExclusiveUtc}
               AND tags->>'path' IS NOT NULL
               AND ({library}::text IS NULL OR library = {library}::text)
+              AND (NOT {visibility?.VisibleNames is not null} OR library IS NULL
+                   OR library = ANY({visibility?.VisibleNames ?? []}))
               AND (cardinality({userFilter}) = 0 OR lower(btrim(user_email)) = ANY({resolvedUserKeys}))
             GROUP BY 1, 2
             ORDER BY 3 DESC
@@ -456,6 +467,8 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
               AND tags->>'path' IS NOT NULL
               AND tags->>'heading' IS NOT NULL
               AND ({library}::text IS NULL OR library = {library}::text)
+              AND (NOT {visibility?.VisibleNames is not null} OR library IS NULL
+                   OR library = ANY({visibility?.VisibleNames ?? []}))
               AND (cardinality({userFilter}) = 0 OR lower(btrim(user_email)) = ANY({resolvedUserKeys}))
             GROUP BY tags->>'path', tags->>'heading', library
             ORDER BY 3 DESC
@@ -506,6 +519,7 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
               AND metric.tags->>'document_path' IS NOT NULL
               AND (cardinality({2}) = 0 OR {{NormalizedMetricUserEmailSql}} = ANY({5}))
               AND ({3}::text IS NULL OR metric.library = {3}::text)
+              AND (NOT {7} OR metric.library IS NULL OR metric.library = ANY({8}))
             GROUP BY metric.library, metric.tags->>'document_path'
             ORDER BY 3 DESC
             LIMIT {4}
@@ -519,7 +533,9 @@ internal sealed class PostgresMetricsQueryStore(PostgresDbContext db) : IMetrics
             library,
             top,
             resolvedUserKeys,
-            range.EndExclusiveUtc
+            range.EndExclusiveUtc,
+            visibility?.VisibleNames is not null,
+            visibility?.VisibleNames ?? []
         );
 
         return await db

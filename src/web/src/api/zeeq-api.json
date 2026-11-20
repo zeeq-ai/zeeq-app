@@ -5789,7 +5789,7 @@
           "Libraries"
         ],
         "summary": "List libraries.",
-        "description": "Returns all document libraries in the caller's active organization, ordered by name.",
+        "description": "Returns visible document libraries in the caller's active organization, ordered by name.",
         "operationId": "ListLibraries",
         "parameters": [
           {
@@ -5986,8 +5986,21 @@
               }
             }
           },
+          "403": {
+            "description": "Forbidden"
+          },
           "404": {
             "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryError"
+                }
+              }
+            }
           }
         }
       },
@@ -6353,6 +6366,48 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/libraries/{name}/visibility": {
+      "get": {
+        "tags": [
+          "Libraries"
+        ],
+        "summary": "Get the library team grants and available teams.",
+        "operationId": "GetLibraryVisibility",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryVisibilitySettings"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -16351,6 +16406,74 @@
         },
         "description": "External-source metadata and sync status for a source-backed library."
       },
+      "LibraryVisibilityChange": {
+        "required": [
+          "teamIds",
+          "expectedTeamIds",
+          "confirmEveryone"
+        ],
+        "type": "object",
+        "properties": {
+          "teamIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expectedTeamIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confirmEveryone": {
+            "type": "boolean"
+          }
+        },
+        "description": "A replacement with an explicit baseline and consent to organization-wide access."
+      },
+      "LibraryVisibilitySettings": {
+        "required": [
+          "teamIds",
+          "teams"
+        ],
+        "type": "object",
+        "properties": {
+          "teamIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LibraryVisibilityTeam"
+            }
+          }
+        },
+        "description": "The current grants and selectable teams for a library."
+      },
+      "LibraryVisibilityTeam": {
+        "required": [
+          "id",
+          "name",
+          "isAvailable"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "isAvailable": {
+            "type": "boolean"
+          }
+        },
+        "description": "A selectable team or a retained grant to a disabled team."
+      },
       "LlmApiKeyResponse": {
         "required": [
           "id",
@@ -19274,6 +19397,17 @@
           "runFullResync": {
             "type": "boolean",
             "description": "When true for a Notion-sourced library, schedules a full resync to apply filter changes\nto already-ingested pages. Filter edits alone never imply this destructive backstop."
+          },
+          "visibility": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "When present, replace the library's team grants along with this edit.",
+                "$ref": "#/components/schemas/LibraryVisibilityChange"
+              }
+            ]
           }
         },
         "description": "Request body for updating a document library."

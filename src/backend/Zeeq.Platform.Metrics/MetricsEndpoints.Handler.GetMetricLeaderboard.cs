@@ -4,8 +4,11 @@ using Zeeq.Core.Models;
 namespace Zeeq.Platform.Metrics;
 
 /// <summary>Serves the top-N read-path leaderboard across section + snippet reads (UI-7), cached 30s.</summary>
-public sealed class GetMetricLeaderboardHandler(IMetricsQueryStore store, HybridCache cache)
-    : IEndpointHandler
+public sealed class GetMetricLeaderboardHandler(
+    IMetricsQueryStore store,
+    HybridCache cache,
+    LibraryMetricsScope? visibility = null
+) : IEndpointHandler
 {
     private const int DefaultTop = 10;
     private const int MaxTop = 100;
@@ -40,7 +43,8 @@ public sealed class GetMetricLeaderboardHandler(IMetricsQueryStore store, Hybrid
         }
 
         var boundedTop = Math.Clamp(top ?? DefaultTop, 1, MaxTop);
-        var key = MetricsEndpointCache.Key(
+        var key = MetricsEndpointCache.KeyForVisibility(
+            visibility,
             organizationId,
             "leaderboard",
             rangeIdentity,

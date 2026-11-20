@@ -4,8 +4,11 @@ using Zeeq.Core.Models;
 namespace Zeeq.Platform.Metrics;
 
 /// <summary>Serves the top-N successfully retrieved dynamic prompts, cached 30s.</summary>
-public sealed class GetPromptLeaderboardHandler(IMetricsQueryStore store, HybridCache cache)
-    : IEndpointHandler
+public sealed class GetPromptLeaderboardHandler(
+    IMetricsQueryStore store,
+    HybridCache cache,
+    LibraryMetricsScope? visibility = null
+) : IEndpointHandler
 {
     private const int DefaultTop = 10;
     private const int MaxTop = 100;
@@ -40,7 +43,8 @@ public sealed class GetPromptLeaderboardHandler(IMetricsQueryStore store, Hybrid
         }
 
         var boundedTop = Math.Clamp(top ?? DefaultTop, 1, MaxTop);
-        var key = MetricsEndpointCache.Key(
+        var key = MetricsEndpointCache.KeyForVisibility(
+            visibility,
             organizationId,
             "leaderboard-prompts",
             rangeIdentity,

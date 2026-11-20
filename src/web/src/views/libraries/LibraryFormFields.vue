@@ -178,10 +178,9 @@
       />
     </template>
 
-    <UFormField
-      label="Repositories"
-      description="Reviewer agents for these repositories will have access to this library."
-    >
+    <slot name="visibility" />
+
+    <UFormField label="Repositories" :description="repositoryDescription">
       <template #label>
         <div class="flex items-center justify-between gap-2">
           <span>Repositories</span>
@@ -244,9 +243,15 @@ const props = defineProps<{
   nameError: string | null;
   /** The library's current source, for the read-only summary in edit mode. */
   source: LibrarySourceResponse | null;
+  restricted?: boolean;
 }>();
 
 const source = computed(() => props.source);
+const repositoryDescription = computed(() =>
+  props.restricted && props.form.selectedRepositoryIds.length
+    ? "Reviewers for selected repositories can use this library. Their reviews may include guidance that people outside the selected teams can read."
+    : "Reviewer agents for these repositories will have access to this library.",
+);
 const router = useRouter();
 
 /** Sentinel value routing to the GitHub settings page instead of selecting a repository. */

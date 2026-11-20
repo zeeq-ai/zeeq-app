@@ -8,13 +8,22 @@ namespace Zeeq.Platform.Documents;
 /// </summary>
 public sealed class UpdateLibraryHandler(
     ILibraryDocumentStore store,
-    IDocsPublicSourceStore publicSources
+    IDocsPublicSourceStore publicSources,
+    ILibraryVisibilityStore visibility
 ) : IEndpointHandler
 {
     /// <summary>
     /// Handles the update library request.
     /// </summary>
-    public async Task<Results<Ok<LibraryResponse>, BadRequest<LibraryError>, NotFound>> HandleAsync(
+    public async Task<
+        Results<
+            Ok<LibraryResponse>,
+            BadRequest<LibraryError>,
+            NotFound,
+            ForbidHttpResult,
+            Conflict<LibraryError>
+        >
+    > HandleAsync(
         string orgId,
         string name,
         UpdateLibraryRequest request,
@@ -42,6 +51,12 @@ public sealed class UpdateLibraryHandler(
             );
         }
 
+        if (
+            request.Visibility is not null
+            && user.GetLibraryAudience(orgId)?.IsAdministrator != true
+        )
+            return TypedResults.Forbid();
+
         var existing = await store.GetLibraryAsync(orgId, name, ct);
         if (existing is null)
         {
@@ -52,37 +67,79 @@ public sealed class UpdateLibraryHandler(
             request.RunFullResync && existing.SourceKind == RepositorySourceKind.Notion.ToString()
                 ? DateTimeOffset.UtcNow
                 : existing.NextFullResyncAt;
-        var updated = await store.TryUpdateLibraryAsync(
-            new Library
+        var update = new Library
+        {
+            Id = existing.Id,
+            OrganizationId = existing.OrganizationId,
+            TeamId = existing.TeamId,
+            Name = newName,
+            Description = request.Description ?? existing.Description,
+            PublicSourceId = existing.PublicSourceId,
+            IncludeFilters = request.IncludeFilters ?? existing.IncludeFilters,
+            ExcludeFilters = request.ExcludeFilters ?? existing.ExcludeFilters,
+            SourceKind = existing.SourceKind,
+            SourceRepoUrl = existing.SourceRepoUrl,
+            SourceSyncedAt = existing.SourceSyncedAt,
+            SourceDefaultIncludeFilters = existing.SourceDefaultIncludeFilters,
+            SourceDefaultExcludeFilters = existing.SourceDefaultExcludeFilters,
+            SyncStatus = existing.SyncStatus,
+            NextSyncAt = existing.NextSyncAt,
+            NextFullResyncAt = nextFullResyncAt,
+            ExternalSource = existing.ExternalSource,
+            ActiveSyncRunId = existing.ActiveSyncRunId,
+            ActiveSyncRunCreatedAtUtc = existing.ActiveSyncRunCreatedAtUtc,
+            SyncQueuedAtUtc = existing.SyncQueuedAtUtc,
+            SyncStartedAtUtc = existing.SyncStartedAtUtc,
+            ManualTriggerHistory = existing.ManualTriggerHistory,
+            CreatedAt = existing.CreatedAt,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        Library? updated;
+        if (request.Visibility is { } change)
+        {
+            if (
+                change.TeamIds is null
+                || change.ExpectedTeamIds is null
+                || change.TeamIds.Any(string.IsNullOrWhiteSpace)
+                || change.ExpectedTeamIds.Any(string.IsNullOrWhiteSpace)
+            )
+                return TypedResults.BadRequest(new LibraryError("Invalid team selection."));
+
+            var (status, result) = await visibility.SaveAsync(
+                update,
+                change,
+                request.RunFullResync,
+                ct
+            );
+            switch (status)
             {
-                Id = existing.Id,
-                OrganizationId = existing.OrganizationId,
-                TeamId = existing.TeamId,
-                Name = newName,
-                Description = request.Description ?? existing.Description,
-                PublicSourceId = existing.PublicSourceId,
-                IncludeFilters = request.IncludeFilters ?? existing.IncludeFilters,
-                ExcludeFilters = request.ExcludeFilters ?? existing.ExcludeFilters,
-                SourceKind = existing.SourceKind,
-                SourceRepoUrl = existing.SourceRepoUrl,
-                SourceSyncedAt = existing.SourceSyncedAt,
-                SourceDefaultIncludeFilters = existing.SourceDefaultIncludeFilters,
-                SourceDefaultExcludeFilters = existing.SourceDefaultExcludeFilters,
-                SyncStatus = existing.SyncStatus,
-                NextSyncAt = existing.NextSyncAt,
-                NextFullResyncAt = nextFullResyncAt,
-                ExternalSource = existing.ExternalSource,
-                ActiveSyncRunId = existing.ActiveSyncRunId,
-                ActiveSyncRunCreatedAtUtc = existing.ActiveSyncRunCreatedAtUtc,
-                SyncQueuedAtUtc = existing.SyncQueuedAtUtc,
-                SyncStartedAtUtc = existing.SyncStartedAtUtc,
-                ManualTriggerHistory = existing.ManualTriggerHistory,
-                CreatedAt = existing.CreatedAt,
-                UpdatedAt = DateTimeOffset.UtcNow,
-            },
-            request.RunFullResync,
-            ct
-        );
+                case LibraryVisibilitySaveStatus.Saved:
+                    updated = result;
+                    break;
+                case LibraryVisibilitySaveStatus.Missing:
+                    return TypedResults.NotFound();
+                case LibraryVisibilitySaveStatus.Conflict:
+                    return TypedResults.Conflict(
+                        new LibraryError("Library visibility changed. Reopen Manage and try again.")
+                    );
+                case LibraryVisibilitySaveStatus.InvalidTeams:
+                    return TypedResults.BadRequest(
+                        new LibraryError("A selected team is no longer available.")
+                    );
+                case LibraryVisibilitySaveStatus.ConfirmationRequired:
+                    return TypedResults.BadRequest(
+                        new LibraryError("Confirm giving everyone in the organization access.")
+                    );
+                default:
+                    throw new InvalidOperationException(
+                        $"Unexpected library visibility status: {status}."
+                    );
+            }
+        }
+        else
+        {
+            updated = await store.TryUpdateLibraryAsync(update, request.RunFullResync, ct);
+        }
 
         if (updated is null)
         {

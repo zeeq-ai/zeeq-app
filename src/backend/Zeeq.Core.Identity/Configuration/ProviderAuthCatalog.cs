@@ -53,7 +53,7 @@ public sealed class ProviderAuthCatalog
                 new ProviderAuthSettings
                 {
                     Name = "mock",
-                    DisplayName = "0factor",
+                    DisplayName = "0factor (local mock)",
                     ClientId = settings.MockClientId,
                     IssuerUri = settings.MockProviderIssuer,
                     ServerCallbackUri = settings.MockCallbackUri,

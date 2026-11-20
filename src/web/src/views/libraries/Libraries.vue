@@ -332,6 +332,8 @@
     <LibraryFormSlideover
       v-model:open="libraryFormOpen"
       :library="libraryFormTarget"
+      :can-manage-visibility="canManageOrganization"
+      :fetch-visibility="store.loadLibraryVisibility"
       :repositories="configuredRepositories"
       :source-repositories="librarySourceRepositories"
       :mapped-repository-ids="libraryFormMappedRepoIds"
@@ -483,6 +485,7 @@ import { libraryDocumentScopedSkillEnum } from "@/api/generated/types/LibraryDoc
 import type { LibraryDocumentScopedSkill } from "@/api/generated/types/LibraryDocumentScopedSkill";
 import LibrarySelector from "./LibrarySelector.vue";
 import LibraryFormSlideover, {
+  type LibraryFormSaveResult,
   type LibraryFormSubmitPayload,
 } from "./LibraryFormSlideover.vue";
 import DocumentTree from "./DocumentTree.vue";
@@ -497,6 +500,7 @@ import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 import { toGitHubWebUrl } from "@/utils/githubUrl";
 import AuditHistoryFeed from "@/components/audit/AuditHistoryFeed.vue";
 import { useAppStore } from "@/stores/app-store";
+import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
 
 type DocumentEditorPanelInstance = InstanceType<typeof DocumentEditorPanel>;
 type ReviewDiffDrawerInstance = InstanceType<typeof ReviewDiffDrawer>;
@@ -505,6 +509,7 @@ const toast = useToast();
 const { copy } = useClipboard({ legacy: true });
 const store = useLibraryStore();
 const appStore = useAppStore();
+const { canManageOrganization } = storeToRefs(useOrganizationSettingsStore());
 const auditHistoryStore = useAuditHistoryStore();
 const libraryMetricsStore = useLibraryMetricsStore();
 const githubStore = useGitHubSettingsStore();
@@ -971,7 +976,10 @@ function openLibraryForm(library: LibraryResponse | null) {
 }
 
 /** Handles submit from the library form (create or update). */
-async function onSubmitLibrary(data: LibraryFormSubmitPayload) {
+async function onSubmitLibrary(
+  data: LibraryFormSubmitPayload,
+): Promise<LibraryFormSaveResult> {
+  let librarySaved = false;
   try {
     if (libraryFormTarget.value) {
       const updated = await store.updateLibrary(libraryFormTarget.value.name, {
@@ -980,10 +988,12 @@ async function onSubmitLibrary(data: LibraryFormSubmitPayload) {
         includeFilters: data.includeFilters,
         excludeFilters: data.excludeFilters,
         runFullResync: data.runFullResync,
+        visibility: data.visibility,
       });
-      await store.updateLibraryRepositories(updated.name, data.repositoryIds);
+      librarySaved = true;
       libraryFormTarget.value = updated;
       await router.replace(libraryRoute(updated.name));
+      await store.updateLibraryRepositories(updated.name, data.repositoryIds);
       toast.add({ title: "Library updated", color: "success" });
     } else {
       const source = await resolveCreateSource(data.source);
@@ -992,10 +1002,11 @@ async function onSubmitLibrary(data: LibraryFormSubmitPayload) {
         data.description,
         source,
       );
-      await store.updateLibraryRepositories(created.name, data.repositoryIds);
+      librarySaved = true;
       libraryFormTarget.value = created;
       libraryJustCreated.value = true;
       await router.push(libraryRoute(created.name));
+      await store.updateLibraryRepositories(created.name, data.repositoryIds);
       toast.add({ title: "Library created", color: "success" });
 
       if (created.source) {
@@ -1013,12 +1024,15 @@ async function onSubmitLibrary(data: LibraryFormSubmitPayload) {
         }
       }
     }
-  } catch (err: any) {
+    return "saved";
+  } catch (err: unknown) {
     toast.add({
-      title: "Error",
-      description: err?.message ?? "Failed to save library",
+      title: librarySaved ? "Library saved with a follow-up error" : "Error",
+      description:
+        err instanceof Error ? err.message : "Failed to save library",
       color: "error",
     });
+    return librarySaved ? "library-only" : "failed";
   }
 }
 

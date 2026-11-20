@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Security.Claims;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Zeeq.Core.Common;
+using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
 
 namespace Zeeq.Mcp;
@@ -243,6 +245,61 @@ internal static partial class SetupMcpFiltersExtensions
                 filters.AddCallToolFilter(next =>
                     async (context, cancellationToken) =>
                     {
+                        if (
+                            context.Params is { } tool
+                            && tool.Name
+                                is "list_documents"
+                                    or "read_document_by_path"
+                                    or "search_documents"
+                                    or "search_sections"
+                                    or "search_code_snippets"
+                                    or "create_document"
+                                    or "update_document_by_diff"
+                        )
+                        {
+                            if (
+                                tool.Arguments?.TryGetValue("library", out var value) != true
+                                || value.ValueKind != JsonValueKind.String
+                                || value.GetString() is not { } library
+                                || string.IsNullOrWhiteSpace(library)
+                            )
+                            {
+                                return new CallToolResult
+                                {
+                                    IsError = true,
+                                    Content =
+                                    [
+                                        new TextContentBlock { Text = "library is required." },
+                                    ],
+                                };
+                            }
+
+                            var audience = context.User.GetLibraryAudience();
+                            var visibility =
+                                context.Services!.GetRequiredService<ILibraryVisibilityStore>();
+                            if (
+                                audience is null
+                                || !await visibility.CanOpenAsync(
+                                    audience,
+                                    library,
+                                    cancellationToken
+                                )
+                            )
+                            {
+                                return new CallToolResult
+                                {
+                                    Content =
+                                    [
+                                        new TextContentBlock
+                                        {
+                                            Text =
+                                                $"Library '{library}' was not found; use the list_libraries tool to get valid libraries.",
+                                        },
+                                    ],
+                                };
+                            }
+                        }
+
                         try
                         {
                             return await next(context, cancellationToken);

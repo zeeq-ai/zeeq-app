@@ -148,10 +148,10 @@ public sealed class AuditHandlerTests
             },
             new()
             {
-                Id = "lib_other_team",
+                Id = "lib_additional_team",
                 OrganizationId = "org_1",
                 TeamId = "team_2",
-                Name = "other",
+                Name = "additional",
             },
         ];
 
@@ -163,8 +163,10 @@ public sealed class AuditHandlerTests
         );
 
         await Assert.That(scope!.IsOrgAdmin).IsFalse();
-        await Assert.That(scope.LibraryIds!).IsEquivalentTo(new[] { "lib_shared", "lib_mine" });
-        await Assert.That(scope.TeamId).IsEqualTo("team_1");
+        await Assert
+            .That(scope.LibraryIds!)
+            .IsEquivalentTo(["lib_shared", "lib_mine", "lib_additional_team"]);
+        await Assert.That(scope.TeamId).IsNull();
     }
 
     [Test]

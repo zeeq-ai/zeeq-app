@@ -33,7 +33,96 @@
           :source-repositories="sourceRepositories"
           :name-error="nameError"
           :source="props.library?.source ?? null"
-        />
+          :restricted="selectedTeamIds.length > 0"
+        >
+          <template v-if="canManageVisibility" #visibility>
+            <UFormField
+              label="Visibility"
+              name="library-visibility"
+              :description="visibilityDescription"
+            >
+              <USelectMenu
+                v-if="visibility"
+                v-model="activeTeamIds"
+                :items="activeTeamOptions"
+                value-key="id"
+                label-key="name"
+                :placeholder="
+                  selectedArchivedTeams.length
+                    ? 'Select teams'
+                    : 'Everyone in this organization'
+                "
+                :search-input="{ placeholder: 'Search teams…' }"
+                :disabled="submitting"
+                :loading="loadingVisibility"
+                multiple
+                class="w-full"
+              >
+                <template #default>
+                  <span
+                    v-if="selectedActiveTeams.length"
+                    class="flex min-w-0 flex-wrap gap-1"
+                  >
+                    <UBadge
+                      v-for="team in selectedActiveTeams"
+                      :key="team.id"
+                      color="neutral"
+                      variant="subtle"
+                    >
+                      {{ team.name }}
+                    </UBadge>
+                  </span>
+                  <span v-else class="truncate text-muted">
+                    {{
+                      selectedArchivedTeams.length
+                        ? "Select teams"
+                        : "Everyone in this organization"
+                    }}
+                  </span>
+                </template>
+              </USelectMenu>
+              <p
+                v-else-if="loadingVisibility"
+                role="status"
+                class="text-sm text-muted"
+              >
+                Loading visibility…
+              </p>
+              <UButton
+                v-else
+                label="Retry loading visibility"
+                color="neutral"
+                variant="outline"
+                size="sm"
+                @click="loadVisibility"
+              />
+              <ul v-if="selectedArchivedTeams.length" class="mt-2 space-y-1">
+                <li
+                  v-for="team in selectedArchivedTeams"
+                  :key="team.id"
+                  class="flex items-center gap-2"
+                >
+                  <UBadge color="warning" variant="subtle"
+                    >{{ team.name }} · Archived</UBadge
+                  >
+                  <UButton
+                    :aria-label="`Remove ${team.name}`"
+                    icon="i-lucide-x"
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    :disabled="submitting"
+                    @click="
+                      selectedTeamIds = selectedTeamIds.filter(
+                        (id) => id !== team.id,
+                      )
+                    "
+                  />
+                </li>
+              </ul>
+            </UFormField>
+          </template>
+        </LibraryFormFields>
 
         <LibrarySyncStatusTab
           v-else-if="activeTab === 'status' && isSourceBacked"
@@ -107,10 +196,30 @@
       </div>
     </template>
   </USlideover>
+
+  <UModal
+    v-model:open="confirmEveryoneOpen"
+    :title="`Give everyone in this organization access to ${form.name}?`"
+    description="All active members of the organization will be able to find and open this library."
+  >
+    <template #footer>
+      <div class="flex w-full justify-end gap-2">
+        <UButton
+          label="Go back"
+          color="neutral"
+          variant="ghost"
+          @click="confirmEveryoneOpen = false"
+        />
+        <UButton label="Give everyone access" @click="confirmEveryone" />
+      </div>
+    </template>
+  </UModal>
 </template>
 
 <script setup lang="ts">
 import type { LibraryResponse } from "@/api/generated/types/LibraryResponse";
+import type { LibraryVisibilityChange } from "@/api/generated/types/LibraryVisibilityChange";
+import type { LibraryVisibilitySettings } from "@/api/generated/types/LibraryVisibilitySettings";
 import type { IngestRunPageResponse } from "@/api/generated/types/IngestRunPageResponse";
 import type { NotionWebhookStateResponse } from "@/api/generated/types/NotionWebhookStateResponse";
 import type {
@@ -144,10 +253,15 @@ export type LibraryFormSubmitPayload = {
   includeFilters?: string[];
   excludeFilters?: string[];
   runFullResync?: boolean;
+  visibility?: LibraryVisibilityChange;
 };
+
+export type LibraryFormSaveResult = "saved" | "library-only" | "failed";
 
 const props = defineProps<{
   library: LibraryResponse | null;
+  canManageVisibility: boolean;
+  fetchVisibility: (libraryName: string) => Promise<LibraryVisibilitySettings>;
   repositories: GitHubConfiguredRepository[];
   sourceRepositories: GitHubRepositoryMappingRow[];
   mappedRepositoryIds: string[];
@@ -160,7 +274,9 @@ const props = defineProps<{
   loadingNotionWebhookState: boolean;
   resettingNotionWebhookState: boolean;
   deleting: boolean;
-  submitHandler: (data: LibraryFormSubmitPayload) => Promise<void>;
+  submitHandler: (
+    data: LibraryFormSubmitPayload,
+  ) => Promise<LibraryFormSaveResult>;
 }>();
 
 const emits = defineEmits<{
@@ -202,6 +318,81 @@ const form = reactive<LibraryFormState>({
   originalExcludeFiltersText: "",
   runFullResync: false,
 });
+
+const visibility = ref<LibraryVisibilitySettings | null>(null);
+const selectedTeamIds = ref<string[]>([]);
+const loadingVisibility = ref(false);
+const confirmEveryoneOpen = ref(false);
+let visibilityRequest = 0;
+
+const activeTeamOptions = computed(() =>
+  (visibility.value?.teams ?? []).filter((team) => team.isAvailable),
+);
+const selectedActiveTeams = computed(() =>
+  activeTeamOptions.value.filter((team) =>
+    selectedTeamIds.value.includes(team.id),
+  ),
+);
+const selectedArchivedTeams = computed(() =>
+  (visibility.value?.teams ?? []).filter(
+    (team) => !team.isAvailable && selectedTeamIds.value.includes(team.id),
+  ),
+);
+const activeTeamIds = computed({
+  get: () =>
+    selectedTeamIds.value.filter((id) =>
+      activeTeamOptions.value.some((team) => team.id === id),
+    ),
+  set: (ids: string[]) => {
+    selectedTeamIds.value = [
+      ...ids,
+      ...selectedArchivedTeams.value.map((team) => team.id),
+    ];
+  },
+});
+const visibilityChanged = computed(() => {
+  const saved = visibility.value?.teamIds;
+  return (
+    saved !== undefined &&
+    (saved.length !== selectedTeamIds.value.length ||
+      saved.some((id) => !selectedTeamIds.value.includes(id)))
+  );
+});
+const visibilityDescription = computed(() => {
+  if (!visibility.value)
+    return loadingVisibility.value
+      ? undefined
+      : "The current visibility could not be loaded. Saving other edits preserves it.";
+  if (selectedTeamIds.value.length === 0)
+    return "All active organization members can find and open this library.";
+  if (activeTeamIds.value.length === 0)
+    return "Only organization owners and admins can open this library. Select an active team to give its members access.";
+  return "Members of any selected team can find and open this library in Zeeq and through their MCP agents. Organization owners and admins always have access.";
+});
+
+async function loadVisibility() {
+  const request = ++visibilityRequest;
+  visibility.value = null;
+  selectedTeamIds.value = [];
+  loadingVisibility.value = false;
+  if (!open.value || !props.library || !props.canManageVisibility) return;
+
+  loadingVisibility.value = true;
+  try {
+    const settings = await props.fetchVisibility(props.library.name);
+    if (request !== visibilityRequest) return;
+    visibility.value = settings;
+    selectedTeamIds.value = [...settings.teamIds];
+  } catch {
+    // Preserve server-side grants by omitting visibility from a save after a failed load.
+  } finally {
+    if (request === visibilityRequest) loadingVisibility.value = false;
+  }
+}
+watch(
+  [open, () => props.library?.id, () => props.canManageVisibility],
+  loadVisibility,
+);
 
 const isEdit = computed(() => !!props.library);
 const isSourceBacked = computed(() => isEdit.value && !!props.library?.source);
@@ -342,8 +533,21 @@ function closeSlideover() {
   open.value = false;
 }
 
-/** Emits the submit event with name, optional description, and the source/filters shape. */
-async function onSubmit() {
+function onSubmit() {
+  if (!canSubmit.value) return;
+  if (visibilityChanged.value && selectedTeamIds.value.length === 0) {
+    confirmEveryoneOpen.value = true;
+    return;
+  }
+  void saveLibrary(false);
+}
+
+function confirmEveryone() {
+  confirmEveryoneOpen.value = false;
+  void saveLibrary(true);
+}
+
+async function saveLibrary(confirmEveryone: boolean) {
   if (!canSubmit.value) return;
 
   submitting.value = true;
@@ -351,8 +555,16 @@ async function onSubmit() {
     const payload: LibraryFormSubmitPayload = {
       name: form.name,
       description: form.description || undefined,
-      repositoryIds: form.selectedRepositoryIds,
+      repositoryIds: [...form.selectedRepositoryIds],
     };
+
+    if (visibility.value && visibilityChanged.value) {
+      payload.visibility = {
+        teamIds: [...selectedTeamIds.value],
+        expectedTeamIds: [...visibility.value.teamIds],
+        confirmEveryone,
+      };
+    }
 
     if (!isEdit.value && form.sourceKind !== "local") {
       payload.source =
@@ -382,7 +594,18 @@ async function onSubmit() {
       payload.runFullResync = form.runFullResync;
     }
 
-    await props.submitHandler(payload);
+    const result = await props.submitHandler(payload);
+    if (result === "library-only") {
+      form.selectedRepositoryIds = payload.repositoryIds;
+    }
+
+    // The visibility baseline follows the library write even when mapping fails.
+    if (result !== "failed" && visibility.value && payload.visibility) {
+      visibility.value = {
+        ...visibility.value,
+        teamIds: payload.visibility.teamIds,
+      };
+    }
   } finally {
     submitting.value = false;
   }

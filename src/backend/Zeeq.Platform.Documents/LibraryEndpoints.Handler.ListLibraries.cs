@@ -7,7 +7,7 @@ namespace Zeeq.Platform.Documents;
 /// Lists libraries in the caller's active organization.
 /// </summary>
 public sealed class ListLibrariesHandler(
-    ILibraryDocumentStore store,
+    ILibraryVisibilityStore visibility,
     IDocsPublicSourceStore publicSources
 ) : IEndpointHandler
 {
@@ -20,12 +20,13 @@ public sealed class ListLibrariesHandler(
         CancellationToken ct
     )
     {
-        if (string.IsNullOrWhiteSpace(orgId))
+        var audience = user.GetLibraryAudience(orgId);
+        if (audience is null)
         {
             return TypedResults.BadRequest(new LibraryError("Active organization is required."));
         }
 
-        var libraries = await store.ListLibrariesAsync(orgId, ct);
+        var libraries = await visibility.ListVisibleAsync(audience, ct);
 
         // One batch query for every distinct public source referenced, rather
         // than one per library.

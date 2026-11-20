@@ -127,6 +127,112 @@ public sealed class MetricsEndpointHandlerTests
     }
 
     [Test]
+    public async Task GetMetricTwoDimensionalSeries_RestrictedReaderDoesNotReuseAdminResults()
+    {
+        var cache = new MetricsTestHybridCache();
+        var adminStore = new FakeMetricsQueryStore
+        {
+            TwoDimensionalSeries = [new(DateTimeOffset.UtcNow, "restricted", "dev", 2)],
+        };
+        var memberStore = new FakeMetricsQueryStore();
+        var admin = new GetMetricTwoDimensionalSeriesHandler(adminStore, cache, new());
+        var member = new GetMetricTwoDimensionalSeriesHandler(
+            memberStore,
+            cache,
+            new() { VisibleNames = [] }
+        );
+
+        var adminResult = await admin.HandleAsync(
+            "org_a",
+            "zeeq_tool_call_counter",
+            "1h",
+            null,
+            null,
+            MetricSeriesGroup.Library,
+            MetricSeriesGroup.User,
+            null,
+            null,
+            null,
+            CancellationToken.None
+        );
+        var memberResult = await member.HandleAsync(
+            "org_a",
+            "zeeq_tool_call_counter",
+            "1h",
+            null,
+            null,
+            MetricSeriesGroup.Library,
+            MetricSeriesGroup.User,
+            null,
+            null,
+            null,
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(((Ok<MetricTwoDimensionalSeriesPoint[]>)adminResult.Result).Value)
+            .IsNotEmpty();
+        await Assert
+            .That(((Ok<MetricTwoDimensionalSeriesPoint[]>)memberResult.Result).Value)
+            .IsEmpty();
+        await Assert.That(memberStore.TwoDimensionalSeriesOrganizations).Contains("org_a");
+    }
+
+    [Test]
+    public async Task GetMetricSectionLeaderboard_DifferentLibraryAudiencesDoNotShareResults()
+    {
+        var cache = new MetricsTestHybridCache();
+        var firstStore = new FakeMetricsQueryStore
+        {
+            SectionLeaderboard = [new("Intro", "engineering", 2)],
+        };
+        var secondStore = new FakeMetricsQueryStore
+        {
+            SectionLeaderboard = [new("Guide", "research", 1)],
+        };
+        var engineering = new GetMetricSectionLeaderboardHandler(
+            firstStore,
+            cache,
+            new() { VisibleNames = ["engineering"] }
+        );
+        var research = new GetMetricSectionLeaderboardHandler(
+            secondStore,
+            cache,
+            new() { VisibleNames = ["research"] }
+        );
+
+        var first = await engineering.HandleAsync(
+            "org_a",
+            "1h",
+            null,
+            null,
+            "section",
+            null,
+            10,
+            null,
+            CancellationToken.None
+        );
+        var second = await research.HandleAsync(
+            "org_a",
+            "1h",
+            null,
+            null,
+            "section",
+            null,
+            10,
+            null,
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(((Ok<MetricLeaderboardItem[]>)first.Result).Value!.Single().Item)
+            .IsEqualTo("Intro");
+        await Assert
+            .That(((Ok<MetricLeaderboardItem[]>)second.Result).Value!.Single().Item)
+            .IsEqualTo("Guide");
+    }
+
+    [Test]
     public async Task GetMetricTwoDimensionalSeries_ValidRequest_ReturnsStoreData()
     {
         var store = new FakeMetricsQueryStore

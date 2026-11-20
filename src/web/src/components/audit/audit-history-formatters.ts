@@ -30,6 +30,7 @@ export function formatAuditAction(
     "activation_key.redeemed": "redeemed activation key",
     "library.created": "created library",
     "library.updated": "updated library",
+    "library.visibility_changed": "changed visibility for library",
     "library.deleted": "deleted library",
     "repository.library_mapping_changed": "changed library mapping for",
   };

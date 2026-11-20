@@ -31,6 +31,7 @@ public sealed class IngestEndpoints : IEndpoint
                 }
             );
         group.RequireRouteOrganizationMatchesCookie();
+        group.AddEndpointFilter<RequireLibraryVisibilityFilter>();
 
         // POST /api/v1/orgs/{orgId}/libraries/{name}/ingest-run
         group

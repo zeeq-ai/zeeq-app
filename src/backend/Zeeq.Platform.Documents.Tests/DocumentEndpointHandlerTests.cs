@@ -538,7 +538,7 @@ public sealed class DocumentEndpointHandlerTests
     {
         var store = new TestLibraryDocumentStore { DeleteDuringUpdate = true };
         store.Libraries.Add(TestLibrary());
-        var handler = new UpdateLibraryHandler(store, new NotSupportedPublicSourceStore());
+        var handler = new UpdateLibraryHandler(store, new NotSupportedPublicSourceStore(), null!);
         var result = await handler.HandleAsync(
             "org_123",
             "kb",
@@ -554,7 +554,7 @@ public sealed class DocumentEndpointHandlerTests
     {
         var store = new TestLibraryDocumentStore();
         store.Libraries.Add(TestLibrary(description: "Keep me"));
-        var handler = new UpdateLibraryHandler(store, new NotSupportedPublicSourceStore());
+        var handler = new UpdateLibraryHandler(store, new NotSupportedPublicSourceStore(), null!);
 
         var result = await handler.HandleAsync(
             "org_123",
@@ -577,7 +577,7 @@ public sealed class DocumentEndpointHandlerTests
     {
         var store = new TestLibraryDocumentStore();
         store.Libraries.Add(TestPrivateSourceLibrary());
-        var handler = new UpdateLibraryHandler(store, new NotSupportedPublicSourceStore());
+        var handler = new UpdateLibraryHandler(store, new NotSupportedPublicSourceStore(), null!);
 
         var result = await handler.HandleAsync(
             "org_123",
@@ -609,7 +609,7 @@ public sealed class DocumentEndpointHandlerTests
         var existingNextFullResyncAt = new DateTimeOffset(2026, 8, 9, 12, 0, 0, TimeSpan.Zero);
         var store = new TestLibraryDocumentStore();
         store.Libraries.Add(TestNotionSourceLibrary(nextFullResyncAt: existingNextFullResyncAt));
-        var handler = new UpdateLibraryHandler(store, new NotSupportedPublicSourceStore());
+        var handler = new UpdateLibraryHandler(store, new NotSupportedPublicSourceStore(), null!);
 
         var result = await handler.HandleAsync(
             "org_123",
@@ -639,7 +639,7 @@ public sealed class DocumentEndpointHandlerTests
         var existingNextFullResyncAt = DateTimeOffset.UtcNow.AddDays(1);
         var store = new TestLibraryDocumentStore();
         store.Libraries.Add(TestNotionSourceLibrary(nextFullResyncAt: existingNextFullResyncAt));
-        var handler = new UpdateLibraryHandler(store, new NotSupportedPublicSourceStore());
+        var handler = new UpdateLibraryHandler(store, new NotSupportedPublicSourceStore(), null!);
         var before = DateTimeOffset.UtcNow;
 
         var result = await handler.HandleAsync(

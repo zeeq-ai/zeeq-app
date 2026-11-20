@@ -108,6 +108,7 @@ public sealed class MetricsEndpoints : IEndpoint
                         ct
                     )
             )
+            .AddEndpointFilter<RequireVisibleLibraryMetricsFilter>()
             .WithName("GetMetricSeries")
             .Produces<MetricSeriesPoint[]>()
             .Produces<MetricsEndpointError>(StatusCodes.Status400BadRequest)
@@ -179,6 +180,7 @@ public sealed class MetricsEndpoints : IEndpoint
                         ct
                     )
             )
+            .AddEndpointFilter<RequireVisibleLibraryMetricsFilter>()
             .WithName("GetMetricTwoDimensionalSeries")
             .Produces<MetricTwoDimensionalSeriesPoint[]>()
             .Produces<MetricsEndpointError>(StatusCodes.Status400BadRequest)
@@ -332,6 +334,7 @@ public sealed class MetricsEndpoints : IEndpoint
                     CancellationToken ct
                 ) => handler.HandleAsync(orgId, window, startDate, endDate, library, top, users, ct)
             )
+            .AddEndpointFilter<RequireVisibleLibraryMetricsFilter>()
             .WithName("GetMetricLeaderboard")
             .Produces<MetricLeaderboardItem[]>()
             .Produces<MetricsEndpointError>(StatusCodes.Status400BadRequest)
@@ -389,6 +392,7 @@ public sealed class MetricsEndpoints : IEndpoint
                         ct
                     )
             )
+            .AddEndpointFilter<RequireVisibleLibraryMetricsFilter>()
             .WithName("GetMetricSectionLeaderboard")
             .Produces<MetricLeaderboardItem[]>()
             .Produces<MetricsEndpointError>(StatusCodes.Status400BadRequest)
@@ -442,6 +446,7 @@ public sealed class MetricsEndpoints : IEndpoint
                     CancellationToken ct
                 ) => handler.HandleAsync(orgId, window, startDate, endDate, users, library, top, ct)
             )
+            .AddEndpointFilter<RequireVisibleLibraryMetricsFilter>()
             .WithName("GetPromptLeaderboard")
             .Produces<MetricLeaderboardItem[]>()
             .Produces<MetricsEndpointError>(StatusCodes.Status400BadRequest)

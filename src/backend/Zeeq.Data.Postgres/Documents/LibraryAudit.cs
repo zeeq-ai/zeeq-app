@@ -56,6 +56,38 @@ internal static class LibraryAudit
             ChangedFields = changedFields,
         };
 
+    internal static AuditChange Visibility(
+        Library library,
+        IReadOnlySet<string> before,
+        IReadOnlySet<string> after,
+        IReadOnlyDictionary<string, string> teamNames
+    ) =>
+        Change(
+            "library.visibility_changed",
+            AuditChangeType.Edited,
+            library,
+            VisibilitySnapshot(before, teamNames),
+            VisibilitySnapshot(after, teamNames),
+            ["visibility"]
+        );
+
+    private static AuditSnapshot VisibilitySnapshot(
+        IReadOnlySet<string> teamIds,
+        IReadOnlyDictionary<string, string> teamNames
+    )
+    {
+        var ids = teamIds.Order(StringComparer.Ordinal).ToArray();
+        var names = ids.Select(id => teamNames[id]).Order(StringComparer.Ordinal);
+        return new AuditSnapshot
+        {
+            Fields = new Dictionary<string, string?>
+            {
+                ["visibility"] = JsonSerializer.Serialize(names),
+                ["visibilityTeamIds"] = JsonSerializer.Serialize(ids),
+            },
+        };
+    }
+
     internal static AuditChange Mapping(Library library, CodeRepository repository, bool mapped) =>
         new()
         {
