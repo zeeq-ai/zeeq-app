@@ -65,7 +65,8 @@ public sealed class GetMetricSectionLeaderboardHandler(
         }
 
         var boundedTop = Math.Clamp(top ?? DefaultTop, 1, MaxTop);
-        var key = MetricsEndpointCache.Key(
+        var key = MetricsEndpointCache.KeyForVisibility(
+            visibility,
             organizationId,
             "leaderboard.sections",
             kind,
@@ -76,7 +77,7 @@ public sealed class GetMetricSectionLeaderboardHandler(
         );
 
         var result = await cache.GetOrCreateAsync(
-            MetricsEndpointCache.ForVisibility(key, visibility),
+            key,
             async token =>
                 (
                     await store.GetSectionLeaderboardAsync(

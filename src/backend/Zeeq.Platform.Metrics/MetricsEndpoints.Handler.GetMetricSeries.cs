@@ -51,7 +51,8 @@ public sealed class GetMetricSeriesHandler(
             );
         }
 
-        var key = MetricsEndpointCache.Key(
+        var key = MetricsEndpointCache.KeyForVisibility(
+            visibility,
             organizationId,
             "series",
             metricType,
@@ -63,7 +64,7 @@ public sealed class GetMetricSeriesHandler(
         );
 
         var result = await cache.GetOrCreateAsync(
-            MetricsEndpointCache.ForVisibility(key, visibility),
+            key,
             async token =>
                 (
                     await store.GetSeriesAsync(

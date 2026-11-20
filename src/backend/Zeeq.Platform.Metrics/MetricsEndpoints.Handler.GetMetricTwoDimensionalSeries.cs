@@ -72,7 +72,8 @@ public sealed class GetMetricTwoDimensionalSeriesHandler(
             );
         }
 
-        var key = MetricsEndpointCache.Key(
+        var key = MetricsEndpointCache.KeyForVisibility(
+            visibility,
             organizationId,
             "series-two-dimensional",
             metricType,
@@ -85,7 +86,7 @@ public sealed class GetMetricTwoDimensionalSeriesHandler(
         );
 
         var result = await cache.GetOrCreateAsync(
-            MetricsEndpointCache.ForVisibility(key, visibility),
+            key,
             async token =>
                 (
                     await store.GetTwoDimensionalSeriesAsync(
