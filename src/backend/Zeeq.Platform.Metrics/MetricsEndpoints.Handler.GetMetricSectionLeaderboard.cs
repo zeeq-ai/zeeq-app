@@ -8,8 +8,11 @@ namespace Zeeq.Platform.Metrics;
 /// kind (section prose or code snippet) per call — see <see cref="MetricTaxonomy.SectionLeaderboardTypes" />
 /// for why the two must never be combined in one query.
 /// </summary>
-public sealed class GetMetricSectionLeaderboardHandler(IMetricsQueryStore store, HybridCache cache)
-    : IEndpointHandler
+public sealed class GetMetricSectionLeaderboardHandler(
+    IMetricsQueryStore store,
+    HybridCache cache,
+    LibraryMetricsScope? visibility = null
+) : IEndpointHandler
 {
     private const int DefaultTop = 10;
     private const int MaxTop = 100;
@@ -73,7 +76,7 @@ public sealed class GetMetricSectionLeaderboardHandler(IMetricsQueryStore store,
         );
 
         var result = await cache.GetOrCreateAsync(
-            key,
+            MetricsEndpointCache.ForVisibility(key, visibility),
             async token =>
                 (
                     await store.GetSectionLeaderboardAsync(

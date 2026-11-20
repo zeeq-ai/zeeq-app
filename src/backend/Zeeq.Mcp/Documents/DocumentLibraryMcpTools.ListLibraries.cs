@@ -27,7 +27,7 @@ public sealed partial class DocumentLibraryMcpTools
     /// taken from the server-issued claims on the authenticated principal, never from caller input,
     /// so an agent cannot read another tenant's libraries.
     /// </remarks>
-    /// <param name="store">The injected document-library store.</param>
+    /// <param name="visibility">The injected document-library store.</param>
     /// <param name="user">The authenticated caller; the active organization is read from its claims.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>A JSON array of libraries in the active organization.</returns>
@@ -39,13 +39,13 @@ public sealed partial class DocumentLibraryMcpTools
             """
     )]
     public static async Task<string> ListLibraries(
-        ILibraryDocumentStore store,
+        ILibraryVisibilityStore visibility,
         ClaimsPrincipal? user,
         CancellationToken cancellationToken = default
     )
     {
-        var organizationId = user?.AsZeeqMinimalIdentity().OrganizationId;
-        if (string.IsNullOrWhiteSpace(organizationId))
+        var audience = user.GetLibraryAudience();
+        if (audience is null)
         {
             return RecordToolCall(
                 ListLibrariesCounter,
@@ -56,7 +56,7 @@ public sealed partial class DocumentLibraryMcpTools
             );
         }
 
-        var libraries = await store.ListLibrariesAsync(organizationId, cancellationToken);
+        var libraries = await visibility.ListVisibleAsync(audience, cancellationToken);
 
         var buffer = new StringBuilder();
 
@@ -73,17 +73,13 @@ public sealed partial class DocumentLibraryMcpTools
             ListLibrariesCounter,
             user,
             "success",
-            [("organization", organizationId)],
+            [("organization", audience.OrganizationId)],
             libraries
-                .Aggregate(
-                    buffer,
-                    (acc, lib) =>
-                        acc.AppendLine(
-                            $"""
-                            {lib.Name}: "{lib.RenderedDescription}"
-                            """
-                        )
-                )
+                .Aggregate(buffer, (acc, lib) => acc.AppendLine(
+                        $"""
+                        {lib.Name}: "{lib.RenderedDescription}"
+                        """
+                    ))
                 .ToString()
         );
     }

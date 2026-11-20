@@ -12,7 +12,7 @@ public sealed class ProviderAuthCatalogTests
             ?? throw new InvalidOperationException("The development mock provider is missing.");
 
         await Assert.That(provider.Name).IsEqualTo("mock");
-        await Assert.That(provider.DisplayName).IsEqualTo("0factor");
+        await Assert.That(provider.DisplayName).IsEqualTo("0factor (local mock)");
         await Assert.That(provider.IssuerUri).IsEqualTo("http://localhost:9321/realms/zeeq");
         await Assert.That(provider.ClientId).IsEqualTo("mcp-openiddict-local");
         await Assert

@@ -6,7 +6,8 @@ namespace Zeeq.Platform.Metrics;
 /// <summary>Serves a bucketed metric series grouped by two dimensions, cached per org+query.</summary>
 public sealed class GetMetricTwoDimensionalSeriesHandler(
     IMetricsQueryStore store,
-    HybridCache cache
+    HybridCache cache,
+    LibraryMetricsScope? visibility = null
 ) : IEndpointHandler
 {
     /// <summary>Validates the window, metric type, and dimensions, then returns the cached series.</summary>
@@ -84,7 +85,7 @@ public sealed class GetMetricTwoDimensionalSeriesHandler(
         );
 
         var result = await cache.GetOrCreateAsync(
-            key,
+            MetricsEndpointCache.ForVisibility(key, visibility),
             async token =>
                 (
                     await store.GetTwoDimensionalSeriesAsync(

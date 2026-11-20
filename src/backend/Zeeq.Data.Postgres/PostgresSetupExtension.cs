@@ -128,6 +128,7 @@ public static class PostgresSetupExtension
                 PostgresAgentConversationRollupBackfillStore
             >();
             services.AddScoped<IAgentConversationQueryStore, PostgresAgentConversationQueryStore>();
+            services.AddScoped<LibraryMetricsScope>();
             services.AddScoped<IMetricsQueryStore, PostgresMetricsQueryStore>();
             services.AddScoped<
                 ICodeReviewOrganizationSettingsStore,
@@ -181,6 +182,7 @@ public static class PostgresSetupExtension
             services.TryAddScoped<DocumentSearchScope>();
 
             services.AddScoped<PostgresLibraryDocumentStore>();
+            services.AddScoped<ILibraryVisibilityStore, PostgresLibraryVisibilityStore>();
             services.AddScoped<ILibraryDocumentStore>(serviceProvider =>
             {
                 var store = serviceProvider.GetRequiredService<PostgresLibraryDocumentStore>();

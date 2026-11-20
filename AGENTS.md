@@ -50,7 +50,7 @@ Paseo <https://paseo.sh/llms.txt> is a harness orchestration control plane.  Whe
 
 (✅ PREFER Paseo Browser when operating_environment indicates Paseo)
 
-Use Playwright via MCP to get access to an **authenticated** browser session (the `node_repl` is not a substitute).
+Use the Paseo Browser (preferred) or Playwright MCP for an **authenticated** browser session.
 
 |URL|Purpose|
 |---|---|
@@ -58,7 +58,9 @@ Use Playwright via MCP to get access to an **authenticated** browser session (th
 |`http://zeeq-inspector.localhost:8095`|MCP inspector for testing MCP behavior (NOTE: no `/web/` base URL)|
 |`http://app.zeeq.ai/web`|Production deployment of the app (NOTE the `/web/` base URL)|
 
-Pause and ask to connect to an authenticated session if needed; if the application is on the login screen "Choose sign-in provider"; pause and ask for authentication to continue.
+**Local development sign-in:** 0factor is a local synthetic identity provider for testing. When the local Zeeq app says "Choose sign-in provider", agents should select **0factor (local mock)** and sign in automatically as the fixture persona appropriate to the task. Alice Owner is available for organization admin workflows. See [local 0factor sign-in](build/0factor/README.md) for the fixture users and how to switch personas.
+
+For production, or when a real identity provider is required, ask the user to authenticate if there is no existing signed-in session.
 
 ### Aspire MCP/CLI
 

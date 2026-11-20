@@ -23,6 +23,7 @@ namespace Zeeq.Mcp;
 /// </remarks>
 internal sealed class DynamicPromptsService(
     ILibraryDocumentStore documentStore,
+    ILibraryVisibilityStore visibility,
     RepositoryPromptRenderer promptRenderer,
     IHttpContextAccessor httpContextAccessor,
     ILogger<DynamicPromptsService> logger
@@ -68,7 +69,7 @@ internal sealed class DynamicPromptsService(
         CancellationToken cancellationToken
     )
     {
-        var identity = ResolveIdentity(user);
+        var identity = user.GetLibraryAudience();
         if (identity is null)
         {
             RecordListTelemetry(
@@ -85,11 +86,7 @@ internal sealed class DynamicPromptsService(
             "mcp.dynamic_prompts.list"
         );
 
-        var documents = await documentStore.ListScopedSkillDocumentsAsync(
-            identity.OrganizationId,
-            LibraryDocumentScopedSkill.Organization,
-            cancellationToken
-        );
+        var documents = await ListVisibleSkillsAsync(identity, cancellationToken);
         var entries = BuildPromptEntries(documents);
 
         RecordListTelemetry(
@@ -144,7 +141,7 @@ internal sealed class DynamicPromptsService(
             );
         }
 
-        var identity = ResolveIdentity(user);
+        var identity = user.GetLibraryAudience();
         if (identity is null)
         {
             RecordGetTelemetry(
@@ -165,11 +162,7 @@ internal sealed class DynamicPromptsService(
             "mcp.dynamic_prompts.get"
         );
 
-        var promptEntry = await ResolvePromptEntryAsync(
-            identity.OrganizationId,
-            request.Name,
-            cancellationToken
-        );
+        var promptEntry = await ResolvePromptEntryAsync(identity, request.Name, cancellationToken);
         if (promptEntry is null)
         {
             RecordGetTelemetry(
@@ -245,46 +238,17 @@ internal sealed class DynamicPromptsService(
     /// Resolves a prompt name to the matching scoped document projection.
     /// </summary>
     /// <remarks>
-    /// Prompt names can come from three aliases: manual override, parsed front-matter name, or
-    /// document path. Resolution uses the indexed store lookup first for normal get calls, then
-    /// falls back to the list-shaped resolver so duplicate display-name suffixes and legacy
-    /// normalization edge cases remain retrievable. Ambiguous aliases are treated as not found
-    /// rather than guessing the wrong document.
+    /// Use the same visible catalog as prompts/list so collisions and aliases resolve against
+    /// exactly the documents the caller can discover.
     /// </remarks>
     private async Task<PromptEntry?> ResolvePromptEntryAsync(
-        string organizationId,
+        LibraryAudience audience,
         string promptName,
         CancellationToken cancellationToken
     )
     {
         var normalizedPromptName = DocumentNormalizer.NormalizePromptName(promptName);
-        if (!string.IsNullOrEmpty(normalizedPromptName))
-        {
-            var indexedDocument = await documentStore.ResolveScopedSkillDocumentAsync(
-                organizationId,
-                normalizedPromptName,
-                LibraryDocumentScopedSkill.Organization,
-                cancellationToken
-            );
-            if (indexedDocument is not null)
-            {
-                return new PromptEntry(
-                    normalizedPromptName,
-                    PromptAliases(indexedDocument),
-                    indexedDocument
-                );
-            }
-        }
-
-        // NOTE: Keep this fallback even though the common path is indexed above. The persisted
-        // skill-name columns store authored values, while MCP list output normalizes names and may
-        // append a suffix for duplicate display names. Loading the list here preserves retrieval
-        // for those compatibility edge cases without forcing every get call through a full scan.
-        var documents = await documentStore.ListScopedSkillDocumentsAsync(
-            organizationId,
-            LibraryDocumentScopedSkill.Organization,
-            cancellationToken
-        );
+        var documents = await ListVisibleSkillsAsync(audience, cancellationToken);
 
         var entries = BuildPromptEntries(documents);
         var listedMatch = entries.FirstOrDefault(entry =>
@@ -321,23 +285,23 @@ internal sealed class DynamicPromptsService(
         return null;
     }
 
-    /// <summary>
-    /// Extracts the minimal Zeeq identity required for organization-scoped prompt access.
-    /// </summary>
-    /// <remarks>
-    /// The MCP filter supplies the request <see cref="ClaimsPrincipal"/>. Keeping claim extraction
-    /// here ensures callers do not need to know Zeeq's claim names and prevents dynamic prompts
-    /// from accidentally crossing organization boundaries.
-    /// </remarks>
-    private static ZeeqMinimalIdentity? ResolveIdentity(ClaimsPrincipal? user)
+    private async Task<IReadOnlyList<LibraryScopedSkillDocument>> ListVisibleSkillsAsync(
+        LibraryAudience audience,
+        CancellationToken ct
+    )
     {
-        if (user?.AuthenticatedUser() is null)
-        {
-            return null;
-        }
+        var documents = await documentStore.ListScopedSkillDocumentsAsync(
+            audience.OrganizationId,
+            LibraryDocumentScopedSkill.Organization,
+            ct
+        );
+        if (audience.IsAdministrator || documents.Count == 0)
+            return documents;
 
-        var identity = user.AsZeeqMinimalIdentity();
-        return string.IsNullOrWhiteSpace(identity.OrganizationId) ? null : identity;
+        var allowed = (await visibility.ListVisibleAsync(audience, ct))
+            .Select(library => library.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        return documents.Where(document => allowed.Contains(document.LibraryId)).ToArray();
     }
 
     /// <summary>

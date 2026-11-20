@@ -1044,6 +1044,28 @@ public sealed class MetricsQueryStoreIntegrationTests(PgDatabaseFixture postgres
     }
 
     [Test]
+    public async Task PromptLeaderboard_VisibilityFiltersBeforeSelectingTopMatch()
+    {
+        const string orgId = "org_metrics_visibility";
+        await SeedMetricsAsync(
+            PromptGet(orgId, "restricted", "/private.md", "private"),
+            PromptGet(orgId, "restricted", "/private.md", "private"),
+            PromptGet(orgId, "handbook", "/checks.md", "checks")
+        );
+        var visibility = new LibraryMetricsScope { VisibleNames = ["handbook"] };
+        var store = new PostgresMetricsQueryStore(_context, visibility);
+        var items = await store.GetPromptLeaderboardAsync(
+            orgId,
+            OneHourRange,
+            users: null,
+            library: null,
+            top: 1,
+            CancellationToken.None
+        );
+        await Assert.That(items.Single().Item).IsEqualTo("handbook:/checks.md");
+    }
+
+    [Test]
     public async Task GetLeaderboard_RanksPathsAcrossSectionAndSnippetTypes()
     {
         await SeedMetricsAsync(

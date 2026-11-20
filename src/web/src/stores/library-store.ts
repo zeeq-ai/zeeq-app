@@ -18,6 +18,7 @@ import type { LibraryImportPreviewResponse } from "@/api/generated/types/Library
 import type { LibraryImportResponse } from "@/api/generated/types/LibraryImportResponse";
 import type { CreateLibraryRequest } from "@/api/generated/types/CreateLibraryRequest";
 import type { CreateLibrarySourceRequest } from "@/api/generated/types/CreateLibrarySourceRequest";
+import type { LibraryVisibilityChange } from "@/api/generated/types/LibraryVisibilityChange";
 import type { UpdateLibraryRequest } from "@/api/generated/types/UpdateLibraryRequest";
 import type { UpdateLibraryRepositoryMappingsRequest } from "@/api/generated/types/UpdateLibraryRepositoryMappingsRequest";
 import type { UpsertDocumentRequest } from "@/api/generated/types/UpsertDocumentRequest";
@@ -196,6 +197,10 @@ export const useLibraryStore = defineStore("library", () => {
    * repository URL/kind — delete and recreate to change the source. Returns
    * the updated library.
    */
+  function loadLibraryVisibility(libraryName: string) {
+    return Libraries.getLibraryVisibility(orgId.value, libraryName);
+  }
+
   async function updateLibrary(
     currentName: string,
     next: {
@@ -204,6 +209,7 @@ export const useLibraryStore = defineStore("library", () => {
       includeFilters?: string[];
       excludeFilters?: string[];
       runFullResync?: boolean;
+      visibility?: LibraryVisibilityChange;
     },
   ): Promise<LibraryResponse> {
     const request: UpdateLibraryRequest = {
@@ -212,6 +218,7 @@ export const useLibraryStore = defineStore("library", () => {
       includeFilters: next.includeFilters,
       excludeFilters: next.excludeFilters,
       runFullResync: next.runFullResync,
+      visibility: next.visibility,
     };
 
     const updated = await Libraries.updateLibrary(
@@ -680,6 +687,7 @@ export const useLibraryStore = defineStore("library", () => {
     refreshLibrary,
     createLibrary,
     updateLibrary,
+    loadLibraryVisibility,
     deleteLibrary,
     triggerIngest,
     triggerNotionFullResync,

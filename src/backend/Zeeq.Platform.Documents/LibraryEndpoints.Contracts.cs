@@ -111,6 +111,9 @@ public sealed record UpdateLibraryRequest
     /// to already-ingested pages. Filter edits alone never imply this destructive backstop.
     /// </summary>
     public bool RunFullResync { get; init; }
+
+    /// <summary>When present, replace the library's team grants along with this edit.</summary>
+    public LibraryVisibilityChange? Visibility { get; init; }
 }
 
 /// <summary>

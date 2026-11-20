@@ -332,6 +332,8 @@
     <LibraryFormSlideover
       v-model:open="libraryFormOpen"
       :library="libraryFormTarget"
+      :can-manage-visibility="canManageOrganization"
+      :fetch-visibility="store.loadLibraryVisibility"
       :repositories="configuredRepositories"
       :source-repositories="librarySourceRepositories"
       :mapped-repository-ids="libraryFormMappedRepoIds"
@@ -497,6 +499,7 @@ import ZeeqPopConfirm from "@/components/ZeeqPopConfirm.vue";
 import { toGitHubWebUrl } from "@/utils/githubUrl";
 import AuditHistoryFeed from "@/components/audit/AuditHistoryFeed.vue";
 import { useAppStore } from "@/stores/app-store";
+import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
 
 type DocumentEditorPanelInstance = InstanceType<typeof DocumentEditorPanel>;
 type ReviewDiffDrawerInstance = InstanceType<typeof ReviewDiffDrawer>;
@@ -505,6 +508,7 @@ const toast = useToast();
 const { copy } = useClipboard({ legacy: true });
 const store = useLibraryStore();
 const appStore = useAppStore();
+const { canManageOrganization } = storeToRefs(useOrganizationSettingsStore());
 const auditHistoryStore = useAuditHistoryStore();
 const libraryMetricsStore = useLibraryMetricsStore();
 const githubStore = useGitHubSettingsStore();
@@ -972,6 +976,7 @@ function openLibraryForm(library: LibraryResponse | null) {
 
 /** Handles submit from the library form (create or update). */
 async function onSubmitLibrary(data: LibraryFormSubmitPayload) {
+  let saved = false;
   try {
     if (libraryFormTarget.value) {
       const updated = await store.updateLibrary(libraryFormTarget.value.name, {
@@ -980,10 +985,12 @@ async function onSubmitLibrary(data: LibraryFormSubmitPayload) {
         includeFilters: data.includeFilters,
         excludeFilters: data.excludeFilters,
         runFullResync: data.runFullResync,
+        visibility: data.visibility,
       });
-      await store.updateLibraryRepositories(updated.name, data.repositoryIds);
+      saved = true;
       libraryFormTarget.value = updated;
       await router.replace(libraryRoute(updated.name));
+      await store.updateLibraryRepositories(updated.name, data.repositoryIds);
       toast.add({ title: "Library updated", color: "success" });
     } else {
       const source = await resolveCreateSource(data.source);
@@ -992,6 +999,7 @@ async function onSubmitLibrary(data: LibraryFormSubmitPayload) {
         data.description,
         source,
       );
+      saved = true;
       await store.updateLibraryRepositories(created.name, data.repositoryIds);
       libraryFormTarget.value = created;
       libraryJustCreated.value = true;
@@ -1020,6 +1028,7 @@ async function onSubmitLibrary(data: LibraryFormSubmitPayload) {
       color: "error",
     });
   }
+  return saved;
 }
 
 type CreateLibrarySourceInput = {

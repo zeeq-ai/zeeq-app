@@ -15,10 +15,12 @@ public sealed class DocumentLibraryMcpToolsTests
     [Test]
     public async Task ListLibraries_WithActiveOrganization_ReturnsLibraries()
     {
-        var store = new TestLibraryDocumentStore();
-        store.Libraries.Add(TestLibrary());
+        var visibility = Substitute.For<ILibraryVisibilityStore>();
+        visibility
+            .ListVisibleAsync(Arg.Any<LibraryAudience>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<Library>>([TestLibrary()]));
 
-        var response = await DocumentLibraryMcpTools.ListLibraries(store, TestUser());
+        var response = await DocumentLibraryMcpTools.ListLibraries(visibility, TestUser());
 
         await Assert.That(response).Contains("kb");
         await Assert.That(response).Contains("Knowledge base");
@@ -27,12 +29,11 @@ public sealed class DocumentLibraryMcpToolsTests
     [Test]
     public async Task ListLibraries_WithoutOrganizationClaim_ReturnsValidationError()
     {
-        var store = new TestLibraryDocumentStore();
-        store.Libraries.Add(TestLibrary());
+        var visibility = Substitute.For<ILibraryVisibilityStore>();
 
         var anonymous = new ClaimsPrincipal(new ClaimsIdentity());
 
-        var response = await DocumentLibraryMcpTools.ListLibraries(store, anonymous);
+        var response = await DocumentLibraryMcpTools.ListLibraries(visibility, anonymous);
 
         await Assert.That(response).IsEqualTo("Active organization is required.");
     }
@@ -311,7 +312,16 @@ public sealed class DocumentLibraryMcpToolsTests
         );
 
     private static ClaimsPrincipal TestUser() =>
-        new(new ClaimsIdentity([new Claim(AuthClaims.OrganizationId, "org_123")], "test"));
+        new(
+            new ClaimsIdentity(
+                [
+                    new Claim(AuthClaims.OrganizationId, "org_123"),
+                    new Claim("sub", "user_123"),
+                    new Claim(ClaimTypes.Role, "member"),
+                ],
+                "test"
+            )
+        );
 
     private static Library TestLibrary(string id = "lib_123", string name = "kb") =>
         new()

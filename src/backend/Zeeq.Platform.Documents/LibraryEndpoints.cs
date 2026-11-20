@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Zeeq.Core.Documents;
 using Zeeq.Core.Identity;
 
 namespace Zeeq.Platform.Documents;
@@ -25,6 +26,7 @@ public sealed class LibraryEndpoints : IEndpoint
                 }
             );
         group.RequireRouteOrganizationMatchesCookie();
+        group.AddEndpointFilter<RequireLibraryVisibilityFilter>();
 
         // GET /api/v1/orgs/{orgId}/libraries
         group
@@ -43,7 +45,7 @@ public sealed class LibraryEndpoints : IEndpoint
             .WithSummary("List libraries.")
             .WithDescription(
                 """
-                Returns all document libraries in the caller's active organization, ordered by name.
+                Returns visible document libraries in the caller's active organization, ordered by name.
                 """
             )
             .RequireActiveOrganization();
@@ -247,6 +249,24 @@ public sealed class LibraryEndpoints : IEndpoint
             .DisableAntiforgery()
             .RequireActiveOrganization();
 
+        group
+            .MapGet(
+                "/{name}/visibility",
+                static async Task<Results<Ok<LibraryVisibilitySettings>, NotFound>> (
+                    string orgId,
+                    string name,
+                    [FromServices] ILibraryVisibilityStore visibility,
+                    CancellationToken ct
+                ) =>
+                    await visibility.GetSettingsAsync(orgId, name, ct) is { } settings
+                        ? TypedResults.Ok(settings)
+                        : TypedResults.NotFound()
+            )
+            .WithName("GetLibraryVisibility")
+            .WithSummary("Get the library team grants and available teams.")
+            .RequireAuthorization(policy => policy.RequireRole("owner", "admin"))
+            .RequireActiveOrganization();
+
         // PUT /api/v1/orgs/{orgId}/libraries/{name}
         group
             .MapPut(
@@ -264,6 +284,8 @@ public sealed class LibraryEndpoints : IEndpoint
             .Produces<LibraryResponse>()
             .Produces<LibraryError>(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
+            .Produces<LibraryError>(StatusCodes.Status409Conflict)
+            .Produces(StatusCodes.Status403Forbidden)
             .WithSummary("Update a library.")
             .WithDescription(
                 """

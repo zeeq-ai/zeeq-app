@@ -4886,6 +4886,29 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                     b.ToTable("system_audit_events", "zeeq");
                 });
 
+            modelBuilder.Entity("Zeeq.Data.Postgres.Documents.LibraryTeamGrant", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("LibraryId")
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("library_id");
+
+                    b.Property<string>("TeamId")
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("team_id");
+
+                    b.HasKey("OrganizationId", "LibraryId", "TeamId")
+                        .HasName("pk_docs_library_team_grants");
+
+                    b.HasIndex("OrganizationId", "TeamId")
+                        .HasDatabaseName("ix_docs_library_team_grants_organization_id_team_id");
+
+                    b.ToTable("docs_library_team_grants", "zeeq");
+                });
+
             modelBuilder.Entity("Zeeq.Data.Postgres.PostgresStorageObject", b =>
                 {
                     b.Property<string>("Uri")
@@ -5997,6 +6020,24 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_auth_user_tokens_core_teams_organization_id_team_id");
+                });
+
+            modelBuilder.Entity("Zeeq.Data.Postgres.Documents.LibraryTeamGrant", b =>
+                {
+                    b.HasOne("Zeeq.Core.Documents.Library", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "LibraryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_docs_library_team_grants_docs_libraries_organization_id_lib");
+
+                    b.HasOne("Zeeq.Core.Models.Team", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "TeamId")
+                        .HasPrincipalKey("OrganizationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_docs_library_team_grants_teams_organization_id_team_id");
                 });
 
             modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication", b =>

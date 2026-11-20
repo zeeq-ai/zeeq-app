@@ -70,17 +70,21 @@ public static class MembershipEnrichmentMiddleware
 
                         var role = memberships.FirstOrDefault(m => m.OrganizationId == orgId)?.Role;
 
+                        var identity = (ClaimsIdentity)context.User.Identity!;
+                        var roleClaimType = identity.RoleClaimType;
+                        // A cookie may still carry the old organization role after removal.
+                        foreach (
+                            var claim in identity
+                                .FindAll(roleClaimType)
+                                .Where(claim => claim.Value is "owner" or "admin" or "member")
+                                .ToArray()
+                        )
+                        {
+                            identity.RemoveClaim(claim);
+                        }
+
                         if (role is not null)
                         {
-                            var identity = (ClaimsIdentity)context.User.Identity!;
-                            var roleClaimType = identity.RoleClaimType;
-
-                            // Remove any previously injected org-role claims to keep the set idempotent.
-                            foreach (var claim in identity.FindAll(roleClaimType).ToArray())
-                            {
-                                identity.RemoveClaim(claim);
-                            }
-
                             identity.AddClaim(new Claim(roleClaimType, role));
                         }
                     }

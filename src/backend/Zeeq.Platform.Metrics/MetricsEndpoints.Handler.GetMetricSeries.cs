@@ -4,8 +4,11 @@ using Zeeq.Core.Models;
 namespace Zeeq.Platform.Metrics;
 
 /// <summary>Serves a bucketed metric series (UI-1/UI-2/UI-6), cached per org+query for 30s.</summary>
-public sealed class GetMetricSeriesHandler(IMetricsQueryStore store, HybridCache cache)
-    : IEndpointHandler
+public sealed class GetMetricSeriesHandler(
+    IMetricsQueryStore store,
+    HybridCache cache,
+    LibraryMetricsScope? visibility = null
+) : IEndpointHandler
 {
     /// <summary>Validates the window and metric type, then returns the cached bucketed series.</summary>
     public async Task<
@@ -60,7 +63,7 @@ public sealed class GetMetricSeriesHandler(IMetricsQueryStore store, HybridCache
         );
 
         var result = await cache.GetOrCreateAsync(
-            key,
+            MetricsEndpointCache.ForVisibility(key, visibility),
             async token =>
                 (
                     await store.GetSeriesAsync(

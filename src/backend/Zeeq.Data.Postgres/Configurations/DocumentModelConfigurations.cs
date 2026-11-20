@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Documents.Snippets;
 using Zeeq.Core.Models;
+using Zeeq.Data.Postgres.Documents;
 
 namespace Zeeq.Data.Postgres.Configurations;
 
@@ -76,6 +77,33 @@ internal sealed class LibraryConfiguration : IEntityTypeConfiguration<Library>
             .WithMany()
             .HasPrincipalKey(team => new { team.OrganizationId, team.Id })
             .HasForeignKey(library => new { library.OrganizationId, library.TeamId })
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+internal sealed class LibraryTeamGrantConfiguration : IEntityTypeConfiguration<LibraryTeamGrant>
+{
+    public void Configure(EntityTypeBuilder<LibraryTeamGrant> entity)
+    {
+        entity.ToTable("docs_library_team_grants");
+        entity.HasKey(grant => new
+        {
+            grant.OrganizationId,
+            grant.LibraryId,
+            grant.TeamId,
+        });
+        entity.HasIndex(grant => new { grant.OrganizationId, grant.TeamId });
+
+        entity
+            .HasOne<Library>()
+            .WithMany()
+            .HasForeignKey(grant => new { grant.OrganizationId, grant.LibraryId })
+            .OnDelete(DeleteBehavior.Cascade);
+        entity
+            .HasOne<Team>()
+            .WithMany()
+            .HasPrincipalKey(team => new { team.OrganizationId, team.Id })
+            .HasForeignKey(grant => new { grant.OrganizationId, grant.TeamId })
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

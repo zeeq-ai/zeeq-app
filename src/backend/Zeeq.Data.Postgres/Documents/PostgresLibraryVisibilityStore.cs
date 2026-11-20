@@ -1,0 +1,193 @@
+using Microsoft.EntityFrameworkCore;
+using Zeeq.Core.Documents;
+
+namespace Zeeq.Data.Postgres.Documents;
+
+internal sealed class PostgresLibraryVisibilityStore(
+    PostgresDbContext db,
+    PostgresLibraryDocumentStore documents
+) : ILibraryVisibilityStore
+{
+    private DbSet<LibraryTeamGrant> Grants => db.Set<LibraryTeamGrant>();
+
+    private IQueryable<Library> VisibleLibraries(LibraryAudience audience)
+    {
+        var libraries = db
+            .Libraries.AsNoTracking()
+            .Where(library => library.OrganizationId == audience.OrganizationId);
+
+        if (audience.IsAdministrator)
+            return libraries;
+
+        var memberships =
+            from membership in db.TeamMemberships
+            join team in db.Teams
+                on new { membership.OrganizationId, membership.TeamId } equals new
+                {
+                    team.OrganizationId,
+                    TeamId = team.Id,
+                }
+            where
+                membership.OrganizationId == audience.OrganizationId
+                && membership.UserId == audience.UserId
+                && membership.DisabledAtUtc == null
+                && team.DisabledAtUtc == null
+            select membership.TeamId;
+
+        var grants = Grants.Where(grant => grant.OrganizationId == audience.OrganizationId);
+        return libraries.Where(library =>
+            !grants.Any(grant => grant.LibraryId == library.Id)
+            || grants.Any(grant =>
+                grant.LibraryId == library.Id && memberships.Contains(grant.TeamId)
+            )
+        );
+    }
+
+    public Task<bool> CanOpenAsync(
+        LibraryAudience audience,
+        string libraryName,
+        CancellationToken ct
+    ) =>
+        VisibleLibraries(audience)
+            .TagWithOperationCallSite("library.visibility.open")
+            .AnyAsync(library => library.Name == libraryName, ct);
+
+    public async Task<IReadOnlyList<Library>> ListVisibleAsync(
+        LibraryAudience audience,
+        CancellationToken ct
+    ) =>
+        await VisibleLibraries(audience)
+            .TagWithOperationCallSite("library.visibility.list")
+            .OrderBy(library => library.Name)
+            .ToArrayAsync(ct);
+
+    public Task<string[]> ListVisibleNamesAsync(LibraryAudience audience, CancellationToken ct) =>
+        VisibleLibraries(audience)
+            .TagWithOperationCallSite("library.visibility.names")
+            .Select(library => library.Name)
+            .ToArrayAsync(ct);
+
+    public async Task<LibraryVisibilitySettings?> GetSettingsAsync(
+        string organizationId,
+        string libraryName,
+        CancellationToken ct
+    )
+    {
+        var library = db.Libraries.Where(row =>
+            row.OrganizationId == organizationId && row.Name == libraryName
+        );
+        var settings = await library
+            .Select(row => new
+            {
+                TeamIds = Grants
+                    .Where(grant =>
+                        grant.OrganizationId == organizationId && grant.LibraryId == row.Id
+                    )
+                    .Select(grant => grant.TeamId)
+                    .ToArray(),
+                Teams = db
+                    .Teams.Where(team =>
+                        team.OrganizationId == organizationId
+                        && (
+                            !team.IsRootTeam && team.DisabledAtUtc == null
+                            || Grants.Any(grant =>
+                                grant.OrganizationId == organizationId
+                                && grant.LibraryId == row.Id
+                                && grant.TeamId == team.Id
+                            )
+                        )
+                    )
+                    .OrderBy(team => team.DisplayName)
+                    .Select(team => new LibraryVisibilityTeam(
+                        team.Id,
+                        team.DisplayName,
+                        !team.IsRootTeam && team.DisabledAtUtc == null
+                    ))
+                    .ToArray(),
+            })
+            .SingleOrDefaultAsync(ct);
+
+        return settings is null ? null : new(settings.TeamIds, settings.Teams);
+    }
+
+    public async Task<(LibraryVisibilitySaveStatus Status, Library? Library)> SaveAsync(
+        Library library,
+        LibraryVisibilityChange change,
+        bool requestFullResync,
+        CancellationToken ct
+    )
+    {
+        var selected = change.TeamIds.ToHashSet(StringComparer.Ordinal);
+        var organizationId = library.OrganizationId;
+        var libraryId = library.Id;
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var locked = await db
+            .Database.SqlQuery<string>(
+                $"""
+                SELECT id AS "Value" FROM zeeq.docs_libraries
+                WHERE organization_id = {organizationId} AND id = {libraryId}
+                FOR UPDATE
+                """
+            )
+            .ToArrayAsync(ct);
+        if (locked.Length == 0)
+            return (LibraryVisibilitySaveStatus.Missing, null);
+
+        var grants = Grants.Where(grant =>
+            grant.OrganizationId == organizationId && grant.LibraryId == libraryId
+        );
+        var current = (await grants.Select(grant => grant.TeamId).ToArrayAsync(ct)).ToHashSet(
+            StringComparer.Ordinal
+        );
+        if (!current.SetEquals(change.ExpectedTeamIds))
+            return (LibraryVisibilitySaveStatus.Conflict, null);
+        if (current.Count > 0 && selected.Count == 0 && !change.ConfirmEveryone)
+            return (LibraryVisibilitySaveStatus.ConfirmationRequired, null);
+
+        var additions = selected.Except(current).Order(StringComparer.Ordinal).ToArray();
+        if (additions.Length > 0)
+        {
+            var valid = await db
+                .Database.SqlQuery<string>(
+                    $"""
+                    SELECT id AS "Value" FROM zeeq.core_teams
+                    WHERE organization_id = {organizationId} AND id = ANY({additions})
+                        AND NOT is_root_team AND disabled_at_utc IS NULL
+                    ORDER BY id FOR SHARE
+                    """
+                )
+                .ToArrayAsync(ct);
+            if (valid.Length != additions.Length)
+                return (LibraryVisibilitySaveStatus.InvalidTeams, null);
+        }
+
+        var removals = current.Except(selected).ToArray();
+        if (removals.Length > 0)
+            await grants.Where(grant => removals.Contains(grant.TeamId)).ExecuteDeleteAsync(ct);
+
+        var addedGrants = additions
+            .Select(teamId => new LibraryTeamGrant
+            {
+                OrganizationId = organizationId,
+                LibraryId = libraryId,
+                TeamId = teamId,
+            })
+            .ToArray();
+        Grants.AddRange(addedGrants);
+        try
+        {
+            var updated = await documents.TryUpdateLibraryAsync(library, requestFullResync, ct);
+            if (updated is null)
+                return (LibraryVisibilitySaveStatus.Missing, null);
+
+            await transaction.CommitAsync(ct);
+            return (LibraryVisibilitySaveStatus.Saved, updated);
+        }
+        finally
+        {
+            foreach (var grant in addedGrants)
+                db.Entry(grant).State = EntityState.Detached;
+        }
+    }
+}

@@ -152,6 +152,10 @@ internal static class MetricsEndpointCache
     public static string Key(string organizationId, string route, params string?[] parts) =>
         $"metrics:v2:{organizationId}:{route}:{string.Join('|', parts)}";
 
+    /// <summary>Separates results with different library visibility rules.</summary>
+    public static string ForVisibility(string key, LibraryMetricsScope? visibility) =>
+        visibility?.VisibleNames is { } names ? $"metrics:visible:{Join(names)}:{key}" : key;
+
     /// <summary>Joins a multi-select filter into a stable, order-insensitive key fragment.</summary>
     public static string Join(string[]? values) =>
         values is { Length: > 0 }
