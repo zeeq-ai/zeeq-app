@@ -485,6 +485,7 @@ import { libraryDocumentScopedSkillEnum } from "@/api/generated/types/LibraryDoc
 import type { LibraryDocumentScopedSkill } from "@/api/generated/types/LibraryDocumentScopedSkill";
 import LibrarySelector from "./LibrarySelector.vue";
 import LibraryFormSlideover, {
+  type LibraryFormSaveResult,
   type LibraryFormSubmitPayload,
 } from "./LibraryFormSlideover.vue";
 import DocumentTree from "./DocumentTree.vue";
@@ -975,8 +976,10 @@ function openLibraryForm(library: LibraryResponse | null) {
 }
 
 /** Handles submit from the library form (create or update). */
-async function onSubmitLibrary(data: LibraryFormSubmitPayload) {
-  let saved = false;
+async function onSubmitLibrary(
+  data: LibraryFormSubmitPayload,
+): Promise<LibraryFormSaveResult> {
+  let librarySaved = false;
   try {
     if (libraryFormTarget.value) {
       const updated = await store.updateLibrary(libraryFormTarget.value.name, {
@@ -987,7 +990,7 @@ async function onSubmitLibrary(data: LibraryFormSubmitPayload) {
         runFullResync: data.runFullResync,
         visibility: data.visibility,
       });
-      saved = true;
+      librarySaved = true;
       libraryFormTarget.value = updated;
       await router.replace(libraryRoute(updated.name));
       await store.updateLibraryRepositories(updated.name, data.repositoryIds);
@@ -999,11 +1002,11 @@ async function onSubmitLibrary(data: LibraryFormSubmitPayload) {
         data.description,
         source,
       );
-      saved = true;
-      await store.updateLibraryRepositories(created.name, data.repositoryIds);
+      librarySaved = true;
       libraryFormTarget.value = created;
       libraryJustCreated.value = true;
       await router.push(libraryRoute(created.name));
+      await store.updateLibraryRepositories(created.name, data.repositoryIds);
       toast.add({ title: "Library created", color: "success" });
 
       if (created.source) {
@@ -1021,14 +1024,16 @@ async function onSubmitLibrary(data: LibraryFormSubmitPayload) {
         }
       }
     }
-  } catch (err: any) {
+    return "saved";
+  } catch (err: unknown) {
     toast.add({
-      title: "Error",
-      description: err?.message ?? "Failed to save library",
+      title: librarySaved ? "Library saved with a follow-up error" : "Error",
+      description:
+        err instanceof Error ? err.message : "Failed to save library",
       color: "error",
     });
+    return librarySaved ? "library-only" : "failed";
   }
-  return saved;
 }
 
 type CreateLibrarySourceInput = {

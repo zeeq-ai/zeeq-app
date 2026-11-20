@@ -256,6 +256,8 @@ export type LibraryFormSubmitPayload = {
   visibility?: LibraryVisibilityChange;
 };
 
+export type LibraryFormSaveResult = "saved" | "library-only" | "failed";
+
 const props = defineProps<{
   library: LibraryResponse | null;
   canManageVisibility: boolean;
@@ -272,7 +274,9 @@ const props = defineProps<{
   loadingNotionWebhookState: boolean;
   resettingNotionWebhookState: boolean;
   deleting: boolean;
-  submitHandler: (data: LibraryFormSubmitPayload) => Promise<boolean>;
+  submitHandler: (
+    data: LibraryFormSubmitPayload,
+  ) => Promise<LibraryFormSaveResult>;
 }>();
 
 const emits = defineEmits<{
@@ -551,7 +555,7 @@ async function saveLibrary(confirmEveryone: boolean) {
     const payload: LibraryFormSubmitPayload = {
       name: form.name,
       description: form.description || undefined,
-      repositoryIds: form.selectedRepositoryIds,
+      repositoryIds: [...form.selectedRepositoryIds],
     };
 
     if (visibility.value && visibilityChanged.value) {
@@ -590,8 +594,13 @@ async function saveLibrary(confirmEveryone: boolean) {
       payload.runFullResync = form.runFullResync;
     }
 
-    const saved = await props.submitHandler(payload);
-    if (saved && visibility.value && payload.visibility) {
+    const result = await props.submitHandler(payload);
+    if (result === "library-only") {
+      form.selectedRepositoryIds = payload.repositoryIds;
+    }
+
+    // The visibility baseline follows the library write even when mapping fails.
+    if (result !== "failed" && visibility.value && payload.visibility) {
       visibility.value = {
         ...visibility.value,
         teamIds: payload.visibility.teamIds,
