@@ -279,13 +279,10 @@ internal static partial class SetupMcpFiltersExtensions
                                 context.Services!.GetRequiredService<ILibraryVisibilityStore>();
                             if (
                                 audience is null
-                                || (
-                                    !audience.IsAdministrator
-                                    && !await visibility.CanOpenAsync(
-                                        audience,
-                                        library,
-                                        cancellationToken
-                                    )
+                                || !await visibility.CanOpenAsync(
+                                    audience,
+                                    library,
+                                    cancellationToken
                                 )
                             )
                             {
