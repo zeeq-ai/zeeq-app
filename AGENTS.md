@@ -58,7 +58,7 @@ Use the Paseo Browser (preferred) or Playwright MCP for an **authenticated** bro
 |`http://zeeq-inspector.localhost:8095`|MCP inspector for testing MCP behavior (NOTE: no `/web/` base URL)|
 |`http://app.zeeq.ai/web`|Production deployment of the app (NOTE the `/web/` base URL)|
 
-**Local development sign-in:** 0factor is a local synthetic identity provider for testing. When the local Zeeq app says "Choose sign-in provider", agents should select **0factor (local mock)** and sign in automatically as the fixture persona appropriate to the task. Alice Owner is available for organization admin workflows. See [local 0factor sign-in](build/0factor/README.md) for the fixture users and how to switch personas.
+**Local development sign-in:** 0factor is a local synthetic identity provider for testing. When the local Zeeq app says "Choose sign-in provider", agents should select **0factor (local mock)** and sign in automatically as the fixture persona appropriate to the task. Alice Owner is available for organization admin workflows. See [local 0factor sign-in](build/0factor/README.md) for the fixture users and how to switch personas. Reuse an existing persona when one fits; add a new persona only to test a distinct authn/authz scenario.
 
 For production, or when a real identity provider is required, ask the user to authenticate if there is no existing signed-in session.
 
