@@ -39,9 +39,7 @@ public sealed partial class CodeReviewMcpTools
     /// </remarks>
     [McpServerTool(Name = "expert_code_review", Title = "Expert Code Review")]
     // NOTE: `git diff <commit>` compares the commit with the working tree, including
-    // staged and unstaged changes; intent-to-add also includes new files. If a file
-    // differs in the index and working tree, only its working-tree version is reviewed:
-    // NOTE: staging everything would change the caller's index and is not appropriate.
+    // staged and unstaged changes; intent-to-add also includes new files.
     [Description(
         """
             Request an expert code review by uploading a git diff and providing context about the change.
@@ -56,9 +54,7 @@ public sealed partial class CodeReviewMcpTools
             1. Call with action=`create_upload_url` to get a signed URL + `curl` instructions; no other parameters at this step
             2. Generate a raw unified git diff into a temp file, for example:
                `git add -N . && git diff --binary $(git merge-base origin/HEAD HEAD) > /tmp/zeeq-review.diff`.
-               This marks new files as intent-to-add in the index. The diff uses the working-tree
-               version when it differs from the staged version. Before a staged-only commit, make
-               the working tree match the intended staged content and run a fresh review.
+               This marks new files as intent-to-add in the index and reviews the working tree.
                For a slice, use
                `git add -N . && git diff --binary $(git merge-base origin/HEAD HEAD) -- src/web > /tmp/zeeq-review.diff`.
             3. Upload the file to the signed URL using `curl` use `--data-binary`; do not paste or transform the diff.
@@ -289,6 +285,7 @@ public sealed partial class CodeReviewMcpTools
         };
     }
 
+    // NOTE: Compare the working tree intentionally because the PR reflects the final working state.
     private static string BuildLocalAgentInstructions(
         ExpertCodeReviewRunResponse response,
         string scope
@@ -310,7 +307,7 @@ public sealed partial class CodeReviewMcpTools
 
             {{(
                 scope == "slice" || response.UsedPreviousReviews
-                    ? "Before opening or updating the PR: run `expert_code_review` on the full branch diff (`git add -N . && git diff --binary $(git merge-base origin/HEAD HEAD)`). Omit `reviewGroupId` so reviewers start fresh. This reviews working-tree content; before a staged-only commit, make the working tree match the intended staged content. Slice-only or chained reviews can miss issues. Over the size limit? Exclude only low-risk files (lockfiles, generated code)."
+                    ? "Before opening or updating the PR: run `expert_code_review` on the full branch diff (`git add -N . && git diff --binary $(git merge-base origin/HEAD HEAD)`). Omit `reviewGroupId` so reviewers start fresh. Slice-only or chained reviews can miss issues. Over the size limit? Exclude only low-risk files (lockfiles, generated code)."
                     : ""
             )}}
 
