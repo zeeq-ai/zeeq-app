@@ -89,6 +89,7 @@ public sealed record ExpertCodeReviewUploadUrlResponse(
 /// Optional explicit list of library names to use for this review, replacing the repository's
 /// configured libraries when at least one name is valid for the organization.
 /// </param>
+/// <param name="Scope">Whether this upload is a full branch diff or an intentional slice.</param>
 public sealed record ExpertCodeReviewRunInput(
     string? JobId,
     string? UploadToken,
@@ -98,7 +99,8 @@ public sealed record ExpertCodeReviewRunInput(
     string? AgentSessionId = null,
     string? ReviewGroupId = null,
     string? Branch = null,
-    IReadOnlyList<string>? Libraries = null
+    IReadOnlyList<string>? Libraries = null,
+    string Scope = "full"
 )
 {
     /// <summary>
@@ -123,6 +125,12 @@ public sealed record ExpertCodeReviewRunInput(
             );
         }
 
+        // Slices are intentional for parallel work and focused iteration; do not enforce full diffs here.
+        if (Scope is not ("full" or "slice"))
+        {
+            return new ExpertCodeReviewError("scope must be either 'full' or 'slice'.");
+        }
+
         return new ExpertCodeReviewRunRequest(
             JobId.Trim(),
             UploadToken.Trim(),
@@ -132,7 +140,8 @@ public sealed record ExpertCodeReviewRunInput(
             AgentSessionId,
             ReviewGroupId,
             Branch,
-            Libraries ?? []
+            Libraries ?? [],
+            Scope
         );
     }
 }
@@ -152,6 +161,7 @@ public sealed record ExpertCodeReviewRunInput(
 /// Optional explicit list of library names to use for this review, replacing the repository's
 /// configured libraries when at least one name is valid for the organization.
 /// </param>
+/// <param name="Scope">Whether this upload is a full branch diff or an intentional slice.</param>
 public sealed record ExpertCodeReviewRunRequest(
     string JobId,
     string UploadToken,
@@ -161,7 +171,8 @@ public sealed record ExpertCodeReviewRunRequest(
     string? AgentSessionId,
     string? ReviewGroupId,
     string? Branch,
-    IReadOnlyList<string>? Libraries = null
+    IReadOnlyList<string>? Libraries = null,
+    string Scope = "full"
 );
 
 /// <summary>
@@ -175,6 +186,7 @@ public sealed record ExpertCodeReviewRunRequest(
 /// <param name="ReviewCreatedAtUtc">Partition timestamp of the persisted review row.</param>
 /// <param name="ReviewGroupId">Group id for chaining follow-up reviews.</param>
 /// <param name="ReviewViewUrl">Absolute frontend deep link to the single-review view.</param>
+/// <param name="UsedPreviousReviews">Whether this run received earlier reviews as context.</param>
 public sealed record ExpertCodeReviewRunResponse(
     string JobId,
     string ReviewXml,
@@ -183,5 +195,6 @@ public sealed record ExpertCodeReviewRunResponse(
     string ReviewId,
     DateTimeOffset ReviewCreatedAtUtc,
     string ReviewGroupId,
-    string ReviewViewUrl
+    string ReviewViewUrl,
+    bool UsedPreviousReviews = false
 );

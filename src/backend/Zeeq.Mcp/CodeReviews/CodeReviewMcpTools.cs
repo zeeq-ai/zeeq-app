@@ -51,10 +51,11 @@ public sealed partial class CodeReviewMcpTools
             <expert_code_review.flow>
             1. Call with action=`create_upload_url` to get a signed URL + `curl` instructions; no other parameters at this step
             2. Generate a raw unified git diff into a temp file, for example:
-               `git diff --binary > /tmp/zeeq-review.diff`
-               or `git diff origin/main...HEAD --binary > /tmp/zeeq-review.diff`.
+               `git add -N . && git diff --binary $(git merge-base origin/HEAD HEAD) > /tmp/zeeq-review.diff`.
+               This marks new files as intent-to-add in the index. For a slice, add a pathspec such as `-- src/web`.
             3. Upload the file to the signed URL using `curl` use `--data-binary`; do not paste or transform the diff.
             4. Call with action=`run_review`, the returned jobId, remoteRepoNameUsingGit, activeOrPlannedBranchName, agentSessionId (if can be resolved from runtime environment), reviewGroupId (from previous result for re-review), and any title/description context.
+            Review in slices or in chained rounds while you iterate. Before you open the PR, run one fresh review of the full branch diff.
             </expert_code_review.flow>
 
             Limits: Max diff size is 500000 bytes
@@ -115,6 +116,10 @@ public sealed partial class CodeReviewMcpTools
                 """
         )]
             string[]? libraries = null,
+        [Description(
+            "Optional for `run_review`; `full` (default) reviews the full branch diff, while `slice` marks an intentional path-limited diff."
+        )]
+            string scope = "full",
         CancellationToken cancellationToken = default
     )
     {
@@ -144,6 +149,7 @@ public sealed partial class CodeReviewMcpTools
                     agentSessionId,
                     reviewGroupId,
                     libraries,
+                    scope,
                     user,
                     cancellationToken
                 ),
@@ -216,6 +222,7 @@ public sealed partial class CodeReviewMcpTools
         string? agentSessionId,
         string? reviewGroupId,
         string[]? libraries,
+        string scope,
         ClaimsPrincipal? user,
         CancellationToken cancellationToken
     )
@@ -229,7 +236,8 @@ public sealed partial class CodeReviewMcpTools
             agentSessionId,
             reviewGroupId,
             branch,
-            libraries
+            libraries,
+            scope
         ).ToRequest();
 
         return result switch
@@ -265,7 +273,7 @@ public sealed partial class CodeReviewMcpTools
         return result switch
         {
             ExpertCodeReviewRunResponse response => new ReviewCallResult(
-                BuildLocalAgentInstructions(response),
+                BuildLocalAgentInstructions(response, request.Scope),
                 IsError: false
             ),
             ExpertCodeReviewError error => new ReviewCallResult(error.Message, IsError: true),
@@ -273,7 +281,10 @@ public sealed partial class CodeReviewMcpTools
         };
     }
 
-    private static string BuildLocalAgentInstructions(ExpertCodeReviewRunResponse response) =>
+    private static string BuildLocalAgentInstructions(
+        ExpertCodeReviewRunResponse response,
+        string scope
+    ) =>
         $$"""
             <instruction_for_agents>
             The following XML is the raw output from expert code reviewers analyzing the PR.
@@ -289,12 +300,18 @@ public sealed partial class CodeReviewMcpTools
             - Add code comment: "NOTE: (Reason to defer or ignore a finding goes here)" to document any rationale for deferring or ignoring a finding
             </instruction_for_agents>
 
+            {{(
+                scope == "slice" || response.UsedPreviousReviews
+                    ? "Before opening or updating the PR: run `expert_code_review` on the full branch diff (`git add -N . && git diff --binary $(git merge-base origin/HEAD HEAD)`). Omit `reviewGroupId` so reviewers start fresh. Slice-only or chained reviews can miss issues. Over the size limit? Exclude only low-risk files (lockfiles, generated code)."
+                    : ""
+            )}}
+
             <view_in_zeeq>
             A durable record of this review is available in Zeeq at the link: `{{response.ReviewViewUrl}}`
             - reviewId: {{response.ReviewId}}
             - reviewGroupId: {{response.ReviewGroupId}}
             ALWAYS print this link and inform the user that they can open this link to view the full review UI.
-            Pass this reviewGroupId, the same activeOrPlannedBranchName, and (when available) the same agentSessionId on the next `expert_code_review` call to chain follow-up reviews.
+            Pass this reviewGroupId to chain related reviews. The agentSessionId is for attribution only.
             </view_in_zeeq>
 
             {{response.ReviewXml}}

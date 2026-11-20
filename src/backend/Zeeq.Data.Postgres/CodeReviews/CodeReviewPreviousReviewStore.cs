@@ -1,7 +1,7 @@
-using Zeeq.Core.Models;
-using Zeeq.Platform.CodeReviews;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Zeeq.Core.Models;
+using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Data.Postgres.CodeReviews;
 
@@ -25,7 +25,7 @@ internal sealed class CodeReviewPreviousReviewStore(
         CancellationToken cancellationToken = default
     )
     {
-        if (string.IsNullOrEmpty(agentSessionId) && string.IsNullOrEmpty(reviewGroupId))
+        if (string.IsNullOrEmpty(reviewGroupId))
         {
             return [];
         }
@@ -41,11 +41,11 @@ internal sealed class CodeReviewPreviousReviewStore(
                 && r.Id != excludeReviewId
             );
 
-        // Either-key rule: match when session id OR group id matches (or both).
-        query = query.Where(r =>
-            (agentSessionId != null && r.AgentSessionId == agentSessionId)
-            || (reviewGroupId != null && r.ReviewGroupId == reviewGroupId)
-        );
+        // Sessions span unrelated work; only an explicit group opts into a chain.
+        // Chained MCP reviews missed major findings more often than fresh reviews.
+        // Groups deliberately remain organization-wide for now (18 of 3,911 span repos).
+        // Follow up by scoping both history and PreviousReviewId to the repository.
+        query = query.Where(r => r.ReviewGroupId == reviewGroupId);
 
         var records = await query
             .OrderByDescending(r => r.CreatedAtUtc)
@@ -63,10 +63,7 @@ internal sealed class CodeReviewPreviousReviewStore(
         {
             var parsed = await TryParseRecordAsync(record, cancellationToken);
 
-            if (parsed is not null)
-            {
-                results.Add(parsed);
-            }
+            results.AddRange(parsed);
         }
 
         return results;
@@ -114,16 +111,13 @@ internal sealed class CodeReviewPreviousReviewStore(
         {
             var parsed = await TryParseRecordAsync(record, cancellationToken);
 
-            if (parsed is not null)
-            {
-                results.Add(parsed);
-            }
+            results.AddRange(parsed);
         }
 
         return results;
     }
 
-    private async Task<CodeReviewPreviousReview?> TryParseRecordAsync(
+    private async Task<IReadOnlyList<CodeReviewPreviousReview>> TryParseRecordAsync(
         CodeReviewRecord record,
         CancellationToken cancellationToken
     )
@@ -134,7 +128,7 @@ internal sealed class CodeReviewPreviousReviewStore(
                 "Previous code review record {CodeReviewId} has no findings storage URI.",
                 record.Id
             );
-            return null;
+            return [];
         }
 
         try
@@ -157,31 +151,27 @@ internal sealed class CodeReviewPreviousReviewStore(
                     record.Id,
                     validation.ErrorMessage ?? "Unknown error"
                 );
-                return null;
+                return [];
             }
 
-            // Map the first facet output to a CodeReviewPreviousReview.
-            // Each review record typically has one facet per reviewer.
-            var facet = validation.Output.Reviews.FirstOrDefault();
-
-            if (facet is null)
-            {
-                return null;
-            }
-
-            return new CodeReviewPreviousReview(
-                Facet: facet.Facet,
-                Summary: facet.Summary,
-                Findings:
-                [
-                    .. facet.Findings.Select(f => new CodeReviewPreviousFinding(
-                        Summary: f.Summary,
-                        Details: f.Details,
-                        File: f.File,
-                        Level: f.Level
-                    )),
-                ]
-            );
+            // The limit is five records, not facets. Prompt rendering includes only summaries,
+            // bounding growth while preserving every reviewer perspective on both MCP and PR runs.
+            // Ship this with the independent-pass rule to avoid increasing anchoring.
+            return validation
+                .Output.Reviews.Select(facet => new CodeReviewPreviousReview(
+                    Facet: facet.Facet,
+                    Summary: facet.Summary,
+                    Findings:
+                    [
+                        .. facet.Findings.Select(f => new CodeReviewPreviousFinding(
+                            Summary: f.Summary,
+                            Details: f.Details,
+                            File: f.File,
+                            Level: f.Level
+                        )),
+                    ]
+                ))
+                .ToArray();
         }
         catch (Exception ex)
         {
@@ -190,7 +180,7 @@ internal sealed class CodeReviewPreviousReviewStore(
                 "Failed to parse previous code review XML for record {CodeReviewId}",
                 record.Id
             );
-            return null;
+            return [];
         }
     }
 }

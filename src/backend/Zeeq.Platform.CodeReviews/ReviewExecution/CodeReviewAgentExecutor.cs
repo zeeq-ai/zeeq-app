@@ -547,7 +547,10 @@ public sealed partial class CodeReviewAgentExecutor(
         );
     }
 
+    // Chained reviews missed major findings more often, so independently inspect the full diff first.
     private const string PreviousReviewsUsageGuidance = """
+        - First review the entire pr_diff independently as if no previous_reviews existed. Never let previous reviews narrow your search.
+        - After the independent pass, use previous_reviews to re-check unresolved critical and major findings and avoid repeating resolved lower-level findings. Rank all findings by severity and impact.
         - The previous_reviews contain earlier rounds of findings from all reviewer facets
         - These are **NOT** current cycle findings!!  **ONLY FOR CONTEXT OF PREVIOUS REVIEW ROUNDS**
         - In the *current* pr_diff, pay attention to `NOTE` comments (e.g. // NOTE: ...,  -- NOTE: ..., /* NOTE: ...*/, idiomatic language comments) that address these previous findings; if present, *consider the finding resolved*
