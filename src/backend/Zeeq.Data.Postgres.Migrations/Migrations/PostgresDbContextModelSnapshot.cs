@@ -2692,6 +2692,226 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                     b.ToTable("code_review_execution_leases", "zeeq");
                 });
 
+            modelBuilder.Entity("Zeeq.Core.Models.CodeReviewFindingTriage", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("organization_id");
+
+                    b.Property<string>("Id")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AgentSessionId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("agent_session_id");
+
+                    b.Property<string>("ApprovalState")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("approval_state");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("channel");
+
+                    b.Property<DateTimeOffset?>("ClearedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cleared_at_utc");
+
+                    b.Property<string>("ClearedByUserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("cleared_by_user_id");
+
+                    b.Property<DateTimeOffset?>("ConfirmedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("confirmed_at_utc");
+
+                    b.Property<string>("ConfirmedByUserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("confirmed_by_user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc");
+
+                    b.Property<string>("CurrentReason")
+                        .HasColumnType("text")
+                        .HasColumnName("current_reason");
+
+                    b.Property<DateTimeOffset?>("DisabledAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disabled_at_utc");
+
+                    b.Property<string>("Disposition")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("disposition");
+
+                    b.Property<HalfVector>("Embedding")
+                        .HasColumnType("halfvec(768)")
+                        .HasColumnName("embedding");
+
+                    b.Property<string>("EmbeddingModel")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("embedding_model");
+
+                    b.Property<DateTimeOffset?>("EmbeddingStartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("embedding_started_at");
+
+                    b.Property<string>("Facet")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("facet");
+
+                    b.Property<string>("FilePath")
+                        .HasColumnType("text")
+                        .HasColumnName("file_path");
+
+                    b.Property<string>("FindingSummary")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("finding_summary");
+
+                    b.Property<DateTimeOffset>("LastSourceEventAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_source_event_at_utc");
+
+                    b.Property<int?>("LineNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("line_number");
+
+                    b.Property<string>("OccurrenceKey")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("occurrence_key");
+
+                    b.Property<string>("OwnerQualifiedRepoName")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("owner_qualified_repo_name");
+
+                    b.Property<DateTimeOffset?>("ProposedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("proposed_at_utc");
+
+                    b.Property<string>("ProposedByUserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("proposed_by_user_id");
+
+                    b.Property<int?>("PullRequestNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("pull_request_number");
+
+                    b.Property<string>("RepositoryId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("repository_id");
+
+                    b.Property<string>("ReviewGroupId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("review_group_id");
+
+                    b.Property<string>("SemanticId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("semantic_id");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("severity");
+
+                    b.Property<DateTimeOffset>("SourceReviewCreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("source_review_created_at_utc");
+
+                    b.Property<string>("SourceReviewId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("source_review_id");
+
+                    b.Property<string>("SourceUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("source_url");
+
+                    b.Property<string>("TeamId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("team_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at_utc");
+
+                    b.HasKey("OrganizationId", "Id")
+                        .HasName("pk_code_review_finding_triages");
+
+                    b.HasIndex("OrganizationId", "OwnerQualifiedRepoName")
+                        .HasDatabaseName("ix_cr_triages_fp_by_repo_name")
+                        .HasFilter("disposition = 'FalsePositive' AND approval_state = 'Confirmed'");
+
+                    b.HasIndex("OrganizationId", "RepositoryId")
+                        .HasDatabaseName("ix_cr_triages_fp_by_repo_id")
+                        .HasFilter("repository_id IS NOT NULL AND disposition = 'FalsePositive' AND approval_state = 'Confirmed'");
+
+                    b.HasIndex("OrganizationId", "ReviewGroupId")
+                        .HasDatabaseName("ix_cr_triages_group_scope")
+                        .HasFilter("review_group_id IS NOT NULL");
+
+                    b.HasIndex("OrganizationId", "RepositoryId", "PullRequestNumber")
+                        .HasDatabaseName("ix_cr_triages_pr_scope")
+                        .HasFilter("pull_request_number IS NOT NULL");
+
+                    b.HasIndex("OrganizationId", "SourceReviewId", "OccurrenceKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_cr_triages_review_occurrence");
+
+                    b.HasIndex("UpdatedAtUtc", "OrganizationId", "Id")
+                        .HasDatabaseName("ix_cr_triages_embed_queue")
+                        .HasFilter("disposition = 'FalsePositive' AND approval_state = 'Confirmed'");
+
+                    b.ToTable("code_review_finding_triages", "zeeq", t =>
+                        {
+                            t.HasCheckConstraint("ck_cr_triages_approval_state", "approval_state IN ('Open', 'Proposed', 'Confirmed')");
+
+                            t.HasCheckConstraint("ck_cr_triages_channel", "channel IN ('Ui', 'GitHub', 'Mcp')");
+
+                            t.HasCheckConstraint("ck_cr_triages_confirmed_timestamp", "(approval_state = 'Confirmed') = (confirmed_at_utc IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_cr_triages_disposition", "disposition IS NULL OR disposition IN ('FalsePositive', 'Deferred')");
+
+                            t.HasCheckConstraint("ck_cr_triages_disposition_state", "(disposition IS NULL) = (approval_state = 'Open')");
+
+                            t.HasCheckConstraint("ck_cr_triages_line_positive", "line_number IS NULL OR line_number > 0");
+
+                            t.HasCheckConstraint("ck_cr_triages_pr_positive", "pull_request_number IS NULL OR pull_request_number > 0");
+
+                            t.HasCheckConstraint("ck_cr_triages_reason_length", "current_reason IS NULL OR char_length(current_reason) <= 1000");
+
+                            t.HasCheckConstraint("ck_cr_triages_severity", "severity IN ('Critical', 'Major', 'Minor', 'Suggestion', 'Comment')");
+                        });
+                });
+
             modelBuilder.Entity("Zeeq.Core.Models.CodeReviewRecord", b =>
                 {
                     b.Property<string>("Id")
@@ -5636,6 +5856,23 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_code_review_execution_leases_code_review_repositories_repos");
+                });
+
+            modelBuilder.Entity("Zeeq.Core.Models.CodeReviewFindingTriage", b =>
+                {
+                    b.HasOne("Zeeq.Core.Models.Organization", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_cr_triages_org");
+
+                    b.HasOne("Zeeq.Core.Models.CodeRepository", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizationId", "RepositoryId")
+                        .HasPrincipalKey("OrganizationId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_cr_triages_repo");
                 });
 
             modelBuilder.Entity("Zeeq.Core.Models.CodeReviewerAgent", b =>

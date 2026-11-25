@@ -103,6 +103,10 @@ public static class PostgresSetupExtension
             services.AddScoped<ILlmSettingsStore, PostgresLlmSettingsStore>();
             services.AddScoped<IEncryptedValueStore, PostgresEncryptedValueStore>();
             services.AddScoped<IGitHubInstallationStore, PostgresGitHubInstallationStore>();
+            services.AddScoped<
+                ICodeReviewFindingTriageStore,
+                PostgresCodeReviewFindingTriageStore
+            >();
             services.AddScoped<ICodeRepositoryStore, PostgresCodeRepositoryStore>();
             services.AddScoped<
                 ICodeRepositoryPromptConfigurationStore,

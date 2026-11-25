@@ -343,6 +343,11 @@ public sealed partial class CodeReviewAgentExecutor(
             );
         }
 
+        foreach (var indexed in CodeReviewFindingIds.Assign(validation.Output))
+        {
+            indexed.Finding.Id = indexed.SemanticId;
+        }
+
         return CodeReviewXmlOutputValidator.Serialize(validation.Output);
     }
 

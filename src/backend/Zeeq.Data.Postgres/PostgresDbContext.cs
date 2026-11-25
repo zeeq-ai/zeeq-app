@@ -120,6 +120,11 @@ public class PostgresDbContext(DbContextOptions<PostgresDbContext> options)
     /// <summary>
     /// Code review execution records.
     /// </summary>
+    /// <summary>Current finding triage snapshots.</summary>
+    public DbSet<CodeReviewFindingTriage> CodeReviewFindingTriages =>
+        Set<CodeReviewFindingTriage>();
+
+    /// <summary>Code review execution records.</summary>
     public DbSet<CodeReviewRecord> CodeReviewRecords => Set<CodeReviewRecord>();
 
     /// <summary>
