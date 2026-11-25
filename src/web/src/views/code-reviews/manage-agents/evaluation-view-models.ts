@@ -420,6 +420,11 @@ export function findStagedFindingDisposition(
     );
   return finding ? (finding.disposition ?? "Expected") : null;
 }
+export function canAddEvaluationReferenceFinding(
+  referenceSet: CodeReviewEvaluationReferenceSetDto,
+): boolean {
+  return referenceSet.findings.length < 100;
+}
 export function summarizeRunFalsePositives(
   run: EvaluationRunDto,
   cases: EvaluationRunCaseDto[],

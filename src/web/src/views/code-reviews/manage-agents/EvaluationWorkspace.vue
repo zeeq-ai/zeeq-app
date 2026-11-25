@@ -493,6 +493,7 @@ import EvaluationRevisionDiff from "./EvaluationRevisionDiff.vue";
 import EvaluationToolbar from "./EvaluationToolbar.vue";
 import {
   addCapturedEvaluationCase,
+  canAddEvaluationReferenceFinding,
   countEvaluationDatasetDraftChanges,
   findStagedFindingDisposition,
   summarizeRunFalsePositives,
@@ -1451,6 +1452,11 @@ function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
   const sourceDatasetId = selectedRun.value?.run.datasetId;
   if (!candidate || !sourceRunId || !sourceDatasetId) return;
   void (async () => {
+    const repositoryId = props.workspaceRepository.id;
+    let isCurrent = () =>
+      !workspaceUnmounted &&
+      props.workspaceRepository.id === repositoryId &&
+      selectedRun.value?.run.id === sourceRunId;
     let draft: EvaluationDatasetDraft;
     if (datasetDraft.value?.datasetId === sourceDatasetId) {
       draft = datasetDraft.value;
@@ -1461,9 +1467,8 @@ function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
           "Save or discard the current dataset before adding a finding from another dataset.";
         return;
       }
-      const repositoryId = props.workspaceRepository.id;
       const editEpoch = datasetDraftEditEpoch.value;
-      const isCurrent = () =>
+      isCurrent = () =>
         !workspaceUnmounted &&
         props.workspaceRepository.id === repositoryId &&
         selectedRun.value?.run.id === sourceRunId &&
@@ -1476,9 +1481,8 @@ function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
       );
       if (!loaded || !isCurrent()) return;
       draft = createEvaluationDatasetDraft(loaded);
-      selectedDatasetId.value = loaded.id;
-      await store.loadRuns(props.workspaceRepository.id, loaded.id);
     }
+    if (!isCurrent()) return;
     const evaluationCase = draft.cases.find(
       (item) => item.caseId === caseResult.caseId,
     );
@@ -1510,7 +1514,6 @@ function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
       });
       return;
     }
-    selectedReviewerId.value = caseResult.references.reviewerAgentId;
     const reviewerId = caseResult.references.reviewerAgentId;
     const current = evaluationCase.referenceSets.find(
       (item) => item.reviewerAgentId === reviewerId,
@@ -1519,6 +1522,14 @@ function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
       state: "Expected" as const,
       findings: [],
     };
+    if (!canAddEvaluationReferenceFinding(current)) {
+      toast.add({
+        title: "Finding not added",
+        description: "A reference set can hold at most 100 findings.",
+        color: "warning",
+      });
+      return;
+    }
     const severity = toReferenceSeverity(candidate.severity);
     const reference = {
       id: crypto.randomUUID(),
@@ -1539,6 +1550,9 @@ function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
       findings: [...current.findings, reference],
     });
     datasetDraft.value = draft;
+    selectedDatasetId.value = sourceDatasetId;
+    selectedReviewerId.value = reviewerId;
+    void store.loadRuns(props.workspaceRepository.id, sourceDatasetId);
     referenceFocusPr.value = Number(caseResult.pullRequestNumber);
     datasetEditorOpen.value = true;
   })();

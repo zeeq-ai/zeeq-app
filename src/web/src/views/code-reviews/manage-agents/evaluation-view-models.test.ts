@@ -9,6 +9,7 @@ import type {
 } from "@/api/generated";
 import {
   addCapturedEvaluationCase,
+  canAddEvaluationReferenceFinding,
   buildEvaluationDatasetSaveRequest,
   canRetryEvaluationRun,
   countEvaluationDatasetDraftChanges,
@@ -53,6 +54,17 @@ describe("evaluation dataset view models", () => {
     expect(
       findStagedFindingDisposition(sets, "agent-a", "run-2", "candidate-1"),
     ).toBeNull();
+  });
+  it("enforces the combined 100 finding cap", () => {
+    const set = referenceSet();
+    expect(canAddEvaluationReferenceFinding(set)).toBe(true);
+    set.findings = Array.from({ length: 100 }, (_, index) => ({
+      ...referenceSet().findings[0],
+      id: `finding-${index}`,
+      disposition:
+        index % 2 === 0 ? ("Expected" as const) : ("Rejected" as const),
+    }));
+    expect(canAddEvaluationReferenceFinding(set)).toBe(false);
   });
   it("shows assessment counts only for graded cases and keeps clean zeroes", () => {
     const ungraded = runCase({ outcome: "JudgeFailed", phase: "Grading" });
