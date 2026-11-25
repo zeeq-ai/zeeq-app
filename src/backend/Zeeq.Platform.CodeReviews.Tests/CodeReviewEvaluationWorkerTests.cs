@@ -53,6 +53,7 @@ public sealed class CodeReviewEvaluationWorkerTests
     [Arguments(1)]
     [Arguments(2)]
     [Arguments(3)]
+    [Arguments(4)]
     public async Task WorkerRunsTwoPipelinesAndStartsThirdOnlyAfterOneFinishes(int scenario)
     {
         var run = new CodeReviewEvaluationRun
@@ -163,7 +164,10 @@ public sealed class CodeReviewEvaluationWorkerTests
                         ManifestCaseId = c.CaseId,
                         PullRequestNumber = c.PullRequestNumber,
                         Phase = CodeReviewEvaluationCasePhase.Graded,
-                        Outcome = CodeReviewEvaluationCaseOutcome.Graded,
+                        Outcome =
+                            scenario == 4 && c.CaseId == "case1"
+                                ? CodeReviewEvaluationCaseOutcome.FalsePositiveChecked
+                                : CodeReviewEvaluationCaseOutcome.Graded,
                     })
                     .ToArray()
             );
@@ -219,7 +223,8 @@ public sealed class CodeReviewEvaluationWorkerTests
                         x.State
                         == (
                             scenario == 3 ? CodeReviewEvaluationRunState.Cancelled
-                            : scenario == 1 ? CodeReviewEvaluationRunState.Incomplete
+                            : scenario == 1 || scenario == 4
+                                ? CodeReviewEvaluationRunState.Incomplete
                             : CodeReviewEvaluationRunState.Completed
                         )
                     ),

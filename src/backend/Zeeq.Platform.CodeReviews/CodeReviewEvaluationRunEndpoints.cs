@@ -55,7 +55,9 @@ public sealed record EvaluationRunCaseDto(
     IReadOnlyList<CodeReviewEvaluationMatch> JudgeMatches,
     string? ReviewerProvenanceJson,
     string? JudgeProvenanceJson,
-    string? ErrorCode
+    string? ErrorCode,
+    int RepeatedFalsePositiveCount,
+    int TrackedFalsePositiveCount
 );
 
 /// <summary>Run details with immutable case results.</summary>
@@ -302,7 +304,10 @@ public sealed class EvaluationRunHandler(
                 r.MatchedReferenceCount,
                 r.MissedReferenceCount,
                 r.ExpectedReferenceCount,
-                r.AdditionalFindingCount
+                r.AdditionalFindingCount,
+                r.FalsePositiveCheckedCaseCount,
+                r.RepeatedFalsePositiveCount,
+                r.TrackedFalsePositiveCount
             ),
             r.ErrorCode
         );
@@ -525,7 +530,9 @@ public sealed class EvaluationRunHandler(
                     DeserializeList<CodeReviewEvaluationMatch>(row?.JudgeMatchesJson),
                     PublicProvenance(row?.ReviewerProvenanceJson),
                     PublicProvenance(row?.JudgeProvenanceJson),
-                    row?.ErrorCode
+                    row?.ErrorCode,
+                    row?.RepeatedFalsePositiveCount ?? 0,
+                    row?.TrackedFalsePositiveCount ?? 0
                 );
             })
             .ToArray();

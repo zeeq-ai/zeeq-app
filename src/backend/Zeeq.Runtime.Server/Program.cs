@@ -127,6 +127,7 @@ LlmStartupDiagnostics.LogEmbeddingConfigurationStatus(appSettings.Llm);
 // closed for this feature because local testing needs the sweep live.
 if (builder.Environment.IsDevelopment())
 {
+    builder.Services.AddCors();
     builder.Services.AddZeeqSnippetIndexing();
     builder.Services.AddZeeqStalledIngestSyncCleanup();
 }
@@ -154,6 +155,7 @@ app.MapScalarApiReference("/scalar", options =>
 
 app.UseForwardedHeaders();
 app.UseRequestDecompression();
+app.UseZeeqDevelopmentTokenCors(appSettings);
 app.UseAuthentication();
 app.UseUserTokenValidation();
 app.UseMembershipEnrichment();

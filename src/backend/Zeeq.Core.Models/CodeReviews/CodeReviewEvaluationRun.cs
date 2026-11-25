@@ -82,6 +82,15 @@ public sealed class CodeReviewEvaluationRun : MutableDomainEntityBase, IOrganiza
     /// <summary>Expected reference findings that the judge matched.</summary>
     public int MatchedReferenceCount { get; set; }
 
+    /// <summary>FalsePositiveCheckedCaseCount for this evaluation.</summary>
+    public int FalsePositiveCheckedCaseCount { get; set; }
+
+    /// <summary>RepeatedFalsePositiveCount for this evaluation.</summary>
+    public int RepeatedFalsePositiveCount { get; set; }
+
+    /// <summary>TrackedFalsePositiveCount for this evaluation.</summary>
+    public int TrackedFalsePositiveCount { get; set; }
+
     /// <summary>Expected reference findings that the judge reported as missed.</summary>
     public int MissedReferenceCount { get; set; }
 

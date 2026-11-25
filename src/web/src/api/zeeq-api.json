@@ -11985,6 +11985,7 @@
         "enum": [
           "None",
           "Graded",
+          "FalsePositiveChecked",
           "ReviewFailed",
           "JudgeFailed",
           "Unlabelled",
@@ -12270,6 +12271,9 @@
           },
           "reason": {
             "type": "string"
+          },
+          "disposition": {
+            "$ref": "#/components/schemas/CodeReviewEvaluationReferenceDisposition"
           }
         },
         "description": "A one-to-one judge assignment and its explanation."
@@ -12428,6 +12432,14 @@
         },
         "description": "Page of known evaluation targets."
       },
+      "CodeReviewEvaluationReferenceDisposition": {
+        "enum": [
+          "Expected",
+          "Rejected"
+        ],
+        "description": "Whether a finding is expected or a known false positive.",
+        "default": "Expected"
+      },
       "CodeReviewEvaluationReferenceFinding": {
         "required": [
           "id",
@@ -12500,6 +12512,17 @@
             "type": "string",
             "description": "Time the reference was approved.",
             "format": "date-time"
+          },
+          "disposition": {
+            "description": "Whether this finding is expected or rejected.",
+            "$ref": "#/components/schemas/CodeReviewEvaluationReferenceDisposition"
+          },
+          "rationale": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Optional explanation of the reference."
           }
         },
         "description": "One expected finding inside a reviewer's reference set."
@@ -12567,6 +12590,18 @@
               "string"
             ],
             "description": "Candidate finding id inside the source run, when applicable."
+          },
+          "disposition": {
+            "description": "Expected finding or known false positive.",
+            "$ref": "#/components/schemas/CodeReviewEvaluationReferenceDisposition"
+          },
+          "rationale": {
+            "maxLength": 1000,
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Optional explanation of the reference."
           }
         },
         "description": "One editable reference finding."
@@ -12600,10 +12635,36 @@
             "items": {
               "$ref": "#/components/schemas/CodeReviewEvaluationReferenceFinding"
             },
-            "description": "Expected findings. Empty is valid for CodeReviewEvaluationReferenceState.ReviewedClean."
+            "description": "Expected and rejected findings. Rejected findings are allowed in every state."
+          },
+          "expectedFindingCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Number of expected findings.",
+            "format": "int32"
+          },
+          "rejectedFindingCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Number of known false positives.",
+            "format": "int32"
+          },
+          "isExpectedAudited": {
+            "type": "boolean",
+            "description": "Whether expected findings were audited."
+          },
+          "requiresJudge": {
+            "type": "boolean",
+            "description": "Whether this set requires grading."
           }
         },
-        "description": "Expected findings for one reviewer on one dataset case."
+        "description": "Reference findings for one reviewer on one dataset case."
       },
       "CodeReviewEvaluationReferenceSetDto": {
         "required": [
@@ -12626,7 +12687,7 @@
             "items": {
               "$ref": "#/components/schemas/CodeReviewEvaluationReferenceFindingDto"
             },
-            "description": "Expected findings. Empty is valid for ReviewedClean."
+            "description": "Expected and rejected findings. Rejected findings are allowed in every state."
           }
         },
         "description": "One reviewer's reference expectations for one case."
@@ -12733,6 +12794,36 @@
             ],
             "description": "Candidate findings reported as additional and unverified.",
             "format": "int32"
+          },
+          "falsePositiveCheckedCaseCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Cases checked only for false positives.",
+            "format": "int32",
+            "default": 0
+          },
+          "repeatedFalsePositiveCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Repeated false positives.",
+            "format": "int32",
+            "default": 0
+          },
+          "trackedFalsePositiveCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "description": "Tracked false positives checked.",
+            "format": "int32",
+            "default": 0
           }
         },
         "description": "Aggregate counts recorded on a run and returned to the UI."
@@ -15165,7 +15256,9 @@
           "judgeMatches",
           "reviewerProvenanceJson",
           "judgeProvenanceJson",
-          "errorCode"
+          "errorCode",
+          "repeatedFalsePositiveCount",
+          "trackedFalsePositiveCount"
         ],
         "type": "object",
         "properties": {
@@ -15235,6 +15328,22 @@
               "null",
               "string"
             ]
+          },
+          "repeatedFalsePositiveCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "trackedFalsePositiveCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         },
         "description": "A sanitized case result and immutable reference content."

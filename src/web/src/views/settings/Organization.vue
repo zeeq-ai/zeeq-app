@@ -17,7 +17,7 @@
           @click="openOrganizationHistory"
         />
         <UButton
-          label="New organization"
+          label="New"
           icon="i-hugeicons-plus-sign"
           color="neutral"
           variant="ghost"
@@ -29,7 +29,7 @@
           "
         />
         <UButton
-          label="Save changes"
+          label="Save"
           icon="i-hugeicons-floppy-disk"
           color="neutral"
           :loading="saving"

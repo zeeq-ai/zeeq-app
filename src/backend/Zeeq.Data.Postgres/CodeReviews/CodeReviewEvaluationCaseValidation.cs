@@ -100,13 +100,10 @@ internal static class CodeReviewEvaluationCaseValidation
                 return "reference_state_invalid";
             }
 
-            // Only an Expected set can carry expectations. The UI may keep fields in an open
-            // editor until Save, but it projects non-expected states to no findings; a direct
-            // store call that persists ReviewedClean/Unlabelled with findings is contradictory
-            // and would corrupt coverage accounting.
+            // Known false positives are independent of expected coverage state.
             if (
                 set.State != Zeeq.Core.Models.CodeReviewEvaluationReferenceState.Expected
-                && set.Findings.Count > 0
+                && set.ExpectedFindingCount > 0
             )
             {
                 return "reference_state_conflict";
@@ -125,6 +122,19 @@ internal static class CodeReviewEvaluationCaseValidation
             var findingIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var finding in set.Findings)
             {
+                if (!Enum.IsDefined(finding.Disposition))
+                {
+                    return "reference_disposition_invalid";
+                }
+
+                if (
+                    finding.Rationale is
+                    { Length: > CodeReviewEvaluationLimits.MaxReferenceRationaleLength }
+                )
+                {
+                    return "reference_rationale_too_long";
+                }
+
                 if (string.IsNullOrWhiteSpace(finding.Id) || !findingIds.Add(finding.Id))
                 {
                     return "reference_finding_id_invalid";

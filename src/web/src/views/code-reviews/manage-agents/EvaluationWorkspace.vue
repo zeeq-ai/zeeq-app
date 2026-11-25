@@ -75,7 +75,7 @@
           <USkeleton class="h-48" />
         </div>
 
-        <div v-else-if="loadingDatasets" class="grid gap-3">
+        <div v-else-if="loadingDatasets && !selectedRun" class="grid gap-3">
           <USkeleton class="h-14" />
           <USkeleton class="h-48" />
         </div>
@@ -88,6 +88,40 @@
         />
 
         <div v-else-if="selectedRun" class="grid gap-4">
+          <div
+            v-if="datasetDraftDirty && !datasetEditorOpen"
+            class="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-md border border-default bg-default p-3 shadow-sm"
+          >
+            <span class="text-sm"
+              >{{ draftChangeCount }} unsaved dataset
+              {{ draftChangeCount === 1 ? "change" : "changes" }}</span
+            >
+            <UButton
+              label="Review in Manage datasets"
+              color="neutral"
+              variant="outline"
+              size="xs"
+              @click="openDatasetEditor()"
+            />
+            <UButton
+              :label="`Save as v${Number(datasetDraft?.expectedVersion ?? 0) + 1}`"
+              color="primary"
+              size="xs"
+              :loading="savingDataset"
+              @click="saveDatasetDraft(false)"
+            />
+            <UButton
+              label="Discard"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              :disabled="savingDataset"
+              @click="discardDraftConfirmOpen = true"
+            />
+            <p v-if="datasetSaveError" class="w-full text-xs text-error">
+              {{ datasetSaveError }}
+            </p>
+          </div>
           <header class="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div class="flex flex-wrap items-center gap-2">
@@ -126,7 +160,7 @@
                 label="Back to latest"
                 color="neutral"
                 variant="ghost"
-                @click="selectedRun = null"
+                @click="backToLatest"
               />
             </div>
           </header>
@@ -139,6 +173,32 @@
               <strong class="font-mono tabular-nums">{{
                 coverageLabel(selectedRun.run)
               }}</strong></span
+            >
+            <span v-if="runFalsePositives" class="text-default"
+              >Known FPs
+              <strong
+                :class="
+                  runFalsePositives.reported > 0
+                    ? 'text-warning font-medium'
+                    : 'text-muted'
+                "
+                >{{
+                  runFalsePositives.checked === 0 &&
+                  runFalsePositives.unchecked === 0
+                    ? "No known false positives checked"
+                    : `${runFalsePositives.reported} of ${runFalsePositives.checked} reported`
+                }}</strong
+              ><span
+                v-if="runFalsePositives.onUnlabelledPrCount > 0"
+                class="text-muted"
+              >
+                ({{ runFalsePositives.onUnlabelledPrCount }} on unlabelled
+                {{
+                  runFalsePositives.onUnlabelledPrCount === 1 ? "PR" : "PRs"
+                }})</span
+              ><span v-if="runFalsePositives.unchecked > 0" class="text-muted">
+                · {{ runFalsePositives.unchecked }} not checked</span
+              ></span
             >
             <span class="text-default"
               >Graded
@@ -160,12 +220,21 @@
                 selectedRun.run.counts.failedCaseCount
               }}</strong></span
             >
-            <span class="text-default"
-              >Unlabelled
+            <span
+              v-if="runFalsePositives?.onUnlabelledPrCount"
+              class="text-default"
+            >
+              FP-only PRs
+              <strong class="font-mono tabular-nums">{{
+                runFalsePositives.onUnlabelledPrCount
+              }}</strong>
+            </span>
+            <span class="text-default">
+              Unlabelled
               <strong class="font-mono tabular-nums">{{
                 selectedRun.run.counts.unlabelledCaseCount
-              }}</strong></span
-            >
+              }}</strong>
+            </span>
             <span class="text-default"
               >Additional
               <strong class="font-mono tabular-nums"
@@ -190,29 +259,23 @@
           <EvaluationRunCases
             :cases="selectedRun.cases"
             :loading="loadingRun"
+            :can-manage="canManage && !savingDataset"
             @add-to-reference="stageFinding"
+            @mark-as-false-positive="openFalsePositiveModal"
           />
 
-          <details class="border-t border-default pt-3">
-            <summary
-              class="cursor-pointer text-sm font-semibold text-highlighted"
-            >
-              Previous runs ({{ runs.length }})
-            </summary>
-            <div class="mt-3">
-              <EvaluationRunHistory
-                :runs="runs"
-                :loading="loadingRuns"
-                :next-cursor-id="runNextCursorId"
-                :dataset-name="datasetName"
-                @select="viewRun"
-                @load-more="loadMoreRuns"
-                @cancel="cancelRun"
-                @abandon="abandonRun"
-                @retry="retryFailedRun"
-              />
-            </div>
-          </details>
+          <EvaluationRunHistory
+            class="border-t border-default pt-3"
+            :runs="runs"
+            :loading="loadingRuns"
+            :next-cursor-id="runNextCursorId"
+            :dataset-name="datasetName"
+            @select="viewRun"
+            @load-more="loadMoreRuns"
+            @cancel="cancelRun"
+            @abandon="abandonRun"
+            @retry="retryFailedRun"
+          />
         </div>
 
         <div v-else class="grid gap-4">
@@ -321,6 +384,79 @@
       @close="closeDatasetEditor"
     />
 
+    <UModal
+      v-model:open="falsePositiveModalOpen"
+      title="Mark as false positive"
+      description="Future evals will flag this claim if this reviewer reports it again on this snapshot."
+    >
+      <template #body>
+        <div class="grid gap-3">
+          <UAlert
+            v-if="stagingError"
+            :description="stagingError"
+            color="error"
+            variant="subtle"
+          />
+          <p class="text-sm font-medium">
+            {{ pendingFalsePositive?.candidate.summary }}
+          </p>
+          <p class="font-mono text-xs text-muted">
+            {{ pendingFalsePositive?.candidate.file
+            }}<span v-if="pendingFalsePositive?.candidate.line"
+              >:{{ pendingFalsePositive.candidate.line }}</span
+            >
+          </p>
+          <UFormField
+            label="Rationale"
+            hint="Optional — helps the judge match accurately"
+            ><UTextarea
+              v-model="falsePositiveRationale"
+              :maxlength="1000"
+              placeholder="Why is this wrong?"
+              class="w-full"
+          /></UFormField>
+          <p class="text-sm text-muted">
+            Future evals will flag this claim if this reviewer reports it again
+            on this snapshot.
+          </p>
+        </div>
+      </template>
+      <template #footer
+        ><div class="flex w-full justify-end gap-2">
+          <UButton
+            label="Cancel"
+            color="neutral"
+            variant="ghost"
+            @click="falsePositiveModalOpen = false"
+          /><UButton
+            label="Mark as false positive"
+            color="primary"
+            :loading="stagingFalsePositive"
+            @click="submitFalsePositive"
+          /></div
+      ></template>
+    </UModal>
+
+    <UModal
+      v-model:open="discardDraftConfirmOpen"
+      title="Discard dataset changes?"
+      description="This discards every unsaved change in the current dataset draft, including all staged run findings."
+    >
+      <template #footer
+        ><div class="flex w-full justify-end gap-2">
+          <UButton
+            label="Keep changes"
+            color="neutral"
+            variant="ghost"
+            @click="discardDraftConfirmOpen = false"
+          /><UButton
+            label="Discard all changes"
+            color="error"
+            @click="confirmDiscardDatasetDraft"
+          /></div
+      ></template>
+    </UModal>
+
     <EvaluationRevisionDiff
       v-if="selectedRevision"
       v-model:open="revisionDiffOpen"
@@ -357,7 +493,10 @@ import EvaluationRevisionDiff from "./EvaluationRevisionDiff.vue";
 import EvaluationToolbar from "./EvaluationToolbar.vue";
 import {
   addCapturedEvaluationCase,
+  canAddEvaluationReferenceFinding,
   countEvaluationDatasetDraftChanges,
+  findStagedFindingDisposition,
+  summarizeRunFalsePositives,
   createEvaluationDatasetDraft,
   updateEvaluationCaseReferenceSet,
   type EvaluationDatasetDraft,
@@ -424,6 +563,17 @@ const historicalScope = ref<{
 let historicalRequestId = 0;
 let refreshUiRequestId = 0;
 const revisionDiffOpen = ref(false);
+const falsePositiveModalOpen = ref(false);
+const falsePositiveRationale = ref("");
+const discardDraftConfirmOpen = ref(false);
+const stagingFalsePositive = ref(false);
+const stagingError = ref<string | null>(null);
+const pendingFalsePositive = ref<{
+  result: EvaluationRunCaseDto;
+  candidate: EvaluationRunCaseDto["candidateFindings"][number];
+  runId: string;
+  datasetId: string;
+} | null>(null);
 const datasetDraft = ref<EvaluationDatasetDraft | null>(null);
 const selectedPullRequestNumbers = ref(new Set<number>());
 const selectionSaveError = ref<string | null>(null);
@@ -467,6 +617,16 @@ const datasetDraftDirty = computed(() => {
     countEvaluationDatasetDraftChanges(datasetDraft.value) > 0
   );
 });
+const draftChangeCount = computed(() =>
+  datasetDraft.value
+    ? countEvaluationDatasetDraftChanges(datasetDraft.value)
+    : 0,
+);
+const runFalsePositives = computed(() =>
+  selectedRun.value
+    ? summarizeRunFalsePositives(selectedRun.value.run, selectedRun.value.cases)
+    : null,
+);
 const datasetSaveError = computed(() => {
   if (saveErrorCode.value === "capture_token_expired") {
     return `${datasetError.value ?? "The capture token expired."} Re-resolve the selected PRs; your draft is still open.`;
@@ -621,23 +781,24 @@ function beginPolling() {
   endPolling();
   pollHandle = setInterval(() => {
     const dataset = selectedDataset.value;
+    const currentSelectedRun = selectedRun.value;
+    const hasActiveListRun = runs.value.some((run) => isActiveRun(run.state));
+    const hasActiveSelectedRun = Boolean(
+      currentSelectedRun && isActiveRun(currentSelectedRun.run.state),
+    );
     if (
       !dataset ||
       document.hidden ||
-      !runs.value.some((run) => isActiveRun(run.state))
+      (!hasActiveListRun && !hasActiveSelectedRun)
     ) {
       return;
     }
     // Poll the loaded dataset, including while a dirty draft keeps its repository open.
-    if (!loadingRuns.value) {
+    if (hasActiveListRun && !loadingRuns.value) {
       void store.loadRuns(dataset.repositoryId, dataset.id);
     }
-    if (
-      !loadingRun.value &&
-      selectedRun.value &&
-      isActiveRun(selectedRun.value.run.state)
-    ) {
-      void store.loadRun(dataset.repositoryId, selectedRun.value.run.id);
+    if (hasActiveSelectedRun && !loadingRun.value && currentSelectedRun) {
+      void store.loadRun(dataset.repositoryId, currentSelectedRun.run.id);
     }
   }, 2000);
 }
@@ -1254,7 +1415,13 @@ async function runEvaluation() {
   }
 }
 
+function backToLatest() {
+  if (!canLeaveDatasetWorkspace()) return;
+  selectedRun.value = null;
+}
+
 function viewRun(runId: string) {
+  if (!canLeaveDatasetWorkspace()) return;
   void store.loadRun(props.workspaceRepository.id, runId);
 }
 
@@ -1277,6 +1444,7 @@ function loadMoreRuns() {
 }
 
 function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
+  if (savingDataset.value || !props.canManage) return;
   const candidate = caseResult.candidateFindings.find(
     (item) => item.id === findingId,
   );
@@ -1284,6 +1452,11 @@ function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
   const sourceDatasetId = selectedRun.value?.run.datasetId;
   if (!candidate || !sourceRunId || !sourceDatasetId) return;
   void (async () => {
+    const repositoryId = props.workspaceRepository.id;
+    let isCurrent = () =>
+      !workspaceUnmounted &&
+      props.workspaceRepository.id === repositoryId &&
+      selectedRun.value?.run.id === sourceRunId;
     let draft: EvaluationDatasetDraft;
     if (datasetDraft.value?.datasetId === sourceDatasetId) {
       draft = datasetDraft.value;
@@ -1294,20 +1467,53 @@ function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
           "Save or discard the current dataset before adding a finding from another dataset.";
         return;
       }
+      const editEpoch = datasetDraftEditEpoch.value;
+      isCurrent = () =>
+        !workspaceUnmounted &&
+        props.workspaceRepository.id === repositoryId &&
+        selectedRun.value?.run.id === sourceRunId &&
+        datasetDraftEditEpoch.value === editEpoch &&
+        !datasetDraftDirty.value;
       const loaded = await store.loadDataset(
-        props.workspaceRepository.id,
+        repositoryId,
         sourceDatasetId,
+        isCurrent,
       );
-      if (!loaded) return;
+      if (!loaded || !isCurrent()) return;
       draft = createEvaluationDatasetDraft(loaded);
-      selectedDatasetId.value = loaded.id;
-      await store.loadRuns(props.workspaceRepository.id, loaded.id);
     }
+    if (!isCurrent()) return;
     const evaluationCase = draft.cases.find(
       (item) => item.caseId === caseResult.caseId,
     );
-    if (!evaluationCase) return;
-    selectedReviewerId.value = caseResult.references.reviewerAgentId;
+    if (
+      !evaluationCase ||
+      evaluationCase.captureToken ||
+      evaluationCase.snapshot.baseSha !== caseResult.baseSha ||
+      evaluationCase.snapshot.headSha !== caseResult.headSha
+    ) {
+      toast.add({
+        title: "Finding not added",
+        description:
+          "This run used a different PR snapshot. Run the evaluation again on the current dataset.",
+        color: "warning",
+      });
+      return;
+    }
+    const alreadyStaged = findStagedFindingDisposition(
+      evaluationCase.referenceSets,
+      caseResult.references.reviewerAgentId,
+      sourceRunId,
+      candidate.id,
+    );
+    if (alreadyStaged) {
+      toast.add({
+        title: "Finding already staged",
+        description: `This claim is already marked ${alreadyStaged === "Rejected" ? "as a false positive" : "as expected"}.`,
+        color: "neutral",
+      });
+      return;
+    }
     const reviewerId = caseResult.references.reviewerAgentId;
     const current = evaluationCase.referenceSets.find(
       (item) => item.reviewerAgentId === reviewerId,
@@ -1316,17 +1522,27 @@ function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
       state: "Expected" as const,
       findings: [],
     };
+    if (!canAddEvaluationReferenceFinding(current)) {
+      toast.add({
+        title: "Finding not added",
+        description: "A reference set can hold at most 100 findings.",
+        color: "warning",
+      });
+      return;
+    }
     const severity = toReferenceSeverity(candidate.severity);
     const reference = {
       id: crypto.randomUUID(),
       title: candidate.summary.slice(0, 300),
-      summary: candidate.details.slice(0, 4000),
+      summary: (candidate.details.trim() || candidate.summary).slice(0, 4000),
       severity,
       file: candidate.file,
       line: candidate.line === null ? null : Number(candidate.line),
       origin: "RunFinding" as const,
       sourceRunId,
       sourceFindingId: candidate.id,
+      disposition: "Expected" as const,
+      rationale: null,
     };
     draft = updateEvaluationCaseReferenceSet(draft, caseResult.caseId, {
       ...current,
@@ -1334,9 +1550,158 @@ function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
       findings: [...current.findings, reference],
     });
     datasetDraft.value = draft;
+    selectedDatasetId.value = sourceDatasetId;
+    selectedReviewerId.value = reviewerId;
+    void store.loadRuns(props.workspaceRepository.id, sourceDatasetId);
     referenceFocusPr.value = Number(caseResult.pullRequestNumber);
     datasetEditorOpen.value = true;
   })();
+}
+
+function discardDatasetDraft() {
+  if (selectedDataset.value)
+    datasetDraft.value = createEvaluationDatasetDraft(selectedDataset.value);
+  selectedPullRequestNumbers.value = new Set();
+  selectionSaveError.value = null;
+}
+function confirmDiscardDatasetDraft() {
+  discardDatasetDraft();
+  discardDraftConfirmOpen.value = false;
+}
+
+function openFalsePositiveModal(
+  result: EvaluationRunCaseDto,
+  findingId: string,
+) {
+  const candidate = result.candidateFindings.find(
+    (item) => item.id === findingId,
+  );
+  const run = selectedRun.value?.run;
+  if (!candidate || !run || savingDataset.value || !props.canManage) return;
+  stagingError.value = null;
+  pendingFalsePositive.value = {
+    result,
+    candidate,
+    runId: run.id,
+    datasetId: run.datasetId,
+  };
+  falsePositiveRationale.value = "";
+  falsePositiveModalOpen.value = true;
+}
+
+async function submitFalsePositive() {
+  const pending = pendingFalsePositive.value;
+  if (
+    !pending ||
+    !falsePositiveModalOpen.value ||
+    selectedRun.value?.run.id !== pending.runId ||
+    stagingFalsePositive.value ||
+    savingDataset.value ||
+    !props.canManage
+  )
+    return;
+  stagingFalsePositive.value = true;
+  try {
+    let draft = datasetDraft.value;
+    let loadedDatasetId: string | null = null;
+    if (draft?.datasetId !== pending.datasetId) {
+      if (datasetDraftDirty.value) {
+        datasetEditorOpen.value = true;
+        datasetError.value =
+          "Save or discard the current dataset before adding a finding from another dataset.";
+        return;
+      }
+      const repositoryId = props.workspaceRepository.id;
+      const editEpoch = datasetDraftEditEpoch.value;
+      const isCurrent = () =>
+        !workspaceUnmounted &&
+        falsePositiveModalOpen.value &&
+        pendingFalsePositive.value === pending &&
+        props.workspaceRepository.id === repositoryId &&
+        selectedRun.value?.run.id === pending.runId &&
+        datasetDraftEditEpoch.value === editEpoch &&
+        !datasetDraftDirty.value;
+      const loaded = await store.loadDataset(
+        repositoryId,
+        pending.datasetId,
+        isCurrent,
+      );
+      if (!loaded || !isCurrent()) {
+        if (
+          falsePositiveModalOpen.value &&
+          pendingFalsePositive.value === pending
+        )
+          stagingError.value =
+            "The dataset or run changed. Review the current draft and try again.";
+        return;
+      }
+      draft = createEvaluationDatasetDraft(loaded);
+      loadedDatasetId = loaded.id;
+    }
+    const evaluationCase = draft.cases.find(
+      (item) => item.caseId === pending.result.caseId,
+    );
+    if (!evaluationCase) {
+      stagingError.value = "This PR is no longer in the dataset.";
+      return;
+    }
+    if (
+      evaluationCase.snapshot.baseSha !== pending.result.baseSha ||
+      evaluationCase.snapshot.headSha !== pending.result.headSha ||
+      evaluationCase.captureToken
+    ) {
+      stagingError.value =
+        "This run used a different PR snapshot. Run the evaluation again on the current dataset before adding this finding.";
+      return;
+    }
+    const reviewerAgentId = pending.result.references.reviewerAgentId;
+    const current = evaluationCase.referenceSets.find(
+      (item) => item.reviewerAgentId === reviewerAgentId,
+    ) ?? { reviewerAgentId, state: "Unlabelled" as const, findings: [] };
+    if (
+      current.findings.some(
+        (item) =>
+          item.sourceRunId === pending.runId &&
+          item.sourceFindingId === pending.candidate.id,
+      )
+    ) {
+      const existing = current.findings.find(
+        (item) =>
+          item.sourceRunId === pending.runId &&
+          item.sourceFindingId === pending.candidate.id,
+      );
+      stagingError.value = `This finding is already marked ${existing?.disposition === "Rejected" ? "as a false positive" : "as expected"} in the dataset draft.`;
+      return;
+    }
+    if (current.findings.length >= 100) {
+      stagingError.value = "A reference set can hold at most 100 findings.";
+      return;
+    }
+    const candidate = pending.candidate;
+    const reference: CodeReviewEvaluationReferenceFindingDto = {
+      id: crypto.randomUUID(),
+      title: candidate.summary.slice(0, 300),
+      summary: (candidate.details.trim() || candidate.summary).slice(0, 4000),
+      severity: toReferenceSeverity(candidate.severity),
+      file: candidate.file,
+      line: candidate.line === null ? null : Number(candidate.line),
+      origin: "RunFinding",
+      sourceRunId: pending.runId,
+      sourceFindingId: candidate.id,
+      disposition: "Rejected",
+      rationale: falsePositiveRationale.value.trim() || null,
+    };
+    datasetDraft.value = updateEvaluationCaseReferenceSet(
+      draft,
+      pending.result.caseId,
+      { ...current, findings: [...current.findings, reference] },
+    );
+    if (loadedDatasetId) selectedDatasetId.value = loadedDatasetId;
+    selectedReviewerId.value = reviewerAgentId;
+    falsePositiveModalOpen.value = false;
+  } finally {
+    stagingFalsePositive.value = false;
+  }
 }
 
 function toReferenceSeverity(value: CodeReviewEvaluationFindingSeverity) {

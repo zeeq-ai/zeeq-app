@@ -683,9 +683,12 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
                 run.Id,
                 manifestCaseId,
                 "lease-1",
+                CodeReviewEvaluationCaseOutcome.Graded,
                 1,
                 0,
                 1,
+                0,
+                0,
                 0,
                 "[{\"referenceId\":\"ref_1\",\"candidateId\":\"c_1\"}]",
                 "[]",
@@ -978,9 +981,12 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
                 run.Id,
                 gradedCase,
                 "lease-t",
+                CodeReviewEvaluationCaseOutcome.Graded,
                 1,
                 0,
                 1,
+                0,
+                0,
                 0,
                 "[]",
                 "[]",
@@ -1293,9 +1299,12 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
                 run.Id,
                 caseId,
                 "lease-n",
+                CodeReviewEvaluationCaseOutcome.Graded,
                 0,
                 1,
                 1,
+                0,
+                0,
                 0,
                 "[]",
                 "[]",
@@ -1855,9 +1864,12 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
                 run.Id,
                 caseId,
                 leaseToken,
+                CodeReviewEvaluationCaseOutcome.Graded,
                 1,
                 0,
                 1,
+                0,
+                0,
                 0,
                 "[]",
                 "[]",
@@ -1969,6 +1981,172 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
             CancellationToken.None
         );
 
+        _context.ChangeTracker.Clear();
+        var parentResult = await _context
+            .CodeReviewEvaluationCaseResults.AsNoTracking()
+            .SingleAsync(result =>
+                result.OrganizationId == repository.OrganizationId
+                && result.RunId == parent.Id
+                && result.ManifestCaseId == caseId
+            );
+        await Assert
+            .That(parentResult.Outcome)
+            .IsEqualTo(CodeReviewEvaluationCaseOutcome.JudgeFailed);
+        await Assert.That(parentResult.CandidateStorageUri).IsEqualTo(candidate.StorageUri);
+        await Assert.That(parentResult.CandidateSha256).IsEqualTo(candidate.Sha256);
+        await Assert.That(parentResult.CandidateByteCount).IsEqualTo(candidate.ByteCount);
+
+        // Judge-only retry reuses the persisted parent candidate.
+        var retry = await store.AdmitRetryAsync(
+            new(
+                repository.OrganizationId,
+                parent.Id,
+                "judge-reviewed-retry",
+                "usr_1",
+                "build-test",
+                "prompt-v1",
+                "fingerprint-judge-reviewed-retry"
+            ),
+            CancellationToken.None
+        );
+        await Assert
+            .That(retry.Outcome)
+            .IsEqualTo(CodeReviewEvaluationRunAdmissionOutcome.Admitted);
+
+        await store.TryClaimAsync(
+            repository.OrganizationId,
+            retry.Run!.Id,
+            "lease-jr",
+            TimeSpan.FromMinutes(10),
+            CancellationToken.None
+        );
+        var reused = await Results.StartGradingAsync(
+            new(repository.OrganizationId, retry.Run.Id, caseId, "lease-jr", candidate),
+            CancellationToken.None
+        );
+
+        await Assert.That(reused.Phase).IsEqualTo(CodeReviewEvaluationCasePhase.Grading);
+        await Assert.That(reused.CandidateStorageUri).IsEqualTo(candidate.StorageUri);
+        await Assert.That(reused.ReviewerInputTokens).IsEqualTo(9);
+        await Assert.That(reused.EstimatedCostUsd).IsEqualTo(0.02m);
+    }
+
+    [Test]
+    public async Task RunStore_UnlabelledRejectedJudgeFailure_RetriesWithCandidate()
+    {
+        var (repository, agent) = await SeedRepositoryAsync();
+        var draft = await Datasets.CreateAsync(
+            NewDataset(repository, "judge-fp-dataset"),
+            CancellationToken.None
+        );
+        var finding = new CodeReviewEvaluationReferenceFinding(
+            "ref",
+            "Wrong",
+            "Not a bug",
+            CodeReviewEvaluationFindingSeverity.Minor,
+            "src/App.cs",
+            null,
+            CodeReviewEvaluationReferenceOrigin.Manual,
+            null,
+            null,
+            "usr_1",
+            _clock.GetUtcNow(),
+            CodeReviewEvaluationReferenceDisposition.Rejected
+        );
+        var reference = new CodeReviewEvaluationReferenceSet(
+            agent.Id,
+            CodeReviewEvaluationReferenceState.Unlabelled,
+            [finding]
+        );
+        var dataset = (
+            await Datasets.SaveAsync(
+                NewSaveRequest(draft, [NewCase(903, agent.Id, "judge-fp-sha", [reference])]),
+                CancellationToken.None
+            )
+        ).Dataset!;
+        var store = Runs;
+
+        var parent = (
+            await store.AdmitAsync(
+                NewAdmission(dataset, agent, "judge-reviewed-parent"),
+                CancellationToken.None
+            )
+        ).Run!;
+        var caseId = (
+            await store.FindAsync(repository.OrganizationId, parent.Id, CancellationToken.None)
+        )!
+            .Manifest.Cases.Single()
+            .CaseId;
+
+        var candidate = new CodeReviewEvaluationArtifact(
+            "postgres://reviewer-evaluations/org/repo/reviewed/output.xml",
+            new string('5', 64),
+            256
+        );
+
+        await store.TryClaimAsync(
+            repository.OrganizationId,
+            parent.Id,
+            "lease-j",
+            TimeSpan.FromMinutes(10),
+            CancellationToken.None
+        );
+        await Results.StartReviewAsync(
+            new(repository.OrganizationId, parent.Id, caseId, "lease-j"),
+            CancellationToken.None
+        );
+        await Results.RecordCandidateAsync(
+            new(
+                repository.OrganizationId,
+                parent.Id,
+                caseId,
+                "lease-j",
+                candidate,
+                1,
+                "[{\"id\":\"cand_1\"}]",
+                "{}",
+                9,
+                3,
+                0.02m
+            ),
+            CancellationToken.None
+        );
+
+        // The grading transition fails transiently. The candidate is persisted and the case is
+        // still Reviewed; a judge failure must be recordable from here.
+        var judgeFailure = await Results.RecordFailureAsync(
+            new(
+                repository.OrganizationId,
+                parent.Id,
+                caseId,
+                "lease-j",
+                CodeReviewEvaluationCaseOutcome.JudgeFailed,
+                "GradingTransitionFailed",
+                "Grading could not start"
+            ),
+            CancellationToken.None
+        );
+
+        await Assert.That(judgeFailure.Phase).IsEqualTo(CodeReviewEvaluationCasePhase.Reviewed);
+        await Assert
+            .That(judgeFailure.Outcome)
+            .IsEqualTo(CodeReviewEvaluationCaseOutcome.JudgeFailed);
+        await Assert.That(judgeFailure.CandidateStorageUri).IsEqualTo(candidate.StorageUri);
+
+        var finished = await store.FinalizeAsync(
+            new(
+                repository.OrganizationId,
+                parent.Id,
+                "lease-j",
+                CodeReviewEvaluationRunState.Incomplete,
+                null,
+                null
+            ),
+            CancellationToken.None
+        );
+
+        await Assert.That(finished.FailedCaseCount).IsEqualTo(1);
+        await Assert.That(finished.UnlabelledCaseCount).IsEqualTo(0);
         _context.ChangeTracker.Clear();
         var parentResult = await _context
             .CodeReviewEvaluationCaseResults.AsNoTracking()
@@ -2432,6 +2610,141 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
             )
         );
         await FinishAsync(beforeGrading.Run, beforeGrading.Lease);
+    }
+
+    [Test]
+    public async Task FalsePositiveOnlyGrade_IsCountedAndExcludedFromRetry()
+    {
+        var (repository, agent) = await SeedRepositoryAsync();
+        var dataset = await Datasets.CreateAsync(
+            NewDataset(repository, "fp-dataset"),
+            CancellationToken.None
+        );
+        var finding = new CodeReviewEvaluationReferenceFinding(
+            "ref",
+            "Wrong claim",
+            "Not a bug",
+            CodeReviewEvaluationFindingSeverity.Minor,
+            "src/App.cs",
+            12,
+            CodeReviewEvaluationReferenceOrigin.Manual,
+            null,
+            null,
+            "usr_1",
+            _clock.GetUtcNow(),
+            CodeReviewEvaluationReferenceDisposition.Rejected
+        );
+        var reference = new CodeReviewEvaluationReferenceSet(
+            agent.Id,
+            CodeReviewEvaluationReferenceState.Unlabelled,
+            [finding]
+        );
+        var saved = await Datasets.SaveAsync(
+            NewSaveRequest(dataset, [NewCase(903, agent.Id, "fp-sha", [reference])]),
+            CancellationToken.None
+        );
+        var run = (
+            await Runs.AdmitAsync(
+                NewAdmission(saved.Dataset!, agent, "fp-run"),
+                CancellationToken.None
+            )
+        ).Run!;
+        await Assert.That(run.UnlabelledCaseCount).IsEqualTo(0);
+        var caseId = (
+            await Runs.FindAsync(repository.OrganizationId, run.Id, CancellationToken.None)
+        )!
+            .Manifest.Cases.Single()
+            .CaseId;
+        await Runs.TryClaimAsync(
+            repository.OrganizationId,
+            run.Id,
+            "fp-lease",
+            TimeSpan.FromMinutes(5),
+            CancellationToken.None
+        );
+        await Results.StartReviewAsync(
+            new(repository.OrganizationId, run.Id, caseId, "fp-lease"),
+            CancellationToken.None
+        );
+        await Results.RecordCandidateAsync(
+            new(
+                repository.OrganizationId,
+                run.Id,
+                caseId,
+                "fp-lease",
+                new("postgres://x/fp.xml", new string('a', 64), 4),
+                1,
+                "[]",
+                "{}",
+                null,
+                null,
+                null
+            ),
+            CancellationToken.None
+        );
+        await Results.StartGradingAsync(
+            new(repository.OrganizationId, run.Id, caseId, "fp-lease", null),
+            CancellationToken.None
+        );
+        var result = await Results.RecordGradeAsync(
+            new(
+                repository.OrganizationId,
+                run.Id,
+                caseId,
+                "fp-lease",
+                CodeReviewEvaluationCaseOutcome.FalsePositiveChecked,
+                0,
+                0,
+                0,
+                2,
+                1,
+                3,
+                "[]",
+                "[]",
+                "{}",
+                null,
+                null,
+                null
+            ),
+            CancellationToken.None
+        );
+        await Assert
+            .That(result.Outcome)
+            .IsEqualTo(CodeReviewEvaluationCaseOutcome.FalsePositiveChecked);
+        await Assert.That(result.RepeatedFalsePositiveCount).IsEqualTo(1);
+        await Assert.That(result.TrackedFalsePositiveCount).IsEqualTo(3);
+        var finished = await Runs.FinalizeAsync(
+            new(
+                repository.OrganizationId,
+                run.Id,
+                "fp-lease",
+                CodeReviewEvaluationRunState.Incomplete,
+                null,
+                null
+            ),
+            CancellationToken.None
+        );
+        await Assert.That(finished.GradedCaseCount).IsEqualTo(0);
+        await Assert.That(finished.FalsePositiveCheckedCaseCount).IsEqualTo(1);
+        await Assert.That(finished.ExpectedReferenceCount).IsEqualTo(0);
+        await Assert.That(finished.AdditionalFindingCount).IsEqualTo(2);
+        await Assert.That(finished.RepeatedFalsePositiveCount).IsEqualTo(1);
+        await Assert.That(finished.TrackedFalsePositiveCount).IsEqualTo(3);
+        var retry = await Runs.AdmitRetryAsync(
+            new(
+                repository.OrganizationId,
+                run.Id,
+                "fp-retry",
+                "usr_1",
+                "build-test",
+                "prompt-v1",
+                "fingerprint"
+            ),
+            CancellationToken.None
+        );
+        await Assert
+            .That(retry.Outcome)
+            .IsNotEqualTo(CodeReviewEvaluationRunAdmissionOutcome.Admitted);
     }
 
     private async Task<(CodeRepository Repository, CodeReviewerAgent Agent)> SeedRepositoryAsync()

@@ -20,6 +20,16 @@ public enum CodeReviewEvaluationReferenceState
     ReviewedClean,
 }
 
+/// <summary>Whether a finding is expected or a known false positive.</summary>
+public enum CodeReviewEvaluationReferenceDisposition
+{
+    /// <summary>The reviewer is expected to report this issue.</summary>
+    Expected = 0,
+
+    /// <summary>The reviewer must not report this known false positive.</summary>
+    Rejected = 1,
+}
+
 /// <summary>
 /// How one reference finding entered the dataset.
 /// </summary>
@@ -61,7 +71,7 @@ public enum CodeReviewEvaluationFindingSeverity
 }
 
 /// <summary>
-/// Expected findings for one reviewer on one dataset case.
+/// Reference findings for one reviewer on one dataset case.
 /// </summary>
 /// <remarks>
 /// Reference sets are keyed by the stable reviewer agent id, never by editable
@@ -71,13 +81,27 @@ public enum CodeReviewEvaluationFindingSeverity
 /// </remarks>
 /// <param name="ReviewerAgentId">Stable reviewer agent id that owns this expectation set.</param>
 /// <param name="State">Expectation state for this reviewer and case.</param>
-/// <param name="Findings">Expected findings. Empty is valid for <see cref="CodeReviewEvaluationReferenceState.ReviewedClean"/>.</param>
+/// <param name="Findings">Expected and rejected findings. Rejected findings are allowed in every state.</param>
 public sealed record CodeReviewEvaluationReferenceSet(
     string ReviewerAgentId,
     CodeReviewEvaluationReferenceState State,
     IReadOnlyList<CodeReviewEvaluationReferenceFinding> Findings
 )
 {
+    /// <summary>Number of expected findings.</summary>
+    public int ExpectedFindingCount =>
+        Findings.Count(f => f.Disposition == CodeReviewEvaluationReferenceDisposition.Expected);
+
+    /// <summary>Number of known false positives.</summary>
+    public int RejectedFindingCount =>
+        Findings.Count(f => f.Disposition == CodeReviewEvaluationReferenceDisposition.Rejected);
+
+    /// <summary>Whether expected findings were audited.</summary>
+    public bool IsExpectedAudited => State != CodeReviewEvaluationReferenceState.Unlabelled;
+
+    /// <summary>Whether this set requires grading.</summary>
+    public bool RequiresJudge => IsExpectedAudited || RejectedFindingCount > 0;
+
     /// <summary>Reference set that exists but has no expectation yet.</summary>
     public static CodeReviewEvaluationReferenceSet Unlabelled(string reviewerAgentId) =>
         new(reviewerAgentId, CodeReviewEvaluationReferenceState.Unlabelled, []);
@@ -97,6 +121,8 @@ public sealed record CodeReviewEvaluationReferenceSet(
 /// <param name="SourceFindingId">Candidate finding id inside <paramref name="SourceRunId"/>, when applicable.</param>
 /// <param name="ApprovedByUserId">User who approved the reference into the dataset.</param>
 /// <param name="ApprovedAtUtc">Time the reference was approved.</param>
+/// <param name="Disposition">Whether this finding is expected or rejected.</param>
+/// <param name="Rationale">Optional explanation of the reference.</param>
 public sealed record CodeReviewEvaluationReferenceFinding(
     string Id,
     string Title,
@@ -108,5 +134,8 @@ public sealed record CodeReviewEvaluationReferenceFinding(
     string? SourceRunId,
     string? SourceFindingId,
     string ApprovedByUserId,
-    DateTimeOffset ApprovedAtUtc
+    DateTimeOffset ApprovedAtUtc,
+    CodeReviewEvaluationReferenceDisposition Disposition =
+        CodeReviewEvaluationReferenceDisposition.Expected,
+    string? Rationale = null
 );

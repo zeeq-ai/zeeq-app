@@ -12,6 +12,32 @@ namespace Zeeq.Runtime.Server.Setup;
 /// </summary>
 internal static class HttpPipelineExtensions
 {
+    extension(WebApplication app)
+    {
+        /// <summary>
+        /// Allows configured development origins to read OAuth token responses from the loopback proxy.
+        /// </summary>
+        public void UseZeeqDevelopmentTokenCors(AppSettings appSettings)
+        {
+            if (!app.Environment.IsDevelopment())
+            {
+                return;
+            }
+
+            // OpenIddict handles this path inside authentication middleware, so CORS must run first.
+            app.UseWhen(
+                context => context.Request.Path == "/connect/token",
+                token =>
+                    token.UseCors(policy =>
+                        policy
+                            .WithOrigins(appSettings.Http.AllowedCorsOrigins)
+                            .WithMethods(HttpMethods.Post)
+                            .AllowAnyHeader()
+                    )
+            );
+        }
+    }
+
     extension(IServiceCollection services)
     {
         /// <summary>
@@ -49,30 +75,6 @@ internal static class HttpPipelineExtensions
                 options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
                 options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
             });
-
-            return services;
-        }
-
-        /// <summary>
-        /// Creates the cors policy to allow the frontend to call the API in development.
-        /// The policy is applied globally in the pipeline configuration.
-        /// </summary>
-        /// <param name="appSettings">
-        /// The application settings with the allowed CORS origins.
-        /// </param>
-        public IServiceCollection AddZeeqCorsConfig(AppSettings appSettings)
-        {
-            var frontendOrigin = appSettings.Http.FrontendBaseUri.TrimEnd('/');
-
-            services.AddCors(options =>
-                options.AddPolicy("api-cors-policy", policy =>
-                    policy
-                        .WithOrigins([.. appSettings.Http.AllowedCorsOrigins, frontendOrigin])
-                        .AllowAnyHeader()
-                        .AllowAnyMethod()
-                        .AllowCredentials()
-                )
-            );
 
             return services;
         }

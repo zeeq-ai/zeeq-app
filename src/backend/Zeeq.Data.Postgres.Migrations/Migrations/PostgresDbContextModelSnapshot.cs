@@ -2263,6 +2263,12 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("pull_request_number");
 
+                    b.Property<int>("RepeatedFalsePositiveCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("repeated_false_positive_count");
+
                     b.Property<long?>("ReviewerInputTokens")
                         .HasColumnType("bigint")
                         .HasColumnName("reviewer_input_tokens");
@@ -2284,6 +2290,12 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                     b.Property<DateTimeOffset?>("StartedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("started_at_utc");
+
+                    b.Property<int>("TrackedFalsePositiveCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("tracked_false_positive_count");
 
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone")
@@ -2451,6 +2463,12 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                         .HasColumnType("character varying(4096)")
                         .HasColumnName("failure_message");
 
+                    b.Property<int>("FalsePositiveCheckedCaseCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("false_positive_checked_case_count");
+
                     b.Property<int>("GradedCaseCount")
                         .HasColumnType("integer")
                         .HasColumnName("graded_case_count");
@@ -2481,6 +2499,12 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
                         .HasColumnName("parent_run_id");
+
+                    b.Property<int>("RepeatedFalsePositiveCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("repeated_false_positive_count");
 
                     b.Property<string>("RepositoryId")
                         .IsRequired()
@@ -2523,6 +2547,12 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
                         .HasColumnName("team_id");
+
+                    b.Property<int>("TrackedFalsePositiveCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("tracked_false_positive_count");
 
                     b.Property<int>("UnlabelledCaseCount")
                         .HasColumnType("integer")

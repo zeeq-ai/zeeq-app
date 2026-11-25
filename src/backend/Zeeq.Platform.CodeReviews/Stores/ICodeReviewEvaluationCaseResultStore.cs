@@ -184,15 +184,21 @@ public sealed record CodeReviewEvaluationCaseGrading(
 /// <param name="InputTokens">Judge input tokens, or null when the provider did not report usage.</param>
 /// <param name="OutputTokens">Judge output tokens, or null when the provider did not report usage.</param>
 /// <param name="EstimatedCostUsd">Estimated judge cost, when priceable.</param>
+/// <param name="Outcome">Successful terminal outcome.</param>
+/// <param name="RepeatedFalsePositiveCount">Repeated known false positives.</param>
+/// <param name="TrackedFalsePositiveCount">Known false positives checked.</param>
 public sealed record CodeReviewEvaluationCaseGrade(
     string OrganizationId,
     string RunId,
     string CaseId,
     string LeaseToken,
+    CodeReviewEvaluationCaseOutcome Outcome,
     int MatchedReferenceCount,
     int MissedReferenceCount,
     int ExpectedReferenceCount,
     int AdditionalFindingCount,
+    int RepeatedFalsePositiveCount,
+    int TrackedFalsePositiveCount,
     string JudgeMatchesJson,
     string JudgeReasonsJson,
     string JudgeProvenanceJson,

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.Extensions.Hosting;
 using Zeeq.Core.Models;
 
@@ -150,15 +151,72 @@ public sealed class CodeReviewEvaluationFixtureJudge(
         cancellationToken.ThrowIfCancellationRequested();
         if (snapshot.PullRequestNumber == 907)
             throw new InvalidOperationException("Controlled fixture judge failure.");
-        if (snapshot.PullRequestNumber is not (901 or 902 or 908))
+        if (
+            snapshot.PullRequestNumber is not (901 or 902 or 908)
+            && !(
+                snapshot.PullRequestNumber == 903
+                && references.Any(r =>
+                    r.Disposition == CodeReviewEvaluationReferenceDisposition.Rejected
+                )
+            )
+        )
             throw new InvalidOperationException("Unknown fixture case.");
         var json = snapshot.PullRequestNumber is 901 or 908
             ? """{"matches":[{"referenceId":"R1","candidateId":"finding_1","reason":"Same issue"}]}"""
             : """{"matches":[]}""";
+        if (snapshot.PullRequestNumber == 903)
+        {
+            var reference = references.FirstOrDefault(r =>
+                r.Disposition == CodeReviewEvaluationReferenceDisposition.Rejected
+                && (
+                    r.Title.Contains("Cache-key normalization", StringComparison.OrdinalIgnoreCase)
+                    || r.Summary.Contains(
+                        "Cache-key normalization",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+            );
+            var candidate = candidates.FirstOrDefault(c =>
+                c.File == "src/Search.cs"
+                && (
+                    c.Summary.Contains(
+                        "Cache-key normalization",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                    || c.Details.Contains(
+                        "Cache-key normalization",
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+            );
+            json =
+                reference is not null && candidate is not null
+                    ? JsonSerializer.Serialize(
+                        new
+                        {
+                            matches = new[]
+                            {
+                                new
+                                {
+                                    referenceId = reference.Id,
+                                    candidateId = candidate.Id,
+                                    reason = "Same issue",
+                                },
+                            },
+                        }
+                    )
+                    : """{"matches":[]}""";
+        }
         var grade = CodeReviewEvaluationGradeValidator.Validate(
             json,
-            [.. references.Select(x => x.Id)],
-            [.. candidates.Select(x => x.Id)]
+            [
+                .. references.Select(x => new CodeReviewEvaluationReferenceTarget(
+                    x.Id,
+                    x.Disposition,
+                    x.File
+                )),
+            ],
+            [.. candidates.Select(x => new CodeReviewEvaluationCandidateTarget(x.Id, x.File))]
         );
         return Task.FromResult(new CodeReviewEvaluationJudgeResult(grade, "fixture", null, null));
     }

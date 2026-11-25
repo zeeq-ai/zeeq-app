@@ -324,6 +324,174 @@ public sealed class CodeReviewEvaluationEndpointHandlerTests
             );
     }
 
+    private static CodeReviewEvaluationReferenceFindingDto Finding(
+        CodeReviewEvaluationReferenceDisposition disposition =
+            CodeReviewEvaluationReferenceDisposition.Rejected,
+        string? rationale = "  explanation  "
+    ) =>
+        new(
+            "ref",
+            "title",
+            "summary",
+            CodeReviewEvaluationFindingSeverity.Minor,
+            "src/A.cs",
+            null,
+            CodeReviewEvaluationReferenceOrigin.Manual,
+            null,
+            null,
+            disposition,
+            rationale
+        );
+
+    [Test]
+    [Arguments(CodeReviewEvaluationReferenceState.Unlabelled)]
+    [Arguments(CodeReviewEvaluationReferenceState.Expected)]
+    [Arguments(CodeReviewEvaluationReferenceState.ReviewedClean)]
+    public async Task Save_RejectedReferencePersistsTrimmedRationale(
+        CodeReviewEvaluationReferenceState state
+    )
+    {
+        var f = Fixture.Create();
+        f.Datasets.SaveAsync(
+                Arg.Any<CodeReviewEvaluationDatasetSaveRequest>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(
+                new CodeReviewEvaluationDatasetSaveResult(
+                    CodeReviewEvaluationDatasetSaveOutcome.Saved,
+                    f.Dataset,
+                    []
+                )
+            );
+        var result = await f.SaveHandler.HandleAsync(
+            Fixture.OrganizationId,
+            Fixture.RepositoryId,
+            f.Dataset.Id,
+            new(
+                f.Dataset.Version,
+                f.Dataset.Name,
+                null,
+                [new(f.Case.Id, 901, null, [new("agent", state, [Finding()])])]
+            ),
+            Fixture.User(),
+            CancellationToken.None
+        );
+        await Assert.That(result.Result is Ok<CodeReviewEvaluationDatasetResponse>).IsTrue();
+        await f
+            .Datasets.Received(1)
+            .SaveAsync(
+                Arg.Is<CodeReviewEvaluationDatasetSaveRequest>(x =>
+                    x.Cases.Single().ReferenceSets!.Single().Findings.Single().Disposition
+                        == CodeReviewEvaluationReferenceDisposition.Rejected
+                    && x.Cases.Single().ReferenceSets!.Single().Findings.Single().Rationale
+                        == "explanation"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+        var mapped = CodeReviewEvaluationEndpointMapping.ToDto(
+            CodeReviewEvaluationEndpointMapping.ToModel(
+                new("agent", state, [Finding()]),
+                "user",
+                DateTimeOffset.UnixEpoch
+            )
+        );
+        await Assert.That(mapped.Findings.Single().Rationale).IsEqualTo("explanation");
+    }
+
+    [Test]
+    [Arguments(CodeReviewEvaluationReferenceState.Unlabelled)]
+    [Arguments(CodeReviewEvaluationReferenceState.ReviewedClean)]
+    public async Task Save_RejectsExpectedReferenceInUnauditedState(
+        CodeReviewEvaluationReferenceState state
+    )
+    {
+        var f = Fixture.Create();
+        var result = await f.SaveHandler.HandleAsync(
+            Fixture.OrganizationId,
+            Fixture.RepositoryId,
+            f.Dataset.Id,
+            new(
+                f.Dataset.Version,
+                f.Dataset.Name,
+                null,
+                [
+                    new(
+                        f.Case.Id,
+                        901,
+                        null,
+                        [
+                            new(
+                                "agent",
+                                state,
+                                [Finding(CodeReviewEvaluationReferenceDisposition.Expected)]
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+            Fixture.User(),
+            CancellationToken.None
+        );
+        await Assert
+            .That((result.Result as BadRequest<CodeReviewEndpointError>)!.Value!.Code)
+            .IsEqualTo("reference_state_conflict");
+    }
+
+    [Test]
+    public async Task Save_RejectsInvalidDispositionRationaleAndCombinedLimit()
+    {
+        var f = Fixture.Create();
+        async Task<string?> Save(IReadOnlyList<CodeReviewEvaluationReferenceFindingDto> findings)
+        {
+            var result = await f.SaveHandler.HandleAsync(
+                Fixture.OrganizationId,
+                Fixture.RepositoryId,
+                f.Dataset.Id,
+                new(
+                    f.Dataset.Version,
+                    f.Dataset.Name,
+                    null,
+                    [
+                        new(
+                            f.Case.Id,
+                            901,
+                            null,
+                            [new("agent", CodeReviewEvaluationReferenceState.Expected, findings)]
+                        ),
+                    ]
+                ),
+                Fixture.User(),
+                CancellationToken.None
+            );
+            return (result.Result as BadRequest<CodeReviewEndpointError>)?.Value?.Code;
+        }
+        await Assert
+            .That(await Save([Finding((CodeReviewEvaluationReferenceDisposition)42)]))
+            .IsEqualTo("reference_disposition_invalid");
+        await Assert
+            .That(await Save([Finding(rationale: new string('x', 1001))]))
+            .IsEqualTo("reference_rationale_too_long");
+        await Assert
+            .That(
+                await Save(
+                    Enumerable
+                        .Range(0, 101)
+                        .Select(i =>
+                            Finding(
+                                i % 2 == 0
+                                    ? CodeReviewEvaluationReferenceDisposition.Expected
+                                    : CodeReviewEvaluationReferenceDisposition.Rejected
+                            ) with
+                            {
+                                Id = i.ToString(),
+                            }
+                        )
+                        .ToArray()
+                )
+            )
+            .IsEqualTo("reference_limit_reached");
+    }
+
     private sealed class Fixture
     {
         public const string OrganizationId = "org_123";

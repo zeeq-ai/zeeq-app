@@ -98,13 +98,14 @@
               variant="link"
               class="min-h-0 flex-1"
               :ui="{
-                root: 'flex h-full min-h-0 flex-col',
+                root: 'flex h-full min-h-0 flex-col gap-0',
                 list: 'shrink-0 px-4',
-                content: 'min-h-0 flex-1 overflow-auto px-4 pb-3 pt-3',
+                content:
+                  'min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col',
               }"
             >
               <template #in-dataset>
-                <div class="flex h-full min-h-0 flex-col gap-3">
+                <div class="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-3 pt-3">
                   <UInput
                     v-model="caseSearch"
                     icon="i-hugeicons-search-01"
@@ -153,6 +154,14 @@
                         variant="subtle"
                         size="xs"
                       />
+                      <UBadge
+                        v-if="caseRejectedCount(item) > 0"
+                        :label="`${caseRejectedCount(item)} known FP`"
+                        icon="i-hugeicons-flag-01"
+                        color="neutral"
+                        variant="subtle"
+                        size="xs"
+                      />
                       <span
                         v-if="item.snapshot.omittedFileCount > 0"
                         class="shrink-0 text-[11px] text-warning"
@@ -170,7 +179,9 @@
                 </div>
               </template>
               <template #add-prs>
-                <div class="h-full overflow-auto">
+                <div
+                  class="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden"
+                >
                   <DatasetAddPrsPanel
                     v-model:selected-numbers="selectedNumbers"
                     :targets="targets"
@@ -396,6 +407,8 @@ import DatasetAddPrsPanel from "./DatasetAddPrsPanel.vue";
 import SelectedEvaluationCase from "./SelectedEvaluationCase.vue";
 import {
   countEvaluationDatasetDraftChanges,
+  countDatasetCaseReferences,
+  findStagedFindingDisposition,
   createEvaluationDatasetDraft,
   refreshEvaluationCase,
   removeEvaluationCase,
@@ -640,14 +653,21 @@ function selectCase(pullRequestNumber: number) {
   selectedPullRequestNumber.value = pullRequestNumber;
   mobileDetailOpen.value = true;
 }
-function caseReferenceLabel(item: EvaluationCaseDraft): string {
-  const set = item.referenceSets.find(
+function caseReferenceSet(item: EvaluationCaseDraft) {
+  return item.referenceSets.find(
     (reference) => reference.reviewerAgentId === props.selectedReviewerId,
   );
+}
+function caseRejectedCount(item: EvaluationCaseDraft): number {
+  const set = caseReferenceSet(item);
+  return set ? countDatasetCaseReferences(set).rejectedCount : 0;
+}
+function caseReferenceLabel(item: EvaluationCaseDraft): string {
+  const set = caseReferenceSet(item);
   if (!set || set.state === "Unlabelled") return "Unlabelled";
   return set.state === "ReviewedClean"
     ? "Reviewed clean"
-    : `${set.findings.length} ${set.findings.length === 1 ? "finding" : "findings"}`;
+    : `${countDatasetCaseReferences(set).expectedCount} expected`;
 }
 function updateSelectedReferenceSet(
   referenceSet: CodeReviewEvaluationReferenceSetDto,
@@ -737,14 +757,47 @@ function emitImportHistorical() {
 }
 function addHistoricalFinding(
   finding: CodeReviewEvaluationReferenceFindingDto,
+  disposition: "Expected" | "Rejected",
 ) {
-  if (!selectedReferenceSet.value || !selectedCase.value) return;
+  if (
+    !selectedReferenceSet.value ||
+    !selectedCase.value ||
+    props.saving ||
+    selectedReferenceSet.value.findings.length >= 100
+  )
+    return;
+  if (
+    finding.sourceRunId &&
+    finding.sourceFindingId &&
+    findStagedFindingDisposition(
+      selectedReferenceSet.value.findings ? [selectedReferenceSet.value] : [],
+      selectedReferenceSet.value.reviewerAgentId,
+      finding.sourceRunId,
+      finding.sourceFindingId,
+    )
+  )
+    return;
+  const duplicate = selectedReferenceSet.value.findings.find(
+    (item) =>
+      item.sourceRunId === finding.sourceRunId &&
+      item.sourceFindingId === finding.sourceFindingId,
+  );
+  if (duplicate) return;
   updateSelectedReferenceSet({
     ...selectedReferenceSet.value,
-    state: "Expected",
+    state:
+      disposition === "Expected"
+        ? "Expected"
+        : selectedReferenceSet.value.state,
     findings: [
       ...selectedReferenceSet.value.findings,
-      { ...finding, id: crypto.randomUUID(), origin: "HistoricalReview" },
+      {
+        ...finding,
+        id: crypto.randomUUID(),
+        origin: "HistoricalReview",
+        disposition,
+        rationale: finding.rationale ?? null,
+      },
     ],
   });
 }

@@ -1,3 +1,5 @@
+using Zeeq.Core.Models;
+
 namespace Zeeq.Platform.CodeReviews.Tests;
 
 public sealed class CodeReviewEvaluationGradeValidatorTests
@@ -35,5 +37,123 @@ public sealed class CodeReviewEvaluationGradeValidatorTests
         var grade = CodeReviewEvaluationGradeValidator.Validate("""{"matches":[]}""", ["r1"], []);
         await Assert.That(grade.MissedReferenceIds.Single()).IsEqualTo("r1");
         await Assert.That(grade.AdditionalCandidateIds).IsEmpty();
+    }
+
+    [Test]
+    [Arguments("./src/Search.cs")]
+    [Arguments("/src/Search.cs")]
+    [Arguments("src\\Search.cs")]
+    public async Task RejectedMatch_RequiresNormalizedSameFile(string file)
+    {
+        var refs = new[]
+        {
+            new CodeReviewEvaluationReferenceTarget(
+                "r",
+                CodeReviewEvaluationReferenceDisposition.Rejected,
+                "src/Search.cs"
+            ),
+        };
+        var grade = CodeReviewEvaluationGradeValidator.Validate(
+            """{"matches":[{"referenceId":"r","candidateId":"c","reason":"same claim"}]}""",
+            refs,
+            [new("c", file)]
+        );
+        await Assert.That(grade.RepeatedRejectedReferenceIds.Single()).IsEqualTo("r");
+        await Assert
+            .That(grade.Matches.Single().Disposition)
+            .IsEqualTo(CodeReviewEvaluationReferenceDisposition.Rejected);
+        await Assert.That(grade.AdditionalCandidateIds).IsEmpty();
+        var crossFile = CodeReviewEvaluationGradeValidator.Validate(
+            """{"matches":[{"referenceId":"r","candidateId":"c","reason":"same claim"}]}""",
+            refs,
+            [new("c", "src/Other.cs")]
+        );
+        await Assert.That(crossFile.CrossFileRejectedMatchesFiltered).IsEqualTo(1);
+        await Assert.That(crossFile.AvoidedRejectedReferenceIds.Single()).IsEqualTo("r");
+        await Assert.That(crossFile.AdditionalCandidateIds.Single()).IsEqualTo("c");
+    }
+
+    [Test]
+    public async Task CandidateCannotMatchBothDispositions()
+    {
+        var refs = new[]
+        {
+            new CodeReviewEvaluationReferenceTarget(
+                "e",
+                CodeReviewEvaluationReferenceDisposition.Expected,
+                "src/A.cs"
+            ),
+            new CodeReviewEvaluationReferenceTarget(
+                "r",
+                CodeReviewEvaluationReferenceDisposition.Rejected,
+                "src/A.cs"
+            ),
+        };
+        await Assert
+            .That(() =>
+                CodeReviewEvaluationGradeValidator.Validate(
+                    """{"matches":[{"referenceId":"e","candidateId":"c","reason":"x"},{"referenceId":"r","candidateId":"c","reason":"x"}]}""",
+                    refs,
+                    [new("c", "src/A.cs")]
+                )
+            )
+            .Throws<InvalidOperationException>();
+    }
+
+    [Test]
+    public async Task Judge_EmptyCandidates_DerivesMissesAndAvoidedWithoutProvider()
+    {
+        var finding = new CodeReviewEvaluationReferenceFinding(
+            "r",
+            "title",
+            "summary",
+            CodeReviewEvaluationFindingSeverity.Minor,
+            "src/A.cs",
+            null,
+            CodeReviewEvaluationReferenceOrigin.Manual,
+            null,
+            null,
+            "u",
+            DateTimeOffset.UnixEpoch,
+            CodeReviewEvaluationReferenceDisposition.Rejected
+        );
+        var judge = new CodeReviewEvaluationJudge(null!);
+        var result = await judge.GradeAsync(
+            "org",
+            null!,
+            null!,
+            [finding],
+            [],
+            CancellationToken.None
+        );
+        await Assert.That(result.Grade.AvoidedRejectedReferenceIds.Single()).IsEqualTo("r");
+        await Assert.That(result.InputTokens).IsNull();
+    }
+
+    [Test]
+    public async Task RejectedDotfilePaths_DoNotCollapseIntoNonDotfiles()
+    {
+        var refs = new[]
+        {
+            new CodeReviewEvaluationReferenceTarget(
+                "r",
+                CodeReviewEvaluationReferenceDisposition.Rejected,
+                ".github/ci.yml"
+            ),
+        };
+        const string json =
+            """{"matches":[{"referenceId":"r","candidateId":"c","reason":"same"}]}""";
+        var same = CodeReviewEvaluationGradeValidator.Validate(
+            json,
+            refs,
+            [new("c", "./.github/ci.yml")]
+        );
+        var different = CodeReviewEvaluationGradeValidator.Validate(
+            json,
+            refs,
+            [new("c", "github/ci.yml")]
+        );
+        await Assert.That(same.RepeatedRejectedReferenceIds.Single()).IsEqualTo("r");
+        await Assert.That(different.CrossFileRejectedMatchesFiltered).IsEqualTo(1);
     }
 }

@@ -5,18 +5,67 @@ import type {
   CodeReviewEvaluationDatasetDetailDto,
   CodeReviewEvaluationReferenceSetDto,
   EvaluationRunCaseDto,
+  EvaluationRunDto,
 } from "@/api/generated";
 import {
   addCapturedEvaluationCase,
+  canAddEvaluationReferenceFinding,
   buildEvaluationDatasetSaveRequest,
   canRetryEvaluationRun,
   countEvaluationDatasetDraftChanges,
+  countDatasetCaseReferences,
+  summarizeRunFalsePositives,
   createEvaluationDatasetDraft,
   getEvaluationCaseGradeCounts,
+  normalizeEvaluationFilePath,
+  hasExpectedRejectedFileCollision,
+  findStagedFindingDisposition,
   refreshEvaluationCase,
 } from "./evaluation-view-models";
 
 describe("evaluation dataset view models", () => {
+  it("finds a staged source across dispositions and defaults legacy findings to expected", () => {
+    const sets = [
+      {
+        ...referenceSet(),
+        findings: [
+          {
+            ...referenceSet().findings[0],
+            sourceRunId: "run-1",
+            sourceFindingId: "candidate-1",
+            disposition: "Rejected" as const,
+          },
+          {
+            ...referenceSet().findings[0],
+            id: "legacy",
+            sourceRunId: "run-1",
+            sourceFindingId: "candidate-2",
+            disposition: undefined,
+          },
+        ],
+      },
+    ];
+    expect(
+      findStagedFindingDisposition(sets, "agent-a", "run-1", "candidate-1"),
+    ).toBe("Rejected");
+    expect(
+      findStagedFindingDisposition(sets, "agent-a", "run-1", "candidate-2"),
+    ).toBe("Expected");
+    expect(
+      findStagedFindingDisposition(sets, "agent-a", "run-2", "candidate-1"),
+    ).toBeNull();
+  });
+  it("enforces the combined 100 finding cap", () => {
+    const set = referenceSet();
+    expect(canAddEvaluationReferenceFinding(set)).toBe(true);
+    set.findings = Array.from({ length: 100 }, (_, index) => ({
+      ...referenceSet().findings[0],
+      id: `finding-${index}`,
+      disposition:
+        index % 2 === 0 ? ("Expected" as const) : ("Rejected" as const),
+    }));
+    expect(canAddEvaluationReferenceFinding(set)).toBe(false);
+  });
   it("shows assessment counts only for graded cases and keeps clean zeroes", () => {
     const ungraded = runCase({ outcome: "JudgeFailed", phase: "Grading" });
     expect(getEvaluationCaseGradeCounts(ungraded)).toEqual({
@@ -24,6 +73,7 @@ describe("evaluation dataset view models", () => {
       covered: "—",
       missed: "—",
       additional: "—",
+      knownFalsePositives: "—",
     });
 
     const clean = runCase({
@@ -40,6 +90,7 @@ describe("evaluation dataset view models", () => {
       covered: 0,
       missed: 0,
       additional: 1,
+      knownFalsePositives: "—",
     });
   });
 
@@ -208,6 +259,8 @@ function runCase(
     reviewerProvenanceJson: null,
     judgeProvenanceJson: null,
     errorCode: null,
+    repeatedFalsePositiveCount: 0,
+    trackedFalsePositiveCount: 0,
     ...overrides,
   };
 }
@@ -265,6 +318,8 @@ function referenceSet(): CodeReviewEvaluationReferenceSetDto {
         origin: "Manual",
         sourceRunId: null,
         sourceFindingId: null,
+        disposition: "Expected",
+        rationale: null,
       },
     ],
   };
@@ -322,6 +377,238 @@ describe("evaluation recovery actions", () => {
         state: "Incomplete",
         counts: { ...counts, gradedCaseCount: 3 },
       }),
+    ).toBe(false);
+  });
+});
+
+describe("known false positive reporting", () => {
+  const expected = {
+    ...referenceSet().findings[0],
+    approvedByUserId: "user",
+    approvedAtUtc: new Date(),
+    disposition: "Expected" as const,
+  };
+  const rejected = { ...expected, id: "fp", disposition: "Rejected" as const };
+  const refs = {
+    reviewerAgentId: "agent-a",
+    state: "Expected" as const,
+    findings: [expected, rejected],
+  };
+  const candidates = [
+    {
+      id: "e",
+      summary: "expected",
+      details: "details",
+      file: "a",
+      line: 1,
+      severity: "Major" as const,
+    },
+    {
+      id: "f",
+      summary: "false",
+      details: "details",
+      file: "a",
+      line: 2,
+      severity: "Minor" as const,
+    },
+    {
+      id: "extra",
+      summary: "extra",
+      details: "details",
+      file: "a",
+      line: 3,
+      severity: "Minor" as const,
+    },
+  ];
+  const matches = [
+    {
+      referenceId: expected.id,
+      candidateId: "e",
+      reason: "expected",
+      disposition: "Expected" as const,
+    },
+    {
+      referenceId: "fp",
+      candidateId: "f",
+      reason: "false",
+      disposition: "Rejected" as const,
+    },
+  ];
+
+  it.each(["Unlabelled", "ReviewedClean", "Expected"] as const)(
+    "preserves rejected references when saving %s",
+    (state) => {
+      const draft = createEvaluationDatasetDraft(dataset());
+      draft.cases[0].referenceSets[0] = {
+        ...referenceSet(),
+        state,
+        findings: [
+          referenceSet().findings[0],
+          { ...referenceSet().findings[0], id: "fp", disposition: "Rejected" },
+        ],
+      };
+      const findings =
+        buildEvaluationDatasetSaveRequest(draft).cases[0].referenceSets![0]
+          .findings;
+      expect(findings.map((f) => f.id)).toEqual(
+        state === "Expected" ? ["finding-1", "fp"] : ["fp"],
+      );
+      expect(
+        countDatasetCaseReferences(draft.cases[0].referenceSets[0]),
+      ).toEqual({ expectedCount: 1, rejectedCount: 1 });
+    },
+  );
+
+  it("counts only expected references and matches for coverage", () => {
+    expect(
+      getEvaluationCaseGradeCounts(
+        runCase({
+          references: refs,
+          candidateFindings: candidates,
+          judgeMatches: matches,
+          repeatedFalsePositiveCount: 1,
+          trackedFalsePositiveCount: 1,
+        }),
+      ),
+    ).toEqual({
+      reference: 1,
+      covered: 1,
+      missed: 0,
+      additional: 1,
+      knownFalsePositives: { reported: 1, tracked: 1 },
+    });
+  });
+  it.each([0, 1])(
+    "reports false-positive-only cases with %i recurrence",
+    (reported) => {
+      const result = runCase({
+        outcome: "FalsePositiveChecked",
+        references: { ...refs, state: "Unlabelled", findings: [rejected] },
+        candidateFindings: candidates,
+        judgeMatches: reported ? [matches[1]] : [],
+        repeatedFalsePositiveCount: reported,
+        trackedFalsePositiveCount: 1,
+      });
+      expect(getEvaluationCaseGradeCounts(result)).toEqual({
+        reference: "—",
+        covered: "—",
+        missed: "—",
+        additional: reported ? 2 : 3,
+        knownFalsePositives: { reported, tracked: 1 },
+      });
+    },
+  );
+  it.each([
+    "Unlabelled",
+    "None",
+    "JudgeFailed",
+    "ReviewFailed",
+    "Skipped",
+    "Cancelled",
+  ] as const)("keeps %s ungraded", (outcome) => {
+    const result = runCase({ outcome, references: refs });
+    expect(getEvaluationCaseGradeCounts(result)).toEqual({
+      reference: "—",
+      covered: "—",
+      missed: "—",
+      additional: "—",
+      knownFalsePositives: [
+        "JudgeFailed",
+        "ReviewFailed",
+        "Skipped",
+        "Cancelled",
+      ].includes(outcome)
+        ? "not-checked"
+        : "—",
+    });
+    expect(
+      getEvaluationCaseGradeCounts({
+        ...result,
+        references: { ...refs, findings: [expected] },
+      }).knownFalsePositives,
+    ).toBe("—");
+  });
+  it("does not subtract unchecked findings from backend checked counts", () => {
+    const counts = {
+      caseCount: 2,
+      gradedCaseCount: 0,
+      skippedCaseCount: 0,
+      failedCaseCount: 1,
+      unlabelledCaseCount: 0,
+      matchedReferenceCount: 0,
+      missedReferenceCount: 0,
+      expectedReferenceCount: 0,
+      additionalFindingCount: 0,
+      falsePositiveCheckedCaseCount: 1,
+      repeatedFalsePositiveCount: 1,
+      trackedFalsePositiveCount: 2,
+    };
+    const run: EvaluationRunDto = {
+      id: "r",
+      datasetId: "d",
+      datasetVersion: 1,
+      agentId: "a",
+      savedRevisionId: null,
+      parentRunId: null,
+      state: "Incomplete",
+      createdAtUtc: new Date(),
+      startedAtUtc: null,
+      completedAtUtc: null,
+      counts,
+      errorCode: null,
+    };
+    expect(
+      summarizeRunFalsePositives(run, [
+        runCase({ outcome: "JudgeFailed", references: refs }),
+        runCase({ outcome: "FalsePositiveChecked", references: refs }),
+      ]),
+    ).toEqual({
+      reported: 1,
+      checked: 2,
+      unchecked: 1,
+      onUnlabelledPrCount: 1,
+    });
+    expect(canRetryEvaluationRun(run)).toBe(true);
+    expect(
+      canRetryEvaluationRun({
+        ...run,
+        counts: { ...counts, caseCount: 1, failedCaseCount: 0 },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("reference file collisions", () => {
+  it("normalizes slash and prefix without removing a dotfile", () => {
+    expect(normalizeEvaluationFilePath(" /./.github\\ci.yml ")).toBe(
+      ".github/ci.yml",
+    );
+    expect(normalizeEvaluationFilePath("./.github/ci.yml")).toBe(
+      ".github/ci.yml",
+    );
+    expect(normalizeEvaluationFilePath("github/ci.yml")).not.toBe(
+      normalizeEvaluationFilePath(".github/ci.yml"),
+    );
+  });
+  it("warns only for a nonempty same-file expected finding in Expected state", () => {
+    const set = referenceSet();
+    set.findings[0].file = ".github/ci.yml";
+    expect(hasExpectedRejectedFileCollision(set, "./.github/ci.yml")).toBe(
+      true,
+    );
+    expect(hasExpectedRejectedFileCollision(set, "github/ci.yml")).toBe(false);
+    expect(hasExpectedRejectedFileCollision(set, "")).toBe(false);
+    expect(
+      hasExpectedRejectedFileCollision(
+        { ...set, state: "Unlabelled" },
+        ".github/ci.yml",
+      ),
+    ).toBe(false);
+    expect(
+      hasExpectedRejectedFileCollision(
+        { ...set, findings: [{ ...set.findings[0], disposition: "Rejected" }] },
+        ".github/ci.yml",
+      ),
     ).toBe(false);
   });
 });

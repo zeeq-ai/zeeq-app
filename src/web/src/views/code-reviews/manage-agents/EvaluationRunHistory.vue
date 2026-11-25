@@ -23,6 +23,7 @@
             <th scope="col" class="px-3 py-2">Dataset</th>
             <th scope="col" class="px-3 py-2">Run time</th>
             <th scope="col" class="px-3 py-2">Coverage</th>
+            <th scope="col" class="px-3 py-2">Known FPs</th>
             <th scope="col" class="px-3 py-2">Cases</th>
             <th scope="col" class="px-3 py-2">Status</th>
             <th scope="col" class="px-3 py-2">
@@ -51,8 +52,27 @@
             <td class="whitespace-nowrap px-3 py-2 font-mono text-highlighted">
               {{ coverage(run) }}
             </td>
+            <td
+              class="whitespace-nowrap px-3 py-2"
+              :class="
+                Number(run.counts.repeatedFalsePositiveCount ?? 0) > 0
+                  ? 'text-warning font-medium'
+                  : 'text-muted'
+              "
+            >
+              {{
+                Number(run.counts.trackedFalsePositiveCount ?? 0) > 0
+                  ? `${Number(run.counts.repeatedFalsePositiveCount ?? 0)}/${Number(run.counts.trackedFalsePositiveCount)}`
+                  : "—"
+              }}
+            </td>
             <td class="whitespace-nowrap px-3 py-2 text-muted">
               {{ run.counts.gradedCaseCount }}/{{ run.counts.caseCount }} graded
+              <span
+                v-if="Number(run.counts.falsePositiveCheckedCaseCount ?? 0) > 0"
+              >
+                · {{ run.counts.falsePositiveCheckedCaseCount }} FP-only</span
+              >
               <span v-if="Number(run.counts.skippedCaseCount) > 0">
                 · {{ run.counts.skippedCaseCount }} skipped</span
               >
@@ -142,7 +162,8 @@
         <UButton
           :label="confirmButtonLabel"
           color="primary"
-          :loading="!!pendingActionRunId"
+          :disabled="confirmSubmitted"
+          :loading="confirmSubmitted"
           @click="confirmAction"
         />
       </div>
@@ -174,6 +195,7 @@ const emits = defineEmits<{
 const confirmOpen = ref(false);
 const pendingRun = ref<EvaluationRunDto | null>(null);
 const pendingAction = ref<RunAction | null>(null);
+const confirmSubmitted = ref(false);
 const pendingActionRunId = computed(() => pendingRun.value?.id ?? null);
 
 const confirmTitle = computed(() =>
@@ -229,16 +251,19 @@ function formatDate(value: Date | string): string {
 }
 
 function requestAction(run: EvaluationRunDto, action: RunAction) {
+  confirmSubmitted.value = false;
   pendingRun.value = run;
   pendingAction.value = action;
   confirmOpen.value = true;
 }
 
 function confirmAction() {
+  if (confirmSubmitted.value) return;
   const runId = pendingRun.value?.id;
   if (!runId || !pendingAction.value) {
     return;
   }
+  confirmSubmitted.value = true;
 
   if (pendingAction.value === "cancel") emits("cancel", runId);
   else if (pendingAction.value === "abandon") emits("abandon", runId);

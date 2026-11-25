@@ -45,38 +45,66 @@ export type EvaluationCaseGradeCounts = {
   covered: number | "—";
   missed: number | "—";
   additional: number | "—";
+  knownFalsePositives:
+    { reported: number; tracked: number } | "—" | "not-checked";
 };
 
 /** Returns assessment counts only for a case with a persisted binary grade. */
 export function getEvaluationCaseGradeCounts(
   result: Pick<
     EvaluationRunCaseDto,
-    "outcome" | "references" | "judgeMatches" | "candidateFindings"
+    | "outcome"
+    | "references"
+    | "judgeMatches"
+    | "candidateFindings"
+    | "trackedFalsePositiveCount"
+    | "repeatedFalsePositiveCount"
   >,
 ): EvaluationCaseGradeCounts {
-  if (result.outcome !== "Graded") {
-    return { reference: "—", covered: "—", missed: "—", additional: "—" };
-  }
-
-  if (result.references.state === "Unlabelled") {
-    return { reference: "—", covered: "—", missed: "—", additional: "—" };
-  }
-
-  const referenceCount =
+  const rejectedCount = result.references.findings.filter(
+    (f) => f.disposition === "Rejected",
+  ).length;
+  const judged =
+    result.outcome === "Graded" || result.outcome === "FalsePositiveChecked";
+  const tracked = Number(result.trackedFalsePositiveCount ?? rejectedCount);
+  const knownFalsePositives: EvaluationCaseGradeCounts["knownFalsePositives"] =
+    judged
+      ? tracked > 0
+        ? { reported: Number(result.repeatedFalsePositiveCount ?? 0), tracked }
+        : "—"
+      : failedOutcome(result.outcome) && rejectedCount > 0
+        ? "not-checked"
+        : "—";
+  if (!judged)
+    return {
+      reference: "—",
+      covered: "—",
+      missed: "—",
+      additional: "—",
+      knownFalsePositives,
+    };
+  if (result.outcome === "FalsePositiveChecked")
+    return {
+      reference: "—",
+      covered: "—",
+      missed: "—",
+      additional: unmatchedCandidateCount(result),
+      knownFalsePositives,
+    };
+  const reference =
     result.references.state === "Expected"
-      ? result.references.findings.length
+      ? result.references.findings.filter((f) => f.disposition !== "Rejected")
+          .length
       : 0;
-  const covered = result.judgeMatches.length;
-  const matchedCandidateIds = new Set(
-    result.judgeMatches.map((match) => match.candidateId),
-  );
+  const covered = result.judgeMatches.filter(
+    (m) => m.disposition !== "Rejected",
+  ).length;
   return {
-    reference: referenceCount,
+    reference,
     covered,
-    missed: Math.max(0, referenceCount - covered),
-    additional: result.candidateFindings.filter(
-      (candidate) => !matchedCandidateIds.has(candidate.id),
-    ).length,
+    missed: Math.max(0, reference - covered),
+    additional: unmatchedCandidateCount(result),
+    knownFalsePositives,
   };
 }
 
@@ -261,10 +289,11 @@ export function buildEvaluationDatasetSaveRequest(
       captureToken: evaluationCase.captureToken,
       referenceSets: evaluationCase.referenceSets.map((referenceSet) => ({
         ...referenceSet,
-        findings:
-          referenceSet.state === "Expected"
-            ? cloneReferenceSets([referenceSet])[0].findings
-            : [],
+        findings: cloneReferenceSets([referenceSet])[0].findings.filter(
+          (finding) =>
+            referenceSet.state === "Expected" ||
+            finding.disposition === "Rejected",
+        ),
       })),
     })),
   };
@@ -316,7 +345,11 @@ function cloneReferenceSets(
   return referenceSets.map((referenceSet) => ({
     reviewerAgentId: referenceSet.reviewerAgentId,
     state: referenceSet.state,
-    findings: referenceSet.findings.map((finding) => ({ ...finding })),
+    findings: referenceSet.findings.map((finding) => ({
+      ...finding,
+      disposition: finding.disposition ?? "Expected",
+      rationale: finding.rationale ?? null,
+    })),
   }));
 }
 
@@ -341,6 +374,102 @@ export function canRetryEvaluationRun(
     Number(run.counts.caseCount) >
     Number(run.counts.gradedCaseCount) +
       Number(run.counts.skippedCaseCount) +
-      Number(run.counts.unlabelledCaseCount)
+      Number(run.counts.unlabelledCaseCount) +
+      Number(run.counts.falsePositiveCheckedCaseCount ?? 0)
+  );
+}
+
+function unmatchedCandidateCount(
+  result: Pick<EvaluationRunCaseDto, "judgeMatches" | "candidateFindings">,
+): number {
+  const matched = new Set(
+    result.judgeMatches.map((match) => match.candidateId),
+  );
+  return result.candidateFindings.filter(
+    (candidate) => !matched.has(candidate.id),
+  ).length;
+}
+function failedOutcome(outcome: EvaluationRunCaseDto["outcome"]): boolean {
+  return ["ReviewFailed", "JudgeFailed", "Skipped", "Cancelled"].includes(
+    outcome,
+  );
+}
+export function countDatasetCaseReferences(
+  set: CodeReviewEvaluationReferenceSetDto,
+) {
+  return {
+    expectedCount: set.findings.filter(
+      (f) => (f.disposition ?? "Expected") === "Expected",
+    ).length,
+    rejectedCount: set.findings.filter((f) => f.disposition === "Rejected")
+      .length,
+  };
+}
+export function findStagedFindingDisposition(
+  referenceSets: CodeReviewEvaluationReferenceSetDto[],
+  reviewerAgentId: string,
+  sourceRunId: string,
+  sourceFindingId: string,
+): "Expected" | "Rejected" | null {
+  const finding = referenceSets
+    .find((set) => set.reviewerAgentId === reviewerAgentId)
+    ?.findings.find(
+      (item) =>
+        item.sourceRunId === sourceRunId &&
+        item.sourceFindingId === sourceFindingId,
+    );
+  return finding ? (finding.disposition ?? "Expected") : null;
+}
+export function canAddEvaluationReferenceFinding(
+  referenceSet: CodeReviewEvaluationReferenceSetDto,
+): boolean {
+  return referenceSet.findings.length < 100;
+}
+export function summarizeRunFalsePositives(
+  run: EvaluationRunDto,
+  cases: EvaluationRunCaseDto[],
+) {
+  const reported = Number(run.counts.repeatedFalsePositiveCount ?? 0);
+  const checked = Number(run.counts.trackedFalsePositiveCount ?? 0);
+  const unchecked = cases
+    .filter((c) => failedOutcome(c.outcome))
+    .reduce(
+      (n, c) =>
+        n +
+        c.references.findings.filter((f) => f.disposition === "Rejected")
+          .length,
+      0,
+    );
+  return {
+    reported,
+    checked,
+    unchecked,
+    onUnlabelledPrCount: Number(run.counts.falsePositiveCheckedCaseCount ?? 0),
+  };
+}
+
+/** Normalizes repository paths while preserving leading dotfiles. */
+export function normalizeEvaluationFilePath(file: string): string {
+  let path = file.trim().replaceAll("\\", "/");
+  while (path.startsWith("/") || path.startsWith("./")) {
+    path = path.startsWith("/") ? path.slice(1) : path.slice(2);
+  }
+  return path;
+}
+
+/** True when a rejected rule shares a file with an expected finding. */
+export function hasExpectedRejectedFileCollision(
+  set: CodeReviewEvaluationReferenceSetDto,
+  rejectedFile: string,
+): boolean {
+  const file = normalizeEvaluationFilePath(rejectedFile);
+  return (
+    set.state === "Expected" &&
+    file.length > 0 &&
+    set.findings.some(
+      (finding) =>
+        finding.disposition !== "Rejected" &&
+        normalizeEvaluationFilePath(finding.file) === file,
+    )
   );
 }
