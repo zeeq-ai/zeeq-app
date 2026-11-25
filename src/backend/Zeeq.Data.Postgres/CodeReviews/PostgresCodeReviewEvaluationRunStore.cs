@@ -294,9 +294,7 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
             ParentRunId = parent.Id,
             RequestKey = request.RequestKey,
             CaseCount = retryCases.Length,
-            UnlabelledCaseCount = retryCases.Count(item =>
-                item.References.State == CodeReviewEvaluationReferenceState.Unlabelled
-            ),
+            UnlabelledCaseCount = retryCases.Count(item => !item.References.RequiresJudge),
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
         };
@@ -736,6 +734,18 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
                             candidate => candidate.AdditionalFindingCount,
                             counts.AdditionalFindingCount
                         )
+                        .SetProperty(
+                            candidate => candidate.FalsePositiveCheckedCaseCount,
+                            counts.FalsePositiveCheckedCaseCount
+                        )
+                        .SetProperty(
+                            candidate => candidate.RepeatedFalsePositiveCount,
+                            counts.RepeatedFalsePositiveCount
+                        )
+                        .SetProperty(
+                            candidate => candidate.TrackedFalsePositiveCount,
+                            counts.TrackedFalsePositiveCount
+                        )
                         .SetProperty(candidate => candidate.CompletedAtUtc, now)
                         .SetProperty(candidate => candidate.UpdatedAtUtc, now)
                         .SetProperty(candidate => candidate.LeaseToken, (string?)null)
@@ -874,6 +884,18 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
                         .SetProperty(
                             candidate => candidate.AdditionalFindingCount,
                             counts.AdditionalFindingCount
+                        )
+                        .SetProperty(
+                            candidate => candidate.FalsePositiveCheckedCaseCount,
+                            counts.FalsePositiveCheckedCaseCount
+                        )
+                        .SetProperty(
+                            candidate => candidate.RepeatedFalsePositiveCount,
+                            counts.RepeatedFalsePositiveCount
+                        )
+                        .SetProperty(
+                            candidate => candidate.TrackedFalsePositiveCount,
+                            counts.TrackedFalsePositiveCount
                         )
                         .SetProperty(candidate => candidate.CompletedAtUtc, now)
                         .SetProperty(candidate => candidate.UpdatedAtUtc, now)
@@ -1063,9 +1085,7 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
             State = CodeReviewEvaluationRunState.Queued,
             RequestKey = request.RequestKey,
             CaseCount = manifest.Cases.Count,
-            UnlabelledCaseCount = manifest.Cases.Count(item =>
-                item.References.State == CodeReviewEvaluationReferenceState.Unlabelled
-            ),
+            UnlabelledCaseCount = manifest.Cases.Count(item => !item.References.RequiresJudge),
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
         };
@@ -1166,6 +1186,14 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
             .Where(result => result.Outcome == CodeReviewEvaluationCaseOutcome.Graded)
             .ToArray();
 
+        var judged = results
+            .Where(result =>
+                result.Outcome
+                    is CodeReviewEvaluationCaseOutcome.Graded
+                        or CodeReviewEvaluationCaseOutcome.FalsePositiveChecked
+            )
+            .ToArray();
+
         return new(
             results.Length,
             graded.Length,
@@ -1179,7 +1207,12 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
             graded.Sum(result => result.MatchedReferenceCount),
             graded.Sum(result => result.MissedReferenceCount),
             graded.Sum(result => result.ExpectedReferenceCount),
-            graded.Sum(result => result.AdditionalFindingCount)
+            judged.Sum(result => result.AdditionalFindingCount),
+            results.Count(result =>
+                result.Outcome == CodeReviewEvaluationCaseOutcome.FalsePositiveChecked
+            ),
+            judged.Sum(result => result.RepeatedFalsePositiveCount),
+            judged.Sum(result => result.TrackedFalsePositiveCount)
         );
     }
 

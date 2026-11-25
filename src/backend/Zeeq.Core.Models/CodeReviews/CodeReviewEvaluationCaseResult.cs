@@ -46,6 +46,12 @@ public sealed class CodeReviewEvaluationCaseResult
     /// <summary>Expected reference findings the judge matched.</summary>
     public int MatchedReferenceCount { get; set; }
 
+    /// <summary>RepeatedFalsePositiveCount for this evaluation.</summary>
+    public int RepeatedFalsePositiveCount { get; set; }
+
+    /// <summary>TrackedFalsePositiveCount for this evaluation.</summary>
+    public int TrackedFalsePositiveCount { get; set; }
+
     /// <summary>Expected reference findings the judge reported as missed.</summary>
     public int MissedReferenceCount { get; set; }
 

@@ -329,6 +329,17 @@ internal sealed class PostgresCodeReviewEvaluationCaseResultStore(
         CancellationToken cancellationToken
     )
     {
+        if (
+            request.Outcome
+            is not (
+                CodeReviewEvaluationCaseOutcome.Graded
+                or CodeReviewEvaluationCaseOutcome.FalsePositiveChecked
+            )
+        )
+        {
+            throw new ArgumentException("Invalid grade outcome.", nameof(request));
+        }
+
         var now = timeProvider.GetUtcNow();
         var parameters = BaseParameters(
             request.OrganizationId,
@@ -337,6 +348,9 @@ internal sealed class PostgresCodeReviewEvaluationCaseResultStore(
             request.LeaseToken,
             now
         );
+        Add(parameters, "outcome", request.Outcome.ToString());
+        Add(parameters, "repeated_false_positive_count", request.RepeatedFalsePositiveCount);
+        Add(parameters, "tracked_false_positive_count", request.TrackedFalsePositiveCount);
         Add(parameters, "matched_reference_count", request.MatchedReferenceCount);
         Add(parameters, "missed_reference_count", request.MissedReferenceCount);
         Add(parameters, "expected_reference_count", request.ExpectedReferenceCount);
@@ -355,7 +369,9 @@ internal sealed class PostgresCodeReviewEvaluationCaseResultStore(
             $"""
             UPDATE code_review_evaluation_case_results AS c
             SET phase = 'Graded',
-                outcome = 'Graded',
+                outcome = @outcome,
+                repeated_false_positive_count = @repeated_false_positive_count,
+                tracked_false_positive_count = @tracked_false_positive_count,
                 matched_reference_count = @matched_reference_count,
                 missed_reference_count = @missed_reference_count,
                 expected_reference_count = @expected_reference_count,
@@ -380,7 +396,7 @@ internal sealed class PostgresCodeReviewEvaluationCaseResultStore(
               AND {LiveLeaseGuard(requireNoCancelRequest: false)}
             """,
             parameters,
-            CodeReviewEvaluationCaseOutcome.Graded,
+            request.Outcome,
             cancellationToken
         );
     }

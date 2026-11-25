@@ -308,6 +308,9 @@ internal sealed class CodeReviewEvaluationRunConfiguration
         entity.Property(run => run.RepositoryId).IsRequired().HasMaxLength(128);
         entity.Property(run => run.DatasetId).IsRequired().HasMaxLength(128);
         entity.Property(run => run.DatasetVersion).IsRequired();
+        entity.Property(run => run.FalsePositiveCheckedCaseCount).HasDefaultValue(0);
+        entity.Property(run => run.RepeatedFalsePositiveCount).HasDefaultValue(0);
+        entity.Property(run => run.TrackedFalsePositiveCount).HasDefaultValue(0);
         entity.Property(run => run.AgentId).IsRequired().HasMaxLength(128);
         entity.Property(run => run.SavedRevisionId).HasMaxLength(128);
         entity.Property(run => run.ManifestJson).HasColumnType("jsonb").IsRequired();
@@ -436,6 +439,8 @@ internal sealed class CodeReviewEvaluationCaseResultConfiguration
         entity.Property(result => result.MissedReferenceCount).IsRequired();
         entity.Property(result => result.ExpectedReferenceCount).IsRequired();
         entity.Property(result => result.AdditionalFindingCount).IsRequired();
+        entity.Property(result => result.RepeatedFalsePositiveCount).HasDefaultValue(0);
+        entity.Property(result => result.TrackedFalsePositiveCount).HasDefaultValue(0);
         entity.Property(result => result.CandidateFindingsJson).HasColumnType("jsonb");
         entity.Property(result => result.JudgeMatchesJson).HasColumnType("jsonb");
         entity.Property(result => result.JudgeReasonsJson).HasColumnType("jsonb");

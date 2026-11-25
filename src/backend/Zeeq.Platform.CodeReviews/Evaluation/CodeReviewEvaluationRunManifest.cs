@@ -165,6 +165,9 @@ public enum CodeReviewEvaluationCredentialSource
 /// <param name="MissedReferenceCount">Expected findings the judge reported as missed.</param>
 /// <param name="ExpectedReferenceCount">Expected findings across graded labelled cases.</param>
 /// <param name="AdditionalFindingCount">Candidate findings reported as additional and unverified.</param>
+/// <param name="FalsePositiveCheckedCaseCount">Cases checked only for false positives.</param>
+/// <param name="RepeatedFalsePositiveCount">Repeated false positives.</param>
+/// <param name="TrackedFalsePositiveCount">Tracked false positives checked.</param>
 public sealed record CodeReviewEvaluationRunCounts(
     int CaseCount,
     int GradedCaseCount,
@@ -174,7 +177,10 @@ public sealed record CodeReviewEvaluationRunCounts(
     int MatchedReferenceCount,
     int MissedReferenceCount,
     int ExpectedReferenceCount,
-    int AdditionalFindingCount
+    int AdditionalFindingCount,
+    int FalsePositiveCheckedCaseCount = 0,
+    int RepeatedFalsePositiveCount = 0,
+    int TrackedFalsePositiveCount = 0
 );
 
 /// <summary>

@@ -69,6 +69,9 @@ public enum CodeReviewEvaluationCaseOutcome
     /// <summary>Graded successfully; matched and additional counts are authoritative.</summary>
     Graded,
 
+    /// <summary>Known false positives checked while expected findings remain unlabelled.</summary>
+    FalsePositiveChecked,
+
     /// <summary>The reviewer stage failed. No candidate output exists.</summary>
     ReviewFailed,
 

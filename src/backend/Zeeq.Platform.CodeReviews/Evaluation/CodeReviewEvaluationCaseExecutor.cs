@@ -327,10 +327,13 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
                     run.Id,
                     item.CaseId,
                     leaseToken,
+                    CodeReviewEvaluationCaseOutcome.Graded,
                     grade.Matches.Count,
                     grade.MissedReferenceIds.Count,
                     item.References.Findings.Count,
                     grade.AdditionalCandidateIds.Count,
+                    0,
+                    0,
                     JsonSerializer.Serialize(grade.Matches, JsonOptions),
                     JsonSerializer.Serialize(
                         new { grade.MissedReferenceIds, grade.AdditionalCandidateIds },

@@ -22,6 +22,9 @@ public static class CodeReviewEvaluationLimits
     /// <summary>Maximum reference findings per reviewer and case.</summary>
     public const int MaxReferenceFindings = 100;
 
+    /// <summary>Maximum length of a reference rationale.</summary>
+    public const int MaxReferenceRationaleLength = 1000;
+
     /// <summary>Maximum reference finding title length.</summary>
     public const int MaxReferenceTitleLength = 300;
 
