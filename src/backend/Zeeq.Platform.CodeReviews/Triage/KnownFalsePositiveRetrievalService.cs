@@ -10,6 +10,18 @@ using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews;
 
+/// <summary>Frozen advisory selection and provenance for an evaluation case.</summary>
+public sealed record KnownFalsePositiveSnapshot(
+    string Xml,
+    string Model,
+    int PayloadVersion,
+    IReadOnlyList<KnownFalsePositiveSelection> Selections,
+    bool FailOpen = false
+);
+
+/// <summary>One selected triage and its raw and boosted distance.</summary>
+public sealed record KnownFalsePositiveSelection(string TriageId, double Distance, double Score);
+
 /// <summary>Retrieves repository-scoped advisory false positives for changed files.</summary>
 public sealed class KnownFalsePositiveRetrievalService(
     ICodeReviewFindingTriageStore store,
@@ -35,8 +47,36 @@ public sealed class KnownFalsePositiveRetrievalService(
         string? reviewGroupId,
         string? reviewId,
         CancellationToken cancellationToken
+    ) =>
+        (
+            await RetrieveSnapshotAsync(
+                organizationId,
+                repositoryId,
+                repoName,
+                files,
+                prNumber,
+                reviewGroupId,
+                reviewId,
+                null,
+                cancellationToken
+            )
+        ).Xml;
+
+    /// <summary>Captures the selected advisory content and scores for reproducible evaluation.</summary>
+    public async Task<KnownFalsePositiveSnapshot> RetrieveSnapshotAsync(
+        string organizationId,
+        string? repositoryId,
+        string repoName,
+        IReadOnlyList<CodeReviewFileSnapshot> files,
+        int? prNumber,
+        string? reviewGroupId,
+        string? reviewId,
+        DateTimeOffset? asOfUtc,
+        CancellationToken cancellationToken
     )
     {
+        var model = $"{settings.Model}@{settings.Dimensions}";
+        KnownFalsePositiveSnapshot Empty(bool failed = false) => new("", model, 1, [], failed);
         using var activity = ZeeqTelemetry.Trace(
             [("organization.id", organizationId), ("repository.id", repositoryId)],
             "code_reviews.triage.retrieve_known_fps"
@@ -46,8 +86,10 @@ public sealed class KnownFalsePositiveRetrievalService(
         try
         {
             var selected = files.Where(x => !string.IsNullOrWhiteSpace(x.Patch)).Take(16).ToArray();
-            if (!settings.Enabled || selected.Length == 0)
-                return string.Empty;
+            if (!settings.Enabled)
+                return Empty(failed: true);
+            if (selected.Length == 0)
+                return Empty();
             var generator = services.GetRequiredKeyedService<
                 IEmbeddingGenerator<string, Embedding<float>>
             >(DefaultLlmChatClientKeys.SnippetEmbeddingsQuery);
@@ -58,17 +100,17 @@ public sealed class KnownFalsePositiveRetrievalService(
             );
             if (vectors.Count != selected.Length)
                 throw new InvalidOperationException("Embedding count mismatch.");
+            var validVectors = vectors
+                .Select(x => EmbeddingVectorValidation.ToHalfVector(x, settings.Dimensions))
+                .ToArray();
+            if (validVectors.Any(x => x is null))
+                return Empty(failed: true);
             // The store creates a separate DbContext per search; run the bounded searches concurrently.
             using var gate = new SemaphoreSlim(4);
             var searches = selected.Select(
                 async (file, index) =>
                 {
-                    var vector = EmbeddingVectorValidation.ToHalfVector(
-                        vectors[index],
-                        settings.Dimensions
-                    );
-                    if (vector is null)
-                        return Array.Empty<(FindingTriageMatch Match, string Path)>();
+                    var vector = validVectors[index]!;
                     await gate.WaitAsync(cancellationToken);
                     try
                     {
@@ -83,6 +125,7 @@ public sealed class KnownFalsePositiveRetrievalService(
                             activePrNumber: prNumber > 0 ? prNumber : null,
                             activeReviewGroupId: reviewGroupId,
                             activeReviewId: reviewId,
+                            asOfUtc: asOfUtc,
                             cancellationToken: cancellationToken
                         );
                         return results.Select(x => (Match: x, Path: file.Path)).ToArray();
@@ -114,8 +157,8 @@ public sealed class KnownFalsePositiveRetrievalService(
                 .ToArray();
             injected = best.Length;
             if (injected == 0)
-                return string.Empty;
-            return new XElement(
+                return Empty();
+            var xml = new XElement(
                 "known_false_positives",
                 new XAttribute("scope", "repository"),
                 new XElement(
@@ -132,6 +175,17 @@ public sealed class KnownFalsePositiveRetrievalService(
                     new XElement("reason", Limit(x.Match.Row.CurrentReason ?? "", 400))
                 ))
             ).ToString();
+            return new(
+                xml,
+                model,
+                1,
+                best.Select(x => new KnownFalsePositiveSelection(
+                        x.Match.Row.Id,
+                        x.Match.Distance,
+                        Score(x.Match, x.Path)
+                    ))
+                    .ToArray()
+            );
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -145,7 +199,7 @@ public sealed class KnownFalsePositiveRetrievalService(
                 "Known false positive retrieval failed for organization {OrganizationId}",
                 organizationId
             );
-            return string.Empty;
+            return Empty(failed: true);
         }
         finally
         {

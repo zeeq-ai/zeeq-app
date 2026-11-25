@@ -135,7 +135,9 @@
           :review-raw-xml-errors-by-review-key
           :triage-busy-keys
           :triage-success-versions
+          :can-promote-false-positives
           @triage="emits('triage', $event)"
+          @promote="emits('promote', $event)"
           :cart-content-hashes
           @load-review-findings="emits('loadReviewFindings', $event)"
           @load-raw-xml="emits('loadRawXml', $event)"
@@ -180,6 +182,7 @@ defineProps<{
   cartContentHashes: Set<string>;
   triageBusyKeys: string[];
   triageSuccessVersions: Record<string, string>;
+  canPromoteFalsePositives?: boolean;
 }>();
 
 /** Relays the accordion open/close state between PullRequestReviews and CodeReviewAccordion. */
@@ -189,6 +192,7 @@ const bypassing = defineModel<boolean>("bypassing", { default: false });
 
 const emits = defineEmits<{
   triage: [payload: TriageAction];
+  promote: [payload: { review: CodeReviewRecordDto; finding: CodeReviewFindingDto }];
   requestReview: [pullRequest: CodeReviewPullRequestDto];
   loadReviewFindings: [review: CodeReviewRecordDto];
   loadRawXml: [review: CodeReviewRecordDto];

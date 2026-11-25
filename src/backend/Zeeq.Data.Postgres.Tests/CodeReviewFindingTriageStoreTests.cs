@@ -46,13 +46,18 @@ public sealed class CodeReviewFindingTriageStoreTests(PgDatabaseFixture postgres
         await db.Users.Where(x => x.Id == org).ExecuteDeleteAsync();
     }
 
-    private static CodeReviewFindingTriage Snapshot(string org) =>
+    private static CodeReviewFindingTriage Snapshot(
+        string org,
+        string reviewId = "review_1",
+        int? prNumber = null
+    ) =>
         new()
         {
             Id = "tri_" + Guid.NewGuid().ToString("N"),
             OrganizationId = org,
             OwnerQualifiedRepoName = "owner/repo",
-            SourceReviewId = "review_1",
+            SourceReviewId = reviewId,
+            PullRequestNumber = prNumber,
             SourceReviewCreatedAtUtc = DateTimeOffset.UtcNow,
             OccurrenceKey = "F1",
             SemanticId = "sample-finding-name",
@@ -269,6 +274,66 @@ public sealed class CodeReviewFindingTriageStoreTests(PgDatabaseFixture postgres
                 activeReviewId: "review_1"
             );
             await Assert.That(excluded.Count).IsEqualTo(0);
+        }
+        finally
+        {
+            await CleanupAsync(org);
+        }
+    }
+
+    [Test]
+    public async Task SearchAsOfExcludesSamePullRequestAndConfirmationsAtOrAfterCutoff()
+    {
+        var org = await SeedAsync();
+        try
+        {
+            var store = new PostgresCodeReviewFindingTriageStore(new Factory(postgres));
+            var cutoff = DateTimeOffset.UtcNow.AddMinutes(-5);
+            for (var i = 1; i <= 3; i++)
+            {
+                var row = Snapshot(org, $"review_{i}", i);
+                await store.UpsertLwwAsync(Set(row, CodeReviewFindingTriageChannel.Ui, "reason"));
+            }
+            await using (var db = postgres.CreateContext())
+            {
+                var rows = await db
+                    .CodeReviewFindingTriages.Where(x => x.OrganizationId == org)
+                    .ToListAsync();
+                foreach (var row in rows)
+                {
+                    row.ConfirmedAtUtc =
+                        row.PullRequestNumber == 3 ? cutoff : cutoff.AddMinutes(-1);
+                }
+                await db.SaveChangesAsync();
+            }
+            var vector = new HalfVector(Enumerable.Repeat((Half)1, 768).ToArray());
+            var claims = await store.ClaimPendingEmbeddingsAsync(
+                "model",
+                TimeSpan.FromMinutes(1),
+                100
+            );
+            foreach (var claim in claims.Where(x => x.Row.OrganizationId == org))
+                await store.TryCompleteEmbeddingAsync(
+                    org,
+                    claim.Row.Id,
+                    claim.UpdatedAtUtc,
+                    claim.StartedAtUtc,
+                    vector,
+                    "model"
+                );
+            var results = await store.SearchConfirmedFalsePositivesAsync(
+                org,
+                null,
+                "owner/repo",
+                vector,
+                "model",
+                0.9,
+                10,
+                activePrNumber: 2,
+                asOfUtc: cutoff
+            );
+            await Assert.That(results.Count).IsEqualTo(1);
+            await Assert.That(results.Single().Row.PullRequestNumber).IsEqualTo(1);
         }
         finally
         {

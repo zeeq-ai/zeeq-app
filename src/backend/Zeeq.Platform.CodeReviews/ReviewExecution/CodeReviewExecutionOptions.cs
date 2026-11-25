@@ -17,7 +17,9 @@ public sealed record CodeReviewExecutionOptions(
     bool IncludePreviousReviews,
     CodeReviewEvaluationModelSelection? FrozenModel = null,
     int? FixturePullRequestNumber = null,
-    CodeReviewPriorContext? PriorContext = null
+    CodeReviewPriorContext? PriorContext = null,
+    bool IncludeTriageContext = false,
+    KnownFalsePositiveSnapshot? FrozenTriageContext = null
 )
 {
     /// <summary>

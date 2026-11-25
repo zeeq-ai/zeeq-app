@@ -63,6 +63,17 @@ public sealed partial class CodeReviewExecutionEngine(
             );
         }
 
+        if (
+            options.Mode == CodeReviewExecutionMode.Evaluation
+            && (
+                options.IncludeTriageContext != (options.FrozenTriageContext is not null)
+                || options.PriorContext is not null
+            )
+        )
+            throw new ArgumentException(
+                "Evaluation triage context must be explicitly enabled and frozen."
+            );
+
         // Draft test runs intentionally share this engine but suppress code-controlled
         // Activity spans/events. The LLM/provider layer can still emit its own telemetry; this
         // flag only gates Zeeq review-execution diagnostics that would otherwise feed listeners.
@@ -236,6 +247,8 @@ public sealed partial class CodeReviewExecutionEngine(
                         cancellationToken
                     )
                     : string.Empty;
+            if (options.Mode == CodeReviewExecutionMode.Evaluation && options.IncludeTriageContext)
+                known = options.FrozenTriageContext!.Xml;
             var priorContext = new CodeReviewPriorContext(
                 previousReviews,
                 triages,

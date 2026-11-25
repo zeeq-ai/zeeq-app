@@ -47,6 +47,15 @@
               @click="clear"
             />
           </div>
+          <UButton
+            v-if="showPromotionAction"
+            label="Add to eval dataset as rejected"
+            color="neutral"
+            variant="outline"
+            size="xs"
+            :disabled="busy"
+            @click="promote"
+          />
         </template>
         <template v-if="editing">
           <fieldset class="grid gap-2">
@@ -112,6 +121,7 @@ const props = defineProps<{
   busy: boolean;
   highlight?: boolean;
   successVersion?: string;
+  canPromoteConfirmedFalsePositive?: boolean;
 }>();
 const emits = defineEmits<{
   save: [
@@ -121,6 +131,7 @@ const emits = defineEmits<{
   ];
   clear: [requestId: string];
   confirm: [];
+  promote: [];
 }>();
 const open = ref(false);
 const editing = ref(false);
@@ -132,6 +143,12 @@ const options = [
   { label: "Defer / won't fix (this PR)", value: "Deferred" },
 ];
 const triage = computed(() => props.finding.triage);
+const showPromotionAction = computed(
+  () =>
+    props.canPromoteConfirmedFalsePositive === true &&
+    triage.value?.approvalState === "Confirmed" &&
+    triage.value.disposition === "FalsePositive",
+);
 const channelLabel = computed(() =>
   triage.value?.channel === "Mcp"
     ? "Agent proposal"
@@ -157,6 +174,11 @@ const proposalContextId = computed(
 );
 const initialized = ref(false);
 const submittedRequestId = ref<string | null>(null);
+
+function promote() {
+  if (!showPromotionAction.value || props.busy) return;
+  emits("promote");
+}
 
 // Keep the draft on dismissal or request failure. A successful patch resets it.
 watch(open, (value) => {

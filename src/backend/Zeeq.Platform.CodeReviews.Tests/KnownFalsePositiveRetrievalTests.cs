@@ -230,6 +230,55 @@ public class KnownFalsePositiveRetrievalTests
             );
     }
 
+    [Test]
+    public async Task SnapshotForEvaluationPassesCutoffAndActivePullRequest()
+    {
+        var store = Substitute.For<ICodeReviewFindingTriageStore>();
+        var services = new ServiceCollection()
+            .AddKeyedSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
+                DefaultLlmChatClientKeys.SnippetEmbeddingsQuery,
+                new ValidGenerator()
+            )
+            .BuildServiceProvider();
+        var service = new KnownFalsePositiveRetrievalService(
+            store,
+            services,
+            new LlmEmbeddingSettings { Enabled = true },
+            NullLogger<KnownFalsePositiveRetrievalService>.Instance
+        );
+        var cutoff = DateTimeOffset.UtcNow;
+        var snapshot = await service.RetrieveSnapshotAsync(
+            "org",
+            "repo",
+            "owner/repo",
+            [new("a.cs", null, CodeReviewFileMutationState.Modified, "patch")],
+            42,
+            null,
+            null,
+            cutoff,
+            CancellationToken.None
+        );
+        await store
+            .Received(1)
+            .SearchConfirmedFalsePositivesAsync(
+                "org",
+                "repo",
+                "owner/repo",
+                Arg.Any<HalfVector>(),
+                Arg.Any<string>(),
+                0.75,
+                32,
+                42,
+                null,
+                null,
+                cutoff,
+                null,
+                Arg.Any<CancellationToken>()
+            );
+        await Assert.That(snapshot.PayloadVersion).IsEqualTo(1);
+        await Assert.That(snapshot.FailOpen).IsFalse();
+    }
+
     private sealed class ValidGenerator : IEmbeddingGenerator<string, Embedding<float>>
     {
         public int Calls { get; private set; }

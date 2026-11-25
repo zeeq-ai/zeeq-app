@@ -25,6 +25,100 @@ namespace Zeeq.Platform.CodeReviews.Tests;
 public sealed class CodeReviewEvaluationEndpointHandlerTests
 {
     [Test]
+    public async Task PromoteTriage_RejectsOrganizationMemberWithoutDatasetMutation()
+    {
+        var memberships = Substitute.For<IZeeqMembershipStore>();
+        memberships.ListActiveMembershipsForUserAsync("user-1", Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<OrganizationMembership>>([
+                new OrganizationMembership
+                {
+                    Id = "membership-1",
+                    OrganizationId = "org-1",
+                    UserId = "user-1",
+                    Role = "member",
+                    Status = MembershipStatus.Active,
+                    CreatedByUserId = "user-1",
+                },
+            ]);
+        var datasets = Substitute.For<ICodeReviewEvaluationDatasetStore>();
+        var handler = new PromoteFindingTriageHandler(
+            new CodeReviewAuthorization(memberships),
+            Substitute.For<ICodeRepositoryStore>(),
+            datasets,
+            Substitute.For<ICodeReviewFindingTriageStore>()
+        );
+        var user = new ClaimsPrincipal(new ClaimsIdentity([
+            new Claim(OpenIddictConstants.Claims.Subject, "user-1"),
+        ], "test"));
+
+        var result = await handler.HandleAsync("org-1", "repo-1", "dataset-1", "triage-1", new("agent-1", 1), user, CancellationToken.None);
+
+        await Assert.That(result.Result).IsTypeOf<ForbidHttpResult>();
+        await datasets.DidNotReceiveWithAnyArgs().SaveAsync(default!, default);
+    }
+
+    [Test]
+    public async Task PromoteTriage_PreservesOtherCasesAndReferenceSetsInVersionedSave()
+    {
+        var setup = CreatePromotionSetup(role: "admin", datasetVersion: 3);
+        CodeReviewEvaluationDatasetSaveRequest? savedRequest = null;
+        setup.Datasets.SaveAsync(Arg.Do<CodeReviewEvaluationDatasetSaveRequest>(value => savedRequest = value), Arg.Any<CancellationToken>())
+            .Returns(new CodeReviewEvaluationDatasetSaveResult(CodeReviewEvaluationDatasetSaveOutcome.Saved, setup.Dataset, [setup.TargetCase, setup.OtherCase]));
+
+        var result = await setup.Handler.HandleAsync("org-1", "repo-1", "dataset-1", "triage-1", new("agent-1", 3), setup.User, CancellationToken.None);
+
+        await Assert.That(result.Result).IsTypeOf<Microsoft.AspNetCore.Http.HttpResults.Ok<CodeReviewEvaluationDatasetResponse>>();
+        await Assert.That(savedRequest).IsNotNull();
+        await Assert.That(savedRequest!.Cases.Count).IsEqualTo(2);
+        var promoted = savedRequest.Cases.Single(item => item.CaseId == "case-target");
+        var untouched = savedRequest.Cases.Single(item => item.CaseId == "case-other");
+        await Assert.That(untouched.ReferenceSets).IsEquivalentTo(setup.OtherCase.ReferenceSets);
+        var rejected = promoted.ReferenceSets!.Single(set => set.ReviewerAgentId == "agent-1").Findings.Single();
+        await Assert.That(rejected.Disposition).IsEqualTo(CodeReviewEvaluationReferenceDisposition.Rejected);
+        await Assert.That(rejected.Origin).IsEqualTo(CodeReviewEvaluationReferenceOrigin.HistoricalReview);
+        await Assert.That(rejected.SourceFindingId).IsEqualTo("review-1#F2");
+        await Assert.That(rejected.File).IsEqualTo("(unknown file)");
+        await Assert.That(savedRequest.ExpectedVersion).IsEqualTo(3);
+    }
+
+    [Test]
+    public async Task PromoteTriage_StaleVersionReturnsConflictWithoutSaving()
+    {
+        var setup = CreatePromotionSetup(role: "owner", datasetVersion: 4);
+
+        var result = await setup.Handler.HandleAsync("org-1", "repo-1", "dataset-1", "triage-1", new("agent-1", 3), setup.User, CancellationToken.None);
+
+        await Assert.That(result.Result).IsTypeOf<Microsoft.AspNetCore.Http.HttpResults.Conflict<CodeReviewEndpointError>>();
+        await setup.Datasets.DidNotReceiveWithAnyArgs().SaveAsync(default!, default);
+    }
+
+    private static (PromoteFindingTriageHandler Handler, ICodeReviewEvaluationDatasetStore Datasets, ClaimsPrincipal User, CodeReviewEvaluationDataset Dataset, CodeReviewEvaluationCase TargetCase, CodeReviewEvaluationCase OtherCase) CreatePromotionSetup(string role, long datasetVersion)
+    {
+        const string userId = "user-1";
+        var memberships = Substitute.For<IZeeqMembershipStore>();
+        memberships.ListActiveMembershipsForUserAsync(userId, Arg.Any<CancellationToken>()).Returns<IReadOnlyList<OrganizationMembership>>([
+            new OrganizationMembership { Id = "membership-1", OrganizationId = "org-1", UserId = userId, Role = role, Status = MembershipStatus.Active, CreatedByUserId = userId },
+        ]);
+        var repos = Substitute.For<ICodeRepositoryStore>();
+        repos.FindActiveForOrganizationAsync("org-1", "repo-1", Arg.Any<CancellationToken>()).Returns(new CodeRepository
+        {
+            Id = "repo-1", OrganizationId = "org-1", Provider = "github", OwnerQualifiedName = "owner/repo", DisplayName = "repo", Enabled = true,
+            CreatedAtUtc = DateTimeOffset.UtcNow, UpdatedAtUtc = DateTimeOffset.UtcNow,
+        });
+        var dataset = new CodeReviewEvaluationDataset { Id = "dataset-1", OrganizationId = "org-1", RepositoryId = "repo-1", Name = "Fixture", CreateRequestKey = "key", Version = datasetVersion };
+        var target = new CodeReviewEvaluationCase { Id = "case-target", OrganizationId = "org-1", RepositoryId = "repo-1", DatasetId = "dataset-1", PullRequestNumber = 88, PullRequestTitle = "target", SnapshotStorageUri = "snap://target", SnapshotSha256 = new string('a', 64), BaseSha = "base", HeadSha = "head", CapturedAtUtc = DateTimeOffset.UtcNow };
+        var other = new CodeReviewEvaluationCase { Id = "case-other", OrganizationId = "org-1", RepositoryId = "repo-1", DatasetId = "dataset-1", PullRequestNumber = 89, PullRequestTitle = "other", SnapshotStorageUri = "snap://other", SnapshotSha256 = new string('b', 64), BaseSha = "base", HeadSha = "head", CapturedAtUtc = DateTimeOffset.UtcNow, ReferenceSets = [new("agent-1", CodeReviewEvaluationReferenceState.Expected, [new("existing", "Existing", "Keep me", CodeReviewEvaluationFindingSeverity.Major, "src/a.cs", 4, CodeReviewEvaluationReferenceOrigin.Manual, null, null, userId, DateTimeOffset.UtcNow)])] };
+        var datasets = Substitute.For<ICodeReviewEvaluationDatasetStore>();
+        datasets.FindAsync("org-1", "dataset-1", false, Arg.Any<CancellationToken>()).Returns(dataset);
+        datasets.ListCasesAsync("org-1", "dataset-1", false, Arg.Any<CancellationToken>()).Returns<IReadOnlyList<CodeReviewEvaluationCase>>([target, other]);
+        var triage = new CodeReviewFindingTriage { Id = "triage-1", OrganizationId = "org-1", RepositoryId = "repo-1", OwnerQualifiedRepoName = "owner/repo", PullRequestNumber = 88, SourceReviewId = "review-1", SourceReviewCreatedAtUtc = DateTimeOffset.UtcNow, OccurrenceKey = "F2", SemanticId = "semantic-finding", Facet = "quality", FindingSummary = "finding summary", FilePath = null, Severity = CodeReviewFindingLevel.Major, ApprovalState = CodeReviewFindingApprovalState.Confirmed, Disposition = CodeReviewFindingDisposition.FalsePositive, CurrentReason = "not a defect" };
+        var triages = Substitute.For<ICodeReviewFindingTriageStore>();
+        triages.FindAsync("org-1", "triage-1", Arg.Any<CancellationToken>()).Returns(triage);
+        var user = new ClaimsPrincipal(new ClaimsIdentity([new Claim(OpenIddictConstants.Claims.Subject, userId)], "test"));
+        return (new(new CodeReviewAuthorization(memberships), repos, datasets, triages), datasets, user, dataset, target, other);
+    }
+
+    [Test]
     public async Task Create_ReplayedKeyFromAnotherRepository_ReturnsConflict()
     {
         var fixture = Fixture.Create();

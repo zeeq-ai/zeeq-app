@@ -267,6 +267,7 @@
                         <span class="ml-auto" />
                         <FindingTriageControl
                           :finding="finding"
+                          :can-promote-confirmed-false-positive="canPromoteFalsePositives"
                           :highlight="
                             route.query.finding === finding.occurrenceKey
                           "
@@ -307,6 +308,7 @@
                               action: 'confirm',
                             })
                           "
+                          @promote="emits('promote', { review: props.review, finding })"
                         />
                         <UBadge
                           :label="finding.level"
@@ -524,6 +526,7 @@ const props = defineProps<{
   cartContentHashes: Set<string>;
   triageBusyKeys: string[];
   triageSuccessVersions: Record<string, string>;
+  canPromoteFalsePositives?: boolean;
   rawXml: string | null;
   loadingRawXml: boolean;
   rawXmlError: string | null;
@@ -531,6 +534,7 @@ const props = defineProps<{
 
 const emits = defineEmits<{
   triage: [payload: TriageAction];
+  promote: [payload: { review: CodeReviewRecordDto; finding: CodeReviewFindingDto }];
   toggleCart: [
     finding: CodeReviewFindingDto,
     reviewer: CodeReviewReviewerFindingsDto,

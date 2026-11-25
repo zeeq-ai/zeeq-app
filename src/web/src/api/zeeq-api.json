@@ -3956,6 +3956,97 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/evaluation-datasets/{datasetId}/promote-triage/{triageId}": {
+      "post": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "summary": "Promote a confirmed false positive into a dataset.",
+        "operationId": "PromoteFindingTriageToEvaluationDataset",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "datasetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "triageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteFindingTriageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEvaluationDatasetResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/evaluation-datasets": {
       "get": {
         "tags": [
@@ -5267,6 +5358,69 @@
           },
           "503": {
             "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repoId}/evaluation-runs/{runId}/compare/{baselineRunId}": {
+      "get": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "operationId": "CompareCodeReviewEvaluationRuns",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repoId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "baselineRunId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEvaluationComparison"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -12191,6 +12345,101 @@
         },
         "description": "Saved capture for one dataset case."
       },
+      "CodeReviewEvaluationComparison": {
+        "required": [
+          "pairedCaseCount",
+          "baselineRecall",
+          "experimentRecall",
+          "recallDelta",
+          "baselineKnownPrecision",
+          "experimentKnownPrecision",
+          "knownPrecisionDelta",
+          "baselineRepeatedFalsePositives",
+          "experimentRepeatedFalsePositives"
+        ],
+        "type": "object",
+        "properties": {
+          "pairedCaseCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "baselineRecall": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "experimentRecall": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "recallDelta": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "baselineKnownPrecision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "experimentKnownPrecision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "knownPrecisionDelta": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "baselineRepeatedFalsePositives": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "experimentRepeatedFalsePositives": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        },
+        "description": "Paired evaluation metrics. Precision counts only labelled expected and rejected matches."
+      },
       "CodeReviewEvaluationDatasetCaseChangeDto": {
         "required": [
           "caseId",
@@ -14977,6 +15226,10 @@
           },
           "requestKey": {
             "type": "string"
+          },
+          "includeTriageContext": {
+            "type": "boolean",
+            "default": false
           }
         },
         "description": "Request to evaluate one reviewer configuration against a dataset."
@@ -15759,6 +16012,10 @@
             "items": {
               "$ref": "#/components/schemas/EvaluationRunCaseDto"
             }
+          },
+          "includeTriageContext": {
+            "type": "boolean",
+            "default": false
           }
         },
         "description": "Run details with immutable case results."
@@ -18146,6 +18403,27 @@
           }
         },
         "description": "A machine-readable format for specifying errors in HTTP API responses based on <see href=\"https://tools.ietf.org/html/rfc9110\" />."
+      },
+      "PromoteFindingTriageRequest": {
+        "required": [
+          "reviewerAgentId",
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "reviewerAgentId": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        },
+        "description": "Target reviewer and dataset version for a confirmed false-positive promotion."
       },
       "PullRequestClaimStatus": {
         "enum": [

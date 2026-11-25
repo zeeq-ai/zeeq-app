@@ -642,14 +642,16 @@ public sealed class CodeReviewEvaluationCaseExecutorTests
     }
 
     [Test]
-    [Arguments(CodeReviewEvaluationReferenceState.Unlabelled, true, true)]
-    [Arguments(CodeReviewEvaluationReferenceState.Unlabelled, false, true)]
-    [Arguments(CodeReviewEvaluationReferenceState.ReviewedClean, true, true)]
-    [Arguments(CodeReviewEvaluationReferenceState.ReviewedClean, true, false)]
+    [Arguments(CodeReviewEvaluationReferenceState.Unlabelled, true, true, false)]
+    [Arguments(CodeReviewEvaluationReferenceState.Unlabelled, true, true, true)]
+    [Arguments(CodeReviewEvaluationReferenceState.Unlabelled, false, true, false)]
+    [Arguments(CodeReviewEvaluationReferenceState.ReviewedClean, true, true, false)]
+    [Arguments(CodeReviewEvaluationReferenceState.ReviewedClean, true, false, false)]
     public async Task FreshReview_HandlesIndependentFalsePositiveAxis(
         CodeReviewEvaluationReferenceState state,
         bool rejected,
-        bool hasCandidate
+        bool hasCandidate,
+        bool includeTriage
     )
     {
         var now = DateTimeOffset.UtcNow;
@@ -691,7 +693,10 @@ public sealed class CodeReviewEvaluationCaseExecutorTests
             now,
             1,
             0,
-            new("agent", state, rejected ? [reference] : [])
+            new("agent", state, rejected ? [reference] : []),
+            includeTriage
+                ? new KnownFalsePositiveSnapshot("<known_false_positives />", "model", 1, [])
+                : null
         );
         var model = new CodeReviewEvaluationModelSelection(
             CodeReviewModelTier.High,
@@ -733,7 +738,8 @@ public sealed class CodeReviewEvaluationCaseExecutorTests
             "fingerprint",
             now,
             "parent",
-            [item]
+            [item],
+            includeTriage
         );
         var snapshot = new CodeReviewEvaluationSnapshot(
             1,
@@ -859,6 +865,10 @@ public sealed class CodeReviewEvaluationCaseExecutorTests
         );
 
         await executor.ExecuteAsync(run, manifest, item, "lease", CancellationToken.None);
+        await Assert
+            .That(reviewer.Options!.PriorContext?.KnownFalsePositives)
+            .IsEqualTo(includeTriage ? "<known_false_positives />" : null);
+        await Assert.That(reviewer.PreviousReviews.Count).IsEqualTo(0);
 
         if (!rejected)
         {

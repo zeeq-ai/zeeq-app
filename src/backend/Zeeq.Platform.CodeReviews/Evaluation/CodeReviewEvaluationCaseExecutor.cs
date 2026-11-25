@@ -247,6 +247,8 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
                     CodeReviewExecutionOptions.Evaluation(manifest.ReviewerSelection) with
                     {
                         FixturePullRequestNumber = item.PullRequestNumber,
+                        IncludeTriageContext = manifest.IncludeTriageContext,
+                        FrozenTriageContext = item.TriageContext,
                     },
                     null,
                     cancellationToken,

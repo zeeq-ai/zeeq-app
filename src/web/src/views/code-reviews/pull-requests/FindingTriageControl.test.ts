@@ -67,6 +67,56 @@ describe("FindingTriageControl", () => {
     button!.click();
     expect(confirm).toHaveBeenCalledOnce();
   });
+
+  it("shows promotion only when the confirmed false-positive action is enabled", async () => {
+    const promote = vi.fn();
+    const root = document.createElement("div");
+    document.body.append(root);
+    const app = createApp({
+      render: () =>
+        h(FindingTriageControl, {
+          finding: {
+            ...finding,
+            triage: { ...triage, approvalState: "Confirmed" },
+          },
+          busy: false,
+          canPromoteConfirmedFalsePositive: true,
+          onPromote: promote,
+        }),
+    });
+    app.mount(root);
+    cleanup = () => {
+      app.unmount();
+      root.remove();
+    };
+    await nextTick();
+    root.querySelector("button")!.click();
+    await nextTick();
+    const button = [...document.querySelectorAll("button")].find((item) =>
+      item.textContent?.includes("Add to eval dataset as rejected"),
+    );
+    expect(button).toBeDefined();
+    button!.click();
+    expect(promote).toHaveBeenCalledOnce();
+  });
+
+  it("hides promotion when the operator capability is absent", async () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const app = createApp({
+      render: () => h(FindingTriageControl, {
+        finding: { ...finding, triage: { ...triage, approvalState: "Confirmed" } },
+        busy: false,
+        canPromoteConfirmedFalsePositive: false,
+      }),
+    });
+    app.mount(root);
+    cleanup = () => { app.unmount(); root.remove(); };
+    await nextTick();
+    root.querySelector("button")!.click();
+    await nextTick();
+    expect([...document.querySelectorAll("button")].some(button => button.textContent?.includes("Add to eval dataset as rejected"))).toBe(false);
+  });
 });
 
 it("requires a nonblank reason before saving an open finding", async () => {

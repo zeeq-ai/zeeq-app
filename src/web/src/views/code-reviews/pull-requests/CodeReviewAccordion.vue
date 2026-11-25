@@ -68,7 +68,9 @@
         :error="item.findingsError"
         :triage-busy-keys
         :triage-success-versions
+        :can-promote-false-positives
         @triage="emits('triage', $event)"
+        @promote="emits('promote', $event)"
         :cart-content-hashes="cartContentHashes"
         :raw-xml="item.rawXml"
         :loading-raw-xml="item.loadingRawXml"
@@ -125,10 +127,12 @@ const props = defineProps<{
   cartContentHashes: Set<string>;
   triageBusyKeys: string[];
   triageSuccessVersions: Record<string, string>;
+  canPromoteFalsePositives?: boolean;
 }>();
 
 const emits = defineEmits<{
   triage: [payload: TriageAction];
+  promote: [payload: { review: CodeReviewRecordDto; finding: CodeReviewFindingDto }];
   loadReviewFindings: [review: CodeReviewRecordDto];
   loadRawXml: [review: CodeReviewRecordDto];
   toggleCart: [
