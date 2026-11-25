@@ -28,7 +28,8 @@ public sealed partial class CodeReviewExecutionEngine(
     ILibraryDocumentStore libraries,
     HybridCache cache,
     ILogger<CodeReviewExecutionEngine> logger,
-    ICodeReviewFindingTriageStore triageStore
+    ICodeReviewFindingTriageStore triageStore,
+    KnownFalsePositiveRetrievalService? knownFalsePositives = null
 )
 {
     /// <summary>
@@ -220,12 +221,28 @@ public sealed partial class CodeReviewExecutionEngine(
                         cancellationToken
                     )
                     : [];
+            var known =
+                options.IncludePreviousReviews
+                && options.Mode == CodeReviewExecutionMode.Durable
+                && knownFalsePositives is not null
+                    ? await knownFalsePositives.RetrieveAsync(
+                        message.OrganizationId,
+                        message.RepositoryId,
+                        message.OwnerQualifiedRepoName,
+                        fileScope.InScopeFiles,
+                        message.PullRequestNumber,
+                        review.ReviewGroupId,
+                        review.Id,
+                        cancellationToken
+                    )
+                    : string.Empty;
             var priorContext = new CodeReviewPriorContext(
                 previousReviews,
                 triages,
                 message.PullRequestNumber > 0 ? "pull_request"
                     : review.ReviewGroupId is not null ? "review_group"
-                    : "review"
+                    : "review",
+                known
             );
 
             // Synthetic automation identity for the async webhook path and draft test path:
@@ -245,7 +262,7 @@ public sealed partial class CodeReviewExecutionEngine(
                 telemetry,
                 options with
                 {
-                    PriorContext = triages.Count == 0 ? null : priorContext,
+                    PriorContext = triages.Count == 0 && known.Length == 0 ? null : priorContext,
                 },
                 cancellationToken
             );

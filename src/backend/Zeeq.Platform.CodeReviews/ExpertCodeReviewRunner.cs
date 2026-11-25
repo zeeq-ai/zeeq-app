@@ -32,7 +32,8 @@ public sealed partial class ExpertCodeReviewRunner(
     ICodeReviewPreviousReviewStore previousReviewStore,
     CodeReviewRequestLinkFactory linkFactory,
     ILogger<ExpertCodeReviewRunner> logger,
-    ICodeReviewFindingTriageStore triageStore
+    ICodeReviewFindingTriageStore triageStore,
+    KnownFalsePositiveRetrievalService? knownFalsePositives = null
 ) : IExpertCodeReviewRunner
 {
     /// <inheritdoc />
@@ -232,7 +233,24 @@ public sealed partial class ExpertCodeReviewRunner(
                     string.Empty,
                     cancellationToken
                 );
-            var priorContext = new CodeReviewPriorContext(previousReviews, triages, "review_group");
+            var known = knownFalsePositives is null
+                ? string.Empty
+                : await knownFalsePositives.RetrieveAsync(
+                    reviewContext.OrganizationId,
+                    repository?.Id,
+                    request.OwnerQualifiedRepoName,
+                    reviewContext.InScopeFiles,
+                    null,
+                    reviewGroupId,
+                    null,
+                    cancellationToken
+                );
+            var priorContext = new CodeReviewPriorContext(
+                previousReviews,
+                triages,
+                "review_group",
+                known
+            );
 
             var xml = await agentExecutor.ExecuteAsync(
                 reviewContext.OrganizationId,
@@ -244,7 +262,7 @@ public sealed partial class ExpertCodeReviewRunner(
                 telemetry,
                 options: CodeReviewExecutionOptions.Durable with
                 {
-                    PriorContext = triages.Count == 0 ? null : priorContext,
+                    PriorContext = triages.Count == 0 && known.Length == 0 ? null : priorContext,
                 },
                 cancellationToken
             );

@@ -45,8 +45,9 @@ internal static class ZeeqWorkerHost
 
         try
         {
-            var appSettings =
-                builder.Configuration.GetSection(nameof(AppSettings)).Get<AppSettings>()
+            var appSettings = builder
+                .Configuration.GetSection(nameof(AppSettings))
+                .Get<AppSettings>()
                 ?? throw new InvalidOperationException("AppSettings configuration is required.");
 
             var workerAppSettings = appSettings with
@@ -103,6 +104,7 @@ internal static class ZeeqWorkerHost
             // service, mirroring AddZeeqIngest/AddZeeqIngestScheduler.
             builder.Services.AddZeeqDocuments(workerAppSettings);
             builder.Services.AddZeeqSnippetIndexing();
+            builder.Services.AddZeeqFindingTriageEmbedding();
 
             // Metrics capture pipeline. The worker is a producer (review metrics) and,
             // as a consumer, also hosts the MetricBatchMessage handler that writes to

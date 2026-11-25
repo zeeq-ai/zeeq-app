@@ -206,6 +206,18 @@ public sealed class CodeReviewFindingTriageStoreTests(PgDatabaseFixture postgres
             var vector = new HalfVector(Enumerable.Repeat((Half)1, 768).ToArray());
             await Assert
                 .That(
+                    await store.TryCompleteEmbeddingAsync(
+                        org,
+                        first.Row.Id,
+                        first.UpdatedAtUtc,
+                        first.StartedAtUtc,
+                        vector,
+                        "model"
+                    )
+                )
+                .IsFalse();
+            await Assert
+                .That(
                     await store.ReleaseEmbeddingClaimAsync(
                         org,
                         first.Row.Id,
@@ -362,6 +374,109 @@ public sealed class CodeReviewFindingTriageStoreTests(PgDatabaseFixture postgres
         finally
         {
             await CleanupAsync(org);
+        }
+    }
+
+    [Test]
+    public async Task SearchExcludesOtherTenantsAndMappedRepositoriesWithReusedName()
+    {
+        var org = await SeedAsync();
+        var otherOrg = await SeedAsync();
+        try
+        {
+            var repoId = "repo_" + Guid.NewGuid().ToString("N");
+            var otherRepoId = "repo_" + Guid.NewGuid().ToString("N");
+            await using (var db = postgres.CreateContext())
+            {
+                db.CodeRepositories.AddRange(
+                    new CodeRepository
+                    {
+                        Id = repoId,
+                        OrganizationId = org,
+                        Provider = "github",
+                        OwnerQualifiedName = "owner/new",
+                        DisplayName = "new",
+                        ReviewConfiguration = new CodeRepositoryReviewConfiguration
+                        {
+                            CheckRun = new CodeRepositoryReviewCheckRunConfiguration(),
+                        },
+                    },
+                    new CodeRepository
+                    {
+                        Id = otherRepoId,
+                        OrganizationId = org,
+                        Provider = "github",
+                        OwnerQualifiedName = "owner/old",
+                        DisplayName = "old",
+                        ReviewConfiguration = new CodeRepositoryReviewConfiguration
+                        {
+                            CheckRun = new CodeRepositoryReviewCheckRunConfiguration(),
+                        },
+                    }
+                );
+                await db.SaveChangesAsync();
+            }
+            var store = new PostgresCodeReviewFindingTriageStore(new Factory(postgres));
+            var mapped = Snapshot(org);
+            mapped.RepositoryId = otherRepoId;
+            await store.UpsertLwwAsync(Set(mapped, CodeReviewFindingTriageChannel.Ui, "reason"));
+            await store.UpsertLwwAsync(
+                Set(Snapshot(otherOrg), CodeReviewFindingTriageChannel.Ui, "reason")
+            );
+            var claims = await store.ClaimPendingEmbeddingsAsync(
+                "model",
+                TimeSpan.FromMinutes(1),
+                100
+            );
+            var vector = new HalfVector(Enumerable.Repeat((Half)1, 768).ToArray());
+            foreach (
+                var claim in claims.Where(x =>
+                    x.Row.OrganizationId == org || x.Row.OrganizationId == otherOrg
+                )
+            )
+                await store.TryCompleteEmbeddingAsync(
+                    claim.Row.OrganizationId,
+                    claim.Row.Id,
+                    claim.UpdatedAtUtc,
+                    claim.StartedAtUtc,
+                    vector,
+                    "model"
+                );
+            var matches = await store.SearchConfirmedFalsePositivesAsync(
+                org,
+                repoId,
+                "owner/repo",
+                vector,
+                "model",
+                0.9,
+                10
+            );
+            await Assert.That(matches.Count).IsEqualTo(0);
+            await Assert
+                .That(async () =>
+                    await store.SearchConfirmedFalsePositivesAsync(
+                        org,
+                        repoId,
+                        "owner/repo",
+                        new HalfVector(new Half[768]),
+                        "model",
+                        0.9,
+                        10
+                    )
+                )
+                .Throws<ArgumentException>();
+        }
+        finally
+        {
+            await using (var db = postgres.CreateContext())
+            {
+                await db
+                    .CodeReviewFindingTriages.Where(x => x.OrganizationId == org)
+                    .ExecuteDeleteAsync();
+                await db.CodeRepositories.Where(x => x.OrganizationId == org).ExecuteDeleteAsync();
+            }
+            await CleanupAsync(org);
+            await CleanupAsync(otherOrg);
         }
     }
 
