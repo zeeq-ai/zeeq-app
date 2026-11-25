@@ -101,7 +101,7 @@
         <template #expanded="{ row }">
           <div class="grid min-w-0 gap-3 p-3">
             <div
-              class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted sm:hidden"
+              class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted md:hidden"
             >
               <span>Reference {{ referenceDisplay(row.original) }}</span
               ><span>Covered {{ gradeCounts(row.original).covered }}</span
@@ -164,6 +164,9 @@
                     candidateForReference(row.original, reference.id)
                   "
                 >
+                  <p class="text-[11px] font-semibold uppercase text-muted">
+                    Matched reviewer finding
+                  </p>
                   <p>
                     {{
                       candidateForReference(row.original, reference.id)?.summary
@@ -178,6 +181,9 @@
                         candidateForReference(row.original, reference.id)?.line
                       }}</span
                     >
+                  </p>
+                  <p class="text-[11px] font-semibold uppercase text-muted">
+                    Judge reason
                   </p>
                   <p class="text-muted">
                     {{ assessment(row.original, reference.id) }}
@@ -300,6 +306,9 @@
                     </p>
                   </div>
                   <p v-else class="text-warning">Missed</p>
+                  <p class="text-[11px] font-semibold uppercase text-muted">
+                    Judge reason
+                  </p>
                   <p class="text-muted">
                     {{ assessment(row.original, reference.id) }}
                   </p>

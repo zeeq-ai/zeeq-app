@@ -172,11 +172,7 @@
               >Coverage
               <strong class="font-mono tabular-nums">{{
                 coverageLabel(selectedRun.run)
-              }}</strong
-              ><span v-if="unlabelledPrCount > 0" class="text-muted">
-                ({{ unlabelledPrCount }}
-                {{ unlabelledPrCount === 1 ? "PR" : "PRs" }} unlabelled)</span
-              ></span
+              }}</strong></span
             >
             <span v-if="runFalsePositives" class="text-default"
               >Known FPs
@@ -224,12 +220,21 @@
                 selectedRun.run.counts.failedCaseCount
               }}</strong></span
             >
-            <span class="text-default"
-              >Unlabelled
+            <span
+              v-if="runFalsePositives?.onUnlabelledPrCount"
+              class="text-default"
+            >
+              FP-only PRs
+              <strong class="font-mono tabular-nums">{{
+                runFalsePositives.onUnlabelledPrCount
+              }}</strong>
+            </span>
+            <span v-else class="text-default">
+              Unlabelled
               <strong class="font-mono tabular-nums">{{
                 selectedRun.run.counts.unlabelledCaseCount
-              }}</strong></span
-            >
+              }}</strong>
+            </span>
             <span class="text-default"
               >Additional
               <strong class="font-mono tabular-nums"
@@ -259,26 +264,18 @@
             @mark-as-false-positive="openFalsePositiveModal"
           />
 
-          <details class="border-t border-default pt-3">
-            <summary
-              class="cursor-pointer text-sm font-semibold text-highlighted"
-            >
-              Previous runs ({{ runs.length }})
-            </summary>
-            <div class="mt-3">
-              <EvaluationRunHistory
-                :runs="runs"
-                :loading="loadingRuns"
-                :next-cursor-id="runNextCursorId"
-                :dataset-name="datasetName"
-                @select="viewRun"
-                @load-more="loadMoreRuns"
-                @cancel="cancelRun"
-                @abandon="abandonRun"
-                @retry="retryFailedRun"
-              />
-            </div>
-          </details>
+          <EvaluationRunHistory
+            class="border-t border-default pt-3"
+            :runs="runs"
+            :loading="loadingRuns"
+            :next-cursor-id="runNextCursorId"
+            :dataset-name="datasetName"
+            @select="viewRun"
+            @load-more="loadMoreRuns"
+            @cancel="cancelRun"
+            @abandon="abandonRun"
+            @retry="retryFailedRun"
+          />
         </div>
 
         <div v-else class="grid gap-4">
@@ -628,12 +625,6 @@ const runFalsePositives = computed(() =>
   selectedRun.value
     ? summarizeRunFalsePositives(selectedRun.value.run, selectedRun.value.cases)
     : null,
-);
-const unlabelledPrCount = computed(() =>
-  selectedRun.value
-    ? Number(selectedRun.value.run.counts.unlabelledCaseCount) +
-      Number(selectedRun.value.run.counts.falsePositiveCheckedCaseCount ?? 0)
-    : 0,
 );
 const datasetSaveError = computed(() => {
   if (saveErrorCode.value === "capture_token_expired") {
