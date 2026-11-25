@@ -45,21 +45,22 @@ export type EvaluationCaseGradeCounts = {
   covered: number | "—";
   missed: number | "—";
   additional: number | "—";
+  knownFalsePositives: number | "—" | "not-checked";
 };
 
 /** Returns assessment counts only for a case with a persisted binary grade. */
 export function getEvaluationCaseGradeCounts(
   result: Pick<
     EvaluationRunCaseDto,
-    "outcome" | "references" | "judgeMatches" | "candidateFindings"
+    "outcome" | "references" | "judgeMatches" | "candidateFindings" | "trackedFalsePositiveCount" | "repeatedFalsePositiveCount"
   >,
 ): EvaluationCaseGradeCounts {
   if (result.outcome !== "Graded") {
-    return { reference: "—", covered: "—", missed: "—", additional: "—" };
+    return { reference: "—", covered: "—", missed: "—", additional: unmatchedCandidateCount(result), knownFalsePositives: failedOutcome(result.outcome) && Number(result.trackedFalsePositiveCount) > 0 ? "not-checked" : Number(result.repeatedFalsePositiveCount) };
   }
 
   if (result.references.state === "Unlabelled") {
-    return { reference: "—", covered: "—", missed: "—", additional: "—" };
+    return { reference: "—", covered: "—", missed: "—", additional: "—", knownFalsePositives: Number(result.repeatedFalsePositiveCount) };
   }
 
   const referenceCount =
@@ -77,6 +78,7 @@ export function getEvaluationCaseGradeCounts(
     additional: result.candidateFindings.filter(
       (candidate) => !matchedCandidateIds.has(candidate.id),
     ).length,
+    knownFalsePositives: Number(result.repeatedFalsePositiveCount),
   };
 }
 
@@ -262,9 +264,7 @@ export function buildEvaluationDatasetSaveRequest(
       referenceSets: evaluationCase.referenceSets.map((referenceSet) => ({
         ...referenceSet,
         findings:
-          referenceSet.state === "Expected"
-            ? cloneReferenceSets([referenceSet])[0].findings
-            : [],
+          cloneReferenceSets([referenceSet])[0].findings.filter((finding) => referenceSet.state === "Expected" || finding.disposition === "Rejected"),
       })),
     })),
   };
@@ -316,7 +316,7 @@ function cloneReferenceSets(
   return referenceSets.map((referenceSet) => ({
     reviewerAgentId: referenceSet.reviewerAgentId,
     state: referenceSet.state,
-    findings: referenceSet.findings.map((finding) => ({ ...finding })),
+    findings: referenceSet.findings.map((finding) => ({ ...finding, disposition: finding.disposition ?? "Expected", rationale: finding.rationale ?? null })),
   }));
 }
 
@@ -341,6 +341,24 @@ export function canRetryEvaluationRun(
     Number(run.counts.caseCount) >
     Number(run.counts.gradedCaseCount) +
       Number(run.counts.skippedCaseCount) +
-      Number(run.counts.unlabelledCaseCount)
+      Number(run.counts.unlabelledCaseCount) +
+      Number(run.counts.falsePositiveCheckedCaseCount ?? 0)
   );
+}
+
+function unmatchedCandidateCount(result: Pick<EvaluationRunCaseDto, "judgeMatches" | "candidateFindings">): number {
+  const matched = new Set(result.judgeMatches.map((match) => match.candidateId));
+  return result.candidateFindings.filter((candidate) => !matched.has(candidate.id)).length;
+}
+function failedOutcome(outcome: EvaluationRunCaseDto["outcome"]): boolean {
+  return ["ReviewFailed", "JudgeFailed", "Skipped", "Cancelled"].includes(outcome);
+}
+export function countDatasetCaseReferences(set: CodeReviewEvaluationReferenceSetDto) {
+  return { expectedCount: set.findings.filter((f) => (f.disposition ?? "Expected") === "Expected").length, rejectedCount: set.findings.filter((f) => f.disposition === "Rejected").length };
+}
+export function summarizeRunFalsePositives(run: EvaluationRunDto, cases: EvaluationRunCaseDto[]) {
+  const reported = Number(run.counts.repeatedFalsePositiveCount ?? cases.reduce((n, c) => n + Number(c.repeatedFalsePositiveCount), 0));
+  const checked = Number(run.counts.trackedFalsePositiveCount ?? cases.reduce((n, c) => n + Number(c.trackedFalsePositiveCount), 0));
+  const unchecked = cases.filter((c) => failedOutcome(c.outcome)).reduce((n, c) => n + Number(c.trackedFalsePositiveCount), 0);
+  return { reported, checked: Math.max(0, checked - unchecked), unchecked, onUnlabelledPrCount: Number(run.counts.falsePositiveCheckedCaseCount ?? 0) };
 }

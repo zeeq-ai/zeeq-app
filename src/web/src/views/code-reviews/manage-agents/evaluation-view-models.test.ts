@@ -23,7 +23,8 @@ describe("evaluation dataset view models", () => {
       reference: "—",
       covered: "—",
       missed: "—",
-      additional: "—",
+      additional: 1,
+      knownFalsePositives: 0,
     });
 
     const clean = runCase({
@@ -40,6 +41,7 @@ describe("evaluation dataset view models", () => {
       covered: 0,
       missed: 0,
       additional: 1,
+      knownFalsePositives: 0,
     });
   });
 
@@ -267,6 +269,8 @@ function referenceSet(): CodeReviewEvaluationReferenceSetDto {
         origin: "Manual",
         sourceRunId: null,
         sourceFindingId: null,
+        disposition: "Expected",
+        rationale: null,
       },
     ],
   };
