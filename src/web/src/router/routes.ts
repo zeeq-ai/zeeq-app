@@ -99,6 +99,13 @@ export const routes: Array<RouteRecordRaw> = [
             }),
           },
           {
+            path: "triages/:orgId/:triageId",
+            name: "FindingTriage",
+            component: () =>
+              import("@/views/code-reviews/single/FindingTriageLink.vue"),
+            meta: { title: "Finding triage" },
+          },
+          {
             path: "reviews/:reviewId",
             name: "CodeReviewSingle",
             component: () =>

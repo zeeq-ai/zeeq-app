@@ -68,6 +68,10 @@ describe("agent test view models", () => {
                   side: "RIGHT",
                   summary: "Major issue",
                   body: "Fix this.",
+                  occurrenceKey: "F1",
+                  findingRef: "12345.F1",
+                  semanticId: "test-finding-1",
+                  triage: null,
                 },
                 {
                   level: codeReviewFindingLevelEnum.Comment,
@@ -76,6 +80,10 @@ describe("agent test view models", () => {
                   side: null,
                   summary: "Context",
                   body: "Note this.",
+                  occurrenceKey: "F2",
+                  findingRef: "12345.F2",
+                  semanticId: "test-finding-2",
+                  triage: null,
                 },
               ],
             },
@@ -179,6 +187,10 @@ describe("agent test view models", () => {
         side: "RIGHT",
         summary: "Minor issue",
         body: "Body",
+        occurrenceKey: "F3",
+        findingRef: "12345.F3",
+        semanticId: "test-finding-3",
+        triage: null,
       }),
     ).toBe("src/App.cs:12 (RIGHT)");
   });

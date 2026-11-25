@@ -67,6 +67,9 @@
         :requesting-review-id
         v-model:open-review-id="openReviewId"
         v-model:bypassing="bypassing"
+        :triage-busy-keys="triageBusyKeys"
+        :triage-success-versions="triageSuccessVersions"
+        @triage="handleTriage"
         :cart-content-hashes="cartContentHashes"
         :can-add-to-dataset="canAddToDataset"
         class="hidden lg:flex"
@@ -101,6 +104,9 @@
             :requesting-review-id
             v-model:open-review-id="openReviewId"
             v-model:bypassing="bypassing"
+            :triage-busy-keys="triageBusyKeys"
+            :triage-success-versions="triageSuccessVersions"
+            @triage="handleTriage"
             :cart-content-hashes="cartContentHashes"
             :can-add-to-dataset="canAddToDataset"
             show-close
@@ -141,6 +147,9 @@
 </template>
 
 <script setup lang="ts">
+import { useFindingTriage } from "@/views/code-reviews/pull-requests/useFindingTriage";
+const { triageBusyKeys, triageSuccessVersions, handleTriage } =
+  useFindingTriage();
 import { computed, onBeforeUnmount, onMounted, ref, toRef, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useRoute } from "vue-router";
@@ -741,11 +750,14 @@ async function handleToggleCart(
         side: finding.side,
         summary: finding.summary,
         body: finding.body,
+        occurrenceKey: finding.occurrenceKey,
+        semanticId: finding.semanticId,
       },
       reviewer,
       {
         ownerQualifiedRepoName: review.ownerQualifiedRepoName,
         pullRequestNumber: +review.pullRequestNumber,
+        id: review.id,
       },
       annotation,
     );

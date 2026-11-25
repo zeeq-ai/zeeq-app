@@ -1,50 +1,56 @@
 <template>
   <!-- Already in the active cart draft: click removes immediately. -->
-  <UButton
+  <UTooltip
     v-if="isInCart"
-    icon="i-hugeicons-shopping-basket-remove-01"
-    label="In cart"
-    color="primary"
-    variant="soft"
-    size="xs"
-    :loading="isToggling"
-    @click="emits('toggleCart', finding, reviewer, null)"
-  />
-
-  <!-- Not yet added: opens the annotate popover before confirming. -->
-  <UPopover v-else v-model:open="popoverOpen">
-    <UButton
-      icon="i-hugeicons-shopping-basket-add-01"
-      label="Add to fix"
-      color="neutral"
-      variant="outline"
+    :text="triaged ? 'Triaged after add' : 'Remove from cart'"
+    ><UButton
+      icon="i-hugeicons-shopping-basket-remove-01"
+      label="In cart"
+      color="primary"
+      variant="soft"
       size="xs"
       :loading="isToggling"
-    />
+      @click="emits('toggleCart', finding, reviewer, null)"
+  /></UTooltip>
 
-    <template #content>
-      <div class="grid w-80 gap-2 p-3">
-        <UTextarea
-          v-model="annotationDraft"
-          placeholder="Add a note for the agent (optional)"
-          :maxlength="500"
-          :rows="3"
-        />
-        <div class="flex items-center justify-between">
-          <span class="text-xs text-muted">
-            {{ annotationDraft.length }}/500
-          </span>
-          <UButton
-            label="Save"
-            color="primary"
-            variant="subtle"
-            size="xs"
-            @click="handleAdd"
+  <!-- Not yet added: opens the annotate popover before confirming. -->
+  <UTooltip
+    v-else
+    :text="triaged ? 'Triaged — Clear to add to fix' : 'Add to fix'"
+    ><UPopover v-model:open="popoverOpen">
+      <UButton
+        icon="i-hugeicons-shopping-basket-add-01"
+        label="Add to fix"
+        color="neutral"
+        variant="outline"
+        size="xs"
+        :loading="isToggling"
+        :disabled="triaged"
+      />
+
+      <template #content>
+        <div class="grid w-80 gap-2 p-3">
+          <UTextarea
+            v-model="annotationDraft"
+            placeholder="Add a note for the agent (optional)"
+            :maxlength="500"
+            :rows="3"
           />
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-muted">
+              {{ annotationDraft.length }}/500
+            </span>
+            <UButton
+              label="Save"
+              color="primary"
+              variant="subtle"
+              size="xs"
+              @click="handleAdd"
+            />
+          </div>
         </div>
-      </div>
-    </template>
-  </UPopover>
+      </template> </UPopover
+  ></UTooltip>
 </template>
 
 <script setup lang="ts">
@@ -68,6 +74,9 @@ const emits = defineEmits<{
   ];
 }>();
 
+const triaged = computed(
+  () => props.finding.triage?.approvalState === "Confirmed",
+);
 const popoverOpen = ref(false);
 
 const annotationDraft = ref("");

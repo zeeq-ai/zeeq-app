@@ -63,7 +63,11 @@
                 {{ new Date(singleReview.createdAtUtc).toLocaleString() }}
               </p>
             </div>
-            <UFieldGroup v-if="singleReviewPullRequest" class="shrink-0" size="sm">
+            <UFieldGroup
+              v-if="singleReviewPullRequest"
+              class="shrink-0"
+              size="sm"
+            >
               <UTooltip text="Bypass active PR check" :delayDuration="0">
                 <UButton
                   v-if="singleReviewPullRequest.checkRunBlocking"
@@ -120,6 +124,9 @@
             :review-raw-xml-by-review-key
             :loading-review-raw-xml-by-review-key
             :review-raw-xml-errors-by-review-key
+            :triage-busy-keys="triageBusyKeys"
+            :triage-success-versions="triageSuccessVersions"
+            @triage="handleTriage"
             :cart-content-hashes
             @load-review-findings="handleLoadReviewFindings"
             @load-raw-xml="handleLoadRawXml"
@@ -135,6 +142,9 @@
 </template>
 
 <script setup lang="ts">
+import { useFindingTriage } from "@/views/code-reviews/pull-requests/useFindingTriage";
+const { triageBusyKeys, triageSuccessVersions, handleTriage } =
+  useFindingTriage();
 import { onMounted, ref } from "vue";
 import { storeToRefs } from "pinia";
 import type {
@@ -272,11 +282,14 @@ async function handleToggleCart(
         side: finding.side,
         summary: finding.summary,
         body: finding.body,
+        occurrenceKey: finding.occurrenceKey,
+        semanticId: finding.semanticId,
       },
       reviewer,
       {
         ownerQualifiedRepoName: review.ownerQualifiedRepoName,
         pullRequestNumber: +review.pullRequestNumber,
+        id: review.id,
       },
       annotation,
     );

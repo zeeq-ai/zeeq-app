@@ -66,6 +66,9 @@
         :source-telemetry="item.findings?.sourceTelemetry"
         :loading="item.loadingFindings"
         :error="item.findingsError"
+        :triage-busy-keys
+        :triage-success-versions
+        @triage="emits('triage', $event)"
         :cart-content-hashes="cartContentHashes"
         :raw-xml="item.rawXml"
         :loading-raw-xml="item.loadingRawXml"
@@ -81,6 +84,7 @@
 </template>
 
 <script setup lang="ts">
+import type { TriageAction } from "./useFindingTriage";
 import type {
   CodeReviewFindingDto,
   CodeReviewFindingsResponse,
@@ -119,9 +123,12 @@ const props = defineProps<{
   loadingReviewRawXmlByReviewKey: Record<string, boolean>;
   reviewRawXmlErrorsByReviewKey: Record<string, string>;
   cartContentHashes: Set<string>;
+  triageBusyKeys: string[];
+  triageSuccessVersions: Record<string, string>;
 }>();
 
 const emits = defineEmits<{
+  triage: [payload: TriageAction];
   loadReviewFindings: [review: CodeReviewRecordDto];
   loadRawXml: [review: CodeReviewRecordDto];
   toggleCart: [
