@@ -84,6 +84,11 @@
             gradeCounts(row.original).additional
           }}</span></template
         >
+        <template #knownFp-cell="{ row }"
+          ><span :class="knownFpClass(row.original)">{{
+            knownFpLabel(row.original)
+          }}</span></template
+        >
         <template #status-cell="{ row }"
           ><span
             class="block max-w-24 truncate text-muted sm:max-w-none sm:whitespace-nowrap"
@@ -98,14 +103,93 @@
               <span>Reference {{ referenceDisplay(row.original) }}</span
               ><span>Covered {{ gradeCounts(row.original).covered }}</span
               ><span>Missed {{ gradeCounts(row.original).missed }}</span
-              ><span
-                >Additional {{ gradeCounts(row.original).additional }}</span
-              >
+              ><span>Additional {{ gradeCounts(row.original).additional }}</span
+              ><span>Known FPs {{ knownFpLabel(row.original) }}</span>
             </div>
-            <template v-if="row.original.outcome !== 'Graded'">
+            <section
+              v-if="rejectedFindings(row.original).length"
+              class="grid gap-2 border-b border-default pb-3"
+            >
+              <h4 class="text-xs font-semibold text-highlighted">
+                Known false positives ({{
+                  rejectedFindings(row.original).length
+                }})
+              </h4>
+              <article
+                v-for="reference in rejectedFindings(row.original)"
+                :key="reference.id"
+                class="grid gap-1 rounded border border-default p-2 text-xs"
+              >
+                <div class="flex items-center gap-2">
+                  <span class="font-medium text-highlighted">{{
+                    reference.title
+                  }}</span>
+                  <UBadge
+                    v-if="!isJudged(row.original)"
+                    label="Not checked"
+                    color="neutral"
+                    variant="subtle"
+                    size="xs"
+                  />
+                  <UBadge
+                    v-else-if="
+                      candidateForReference(row.original, reference.id)
+                    "
+                    label="Reported"
+                    color="warning"
+                    variant="subtle"
+                    size="xs"
+                  />
+                  <UBadge
+                    v-else
+                    label="Not reported"
+                    color="success"
+                    variant="subtle"
+                    size="xs"
+                  />
+                </div>
+                <p class="font-mono text-muted">
+                  {{ reference.file
+                  }}<span v-if="reference.line">:{{ reference.line }}</span>
+                </p>
+                <p v-if="reference.rationale" class="text-muted">
+                  {{ reference.rationale }}
+                </p>
+                <template
+                  v-if="
+                    isJudged(row.original) &&
+                    candidateForReference(row.original, reference.id)
+                  "
+                >
+                  <p>
+                    {{
+                      candidateForReference(row.original, reference.id)?.summary
+                    }}
+                    ·
+                    {{ candidateForReference(row.original, reference.id)?.file
+                    }}<span
+                      v-if="
+                        candidateForReference(row.original, reference.id)?.line
+                      "
+                      >:{{
+                        candidateForReference(row.original, reference.id)?.line
+                      }}</span
+                    >
+                  </p>
+                  <p class="text-muted">
+                    {{ assessment(row.original, reference.id) }}
+                  </p>
+                </template>
+              </article>
+            </section>
+            <template v-if="!isJudged(row.original)">
               <p class="text-sm text-muted">
                 Ungraded findings (unverified) ·
                 {{ statusLabel(row.original) }}; no assessment was recorded.
+              </p>
+              <p class="text-xs text-muted">
+                Optional to label. Unverified findings do not count as known
+                false positives.
               </p>
               <div
                 v-for="finding in row.original.candidateFindings"
@@ -130,12 +214,22 @@
                     variant="subtle"
                     size="xs"
                   /><UButton
-                    v-if="row.original.references.state !== 'Unlabelled'"
-                    label="Add to reference…"
+                    label="Add as expected"
+                    :disabled="!canManage"
                     size="xs"
                     color="neutral"
                     variant="outline"
                     @click="emits('addToReference', row.original, finding.id)"
+                  /><UButton
+                    label="Mark as false positive"
+                    :disabled="!canManage"
+                    icon="i-hugeicons-flag-01"
+                    size="xs"
+                    color="neutral"
+                    variant="outline"
+                    @click="
+                      emits('markAsFalsePositive', row.original, finding.id)
+                    "
                   />
                 </div>
               </div>
@@ -151,7 +245,7 @@
                 v-if="row.original.references.state === 'Unlabelled'"
                 class="text-sm text-muted"
               >
-                Unlabelled · excluded from coverage.
+                Expected findings unlabelled · excluded from coverage.
               </div>
               <div
                 v-else-if="row.original.references.state === 'ReviewedClean'"
@@ -167,7 +261,7 @@
                   ><span>Assessment</span>
                 </div>
                 <div
-                  v-for="reference in row.original.references.findings"
+                  v-for="reference in expectedFindings(row.original)"
                   :key="reference.id"
                   class="grid grid-cols-1 sm:grid-cols-[minmax(10rem,1fr)_minmax(12rem,1fr)_minmax(10rem,1fr)] gap-3 border-b border-default px-2 py-2 text-xs"
                 >
@@ -217,6 +311,10 @@
                     additionalFindings(row.original).length
                   }})
                 </h4>
+                <p class="text-xs text-muted">
+                  Optional to label. Unverified findings do not count as known
+                  false positives.
+                </p>
                 <article
                   v-for="finding in additionalFindings(row.original)"
                   :key="finding.id"
@@ -233,15 +331,27 @@
                       {{ finding.severity }}
                     </p>
                   </div>
-                  <UButton
-                    v-if="row.original.references.state !== 'Unlabelled'"
-                    label="Add to reference…"
-                    size="xs"
-                    color="neutral"
-                    variant="outline"
-                    class="shrink-0"
-                    @click="emits('addToReference', row.original, finding.id)"
-                  />
+                  <div class="flex shrink-0 flex-wrap gap-2">
+                    <UButton
+                      label="Add as expected"
+                      :disabled="!canManage"
+                      size="xs"
+                      color="neutral"
+                      variant="outline"
+                      class="shrink-0"
+                      @click="emits('addToReference', row.original, finding.id)"
+                    /><UButton
+                      label="Mark as false positive"
+                      :disabled="!canManage"
+                      icon="i-hugeicons-flag-01"
+                      size="xs"
+                      color="neutral"
+                      variant="outline"
+                      @click="
+                        emits('markAsFalsePositive', row.original, finding.id)
+                      "
+                    />
+                  </div>
                 </article>
               </section>
             </template>
@@ -261,9 +371,11 @@ import { getEvaluationCaseGradeCounts } from "./evaluation-view-models";
 const props = defineProps<{
   cases: EvaluationRunCaseDto[];
   loading: boolean;
+  canManage: boolean;
 }>();
 const emits = defineEmits<{
   addToReference: [result: EvaluationRunCaseDto, findingId: string];
+  markAsFalsePositive: [result: EvaluationRunCaseDto, findingId: string];
 }>();
 const expandedRows = ref<Record<string, boolean>>({});
 const columns: TableColumn<EvaluationRunCaseDto>[] = [
@@ -315,11 +427,46 @@ const columns: TableColumn<EvaluationRunCaseDto>[] = [
     },
   },
   {
+    id: "knownFp",
+    header: "Known FPs",
+    meta: {
+      class: {
+        th: "hidden text-right sm:table-cell",
+        td: "hidden text-right sm:table-cell",
+      },
+    },
+  },
+  {
     id: "status",
     header: "Status",
     meta: { class: { th: "w-24 sm:w-auto", td: "break-words" } },
   },
 ];
+function isJudged(result: EvaluationRunCaseDto) {
+  return (
+    result.outcome === "Graded" || result.outcome === "FalsePositiveChecked"
+  );
+}
+function expectedFindings(result: EvaluationRunCaseDto) {
+  return result.references.findings.filter((f) => f.disposition !== "Rejected");
+}
+function rejectedFindings(result: EvaluationRunCaseDto) {
+  return result.references.findings.filter((f) => f.disposition === "Rejected");
+}
+function knownFpLabel(result: EvaluationRunCaseDto) {
+  const value = gradeCounts(result).knownFalsePositives;
+  return typeof value === "object"
+    ? `${value.reported}/${value.tracked}`
+    : value === "not-checked"
+      ? "Not checked"
+      : value;
+}
+function knownFpClass(result: EvaluationRunCaseDto) {
+  const value = gradeCounts(result).knownFalsePositives;
+  return typeof value === "object" && value.reported > 0
+    ? "text-warning font-medium tabular-nums"
+    : "text-muted tabular-nums";
+}
 function gradeCounts(result: EvaluationRunCaseDto) {
   return getEvaluationCaseGradeCounts(result);
 }
@@ -361,6 +508,8 @@ function statusLabel(result: EvaluationRunCaseDto): string {
     if (result.phase === "Reviewed") return "Awaiting grade";
     return result.phase;
   }
+  if (result.outcome === "FalsePositiveChecked")
+    return "Expected findings unlabelled";
   if (result.outcome === "Cancelled") return "Cancelled";
   if (result.outcome === "Skipped")
     return `Skipped${result.errorCode ? ` · ${result.errorCode}` : ""}`;
