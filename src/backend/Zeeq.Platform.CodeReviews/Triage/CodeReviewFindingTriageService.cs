@@ -157,11 +157,13 @@ internal sealed partial class CodeReviewFindingTriageService(
             "^[a-fA-F0-9]{5,}\\.F[1-9][0-9]*$",
             RegexOptions.CultureInvariant
         );
-        var isBareReference = Regex.IsMatch(
-            findingReference,
-            "^F[1-9][0-9]*$",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
-        );
+        var isBareReference =
+            request.Target is FindingTriageTarget.ByReview
+            && Regex.IsMatch(
+                findingReference,
+                "^F[1-9][0-9]*$",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
+            );
         if (
             isReference
             && request.Target is FindingTriageTarget.ByReview byReview

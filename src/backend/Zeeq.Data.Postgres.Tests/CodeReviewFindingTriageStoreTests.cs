@@ -419,6 +419,74 @@ public sealed class CodeReviewFindingTriageStoreTests(PgDatabaseFixture postgres
     }
 
     [Test]
+    public async Task NewerIdenticalGithubConfirmation_AdvancesWatermarkWithoutChangingSnapshot()
+    {
+        var org = await SeedAsync();
+        try
+        {
+            var store = new PostgresCodeReviewFindingTriageStore(new Factory(postgres));
+            var snapshot = Snapshot(org);
+            await store.UpsertLwwAsync(Set(snapshot, CodeReviewFindingTriageChannel.Mcp, "reason"));
+            var t10 = DateTimeOffset
+                .FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+                .AddMinutes(1);
+            FindingTriageWrite Confirm(DateTimeOffset at) =>
+                new(
+                    snapshot,
+                    FindingTriageOperation.Confirm,
+                    null,
+                    null,
+                    CodeReviewFindingTriageChannel.GitHub,
+                    "human",
+                    at
+                );
+            var first = await store.UpsertLwwAsync(Confirm(t10));
+            var vector = new HalfVector(Enumerable.Repeat((Half)1, 768).ToArray());
+            var started = t10.AddMinutes(-2);
+            await using (var db = postgres.CreateContext())
+            {
+                var row = await db.CodeReviewFindingTriages.SingleAsync(x =>
+                    x.OrganizationId == org
+                );
+                row.Embedding = vector;
+                row.EmbeddingModel = "model";
+                row.EmbeddingStartedAt = started;
+                await db.SaveChangesAsync();
+            }
+            var t20 = t10.AddSeconds(10);
+            var retry = await store.UpsertLwwAsync(Confirm(t20));
+            await Assert.That(retry.Status).IsEqualTo(FindingTriageWriteStatus.Applied);
+            await using (var db = postgres.CreateContext())
+            {
+                var row = await db
+                    .CodeReviewFindingTriages.AsNoTracking()
+                    .SingleAsync(x => x.OrganizationId == org);
+                await Assert.That(row.LastSourceEventAtUtc).IsEqualTo(t20);
+                await Assert.That(row.UpdatedAtUtc).IsEqualTo(first.Row!.UpdatedAtUtc);
+                await Assert.That(row.Embedding!.ToString()).IsEqualTo(vector.ToString());
+                await Assert.That(row.EmbeddingModel).IsEqualTo("model");
+                await Assert.That(row.EmbeddingStartedAt).IsEqualTo(started);
+            }
+            var delayed = await store.UpsertLwwAsync(
+                new(
+                    snapshot,
+                    FindingTriageOperation.Clear,
+                    null,
+                    null,
+                    CodeReviewFindingTriageChannel.GitHub,
+                    "human",
+                    t10.AddSeconds(5)
+                )
+            );
+            await Assert.That(delayed.Status).IsEqualTo(FindingTriageWriteStatus.IgnoredStale);
+        }
+        finally
+        {
+            await CleanupAsync(org);
+        }
+    }
+
+    [Test]
     public async Task DatabaseChecks_RejectInvalidStateAndCrossTenantRepository()
     {
         var org = await SeedAsync();

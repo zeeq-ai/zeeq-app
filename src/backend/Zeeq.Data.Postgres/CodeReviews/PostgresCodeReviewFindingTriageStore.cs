@@ -107,7 +107,18 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
                 && row.ApprovalState == state
                 && row.CurrentReason == newReason
             )
+            {
+                if (
+                    write.Channel == CodeReviewFindingTriageChannel.GitHub
+                    && write.SourceEventAtUtc!.Value > row.LastSourceEventAtUtc
+                )
+                {
+                    row.LastSourceEventAtUtc = write.SourceEventAtUtc.Value;
+                    await db.SaveChangesAsync(cancellationToken);
+                    await tx.CommitAsync(cancellationToken);
+                }
                 return new(FindingTriageWriteStatus.Applied, row);
+            }
             var previousDisposition = row?.Disposition;
             var previousApprovalState = row?.ApprovalState;
             var now = await db

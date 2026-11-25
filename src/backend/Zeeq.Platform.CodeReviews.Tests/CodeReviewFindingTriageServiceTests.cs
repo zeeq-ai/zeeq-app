@@ -152,6 +152,40 @@ public sealed class CodeReviewFindingTriageServiceTests
     }
 
     [Test]
+    [Arguments("F1")]
+    [Arguments("F2")]
+    public async Task PullRequestBareReference_DoesNotMatch(string reference)
+    {
+        var reviews = Substitute.For<ICodeReviewRecordStore>();
+        var artifacts = Substitute.For<ICodeReviewArtifactStore>();
+        var store = Substitute.For<ICodeReviewFindingTriageStore>();
+        reviews
+            .ListForTriageAsync("org", Arg.Any<FindingTriageTarget>(), Arg.Any<CancellationToken>())
+            .Returns([Review("cr_abcde")]);
+        artifacts
+            .OpenFindingsAsync("uri", Arg.Any<CancellationToken>())
+            .Returns(_ => new MemoryStream(Encoding.UTF8.GetBytes(Xml)));
+        var service = new CodeReviewFindingTriageService(reviews, artifacts, new(), store);
+        var result = await service.TriageAsync(
+            new(
+                "org",
+                new FindingTriageTarget.ByPullRequest("repo", 1),
+                reference,
+                FindingTriageOperation.Clear,
+                null,
+                null,
+                CodeReviewFindingTriageChannel.GitHub,
+                "actor"
+            )
+        );
+        await Assert.That(result is FindingTriageOutcome.NotFound).IsTrue();
+        await Assert.That(((FindingTriageOutcome.NotFound)result).Candidates.Count).IsEqualTo(1);
+        await store
+            .DidNotReceive()
+            .UpsertLwwAsync(Arg.Any<FindingTriageWrite>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
     public async Task CollidingShortReferences_AreAmbiguousAndNeverWrite()
     {
         var reviews = Substitute.For<ICodeReviewRecordStore>();
