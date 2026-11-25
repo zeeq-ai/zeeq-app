@@ -229,7 +229,7 @@
                 runFalsePositives.onUnlabelledPrCount
               }}</strong>
             </span>
-            <span v-else class="text-default">
+            <span class="text-default">
               Unlabelled
               <strong class="font-mono tabular-nums">{{
                 selectedRun.run.counts.unlabelledCaseCount
