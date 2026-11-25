@@ -93,7 +93,8 @@
             class="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-md border border-default bg-default p-3 shadow-sm"
           >
             <span class="text-sm"
-              >{{ draftChangeCount }} unsaved dataset change(s)</span
+              >{{ draftChangeCount }} unsaved dataset
+              {{ draftChangeCount === 1 ? "change" : "changes" }}</span
             >
             <UButton
               label="Review in Manage datasets"
@@ -173,7 +174,8 @@
                 coverageLabel(selectedRun.run)
               }}</strong
               ><span v-if="unlabelledPrCount > 0" class="text-muted">
-                ({{ unlabelledPrCount }} PRs unlabelled)</span
+                ({{ unlabelledPrCount }}
+                {{ unlabelledPrCount === 1 ? "PR" : "PRs" }} unlabelled)</span
               ></span
             >
             <span v-if="runFalsePositives" class="text-default"
@@ -195,7 +197,9 @@
                 class="text-muted"
               >
                 ({{ runFalsePositives.onUnlabelledPrCount }} on unlabelled
-                PR)</span
+                {{
+                  runFalsePositives.onUnlabelledPrCount === 1 ? "PR" : "PRs"
+                }})</span
               ><span v-if="runFalsePositives.unchecked > 0" class="text-muted">
                 · {{ runFalsePositives.unchecked }} not checked</span
               ></span
@@ -760,23 +764,24 @@ function beginPolling() {
   endPolling();
   pollHandle = setInterval(() => {
     const dataset = selectedDataset.value;
+    const currentSelectedRun = selectedRun.value;
+    const hasActiveListRun = runs.value.some((run) => isActiveRun(run.state));
+    const hasActiveSelectedRun = Boolean(
+      currentSelectedRun && isActiveRun(currentSelectedRun.run.state),
+    );
     if (
       !dataset ||
       document.hidden ||
-      !runs.value.some((run) => isActiveRun(run.state))
+      (!hasActiveListRun && !hasActiveSelectedRun)
     ) {
       return;
     }
     // Poll the loaded dataset, including while a dirty draft keeps its repository open.
-    if (!loadingRuns.value) {
+    if (hasActiveListRun && !loadingRuns.value) {
       void store.loadRuns(dataset.repositoryId, dataset.id);
     }
-    if (
-      !loadingRun.value &&
-      selectedRun.value &&
-      isActiveRun(selectedRun.value.run.state)
-    ) {
-      void store.loadRun(dataset.repositoryId, selectedRun.value.run.id);
+    if (hasActiveSelectedRun && !loadingRun.value && currentSelectedRun) {
+      void store.loadRun(dataset.repositoryId, currentSelectedRun.run.id);
     }
   }, 2000);
 }
