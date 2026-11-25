@@ -224,6 +224,40 @@ public sealed class GitHubCommentWriteRequestedHandlerTests
     }
 
     [Test]
+    public async Task HandleAsync_RenderLatest_ResolvesNewestAfterLeaseAcquired()
+    {
+        var fixture = HandlerFixture.Create();
+        var latest = ReviewRecord();
+        var old = ReviewRecord(latest.CreatedAtUtc.AddDays(-1));
+        latest.FindingsStorageUri = fixture.Artifacts.StorageUri;
+        fixture.Artifacts.StoredXml = SampleFindingsXml();
+        fixture
+            .CodeReviews.ListForTriageAsync(
+                "org_123",
+                Arg.Any<FindingTriageTarget>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ =>
+            {
+                if (fixture.Leases.AcquireCalls == 0)
+                    throw new InvalidOperationException("Lookup ran before lease");
+                return Task.FromResult<IReadOnlyList<CodeReviewRecord>>([old, latest]);
+            });
+        await fixture.Handler.HandleAsync(
+            Message(kind: "review_completed", renderLatest: true),
+            CancellationToken.None
+        );
+        fixture
+            .Renderer.Received(1)
+            .Render(
+                "review_completed",
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Is<CodeReviewCommentRenderContext>(context => context.Review == latest),
+                Arg.Any<GitHubCommentDom>()
+            );
+    }
+
+    [Test]
     public async Task HandleAsync_WithReviewReference_LoadsReviewForRenderer()
     {
         var fixture = HandlerFixture.Create();
@@ -405,7 +439,8 @@ public sealed class GitHubCommentWriteRequestedHandlerTests
     private static GitHubCommentWriteRequested Message(
         string kind = "queued",
         string? codeReviewRecordId = null,
-        DateTimeOffset? codeReviewCreatedAtUtc = null
+        DateTimeOffset? codeReviewCreatedAtUtc = null,
+        bool renderLatest = false
     ) =>
         new()
         {
@@ -419,6 +454,7 @@ public sealed class GitHubCommentWriteRequestedHandlerTests
             Clear = [GitHubCommentMarkers.PullRequestFindings],
             CodeReviewRecordId = codeReviewRecordId,
             CodeReviewCreatedAtUtc = codeReviewCreatedAtUtc,
+            RenderLatestForPullRequest = renderLatest,
             SignalId = "signal_123",
             TraceContext = new ZeeqTraceContext(null, null),
         };
@@ -480,7 +516,7 @@ public sealed class GitHubCommentWriteRequestedHandlerTests
             UpdatedAtUtc = DateTimeOffset.UtcNow,
         };
 
-    private static CodeReviewRecord ReviewRecord()
+    private static CodeReviewRecord ReviewRecord(DateTimeOffset? createdAt = null)
     {
         var now = DateTimeOffset.UtcNow;
         return new()
@@ -498,7 +534,7 @@ public sealed class GitHubCommentWriteRequestedHandlerTests
             Status = CodeReviewStatus.Completed,
             RequestOrigin = CodeReviewRequestOrigin.RepositoryWebhook,
             RemainingReviewBudget = 1,
-            CreatedAtUtc = now,
+            CreatedAtUtc = createdAt ?? now,
             UpdatedAtUtc = now,
         };
     }
@@ -639,7 +675,8 @@ public sealed class GitHubCommentWriteRequestedHandlerTests
                 linkFactory,
                 fixture.Writer,
                 options ?? new GitHubCommentWriteOptions(),
-                logger ?? NullLogger<GitHubCommentWriteRequestedHandler>.Instance
+                logger ?? NullLogger<GitHubCommentWriteRequestedHandler>.Instance,
+                Substitute.For<ICodeReviewFindingTriageStore>()
             );
 
             return fixture;

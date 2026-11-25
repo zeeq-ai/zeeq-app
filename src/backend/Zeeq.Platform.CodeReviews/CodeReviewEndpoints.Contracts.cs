@@ -200,13 +200,45 @@ public sealed record CodeReviewReviewerFindingsDto(
 /// <param name="Side">Optional GitHub diff side, such as RIGHT or LEFT.</param>
 /// <param name="Summary">Short finding summary.</param>
 /// <param name="Body">Full finding explanation.</param>
+/// <param name="OccurrenceKey">Position within the review.</param>
+/// <param name="FindingRef">Review-specific short reference.</param>
+/// <param name="SemanticId">Stable descriptive finding label.</param>
+/// <param name="Triage">Current triage state, if one exists.</param>
 public sealed record CodeReviewFindingDto(
     CodeReviewFindingLevel Level,
     string File,
     int? Line,
     string? Side,
     string Summary,
-    string Body
+    string Body,
+    string OccurrenceKey,
+    string FindingRef,
+    string SemanticId,
+    CodeReviewFindingTriageDto? Triage
+);
+
+/// <summary>Current triage state and its finding snapshot.</summary>
+public sealed record CodeReviewFindingTriageDto(
+    string Id,
+    string SourceReviewId,
+    DateTimeOffset SourceReviewCreatedAtUtc,
+    string OccurrenceKey,
+    string SemanticId,
+    string Facet,
+    CodeReviewFindingLevel Severity,
+    string? FilePath,
+    int? LineNumber,
+    string FindingSummary,
+    CodeReviewFindingDisposition? Disposition,
+    CodeReviewFindingApprovalState ApprovalState,
+    string? CurrentReason,
+    CodeReviewFindingTriageChannel Channel,
+    string? SourceUrl,
+    string? ProposedByUserId,
+    DateTimeOffset? ProposedAtUtc,
+    string? ConfirmedByUserId,
+    DateTimeOffset? ConfirmedAtUtc,
+    DateTimeOffset UpdatedAtUtc
 );
 
 /// <summary>
@@ -782,14 +814,72 @@ internal static class CodeReviewEndpointMapping
     public static CodeReviewFindingsResponse ToFindingsDto(
         CodeReviewRecord record,
         CodeReviewOutputDocument findings,
-        CodeReviewSourceTelemetry? sourceTelemetry
-    ) =>
-        new(
+        CodeReviewSourceTelemetry? sourceTelemetry,
+        IReadOnlyList<CodeReviewFindingTriage>? triages = null
+    )
+    {
+        var indexed = new Queue<IndexedCodeReviewFinding>(CodeReviewFindingIds.Assign(findings));
+        var byKey = (triages ?? []).ToDictionary(x => x.OccurrenceKey);
+        return new(
             record.Id,
             record.CreatedAtUtc,
             findings.NoAgentsActivated,
-            findings.Reviews.Select(ToFindingsDto).ToArray(),
+            findings
+                .Reviews.Select(review => new CodeReviewReviewerFindingsDto(
+                    review.Facet,
+                    review.Agent,
+                    review.Summary,
+                    review.Details,
+                    review
+                        .Findings.Select(finding =>
+                        {
+                            var identity = indexed.Dequeue();
+                            byKey.TryGetValue(identity.OccurrenceKey, out var triage);
+                            return new CodeReviewFindingDto(
+                                finding.Level,
+                                finding.File,
+                                finding.Line > 0 ? finding.Line : null,
+                                finding.Side,
+                                finding.Summary,
+                                finding.Details,
+                                identity.OccurrenceKey,
+                                CodeReviewFindingIds.FormatShortReference(
+                                    record.Id,
+                                    identity.OccurrenceKey
+                                ),
+                                identity.SemanticId,
+                                triage is null ? null : ToTriageDto(triage)
+                            );
+                        })
+                        .ToArray()
+                ))
+                .ToArray(),
             ToDto(sourceTelemetry)
+        );
+    }
+
+    public static CodeReviewFindingTriageDto ToTriageDto(CodeReviewFindingTriage x) =>
+        new(
+            x.Id,
+            x.SourceReviewId,
+            x.SourceReviewCreatedAtUtc,
+            x.OccurrenceKey,
+            x.SemanticId,
+            x.Facet,
+            x.Severity,
+            x.FilePath,
+            x.LineNumber,
+            x.FindingSummary,
+            x.Disposition,
+            x.ApprovalState,
+            x.CurrentReason,
+            x.Channel,
+            x.SourceUrl,
+            x.ProposedByUserId,
+            x.ProposedAtUtc,
+            x.ConfirmedByUserId,
+            x.ConfirmedAtUtc,
+            x.UpdatedAtUtc
         );
 
     public static CodeReviewFindingsResponse ToEmptyFindingsDto(
@@ -891,25 +981,6 @@ internal static class CodeReviewEndpointMapping
     private static bool HasSourceTelemetry(CodeReviewRecord record) =>
         !string.IsNullOrWhiteSpace(record.SourceTelemetryPayload)
         && record.SourceTelemetryPayload != CodeReviewRecord.EmptySourceTelemetryPayload;
-
-    private static CodeReviewReviewerFindingsDto ToFindingsDto(CodeReviewFacetOutput review) =>
-        new(
-            review.Facet,
-            review.Agent,
-            review.Summary,
-            review.Details,
-            [.. review.Findings.Select(ToFindingsDto)]
-        );
-
-    private static CodeReviewFindingDto ToFindingsDto(CodeReviewFindingOutput finding) =>
-        new(
-            finding.Level,
-            finding.File,
-            finding.Line > 0 ? finding.Line : null,
-            finding.Side,
-            finding.Summary,
-            finding.Details
-        );
 
     public static CodeReviewOrganizationSettingsResponse ToDto(
         string organizationId,

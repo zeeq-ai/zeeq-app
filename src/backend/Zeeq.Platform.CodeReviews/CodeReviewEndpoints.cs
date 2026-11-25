@@ -211,6 +211,51 @@ public sealed class CodeReviewEndpoints : IEndpoint
                 """
             );
 
+        group
+            .MapPost(
+                "/reviews/{codeReviewRecordId}/triages",
+                static (
+                    string orgId,
+                    string codeReviewRecordId,
+                    [FromQuery] DateTimeOffset? createdAtUtc,
+                    SaveFindingTriageRequest request,
+                    ClaimsPrincipal user,
+                    [FromServices] TriageFindingHandler handler,
+                    CancellationToken ct
+                ) => handler.SaveAsync(orgId, codeReviewRecordId, createdAtUtc, request, user, ct)
+            )
+            .WithName("SaveFindingTriage")
+            .WithSummary("Set or clear a finding triage.");
+
+        group
+            .MapGet(
+                "/triages/{triageId}",
+                static (
+                    string orgId,
+                    string triageId,
+                    ClaimsPrincipal user,
+                    [FromServices] TriageFindingHandler handler,
+                    CancellationToken ct
+                ) => handler.GetAsync(orgId, triageId, user, ct)
+            )
+            .WithName("GetFindingTriage")
+            .WithSummary("Get a finding triage.");
+
+        group
+            .MapPost(
+                "/triages/{triageId}/confirm",
+                static (
+                    string orgId,
+                    string triageId,
+                    ConfirmFindingTriageRequest request,
+                    ClaimsPrincipal user,
+                    [FromServices] TriageFindingHandler handler,
+                    CancellationToken ct
+                ) => handler.ConfirmAsync(orgId, triageId, request, user, ct)
+            )
+            .WithName("ConfirmFindingTriage")
+            .WithSummary("Confirm a finding triage proposal.");
+
         // GET /api/v1/orgs/{orgId}/code-reviews/reviews/{codeReviewRecordId}/raw
         group
             .MapGet(

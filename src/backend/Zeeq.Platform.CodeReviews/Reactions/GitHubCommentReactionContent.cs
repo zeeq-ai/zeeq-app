@@ -13,4 +13,7 @@ public static class GitHubCommentReactionContent
 {
     /// <summary>Thumbs-up acknowledgement reaction.</summary>
     public const string PlusOne = "+1";
+
+    /// <summary>Confused reaction for an invalid command.</summary>
+    public const string Confused = "confused";
 }

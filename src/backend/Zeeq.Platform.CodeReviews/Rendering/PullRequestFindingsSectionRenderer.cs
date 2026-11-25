@@ -1,6 +1,6 @@
-using Zeeq.Core.Models;
 using System.Globalization;
 using System.Text;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -70,9 +70,11 @@ public sealed class PullRequestFindingsSectionRenderer : IGitHubCommentSectionRe
             return RenderNoFindings(findings, context);
         }
 
+        var identities = CodeReviewFindingIds.Assign(findings);
+        var indexed = new Queue<IndexedCodeReviewFinding>(identities);
         foreach (var review in renderedFacets)
         {
-            AppendFacet(sb, review);
+            AppendFacet(sb, review, indexed, context);
         }
 
         if (renderedFacets.Length > 0)
@@ -82,6 +84,21 @@ public sealed class PullRequestFindingsSectionRenderer : IGitHubCommentSectionRe
         }
 
         AppendTotalsTable(sb, renderedFacets);
+
+        var triaged = identities.Count(x =>
+            context.Triages?.TryGetValue(x.OccurrenceKey, out var state) == true
+            && state.ApprovalState == CodeReviewFindingApprovalState.Confirmed
+        );
+        var proposed = identities.Count(x =>
+            context.Triages?.TryGetValue(x.OccurrenceKey, out var state) == true
+            && state.ApprovalState == CodeReviewFindingApprovalState.Proposed
+        );
+        sb.AppendLine(
+            $"\nStatus: {totalFindings - triaged - proposed} open · {proposed} pending · {triaged} triaged"
+        );
+        sb.AppendLine(
+            "\n<details>\n<summary>Finding triage commands</summary>\n\n`/zeeq fp <ref> <reason>` · `/zeeq ignore <ref> <reason>` · `/zeeq confirm <ref>` · `/zeeq clear <ref>`\n\n</details>"
+        );
 
         return sb.ToString().TrimEnd();
     }
@@ -119,7 +136,12 @@ public sealed class PullRequestFindingsSectionRenderer : IGitHubCommentSectionRe
             """;
     }
 
-    private static void AppendFacet(StringBuilder sb, CodeReviewFacetOutput review)
+    private static void AppendFacet(
+        StringBuilder sb,
+        CodeReviewFacetOutput review,
+        Queue<IndexedCodeReviewFinding> indexed,
+        CodeReviewCommentRenderContext context
+    )
     {
         var facet = GitHubCommentMarkdown.SanitizeModelMarkdown(review.Facet).ToUpperInvariant();
         sb.AppendLine($"## {facet} REVIEW ({FormatFindingCount(review.Findings.Count)})");
@@ -143,7 +165,7 @@ public sealed class PullRequestFindingsSectionRenderer : IGitHubCommentSectionRe
             sb.AppendLine();
             sb.AppendLine("----");
             sb.AppendLine();
-            AppendFinding(sb, finding);
+            AppendFinding(sb, finding, indexed.Dequeue(), context);
         }
 
         sb.AppendLine("</details>");
@@ -151,11 +173,40 @@ public sealed class PullRequestFindingsSectionRenderer : IGitHubCommentSectionRe
         sb.AppendLine();
     }
 
-    private static void AppendFinding(StringBuilder sb, CodeReviewFindingOutput finding)
+    private static void AppendFinding(
+        StringBuilder sb,
+        CodeReviewFindingOutput finding,
+        IndexedCodeReviewFinding identity,
+        CodeReviewCommentRenderContext context
+    )
     {
         var level = finding.Level.ToString().ToUpperInvariant();
         var summary = GitHubCommentMarkdown.SanitizeModelMarkdown(finding.Summary);
         sb.AppendLine($"### 👉 «{level}» {summary}");
+        if (context.Review is { } review)
+        {
+            var reference = CodeReviewFindingIds.FormatShortReference(
+                review.Id,
+                identity.OccurrenceKey
+            );
+            sb.AppendLine($"\nRef: `{reference}` · `{identity.SemanticId}`");
+        }
+        if (context.Triages?.TryGetValue(identity.OccurrenceKey, out var triage) == true)
+        {
+            var status = (triage.ApprovalState, triage.Disposition) switch
+            {
+                (CodeReviewFindingApprovalState.Proposed, _) => "Proposed — awaiting confirm",
+                (
+                    CodeReviewFindingApprovalState.Confirmed,
+                    CodeReviewFindingDisposition.FalsePositive
+                ) => "Confirmed False Positive",
+                (CodeReviewFindingApprovalState.Confirmed, CodeReviewFindingDisposition.Deferred) =>
+                    "Defer / won't fix (this PR)",
+                _ => null,
+            };
+            if (status is not null)
+                sb.AppendLine($"\n{status}");
+        }
         sb.AppendLine();
         sb.AppendLine(RenderLocation(finding));
         sb.AppendLine();

@@ -1,9 +1,9 @@
-using Zeeq.Core.Common;
-using Zeeq.Platform.CodeReviews;
 using Octokit.Webhooks;
 using Octokit.Webhooks.Events;
 using Octokit.Webhooks.Events.IssueComment;
 using Octokit.Webhooks.Events.PullRequestReviewComment;
+using Zeeq.Core.Common;
+using Zeeq.Platform.CodeReviews;
 using IssueCommentPayload = Octokit.Webhooks.Models.IssueComment;
 using IssuePayload = Octokit.Webhooks.Models.Issue;
 using ReviewCommentPayload = Octokit.Webhooks.Models.PullRequestReviewComment;
@@ -162,7 +162,10 @@ public partial class ZeeqGitHubWebhookEventProcessor
         IssueCommentPayload? comment
     )
     {
-        if (issue?.PullRequest is null)
+        if (
+            issue?.PullRequest is null
+            || !string.Equals(metadata.Action, "created", StringComparison.OrdinalIgnoreCase)
+        )
         {
             return null;
         }
@@ -190,6 +193,8 @@ public partial class ZeeqGitHubWebhookEventProcessor
             CommentBody = comment?.Body,
             CommentAuthorLogin = comment?.User?.Login,
             CommentHtmlUrl = comment?.HtmlUrl,
+            CommentCreatedAtUtc = comment?.CreatedAt,
+            AuthorAssociation = comment?.AuthorAssociation?.StringValue,
         };
     }
 
@@ -206,10 +211,7 @@ public partial class ZeeqGitHubWebhookEventProcessor
     {
         if (
             issue?.PullRequest is null
-            || !GitHubFeedbackCommandPolicy.TryParseCommand(
-                comment?.Body,
-                out var command
-            )
+            || !GitHubFeedbackCommandPolicy.TryParseCommand(comment?.Body, out var command)
             || command != GitHubFeedbackCommand.BypassCheck
         )
         {
@@ -245,7 +247,10 @@ public partial class ZeeqGitHubWebhookEventProcessor
         ReviewCommentPayload? comment
     )
     {
-        if (!GitHubFeedbackCommandPolicy.IsSupportedFeedbackCommand(comment?.Body))
+        if (
+            !string.Equals(metadata.Action, "created", StringComparison.OrdinalIgnoreCase)
+            || !GitHubFeedbackCommandPolicy.IsSupportedFeedbackCommand(comment?.Body)
+        )
         {
             return null;
         }
@@ -268,6 +273,8 @@ public partial class ZeeqGitHubWebhookEventProcessor
             CommentBody = comment?.Body,
             CommentAuthorLogin = comment?.User?.Login,
             CommentHtmlUrl = comment?.HtmlUrl,
+            CommentCreatedAtUtc = comment?.CreatedAt,
+            AuthorAssociation = comment?.AuthorAssociation?.StringValue,
             Path = comment?.Path,
             CommitId = comment?.CommitId,
             PullRequestReviewId = comment?.PullRequestReviewId ?? 0,
@@ -287,10 +294,7 @@ public partial class ZeeqGitHubWebhookEventProcessor
     )
     {
         if (
-            !GitHubFeedbackCommandPolicy.TryParseCommand(
-                comment?.Body,
-                out var command
-            )
+            !GitHubFeedbackCommandPolicy.TryParseCommand(comment?.Body, out var command)
             || command != GitHubFeedbackCommand.BypassCheck
         )
         {

@@ -38,6 +38,7 @@ public static class SetupCodeReviews
             services.AddScoped<CodeReviewAuthorization>();
             services.AddScoped<CodeReviewRequestService>();
             services.AddScoped<ICodeReviewFindingTriageService, CodeReviewFindingTriageService>();
+            services.AddScoped<IGitHubFindingTriageHandler, GitHubFindingTriageHandler>();
             services.AddScoped<ICheckRunService, CheckRunService>();
             services.AddScoped<IGitHubCommentDomRenderer, GitHubCommentDomRenderer>();
             services.AddScoped<IGitHubCommentSectionRenderer, PullRequestHeaderSectionRenderer>();

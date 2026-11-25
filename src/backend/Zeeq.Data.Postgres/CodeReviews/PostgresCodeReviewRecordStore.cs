@@ -511,7 +511,9 @@ internal sealed class PostgresCodeReviewRecordStore(PostgresDbContext db) : ICod
             );
         query = target switch
         {
-            FindingTriageTarget.ByReview t => query.Where(x => x.Id == t.ReviewId),
+            FindingTriageTarget.ByReview t => query.Where(x =>
+                x.Id == t.ReviewId && (t.CreatedAtUtc == null || x.CreatedAtUtc == t.CreatedAtUtc)
+            ),
             FindingTriageTarget.ByReviewGroup t => query.Where(x =>
                 x.ReviewGroupId == t.ReviewGroupId
                 && x.OwnerQualifiedRepoName.ToLower() == t.OwnerQualifiedRepoName.ToLower()

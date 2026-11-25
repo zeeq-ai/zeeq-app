@@ -9,7 +9,8 @@ namespace Zeeq.Platform.CodeReviews;
 public closed record FindingTriageTarget
 {
     /// <summary>One review by durable ID.</summary>
-    public sealed record ByReview(string ReviewId) : FindingTriageTarget;
+    public sealed record ByReview(string ReviewId, DateTimeOffset? CreatedAtUtc = null)
+        : FindingTriageTarget;
 
     /// <summary>An agent review group within a repository.</summary>
     public sealed record ByReviewGroup(string ReviewGroupId, string OwnerQualifiedRepoName)

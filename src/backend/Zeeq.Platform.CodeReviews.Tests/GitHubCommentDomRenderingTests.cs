@@ -236,6 +236,28 @@ public sealed class GitHubCommentDomRenderingTests
     }
 
     [Test]
+    public async Task Renderer_ShowsFindingIdentityAndTriageStatus()
+    {
+        var xml = SampleFindingsXml();
+        var validation = new CodeReviewXmlOutputValidator().Validate(xml);
+        var triage = new CodeReviewFindingTriage
+        {
+            Id = "cft_1", OrganizationId = "org_123", OwnerQualifiedRepoName = "zeeq-ai/zeeq",
+            SourceReviewId = "cr_123", SourceReviewCreatedAtUtc = DateTimeOffset.UtcNow,
+            OccurrenceKey = "F1", SemanticId = "some-valid-finding", Facet = "Structural",
+            FindingSummary = "A finding", ApprovalState = CodeReviewFindingApprovalState.Confirmed,
+            Disposition = CodeReviewFindingDisposition.FalsePositive,
+        };
+        var context = new CodeReviewCommentRenderContext(ReviewRecord(), xml, validation.Output, null,
+            new(), DateTimeOffset.UtcNow, Triages: new Dictionary<string, CodeReviewFindingTriage> { ["F1"] = triage });
+        var renderer = new GitHubCommentDomRenderer([new PullRequestFindingsSectionRenderer()]);
+        var body = renderer.Render("review_completed", [], context, GitHubCommentDom.Empty(Target));
+        await Assert.That(body).Contains("Ref: `r_123.F1`");
+        await Assert.That(body).Contains("Confirmed False Positive");
+        await Assert.That(body).Contains("Status: 2 open · 0 pending · 1 triaged");
+    }
+
+    [Test]
     public async Task Renderer_WithCompletedReview_RendersV1StyleGitHubCommentSections()
     {
         var xml = SampleFindingsXml();

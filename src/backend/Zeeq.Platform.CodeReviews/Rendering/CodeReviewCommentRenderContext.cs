@@ -19,7 +19,8 @@ public sealed record CodeReviewCommentRenderContext(
     DateTimeOffset RenderedAtUtc,
     bool ShowNoice = false,
     bool CheckRunBlocking = false,
-    CodeReviewSourceTelemetry? SourceTelemetry = null
+    CodeReviewSourceTelemetry? SourceTelemetry = null,
+    IReadOnlyDictionary<string, CodeReviewFindingTriage>? Triages = null
 );
 
 /// <summary>
