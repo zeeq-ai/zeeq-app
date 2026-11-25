@@ -98,13 +98,14 @@
               variant="link"
               class="min-h-0 flex-1"
               :ui="{
-                root: 'flex h-full min-h-0 flex-col',
+                root: 'flex h-full min-h-0 flex-col gap-0',
                 list: 'shrink-0 px-4',
-                content: 'min-h-0 flex-1 overflow-auto px-4 pb-3 pt-3',
+                content:
+                  'min-h-0 flex-1 overflow-hidden data-[state=active]:flex data-[state=active]:flex-col',
               }"
             >
               <template #in-dataset>
-                <div class="flex h-full min-h-0 flex-col gap-3">
+                <div class="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-3 pt-3">
                   <UInput
                     v-model="caseSearch"
                     icon="i-hugeicons-search-01"
@@ -170,7 +171,9 @@
                 </div>
               </template>
               <template #add-prs>
-                <div class="h-full overflow-auto">
+                <div
+                  class="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden"
+                >
                   <DatasetAddPrsPanel
                     v-model:selected-numbers="selectedNumbers"
                     :targets="targets"

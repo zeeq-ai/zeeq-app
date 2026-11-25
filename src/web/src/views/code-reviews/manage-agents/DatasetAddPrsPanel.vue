@@ -1,9 +1,12 @@
 <template>
+  <!-- Desktop splits into two equal-height flex columns; narrow viewports stack and scroll via the parent pane. -->
   <div
-    class="grid min-h-0 items-start gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.8fr)]"
+    class="grid min-h-0 grid-cols-1 lg:flex-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.8fr)] lg:grid-rows-[minmax(0,1fr)]"
   >
-    <section class="order-2 grid min-h-0 content-start gap-3 lg:order-1">
-      <div class="grid gap-1">
+    <section
+      class="order-2 flex min-h-0 flex-col gap-3 px-4 py-3 lg:order-1 lg:overflow-hidden lg:pr-5"
+    >
+      <div class="grid shrink-0 gap-1">
         <h3 class="font-semibold text-highlighted">Browse pull requests</h3>
         <p class="text-sm text-muted">
           Search all repository pull requests. Selections stay staged when you
@@ -11,7 +14,7 @@
         </p>
       </div>
 
-      <div class="flex flex-wrap gap-2">
+      <div class="flex shrink-0 flex-wrap gap-2">
         <UInput
           v-model="searchText"
           icon="i-hugeicons-search-01"
@@ -32,7 +35,7 @@
       </div>
 
       <div
-        class="h-[min(32rem,52dvh)] min-h-48 overflow-auto rounded-md border border-default"
+        class="h-[min(24rem,45dvh)] min-h-48 overflow-auto rounded-md border border-default lg:h-auto lg:min-h-0 lg:flex-1"
       >
         <div
           v-if="loading && targets.length === 0"
@@ -111,7 +114,7 @@
         </table>
       </div>
 
-      <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="flex shrink-0 flex-wrap items-center justify-between gap-2">
         <p class="text-sm text-muted" aria-live="polite">
           {{ selectedForDisplay.size }} selected
         </p>
@@ -139,9 +142,9 @@
     </section>
 
     <section
-      class="order-1 grid content-start gap-3 border-t border-default pt-5 lg:order-2 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0"
+      class="order-1 flex min-h-0 flex-col gap-3 border-b border-default px-4 py-3 pb-5 lg:order-2 lg:overflow-hidden lg:border-b-0 lg:border-l lg:pb-3 lg:pl-5"
     >
-      <div class="grid gap-1">
+      <div class="grid shrink-0 gap-1">
         <h3 class="font-semibold text-highlighted">Add by PR number or URL</h3>
         <p class="text-sm text-muted">
           Enter positive numbers, <code>#numbers</code>, comma or newline lists,
@@ -152,6 +155,7 @@
       <UTextarea
         v-model="manualEntries"
         :rows="4"
+        :ui="manualEntriesTextareaUi"
         placeholder="#252, #247, https://github.com/org/repo/pull/310"
         aria-label="Pull request numbers or URLs"
         :disabled="disabled || resolving"
@@ -161,20 +165,24 @@
         icon="i-hugeicons-search-01"
         color="neutral"
         variant="outline"
-        class="w-fit"
+        class="w-fit shrink-0"
         :loading="resolving"
         :disabled="disabled || resolving || !manualEntries.trim()"
         @click="resolveManual"
       />
 
       <UAlert
-        v-if="resolutionResults.length > 0"
+        v-if="hasResolutionResults"
         title="Resolution results"
         description="Valid selections remain staged when another entry cannot be resolved."
         color="neutral"
         variant="subtle"
+        class="shrink-0"
       />
-      <ul v-if="resolutionResults.length > 0" class="grid gap-2">
+      <ul
+        v-if="hasResolutionResults"
+        class="grid min-h-0 content-start gap-2 lg:flex-1 lg:overflow-y-auto"
+      >
         <li
           v-for="(item, index) in resolutionResults"
           :key="`${item.entry}:${index}`"
@@ -214,7 +222,7 @@
         </li>
       </ul>
 
-      <p class="text-xs text-muted">
+      <p class="shrink-0 text-xs text-muted">
         Browse and manual entries use the same selection list. Saving the
         dataset applies all valid new captures together.
       </p>
@@ -251,6 +259,18 @@ const emits = defineEmits<{
 const searchText = ref("");
 const manualEntries = ref("");
 const capturedNumbers = computed(() => new Set(props.stagedPullRequestNumbers));
+const hasResolutionResults = computed(
+  () => props.resolutionResults.length > 0,
+);
+/** Stretch the manual-entry textarea to fill the right column until resolution results claim that space. */
+const manualEntriesTextareaUi = computed(() =>
+  hasResolutionResults.value
+    ? { root: "w-full shrink-0", base: "w-full" }
+    : {
+        root: "w-full lg:flex lg:min-h-32 lg:flex-1 lg:flex-col lg:items-stretch",
+        base: "w-full lg:flex-1 lg:resize-none",
+      },
+);
 const selectedForDisplay = computed(
   () =>
     new Set(

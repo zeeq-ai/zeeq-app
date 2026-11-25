@@ -84,6 +84,10 @@ const settingsSection: AppNavigationSection = {
       to: "/settings/members",
     },
     {
+      label: "Teams",
+      to: "/settings/teams",
+    },
+    {
       label: "My Memberships",
       to: "/settings/memberships",
     },
