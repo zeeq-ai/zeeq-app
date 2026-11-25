@@ -18,10 +18,42 @@ import {
   getEvaluationCaseGradeCounts,
   normalizeEvaluationFilePath,
   hasExpectedRejectedFileCollision,
+  findStagedFindingDisposition,
   refreshEvaluationCase,
 } from "./evaluation-view-models";
 
 describe("evaluation dataset view models", () => {
+  it("finds a staged source across dispositions and defaults legacy findings to expected", () => {
+    const sets = [
+      {
+        ...referenceSet(),
+        findings: [
+          {
+            ...referenceSet().findings[0],
+            sourceRunId: "run-1",
+            sourceFindingId: "candidate-1",
+            disposition: "Rejected" as const,
+          },
+          {
+            ...referenceSet().findings[0],
+            id: "legacy",
+            sourceRunId: "run-1",
+            sourceFindingId: "candidate-2",
+            disposition: undefined,
+          },
+        ],
+      },
+    ];
+    expect(
+      findStagedFindingDisposition(sets, "agent-a", "run-1", "candidate-1"),
+    ).toBe("Rejected");
+    expect(
+      findStagedFindingDisposition(sets, "agent-a", "run-1", "candidate-2"),
+    ).toBe("Expected");
+    expect(
+      findStagedFindingDisposition(sets, "agent-a", "run-2", "candidate-1"),
+    ).toBeNull();
+  });
   it("shows assessment counts only for graded cases and keeps clean zeroes", () => {
     const ungraded = runCase({ outcome: "JudgeFailed", phase: "Grading" });
     expect(getEvaluationCaseGradeCounts(ungraded)).toEqual({

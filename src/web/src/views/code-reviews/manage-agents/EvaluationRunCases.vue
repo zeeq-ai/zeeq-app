@@ -237,7 +237,7 @@
                 v-if="row.original.candidateFindings.length === 0"
                 class="text-xs text-muted"
               >
-                The reviewer returned no findings.
+                {{ emptyFindingMessage(row.original) }}
               </p>
             </template>
             <template v-else>
@@ -469,6 +469,17 @@ function knownFpClass(result: EvaluationRunCaseDto) {
 }
 function gradeCounts(result: EvaluationRunCaseDto) {
   return getEvaluationCaseGradeCounts(result);
+}
+function emptyFindingMessage(result: EvaluationRunCaseDto): string {
+  if (result.outcome === "Skipped")
+    return "This case was skipped before review.";
+  if (result.outcome === "ReviewFailed")
+    return "The reviewer failed before returning findings.";
+  if (result.outcome === "FalsePositiveChecked")
+    return "Expected coverage is ungraded; the judge checked known false positives.";
+  if (result.outcome === "JudgeFailed")
+    return "The judge failed; no assessment was recorded.";
+  return "The reviewer returned no findings.";
 }
 function hasMissedReferences(result: EvaluationRunCaseDto): boolean {
   const missed = getEvaluationCaseGradeCounts(result).missed;

@@ -471,9 +471,18 @@ function findingMenuItems(
 }
 function moveFinding(id: string, disposition: "Expected" | "Rejected") {
   if (props.disabled) return;
+  const remainingExpected = findings.value.filter(
+    (finding) =>
+      finding.id !== id && (finding.disposition ?? "Expected") === "Expected",
+  ).length;
   updateReferenceSet({
     ...props.referenceSet,
-    state: disposition === "Expected" ? "Expected" : props.referenceSet.state,
+    state:
+      disposition === "Expected"
+        ? "Expected"
+        : props.referenceSet.state === "Expected" && remainingExpected === 0
+          ? "Unlabelled"
+          : props.referenceSet.state,
     findings: findings.value.map((finding) =>
       finding.id === id
         ? {

@@ -162,7 +162,6 @@
         <UButton
           :label="confirmButtonLabel"
           color="primary"
-          :loading="!!pendingActionRunId"
           @click="confirmAction"
         />
       </div>

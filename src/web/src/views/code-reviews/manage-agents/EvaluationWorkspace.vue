@@ -116,7 +116,7 @@
               variant="ghost"
               size="xs"
               :disabled="savingDataset"
-              @click="discardDatasetDraft"
+              @click="discardDraftConfirmOpen = true"
             />
             <p v-if="datasetSaveError" class="w-full text-xs text-error">
               {{ datasetSaveError }}
@@ -390,13 +390,14 @@
     <UModal
       v-model:open="falsePositiveModalOpen"
       title="Mark as false positive"
+      description="Future evals will flag this claim if this reviewer reports it again on this snapshot."
     >
       <template #body>
         <div class="grid gap-3">
           <UAlert
             v-if="stagingError"
             :description="stagingError"
-            color="warning"
+            color="error"
             variant="subtle"
           />
           <p class="text-sm font-medium">
@@ -409,10 +410,12 @@
             >
           </p>
           <UFormField
-            label="Why is this wrong? (Optional — helps the judge match accurately)"
+            label="Rationale"
+            hint="Optional — helps the judge match accurately"
             ><UTextarea
               v-model="falsePositiveRationale"
               :maxlength="1000"
+              placeholder="Why is this wrong?"
               class="w-full"
           /></UFormField>
           <p class="text-sm text-muted">
@@ -433,6 +436,26 @@
             color="primary"
             :loading="stagingFalsePositive"
             @click="submitFalsePositive"
+          /></div
+      ></template>
+    </UModal>
+
+    <UModal
+      v-model:open="discardDraftConfirmOpen"
+      title="Discard dataset changes?"
+      description="This discards every unsaved change in the current dataset draft, including all staged run findings."
+    >
+      <template #footer
+        ><div class="flex w-full justify-end gap-2">
+          <UButton
+            label="Keep changes"
+            color="neutral"
+            variant="ghost"
+            @click="discardDraftConfirmOpen = false"
+          /><UButton
+            label="Discard all changes"
+            color="error"
+            @click="confirmDiscardDatasetDraft"
           /></div
       ></template>
     </UModal>
@@ -474,6 +497,7 @@ import EvaluationToolbar from "./EvaluationToolbar.vue";
 import {
   addCapturedEvaluationCase,
   countEvaluationDatasetDraftChanges,
+  findStagedFindingDisposition,
   summarizeRunFalsePositives,
   createEvaluationDatasetDraft,
   updateEvaluationCaseReferenceSet,
@@ -543,6 +567,7 @@ let refreshUiRequestId = 0;
 const revisionDiffOpen = ref(false);
 const falsePositiveModalOpen = ref(false);
 const falsePositiveRationale = ref("");
+const discardDraftConfirmOpen = ref(false);
 const stagingFalsePositive = ref(false);
 const stagingError = ref<string | null>(null);
 const pendingFalsePositive = ref<{
@@ -1480,6 +1505,20 @@ function stageFinding(caseResult: EvaluationRunCaseDto, findingId: string) {
       });
       return;
     }
+    const alreadyStaged = findStagedFindingDisposition(
+      evaluationCase.referenceSets,
+      caseResult.references.reviewerAgentId,
+      sourceRunId,
+      candidate.id,
+    );
+    if (alreadyStaged) {
+      toast.add({
+        title: "Finding already staged",
+        description: `This claim is already marked ${alreadyStaged === "Rejected" ? "as a false positive" : "as expected"}.`,
+        color: "neutral",
+      });
+      return;
+    }
     selectedReviewerId.value = caseResult.references.reviewerAgentId;
     const reviewerId = caseResult.references.reviewerAgentId;
     const current = evaluationCase.referenceSets.find(
@@ -1519,6 +1558,10 @@ function discardDatasetDraft() {
     datasetDraft.value = createEvaluationDatasetDraft(selectedDataset.value);
   selectedPullRequestNumbers.value = new Set();
   selectionSaveError.value = null;
+}
+function confirmDiscardDatasetDraft() {
+  discardDatasetDraft();
+  discardDraftConfirmOpen.value = false;
 }
 
 function openFalsePositiveModal(
@@ -1608,7 +1651,12 @@ async function submitFalsePositive() {
           item.sourceFindingId === pending.candidate.id,
       )
     ) {
-      stagingError.value = "This finding is already in the dataset draft.";
+      const existing = current.findings.find(
+        (item) =>
+          item.sourceRunId === pending.runId &&
+          item.sourceFindingId === pending.candidate.id,
+      );
+      stagingError.value = `This finding is already marked ${existing?.disposition === "Rejected" ? "as a false positive" : "as expected"} in the dataset draft.`;
       return;
     }
     if (current.findings.length >= 100) {

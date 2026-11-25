@@ -408,6 +408,7 @@ import SelectedEvaluationCase from "./SelectedEvaluationCase.vue";
 import {
   countEvaluationDatasetDraftChanges,
   countDatasetCaseReferences,
+  findStagedFindingDisposition,
   createEvaluationDatasetDraft,
   refreshEvaluationCase,
   removeEvaluationCase,
@@ -765,6 +766,23 @@ function addHistoricalFinding(
     selectedReferenceSet.value.findings.length >= 100
   )
     return;
+  if (
+    finding.sourceRunId &&
+    finding.sourceFindingId &&
+    findStagedFindingDisposition(
+      selectedReferenceSet.value.findings ? [selectedReferenceSet.value] : [],
+      selectedReferenceSet.value.reviewerAgentId,
+      finding.sourceRunId,
+      finding.sourceFindingId,
+    )
+  )
+    return;
+  const duplicate = selectedReferenceSet.value.findings.find(
+    (item) =>
+      item.sourceRunId === finding.sourceRunId &&
+      item.sourceFindingId === finding.sourceFindingId,
+  );
+  if (duplicate) return;
   updateSelectedReferenceSet({
     ...selectedReferenceSet.value,
     state:

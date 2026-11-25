@@ -405,6 +405,21 @@ export function countDatasetCaseReferences(
       .length,
   };
 }
+export function findStagedFindingDisposition(
+  referenceSets: CodeReviewEvaluationReferenceSetDto[],
+  reviewerAgentId: string,
+  sourceRunId: string,
+  sourceFindingId: string,
+): "Expected" | "Rejected" | null {
+  const finding = referenceSets
+    .find((set) => set.reviewerAgentId === reviewerAgentId)
+    ?.findings.find(
+      (item) =>
+        item.sourceRunId === sourceRunId &&
+        item.sourceFindingId === sourceFindingId,
+    );
+  return finding ? (finding.disposition ?? "Expected") : null;
+}
 export function summarizeRunFalsePositives(
   run: EvaluationRunDto,
   cases: EvaluationRunCaseDto[],
