@@ -1,34 +1,72 @@
 <template>
-  <div class="p-6">
-    <UAlert v-if="error" color="error" :title="error" />
-    <UCard v-else-if="result" class="max-w-2xl mx-auto">
-      <template #header>Source review expired</template>
-      <div class="grid gap-3">
-        <p>{{ result.triage.findingSummary }}</p>
-        <p>{{ result.triage.facet }} · {{ result.triage.semanticId }}</p>
-        <p>
-          Disposition:
-          {{
-            result.triage.disposition === "FalsePositive"
-              ? "False positive"
-              : result.triage.disposition === "Deferred"
-                ? "Deferred"
-                : "Open"
-          }}
+  <section class="flex min-h-0 flex-1 flex-col overflow-auto">
+    <UAlert
+      v-if="error"
+      icon="i-hugeicons-alert-02"
+      color="error"
+      variant="subtle"
+      :title="error"
+      class="m-4"
+    />
+    <div
+      v-else-if="result"
+      class="mx-auto w-full flex-1 lg:border-x lg:border-default"
+      style="max-width: 1024px"
+    >
+      <div class="border-b border-default p-4 sm:px-6">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-xl font-semibold text-highlighted">
+            {{ result.triage.findingSummary }}
+          </h2>
+          <UBadge
+            :label="dispositionLabel"
+            color="neutral"
+            variant="outline"
+            class="rounded-full"
+          />
+          <UBadge
+            :label="result.triage.approvalState"
+            :color="
+              result.triage.approvalState === 'Proposed' ? 'info' : 'neutral'
+            "
+            variant="subtle"
+            class="rounded-full"
+          />
+        </div>
+        <p class="mt-1 text-sm text-muted">
+          {{ result.triage.facet }} · {{ result.triage.semanticId }}
         </p>
-        <p>Status: {{ result.triage.approvalState }}</p>
-        <p>{{ result.triage.currentReason }}</p>
-        <UAlert v-if="confirmError" color="error" :title="confirmError" />
-        <UButton
-          v-if="result.triage.approvalState === 'Proposed'"
-          label="Confirm Proposal"
-          :loading="busy"
-          @click="confirm"
-        />
       </div>
-    </UCard>
-    <USkeleton v-else class="h-32" />
-  </div>
+      <div class="grid gap-4 p-4 sm:px-6">
+        <UAlert
+          icon="i-hugeicons-information-circle"
+          color="neutral"
+          variant="subtle"
+          title="Source review expired"
+          description="The original review is no longer available. The finding and its triage record are shown below."
+        />
+        <div>
+          <h3 class="text-sm font-medium text-highlighted">Reason</h3>
+          <p class="mt-1 text-sm text-default whitespace-pre-wrap">
+            {{ result.triage.currentReason }}
+          </p>
+        </div>
+        <UAlert
+          v-if="confirmError"
+          icon="i-hugeicons-alert-02"
+          color="error"
+          variant="subtle"
+          :title="confirmError"
+        />
+        <div v-if="result.triage.approvalState === 'Proposed'" class="flex">
+          <UButton label="Confirm Proposal" :loading="busy" @click="confirm" />
+        </div>
+      </div>
+    </div>
+    <div v-else class="grid gap-3 p-4 sm:px-6">
+      <USkeleton v-for="index in 3" :key="index" class="h-28 rounded-md" />
+    </div>
+  </section>
 </template>
 <script setup lang="ts">
 import type { FindingTriageResponse } from "@/api/generated";
@@ -43,6 +81,13 @@ const result = ref<FindingTriageResponse | null>(null);
 const error = ref("");
 const confirmError = ref("");
 const busy = ref(false);
+const dispositionLabel = computed(() =>
+  result.value?.triage.disposition === "FalsePositive"
+    ? "False positive"
+    : result.value?.triage.disposition === "Deferred"
+      ? "Deferred"
+      : "Open",
+);
 let generation = 0;
 watch(
   () => [route.params.orgId, route.params.triageId],
