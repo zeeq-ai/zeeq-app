@@ -1195,24 +1195,28 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
             .ToArray();
 
         return new(
-            results.Length,
-            graded.Length,
-            results.Count(result => result.Outcome == CodeReviewEvaluationCaseOutcome.Skipped),
-            results.Count(result =>
+            CaseCount: results.Length,
+            GradedCaseCount: graded.Length,
+            SkippedCaseCount: results.Count(result =>
+                result.Outcome == CodeReviewEvaluationCaseOutcome.Skipped
+            ),
+            FailedCaseCount: results.Count(result =>
                 result.Outcome
                     is CodeReviewEvaluationCaseOutcome.ReviewFailed
                         or CodeReviewEvaluationCaseOutcome.JudgeFailed
             ),
-            results.Count(result => result.Outcome == CodeReviewEvaluationCaseOutcome.Unlabelled),
-            graded.Sum(result => result.MatchedReferenceCount),
-            graded.Sum(result => result.MissedReferenceCount),
-            graded.Sum(result => result.ExpectedReferenceCount),
-            judged.Sum(result => result.AdditionalFindingCount),
-            results.Count(result =>
+            UnlabelledCaseCount: results.Count(result =>
+                result.Outcome == CodeReviewEvaluationCaseOutcome.Unlabelled
+            ),
+            MatchedReferenceCount: graded.Sum(result => result.MatchedReferenceCount),
+            MissedReferenceCount: graded.Sum(result => result.MissedReferenceCount),
+            ExpectedReferenceCount: graded.Sum(result => result.ExpectedReferenceCount),
+            AdditionalFindingCount: judged.Sum(result => result.AdditionalFindingCount),
+            FalsePositiveCheckedCaseCount: results.Count(result =>
                 result.Outcome == CodeReviewEvaluationCaseOutcome.FalsePositiveChecked
             ),
-            judged.Sum(result => result.RepeatedFalsePositiveCount),
-            judged.Sum(result => result.TrackedFalsePositiveCount)
+            RepeatedFalsePositiveCount: judged.Sum(result => result.RepeatedFalsePositiveCount),
+            TrackedFalsePositiveCount: judged.Sum(result => result.TrackedFalsePositiveCount)
         );
     }
 

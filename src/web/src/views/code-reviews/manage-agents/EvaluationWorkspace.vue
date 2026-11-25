@@ -1593,6 +1593,8 @@ async function submitFalsePositive() {
   const pending = pendingFalsePositive.value;
   if (
     !pending ||
+    !falsePositiveModalOpen.value ||
+    selectedRun.value?.run.id !== pending.runId ||
     stagingFalsePositive.value ||
     savingDataset.value ||
     !props.canManage
@@ -1613,6 +1615,8 @@ async function submitFalsePositive() {
       const editEpoch = datasetDraftEditEpoch.value;
       const isCurrent = () =>
         !workspaceUnmounted &&
+        falsePositiveModalOpen.value &&
+        pendingFalsePositive.value === pending &&
         props.workspaceRepository.id === repositoryId &&
         selectedRun.value?.run.id === pending.runId &&
         datasetDraftEditEpoch.value === editEpoch &&
@@ -1623,8 +1627,12 @@ async function submitFalsePositive() {
         isCurrent,
       );
       if (!loaded || !isCurrent()) {
-        stagingError.value =
-          "The dataset or run changed. Review the current draft and try again.";
+        if (
+          falsePositiveModalOpen.value &&
+          pendingFalsePositive.value === pending
+        )
+          stagingError.value =
+            "The dataset or run changed. Review the current draft and try again.";
         return;
       }
       draft = createEvaluationDatasetDraft(loaded);

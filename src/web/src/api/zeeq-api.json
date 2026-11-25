@@ -12635,7 +12635,7 @@
             "items": {
               "$ref": "#/components/schemas/CodeReviewEvaluationReferenceFinding"
             },
-            "description": "Expected findings. Empty is valid for CodeReviewEvaluationReferenceState.ReviewedClean."
+            "description": "Expected and rejected findings. Rejected findings are allowed in every state."
           },
           "expectedFindingCount": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
@@ -12664,7 +12664,7 @@
             "description": "Whether this set requires grading."
           }
         },
-        "description": "Expected findings for one reviewer on one dataset case."
+        "description": "Reference findings for one reviewer on one dataset case."
       },
       "CodeReviewEvaluationReferenceSetDto": {
         "required": [

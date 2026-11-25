@@ -71,7 +71,7 @@ public enum CodeReviewEvaluationFindingSeverity
 }
 
 /// <summary>
-/// Expected findings for one reviewer on one dataset case.
+/// Reference findings for one reviewer on one dataset case.
 /// </summary>
 /// <remarks>
 /// Reference sets are keyed by the stable reviewer agent id, never by editable
@@ -81,7 +81,7 @@ public enum CodeReviewEvaluationFindingSeverity
 /// </remarks>
 /// <param name="ReviewerAgentId">Stable reviewer agent id that owns this expectation set.</param>
 /// <param name="State">Expectation state for this reviewer and case.</param>
-/// <param name="Findings">Expected findings. Empty is valid for <see cref="CodeReviewEvaluationReferenceState.ReviewedClean"/>.</param>
+/// <param name="Findings">Expected and rejected findings. Rejected findings are allowed in every state.</param>
 public sealed record CodeReviewEvaluationReferenceSet(
     string ReviewerAgentId,
     CodeReviewEvaluationReferenceState State,

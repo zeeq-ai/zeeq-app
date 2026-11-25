@@ -328,6 +328,33 @@
         </UDropdownMenu>
       </div>
     </section>
+
+    <UModal
+      v-model:open="moveLastExpectedOpen"
+      title="Move the last expected finding?"
+      description="This finding will become a known false positive. Choose how future runs should treat expected coverage for this PR."
+    >
+      <template #footer>
+        <UButton
+          label="Cancel"
+          color="neutral"
+          variant="outline"
+          @click="moveLastExpectedOpen = false"
+        />
+        <UButton
+          label="Leave unlabelled"
+          color="neutral"
+          variant="outline"
+          @click="confirmMoveLastExpected('Unlabelled')"
+        />
+        <UButton
+          label="Mark reviewed clean"
+          color="neutral"
+          variant="outline"
+          @click="confirmMoveLastExpected('ReviewedClean')"
+        />
+      </template>
+    </UModal>
   </div>
 </template>
 
@@ -373,6 +400,16 @@ const referenceState = computed({
 });
 
 const findings = computed(() => props.referenceSet.findings);
+const pendingMove = shallowRef<{
+  id: string;
+  referenceSet: CodeReviewEvaluationReferenceSetDto;
+} | null>(null);
+const moveLastExpectedOpen = computed({
+  get: () => pendingMove.value !== null,
+  set: (open) => {
+    if (!open) pendingMove.value = null;
+  },
+});
 const expandedFindingIds = ref<string[]>([]);
 const expectedFindings = computed(() =>
   findings.value.filter((finding) => finding.disposition !== "Rejected"),
@@ -469,20 +506,28 @@ function findingMenuItems(
     ],
   ];
 }
-function moveFinding(id: string, disposition: "Expected" | "Rejected") {
+function moveFinding(
+  id: string,
+  disposition: "Expected" | "Rejected",
+  coverage?: "Unlabelled" | "ReviewedClean",
+) {
   if (props.disabled) return;
-  const remainingExpected = findings.value.filter(
-    (finding) =>
-      finding.id !== id && (finding.disposition ?? "Expected") === "Expected",
-  ).length;
+  if (
+    disposition === "Rejected" &&
+    props.referenceSet.state === "Expected" &&
+    expectedFindings.value.length === 1 &&
+    expectedFindings.value[0]?.id === id &&
+    !coverage
+  ) {
+    pendingMove.value = { id, referenceSet: props.referenceSet };
+    return;
+  }
   updateReferenceSet({
     ...props.referenceSet,
     state:
       disposition === "Expected"
         ? "Expected"
-        : props.referenceSet.state === "Expected" && remainingExpected === 0
-          ? "Unlabelled"
-          : props.referenceSet.state,
+        : (coverage ?? props.referenceSet.state),
     findings: findings.value.map((finding) =>
       finding.id === id
         ? {
@@ -494,6 +539,13 @@ function moveFinding(id: string, disposition: "Expected" | "Rejected") {
         : finding,
     ),
   });
+}
+
+function confirmMoveLastExpected(coverage: "Unlabelled" | "ReviewedClean") {
+  const move = pendingMove.value;
+  pendingMove.value = null;
+  if (move && move.referenceSet === props.referenceSet)
+    moveFinding(move.id, "Rejected", coverage);
 }
 
 function severityColor(

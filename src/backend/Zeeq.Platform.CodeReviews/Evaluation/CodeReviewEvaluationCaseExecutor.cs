@@ -359,14 +359,14 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
                     item.CaseId,
                     leaseToken,
                     targetOutcome,
-                    grade.Matches.Count(match =>
+                    MatchedReferenceCount: grade.Matches.Count(match =>
                         match.Disposition == CodeReviewEvaluationReferenceDisposition.Expected
                     ),
-                    grade.MissedReferenceIds.Count,
-                    item.References.ExpectedFindingCount,
-                    grade.AdditionalCandidateIds.Count,
-                    grade.RepeatedRejectedReferenceIds.Count,
-                    item.References.RejectedFindingCount,
+                    MissedReferenceCount: grade.MissedReferenceIds.Count,
+                    ExpectedReferenceCount: item.References.ExpectedFindingCount,
+                    AdditionalFindingCount: grade.AdditionalCandidateIds.Count,
+                    RepeatedFalsePositiveCount: grade.RepeatedRejectedReferenceIds.Count,
+                    TrackedFalsePositiveCount: item.References.RejectedFindingCount,
                     JsonSerializer.Serialize(grade.Matches, JsonOptions),
                     JsonSerializer.Serialize(
                         new
