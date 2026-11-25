@@ -67,6 +67,9 @@ public sealed record CartFindingResponse(
 /// Optional free-text note the user attached when adding this finding (max
 /// <see cref="CartLimits.MaxAnnotationLength"/> chars).
 /// </param>
+/// <param name="SourceReviewId">Source review identity, when available.</param>
+/// <param name="OccurrenceKey">Finding ordinal within the source review.</param>
+/// <param name="SemanticId">Stable semantic finding label.</param>
 /// <param name="AddedAtUtc">Timestamp when this finding was added to the (then-draft) cart.</param>
 public sealed record SaveCartItemRequest(
     [property: Required, MaxLength(100)] string Hash,
@@ -82,7 +85,10 @@ public sealed record SaveCartItemRequest(
     [property: Required, MaxLength(100)] string Facet,
     [property: Required, MaxLength(100)] string Agent,
     [property: MaxLength(CartLimits.MaxAnnotationLength)] string? Annotation,
-    DateTimeOffset AddedAtUtc
+    DateTimeOffset AddedAtUtc,
+    [property: MaxLength(128)] string? SourceReviewId = null,
+    [property: MaxLength(32)] string? OccurrenceKey = null,
+    [property: MaxLength(128)] string? SemanticId = null
 );
 
 /// <summary>

@@ -1089,13 +1089,15 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
             seed.Organization.Id,
             "session-a",
             null,
-            "excluded"
+            "excluded",
+            ownerQualifiedRepoName: "owner/repo"
         );
         var group = await store.LoadForAgentAsync(
             seed.Organization.Id,
             "different",
             "group-a",
-            "excluded"
+            "excluded",
+            ownerQualifiedRepoName: "owner/repo"
         );
         var pr = await store.LoadAsync(
             seed.Organization.Id,
@@ -1104,8 +1106,16 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
             "group-a",
             "excluded"
         );
+        var differentRepo = await store.LoadForAgentAsync(
+            seed.Organization.Id,
+            "different",
+            "group-a",
+            "excluded",
+            ownerQualifiedRepoName: "owner/other"
+        );
 
         await Assert.That(sessionOnly).IsEmpty();
+        await Assert.That(differentRepo).IsEmpty();
         await Assert.That(group.Select(r => r.Facet)).IsEquivalentTo(["Security", "Performance"]);
         await Assert.That(pr.Select(r => r.Facet)).IsEquivalentTo(["Security", "Performance"]);
     }

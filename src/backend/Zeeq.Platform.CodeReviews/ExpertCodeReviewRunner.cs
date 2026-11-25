@@ -31,7 +31,8 @@ public sealed partial class ExpertCodeReviewRunner(
     ICodeReviewArtifactStore artifacts,
     ICodeReviewPreviousReviewStore previousReviewStore,
     CodeReviewRequestLinkFactory linkFactory,
-    ILogger<ExpertCodeReviewRunner> logger
+    ILogger<ExpertCodeReviewRunner> logger,
+    ICodeReviewFindingTriageStore triageStore
 ) : IExpertCodeReviewRunner
 {
     /// <inheritdoc />
@@ -209,7 +210,8 @@ public sealed partial class ExpertCodeReviewRunner(
                 request.AgentSessionId,
                 reviewGroupId,
                 excludeReviewId: string.Empty,
-                cancellationToken: cancellationToken
+                cancellationToken: cancellationToken,
+                ownerQualifiedRepoName: request.OwnerQualifiedRepoName
             );
 
             // Per-run collector for the KB sources each reviewer consults; threaded to every
@@ -219,6 +221,19 @@ public sealed partial class ExpertCodeReviewRunner(
                 repository?.Id
             );
 
+            var triages = string.IsNullOrEmpty(reviewGroupId)
+                ? []
+                : await triageStore.ListForScopeAsync(
+                    reviewContext.OrganizationId,
+                    repository?.Id,
+                    request.OwnerQualifiedRepoName.ToLowerInvariant(),
+                    null,
+                    reviewGroupId,
+                    string.Empty,
+                    cancellationToken
+                );
+            var priorContext = new CodeReviewPriorContext(previousReviews, triages, "review_group");
+
             var xml = await agentExecutor.ExecuteAsync(
                 reviewContext.OrganizationId,
                 reviewContext.Agents,
@@ -227,7 +242,10 @@ public sealed partial class ExpertCodeReviewRunner(
                 previousReviews,
                 user,
                 telemetry,
-                options: CodeReviewExecutionOptions.Durable,
+                options: CodeReviewExecutionOptions.Durable with
+                {
+                    PriorContext = triages.Count == 0 ? null : priorContext,
+                },
                 cancellationToken
             );
 

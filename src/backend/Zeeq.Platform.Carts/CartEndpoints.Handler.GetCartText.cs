@@ -1,17 +1,21 @@
 using Zeeq.Core.Carts;
 using Zeeq.Core.Identity;
+using Zeeq.Core.Models;
+using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Platform.Carts;
 
 /// <summary>
 /// Handles cart instruction text.
 /// </summary>
-public sealed class GetCartTextHandler(ICartStore store) : IEndpointHandler
+public sealed class GetCartTextHandler(
+    ICartStore store,
+    ICodeReviewFindingTriageStore triages,
+    CodeReviewRequestLinkFactory links
+) : IEndpointHandler
 {
     /// <summary>
-    /// Returns a short MCP invocation instruction for a saved cart.  The instruction
-    /// tells the agent to call <c>get_cart_findings</c> with the cart ID; the full
-    /// findings XML is returned by the MCP tool itself.
+    /// Returns cart findings with live triage annotations.
     /// </summary>
     public async Task<Results<Ok<CartTextResponse>, NotFound>> HandleAsync(
         string orgId,
@@ -31,6 +35,13 @@ public sealed class GetCartTextHandler(ICartStore store) : IEndpointHandler
             return TypedResults.NotFound();
         }
 
-        return TypedResults.Ok(new CartTextResponse(cartId.ToMcpInstructions()));
+        var text = await CartInstructionsTextBuilder.ToAgentInstructionsAsync(
+            cart.ItemsPayload,
+            orgId,
+            triages,
+            links,
+            cancellationToken: ct
+        );
+        return TypedResults.Ok(new CartTextResponse(text));
     }
 }

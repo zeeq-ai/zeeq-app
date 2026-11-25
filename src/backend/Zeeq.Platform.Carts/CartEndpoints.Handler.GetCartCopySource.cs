@@ -46,7 +46,10 @@ public sealed class GetCartCopySourceHandler(ICartStore store) : IEndpointHandle
                 item.Facet,
                 item.Agent,
                 item.Annotation,
-                item.AddedAtUtc
+                item.AddedAtUtc,
+                item.SourceReviewId,
+                item.OccurrenceKey,
+                item.SemanticId
             ))
             .ToArray();
 

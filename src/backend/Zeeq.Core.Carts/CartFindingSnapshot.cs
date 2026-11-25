@@ -22,6 +22,9 @@ namespace Zeeq.Core.Carts;
 /// <see cref="CartLimits.MaxAnnotationLength"/> chars), surfaced to the local agent as a
 /// <c>note</c> attribute in the compiled XML.
 /// </param>
+/// <param name="SourceReviewId">Source review identity, when available.</param>
+/// <param name="OccurrenceKey">Finding ordinal within the source review.</param>
+/// <param name="SemanticId">Stable semantic finding label.</param>
 /// <param name="AddedAtUtc">Timestamp when this finding was added to the (then-draft) cart.</param>
 public sealed record CartFindingSnapshot(
     string Hash,
@@ -37,5 +40,8 @@ public sealed record CartFindingSnapshot(
     string Facet,
     string Agent,
     string? Annotation,
-    DateTimeOffset AddedAtUtc
+    DateTimeOffset AddedAtUtc,
+    string? SourceReviewId = null,
+    string? OccurrenceKey = null,
+    string? SemanticId = null
 );

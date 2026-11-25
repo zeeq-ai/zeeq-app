@@ -18460,6 +18460,30 @@
             "type": "string",
             "description": "Timestamp when this finding was added to the (then-draft) cart.",
             "format": "date-time"
+          },
+          "sourceReviewId": {
+            "maxLength": 128,
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Source review identity, when available."
+          },
+          "occurrenceKey": {
+            "maxLength": 32,
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Finding ordinal within the source review."
+          },
+          "semanticId": {
+            "maxLength": 128,
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Stable semantic finding label."
           }
         },
         "description": "One full finding snapshot inside an initial save or copy-source payload."

@@ -825,7 +825,8 @@ public sealed class CodeReviewEvaluationCaseExecutorTests
             new(),
             Substitute.For<ILibraryDocumentStore>(),
             new TestHybridCache(),
-            NullLogger<CodeReviewExecutionEngine>.Instance
+            NullLogger<CodeReviewExecutionEngine>.Instance,
+            Substitute.For<ICodeReviewFindingTriageStore>()
         );
         ICodeReviewEvaluationJudge judgeForTest = hasCandidate
             ? Substitute.For<ICodeReviewEvaluationJudge>()

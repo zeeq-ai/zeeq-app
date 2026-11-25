@@ -23,6 +23,7 @@ public sealed class ToolAnnotationTests
         ["update_document_by_diff"] = (false, true, false),
         ["expert_code_review"] = (false, false, false),
         ["get_review_findings"] = (true, null, null),
+        ["triage_review_findings"] = (false, true, false),
         ["get_cart_findings"] = (true, null, null),
         ["get_quip"] = (true, null, null),
         ["list_libraries"] = (true, null, null),
@@ -62,10 +63,7 @@ public sealed class ToolAnnotationTests
 
             await Assert.That(hints).IsNotNull().Because(name);
             await Assert.That(hints!.ReadOnlyHint).IsEqualTo(expected.ReadOnly).Because(name);
-            await Assert
-                .That(hints.DestructiveHint)
-                .IsEqualTo(expected.Destructive)
-                .Because(name);
+            await Assert.That(hints.DestructiveHint).IsEqualTo(expected.Destructive).Because(name);
             await Assert.That(hints.IdempotentHint).IsEqualTo(expected.Idempotent).Because(name);
             await Assert.That(hints.OpenWorldHint).IsFalse().Because(name);
         }

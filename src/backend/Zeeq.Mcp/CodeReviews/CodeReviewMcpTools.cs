@@ -309,7 +309,8 @@ public sealed partial class CodeReviewMcpTools
             - Present the concrete changes needed and let the user decide which to proceed with; do not make changes without confirmation
             - Use a checklist/todo list to keep track of work against this set of findings; we do not want to wing it here
             - If a behavior is expected or by design, suggest leaving a comment near the code to explain reasoning to future travelers (agents)
-            - Add code comment: "NOTE: (Reason to defer or ignore a finding goes here)" to document any rationale for deferring or ignoring a finding
+            - Confirm decisions with the user, then call triage_review_findings using reviewId or reviewGroupId and the finding ref (for example 9d43c.F2), with false_positive or deferred and a reason.
+            - Add a // NOTE: comment only when the code itself needs an explanation.
             </instruction_for_agents>
 
             {{(

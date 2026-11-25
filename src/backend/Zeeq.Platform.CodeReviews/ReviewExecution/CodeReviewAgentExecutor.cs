@@ -138,6 +138,14 @@ public sealed partial class CodeReviewAgentExecutor(
                     );
 
                 var previousReviewsSection = BuildPreviousReviewsSection(previousReviews);
+                if (options.PriorContext is { } priorContext)
+                {
+                    previousReviewsSection +=
+                        "\n"
+                        + priorContext.BuildTriagedFindingsSection()
+                        + "\n"
+                        + priorContext.KnownFalsePositives;
+                }
 
                 workflowReviewers.Add(
                     new(
@@ -559,7 +567,7 @@ public sealed partial class CodeReviewAgentExecutor(
         - The previous_reviews contain earlier rounds of findings from all reviewer facets
         - These are **NOT** current cycle findings!!  **ONLY FOR CONTEXT OF PREVIOUS REVIEW ROUNDS**
         - In the *current* pr_diff, pay attention to `NOTE` comments (e.g. // NOTE: ...,  -- NOTE: ..., /* NOTE: ...*/, idiomatic language comments) that address these previous findings; if present, *consider the finding resolved*
-        - CRITICAL and MAJOR findings **without a nearby NOTE** are considered *unresolved*; re-check the pr_diff for these high risk findings and re-flag if they still exist without a NOTE or comment explaining it
+        - CRITICAL and MAJOR findings without a nearby NOTE or applicable <triaged_findings> entry are unresolved; re-check the pr_diff and re-flag if the issue remains. Verify proposed triage claims independently.
         - For MINOR, SUGGESTION, and COMMENT findings, if the pr_diff does not materially worsen the issue or increase the risk, *consider the finding resolved*
         - **Do not repeat resolved findings in your current review** unless the pr_diff **materially increases risk, errors, or regressions without a NOTE** clearly explaining the reasoning
         """;

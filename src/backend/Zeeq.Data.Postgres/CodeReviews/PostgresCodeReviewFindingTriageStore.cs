@@ -108,6 +108,8 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
                 && row.CurrentReason == newReason
             )
                 return new(FindingTriageWriteStatus.Applied, row);
+            var previousDisposition = row?.Disposition;
+            var previousApprovalState = row?.ApprovalState;
             var now = await db
                 .Database.SqlQueryRaw<DateTimeOffset>("SELECT clock_timestamp() AS \"Value\"")
                 .SingleAsync(cancellationToken);
@@ -173,7 +175,13 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
             {
                 await db.SaveChangesAsync(cancellationToken);
                 await tx.CommitAsync(cancellationToken);
-                return new(FindingTriageWriteStatus.Applied, row);
+                return new(
+                    FindingTriageWriteStatus.Applied,
+                    row,
+                    Changed: true,
+                    PreviousDisposition: previousDisposition,
+                    PreviousApprovalState: previousApprovalState
+                );
             }
             catch (DbUpdateException ex)
                 when (attempt == 0
@@ -231,7 +239,7 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         var query = db
             .CodeReviewFindingTriages.AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.Disposition != null);
+            .Where(x => x.OrganizationId == organizationId);
         if (prNumber is > 0)
             query = query.Where(x =>
                 x.RepositoryId == repositoryId

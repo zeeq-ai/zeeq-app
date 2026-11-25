@@ -49,7 +49,10 @@ public enum FindingTriageWriteStatus
 public sealed record FindingTriageWriteResult(
     FindingTriageWriteStatus Status,
     CodeReviewFindingTriage? Row,
-    string? Error = null
+    string? Error = null,
+    bool Changed = false,
+    CodeReviewFindingDisposition? PreviousDisposition = null,
+    CodeReviewFindingApprovalState? PreviousApprovalState = null
 );
 
 /// <summary>A lease token for an embedding task. Both timestamps must be echoed when completing or releasing the lease.</summary>
@@ -85,7 +88,7 @@ public interface ICodeReviewFindingTriageStore
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>List active triages for the exact scope.</summary>
+    /// <summary>List triages, including cleared tombstones, for the exact scope.</summary>
     Task<IReadOnlyList<CodeReviewFindingTriage>> ListForScopeAsync(
         string organizationId,
         string? repositoryId,

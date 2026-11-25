@@ -27,7 +27,8 @@ public sealed partial class CodeReviewExecutionEngine(
     CodeReviewXmlOutputValidator xmlValidator,
     ILibraryDocumentStore libraries,
     HybridCache cache,
-    ILogger<CodeReviewExecutionEngine> logger
+    ILogger<CodeReviewExecutionEngine> logger,
+    ICodeReviewFindingTriageStore triageStore
 )
 {
     /// <summary>
@@ -207,6 +208,26 @@ public sealed partial class CodeReviewExecutionEngine(
                     )
                     : [];
 
+            var triages =
+                options.IncludePreviousReviews && options.Mode == CodeReviewExecutionMode.Durable
+                    ? await triageStore.ListForScopeAsync(
+                        message.OrganizationId,
+                        message.RepositoryId,
+                        message.OwnerQualifiedRepoName.ToLowerInvariant(),
+                        message.PullRequestNumber,
+                        review.ReviewGroupId,
+                        review.Id,
+                        cancellationToken
+                    )
+                    : [];
+            var priorContext = new CodeReviewPriorContext(
+                previousReviews,
+                triages,
+                message.PullRequestNumber > 0 ? "pull_request"
+                    : review.ReviewGroupId is not null ? "review_group"
+                    : "review"
+            );
+
             // Synthetic automation identity for the async webhook path and draft test path:
             // no real end-user principal exists once execution reaches this provider-neutral core.
             var callerIdentity = CodeReviewAutomationIdentity.Create(
@@ -222,7 +243,10 @@ public sealed partial class CodeReviewExecutionEngine(
                 previousReviews,
                 callerIdentity,
                 telemetry,
-                options,
+                options with
+                {
+                    PriorContext = triages.Count == 0 ? null : priorContext,
+                },
                 cancellationToken
             );
 
