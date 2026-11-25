@@ -62,4 +62,64 @@ public sealed class CodeReviewEvaluationFixtureTests
             );
         await Assert.That(Act).Throws<InvalidOperationException>();
     }
+
+    [Test]
+    [Arguments("Cache-key normalization", true)]
+    [Arguments("Different claim", false)]
+    public async Task FixtureJudge_HandlesRejectedReferenceOn903(string title, bool matches)
+    {
+        var env = Substitute.For<IHostEnvironment>();
+        env.EnvironmentName.Returns("Development");
+        var judge = new CodeReviewEvaluationFixtureJudge(new(env, [("org", "repo")]), null!);
+        var now = DateTimeOffset.UtcNow;
+        var snapshot = new CodeReviewEvaluationSnapshot(
+            1,
+            "org",
+            "repo",
+            "owner/repo",
+            903,
+            "title",
+            "body",
+            "base",
+            "head",
+            "author",
+            "https://example.test",
+            false,
+            PullRequestState.Closed,
+            now,
+            1,
+            []
+        );
+        var reference = new CodeReviewEvaluationReferenceFinding(
+            "r",
+            title,
+            "summary",
+            CodeReviewEvaluationFindingSeverity.Minor,
+            "src/Search.cs",
+            null,
+            CodeReviewEvaluationReferenceOrigin.Manual,
+            null,
+            null,
+            "user",
+            now,
+            CodeReviewEvaluationReferenceDisposition.Rejected
+        );
+        var candidate = new CodeReviewEvaluationCandidate(
+            "c",
+            "Cache-key normalization",
+            "details",
+            CodeReviewFindingLevel.Minor,
+            "src/Search.cs",
+            24
+        );
+        var result = await judge.GradeAsync(
+            "org",
+            null!,
+            snapshot,
+            [reference],
+            [candidate],
+            CancellationToken.None
+        );
+        await Assert.That(result.Grade.Matches.Count).IsEqualTo(matches ? 1 : 0);
+    }
 }

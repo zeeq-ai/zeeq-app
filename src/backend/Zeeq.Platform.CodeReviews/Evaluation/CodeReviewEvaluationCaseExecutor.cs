@@ -46,6 +46,11 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
         CancellationToken cancellationToken
     )
     {
+        using var activity = ZeeqTelemetry.Trace([
+            ("eval.judge.rubric_version", CodeReviewEvaluationJudge.RubricVersion),
+            ("eval.judge.expected_reference_count", item.References.ExpectedFindingCount),
+            ("eval.judge.rejected_reference_count", item.References.RejectedFindingCount),
+        ]);
         var org = run.OrganizationId;
         var stage = CodeReviewEvaluationCaseOutcome.ReviewFailed;
         var operation = "LoadParent";
@@ -105,9 +110,9 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
             if (reused is not null)
             {
                 stage = CodeReviewEvaluationCaseOutcome.JudgeFailed;
-                if (item.References.State == CodeReviewEvaluationReferenceState.Unlabelled)
+                if (!item.References.RequiresJudge)
                     throw new InvalidOperationException(
-                        "An unlabelled case cannot reuse a candidate for grading."
+                        "An unlabelled case with no tracked false positives cannot reuse a candidate for grading."
                     );
                 operation = "StartGrading";
                 await results.StartGradingAsync(
@@ -195,6 +200,10 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
                         new(org, run.Id, item.CaseId, leaseToken, skip),
                         cancellationToken
                     );
+                    activity?.SetTag(
+                        "eval.case.outcome",
+                        CodeReviewEvaluationCaseOutcome.Skipped.ToString()
+                    );
                     return;
                 }
 
@@ -266,7 +275,7 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
                     execution.SourceTelemetryPayload,
                     isJudge: false
                 );
-                if (item.References.State == CodeReviewEvaluationReferenceState.Unlabelled)
+                if (!item.References.RequiresJudge)
                 {
                     await results.RecordUnlabelledAsync(
                         new(
@@ -283,6 +292,10 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
                             review.EstimatedCostUsd
                         ),
                         cancellationToken
+                    );
+                    activity?.SetTag(
+                        "eval.case.outcome",
+                        CodeReviewEvaluationCaseOutcome.Unlabelled.ToString()
                     );
                     return;
                 }
@@ -320,6 +333,24 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
                 cancellationToken
             );
             var grade = judged.Grade;
+            var targetOutcome = item.References.IsExpectedAudited
+                ? CodeReviewEvaluationCaseOutcome.Graded
+                : CodeReviewEvaluationCaseOutcome.FalsePositiveChecked;
+            activity?.SetTag(
+                "eval.judge.repeated_false_positive_count",
+                grade.RepeatedRejectedReferenceIds.Count
+            );
+            activity?.SetTag(
+                "eval.judge.cross_file_rejected_dropped",
+                grade.CrossFileRejectedMatchesFiltered
+            );
+            if (grade.CrossFileRejectedMatchesFiltered > 0)
+                LogCrossFileRejectedMatches(
+                    logger,
+                    run.Id,
+                    item.CaseId,
+                    grade.CrossFileRejectedMatchesFiltered
+                );
             operation = "PersistGrade";
             await results.RecordGradeAsync(
                 new(
@@ -327,16 +358,25 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
                     run.Id,
                     item.CaseId,
                     leaseToken,
-                    CodeReviewEvaluationCaseOutcome.Graded,
-                    grade.Matches.Count,
+                    targetOutcome,
+                    grade.Matches.Count(match =>
+                        match.Disposition == CodeReviewEvaluationReferenceDisposition.Expected
+                    ),
                     grade.MissedReferenceIds.Count,
-                    item.References.Findings.Count,
+                    item.References.ExpectedFindingCount,
                     grade.AdditionalCandidateIds.Count,
-                    0,
-                    0,
+                    grade.RepeatedRejectedReferenceIds.Count,
+                    item.References.RejectedFindingCount,
                     JsonSerializer.Serialize(grade.Matches, JsonOptions),
                     JsonSerializer.Serialize(
-                        new { grade.MissedReferenceIds, grade.AdditionalCandidateIds },
+                        new
+                        {
+                            grade.MissedReferenceIds,
+                            grade.RepeatedRejectedReferenceIds,
+                            grade.AvoidedRejectedReferenceIds,
+                            grade.AdditionalCandidateIds,
+                            grade.CrossFileRejectedMatchesFiltered,
+                        },
                         JsonOptions
                     ),
                     Provenance(
@@ -353,6 +393,7 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
                 ),
                 cancellationToken
             );
+            activity?.SetTag("eval.case.outcome", targetOutcome.ToString());
         }
         catch (CodeReviewEvaluationFencedException)
         {
@@ -364,6 +405,7 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
         }
         catch (Exception ex)
         {
+            activity?.SetTag("eval.case.outcome", stage.ToString());
             LogCaseFailure(logger, run.Id, item.CaseId, operation, ex.GetType().Name);
             await results.RecordFailureAsync(
                 new(
@@ -381,6 +423,18 @@ public sealed partial class CodeReviewEvaluationCaseExecutor(
             );
         }
     }
+
+    [LoggerMessage(
+        EventId = 3481,
+        Level = LogLevel.Warning,
+        Message = "Cross-file rejected matches filtered. RunId={RunId}, CaseId={CaseId}, DroppedCount={DroppedCount}"
+    )]
+    private static partial void LogCrossFileRejectedMatches(
+        ILogger logger,
+        string runId,
+        string caseId,
+        int droppedCount
+    );
 
     [LoggerMessage(
         EventId = 3480,
