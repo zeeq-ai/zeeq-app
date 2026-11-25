@@ -1587,6 +1587,7 @@ async function submitFalsePositive() {
   stagingFalsePositive.value = true;
   try {
     let draft = datasetDraft.value;
+    let loadedDatasetId: string | null = null;
     if (draft?.datasetId !== pending.datasetId) {
       if (datasetDraftDirty.value) {
         datasetEditorOpen.value = true;
@@ -1613,7 +1614,7 @@ async function submitFalsePositive() {
         return;
       }
       draft = createEvaluationDatasetDraft(loaded);
-      selectedDatasetId.value = loaded.id;
+      loadedDatasetId = loaded.id;
     }
     const evaluationCase = draft.cases.find(
       (item) => item.caseId === pending.result.caseId,
@@ -1673,6 +1674,7 @@ async function submitFalsePositive() {
       pending.result.caseId,
       { ...current, findings: [...current.findings, reference] },
     );
+    if (loadedDatasetId) selectedDatasetId.value = loadedDatasetId;
     selectedReviewerId.value = reviewerAgentId;
     falsePositiveModalOpen.value = false;
   } finally {
