@@ -162,6 +162,8 @@
         <UButton
           :label="confirmButtonLabel"
           color="primary"
+          :disabled="confirmSubmitted"
+          :loading="confirmSubmitted"
           @click="confirmAction"
         />
       </div>
@@ -193,6 +195,7 @@ const emits = defineEmits<{
 const confirmOpen = ref(false);
 const pendingRun = ref<EvaluationRunDto | null>(null);
 const pendingAction = ref<RunAction | null>(null);
+const confirmSubmitted = ref(false);
 const pendingActionRunId = computed(() => pendingRun.value?.id ?? null);
 
 const confirmTitle = computed(() =>
@@ -248,16 +251,19 @@ function formatDate(value: Date | string): string {
 }
 
 function requestAction(run: EvaluationRunDto, action: RunAction) {
+  confirmSubmitted.value = false;
   pendingRun.value = run;
   pendingAction.value = action;
   confirmOpen.value = true;
 }
 
 function confirmAction() {
+  if (confirmSubmitted.value) return;
   const runId = pendingRun.value?.id;
   if (!runId || !pendingAction.value) {
     return;
   }
+  confirmSubmitted.value = true;
 
   if (pendingAction.value === "cancel") emits("cancel", runId);
   else if (pendingAction.value === "abandon") emits("abandon", runId);

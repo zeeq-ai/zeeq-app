@@ -12,7 +12,10 @@
     />
     <div
       v-else
-      class="min-w-0 overflow-x-auto rounded-md border border-default"
+      class="min-w-0 max-w-full overflow-x-auto rounded-md border border-default"
+      role="region"
+      aria-label="Per-pull-request evaluation results"
+      tabindex="0"
     >
       <UTable
         v-model:expanded="expandedRows"
@@ -21,12 +24,12 @@
         :loading="loading"
         :get-row-id="(item: EvaluationRunCaseDto) => item.caseId"
         :ui="{
-          base: 'w-full table-fixed sm:table-auto',
+          base: 'min-w-[58rem] table-auto',
           th: 'px-2 py-1.5 text-[11px]',
           td: 'px-2 py-1.5 text-xs',
           tr: 'h-8 data-[expanded=true]:bg-elevated/30',
         }"
-        class="min-w-0 sm:min-w-[58rem]"
+        class="min-w-[58rem]"
       >
         <template #expand-cell="{ row }">
           <UButton
