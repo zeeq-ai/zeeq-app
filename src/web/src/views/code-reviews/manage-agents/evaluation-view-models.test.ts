@@ -16,6 +16,8 @@ import {
   summarizeRunFalsePositives,
   createEvaluationDatasetDraft,
   getEvaluationCaseGradeCounts,
+  normalizeEvaluationFilePath,
+  hasExpectedRejectedFileCollision,
   refreshEvaluationCase,
 } from "./evaluation-view-models";
 
@@ -528,6 +530,41 @@ describe("known false positive reporting", () => {
         ...run,
         counts: { ...counts, caseCount: 1, failedCaseCount: 0 },
       }),
+    ).toBe(false);
+  });
+});
+
+describe("reference file collisions", () => {
+  it("normalizes slash and prefix without removing a dotfile", () => {
+    expect(normalizeEvaluationFilePath(" /./.github\\ci.yml ")).toBe(
+      ".github/ci.yml",
+    );
+    expect(normalizeEvaluationFilePath("./.github/ci.yml")).toBe(
+      ".github/ci.yml",
+    );
+    expect(normalizeEvaluationFilePath("github/ci.yml")).not.toBe(
+      normalizeEvaluationFilePath(".github/ci.yml"),
+    );
+  });
+  it("warns only for a nonempty same-file expected finding in Expected state", () => {
+    const set = referenceSet();
+    set.findings[0].file = ".github/ci.yml";
+    expect(hasExpectedRejectedFileCollision(set, "./.github/ci.yml")).toBe(
+      true,
+    );
+    expect(hasExpectedRejectedFileCollision(set, "github/ci.yml")).toBe(false);
+    expect(hasExpectedRejectedFileCollision(set, "")).toBe(false);
+    expect(
+      hasExpectedRejectedFileCollision(
+        { ...set, state: "Unlabelled" },
+        ".github/ci.yml",
+      ),
+    ).toBe(false);
+    expect(
+      hasExpectedRejectedFileCollision(
+        { ...set, findings: [{ ...set.findings[0], disposition: "Rejected" }] },
+        ".github/ci.yml",
+      ),
     ).toBe(false);
   });
 });

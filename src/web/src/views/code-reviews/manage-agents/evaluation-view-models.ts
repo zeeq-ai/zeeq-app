@@ -427,3 +427,29 @@ export function summarizeRunFalsePositives(
     onUnlabelledPrCount: Number(run.counts.falsePositiveCheckedCaseCount ?? 0),
   };
 }
+
+/** Normalizes repository paths while preserving leading dotfiles. */
+export function normalizeEvaluationFilePath(file: string): string {
+  let path = file.trim().replaceAll("\\", "/");
+  while (path.startsWith("/") || path.startsWith("./")) {
+    path = path.startsWith("/") ? path.slice(1) : path.slice(2);
+  }
+  return path;
+}
+
+/** True when a rejected rule shares a file with an expected finding. */
+export function hasExpectedRejectedFileCollision(
+  set: CodeReviewEvaluationReferenceSetDto,
+  rejectedFile: string,
+): boolean {
+  const file = normalizeEvaluationFilePath(rejectedFile);
+  return (
+    set.state === "Expected" &&
+    file.length > 0 &&
+    set.findings.some(
+      (finding) =>
+        finding.disposition !== "Rejected" &&
+        normalizeEvaluationFilePath(finding.file) === file,
+    )
+  );
+}

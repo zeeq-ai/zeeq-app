@@ -173,14 +173,25 @@
                   {{ finding.severity }}
                 </p>
               </div>
-              <UButton
-                label="Add"
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                :disabled="saving"
-                @click="emits('addHistorical', finding)"
-              />
+              <div class="flex flex-wrap gap-2">
+                <UButton
+                  label="Add as expected"
+                  size="xs"
+                  color="neutral"
+                  variant="outline"
+                  :disabled="saving || referenceSet.findings.length >= 100"
+                  @click="emits('addHistorical', finding, 'Expected')"
+                />
+                <UButton
+                  label="Mark as false positive"
+                  icon="i-hugeicons-flag-01"
+                  size="xs"
+                  color="neutral"
+                  variant="outline"
+                  :disabled="saving || referenceSet.findings.length >= 100"
+                  @click="emits('addHistorical', finding, 'Rejected')"
+                />
+              </div>
             </li>
           </ul>
         </div>
@@ -214,7 +225,10 @@ const emits = defineEmits<{
   remove: [];
   updateReferenceSet: [referenceSet: CodeReviewEvaluationReferenceSetDto];
   importHistorical: [];
-  addHistorical: [finding: CodeReviewEvaluationReferenceFindingDto];
+  addHistorical: [
+    finding: CodeReviewEvaluationReferenceFindingDto,
+    disposition: "Expected" | "Rejected",
+  ];
 }>();
 const detailPane = ref("reference-findings");
 const detailPaneItems = [
