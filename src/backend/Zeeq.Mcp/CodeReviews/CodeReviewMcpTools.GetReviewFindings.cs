@@ -76,7 +76,7 @@ public sealed partial class CodeReviewMcpTools
         )]
             string? minimumLevel = null,
         [Description(
-            "Optional; exclude findings already triaged, while keeping pending major or critical proposals actionable."
+            "Optional; exclude human-confirmed triages while keeping open and unconfirmed proposed findings actionable."
         )]
             bool actionableOnly = false,
         CancellationToken cancellationToken = default

@@ -29,7 +29,11 @@ public sealed class CodeReviewFindingTriageServiceTests
         };
 
     [Test]
-    public async Task ReviewReference_ResolvesImmutableOccurrenceAndForwardsSnapshot()
+    [Arguments("abcde.F1")]
+    [Arguments("f1")]
+    public async Task ReviewReference_ResolvesImmutableOccurrenceAndForwardsSnapshot(
+        string reference
+    )
     {
         var reviews = Substitute.For<ICodeReviewRecordStore>();
         var artifacts = Substitute.For<ICodeReviewArtifactStore>();
@@ -51,7 +55,7 @@ public sealed class CodeReviewFindingTriageServiceTests
             new(
                 "org",
                 new FindingTriageTarget.ByReview("cr_abcde"),
-                "abcde.F1",
+                reference,
                 FindingTriageOperation.Set,
                 CodeReviewFindingDisposition.FalsePositive,
                 "reason",
@@ -65,6 +69,86 @@ public sealed class CodeReviewFindingTriageServiceTests
         await Assert.That(row.SemanticId).IsEqualTo("sample-unsafe-input");
         await Assert.That(row.OwnerQualifiedRepoName).IsEqualTo("owner/repo");
         await Assert.That(row.LineNumber).IsEqualTo(4);
+    }
+
+    [Test]
+    [Arguments("fffff.F1", true)]
+    [Arguments("F99", false)]
+    public async Task MissingOrWrongReviewReference_ReturnsUsefulOutcome(
+        string reference,
+        bool invalid
+    )
+    {
+        var reviews = Substitute.For<ICodeReviewRecordStore>();
+        var artifacts = Substitute.For<ICodeReviewArtifactStore>();
+        var store = Substitute.For<ICodeReviewFindingTriageStore>();
+        reviews
+            .ListForTriageAsync("org", Arg.Any<FindingTriageTarget>(), Arg.Any<CancellationToken>())
+            .Returns([Review("cr_abcde")]);
+        artifacts
+            .OpenFindingsAsync("uri", Arg.Any<CancellationToken>())
+            .Returns(_ => new MemoryStream(Encoding.UTF8.GetBytes(Xml)));
+        var service = new CodeReviewFindingTriageService(reviews, artifacts, new(), store);
+        var result = await service.TriageAsync(
+            new(
+                "org",
+                new FindingTriageTarget.ByReview("cr_abcde"),
+                reference,
+                FindingTriageOperation.Clear,
+                null,
+                null,
+                CodeReviewFindingTriageChannel.Mcp,
+                "actor"
+            )
+        );
+        if (invalid)
+            await Assert.That(result is FindingTriageOutcome.Invalid).IsTrue();
+        else
+            await Assert
+                .That(((FindingTriageOutcome.NotFound)result).Candidates.Count)
+                .IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task BareSecondOccurrenceAndMissingReferenceReturnBoundedCandidates()
+    {
+        var reviews = Substitute.For<ICodeReviewRecordStore>();
+        var artifacts = Substitute.For<ICodeReviewArtifactStore>();
+        var store = Substitute.For<ICodeReviewFindingTriageStore>();
+        reviews
+            .ListForTriageAsync("org", Arg.Any<FindingTriageTarget>(), Arg.Any<CancellationToken>())
+            .Returns([Review("cr_abcde")]);
+        var finding =
+            "<finding level=\"MAJOR\" file=\"a.cs\" line=\"4\"><summary>Unsafe input</summary><details>Details</details></finding>";
+        var xml =
+            "<reviews><review facet=\"Security\" agent=\"Reviewer\"><summary>Review</summary><details>Details</details><findings>"
+            + string.Concat(Enumerable.Repeat(finding, 12))
+            + "</findings></review></reviews>";
+        artifacts
+            .OpenFindingsAsync("uri", Arg.Any<CancellationToken>())
+            .Returns(_ => new MemoryStream(Encoding.UTF8.GetBytes(xml)));
+        store
+            .UpsertLwwAsync(Arg.Any<FindingTriageWrite>(), Arg.Any<CancellationToken>())
+            .Returns(call => new FindingTriageWriteResult(
+                FindingTriageWriteStatus.Applied,
+                call.Arg<FindingTriageWrite>().Snapshot
+            ));
+        var service = new CodeReviewFindingTriageService(reviews, artifacts, new(), store);
+        FindingTriageRequest Request(string reference) =>
+            new(
+                "org",
+                new FindingTriageTarget.ByReview("cr_abcde"),
+                reference,
+                FindingTriageOperation.Clear,
+                null,
+                null,
+                CodeReviewFindingTriageChannel.Mcp,
+                "actor"
+            );
+        var found = (FindingTriageOutcome.Applied)await service.TriageAsync(Request("F2"));
+        var missing = (FindingTriageOutcome.NotFound)await service.TriageAsync(Request("F99"));
+        await Assert.That(found.Row.OccurrenceKey).IsEqualTo("F2");
+        await Assert.That(missing.Candidates.Count).IsEqualTo(10);
     }
 
     [Test]
@@ -83,7 +167,7 @@ public sealed class CodeReviewFindingTriageServiceTests
         var result = await service.TriageAsync(
             new(
                 "org",
-                new FindingTriageTarget.ByReviewGroup("group", "owner/repo"),
+                new FindingTriageTarget.ByPullRequest("repo", 1),
                 "abcde.F1",
                 FindingTriageOperation.Clear,
                 null,

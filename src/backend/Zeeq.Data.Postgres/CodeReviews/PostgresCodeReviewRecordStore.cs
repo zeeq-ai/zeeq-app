@@ -514,10 +514,6 @@ internal sealed class PostgresCodeReviewRecordStore(PostgresDbContext db) : ICod
             FindingTriageTarget.ByReview t => query.Where(x =>
                 x.Id == t.ReviewId && (t.CreatedAtUtc == null || x.CreatedAtUtc == t.CreatedAtUtc)
             ),
-            FindingTriageTarget.ByReviewGroup t => query.Where(x =>
-                x.ReviewGroupId == t.ReviewGroupId
-                && x.OwnerQualifiedRepoName.ToLower() == t.OwnerQualifiedRepoName.ToLower()
-            ),
             FindingTriageTarget.ByPullRequest t => query.Where(x =>
                 x.RepositoryId == t.RepositoryId && x.PullRequestNumber == t.PullRequestNumber
             ),

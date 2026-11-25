@@ -23,7 +23,7 @@ public sealed class ToolAnnotationTests
         ["update_document_by_diff"] = (false, true, false),
         ["expert_code_review"] = (false, false, false),
         ["get_review_findings"] = (true, null, null),
-        ["triage_review_findings"] = (false, true, false),
+        ["triage_review_finding"] = (false, false, true),
         ["get_cart_findings"] = (true, null, null),
         ["get_quip"] = (true, null, null),
         ["list_libraries"] = (true, null, null),

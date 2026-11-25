@@ -53,7 +53,7 @@ describe("finding XML guidance", () => {
     });
     expect(xml).toContain('reviewId="review"');
     expect(xml).toContain('reviewGroupId="group"');
-    expect(xml).toContain("triage_review_findings");
+    expect(xml).toContain("triage_review_finding");
     expect(xml).toContain('summary="pending"');
     expect(xml).not.toContain('summary="excluded"');
   });

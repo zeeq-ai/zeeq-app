@@ -223,5 +223,7 @@ public sealed class KnownFalsePositiveRetrievalService(
     }
 
     private static string Limit(string value, int length) =>
-        value.Length <= length ? value : value[..length];
+        length <= 0 ? ""
+        : value.Length <= length ? value
+        : value[..(char.IsHighSurrogate(value[length - 1]) ? length - 1 : length)];
 }

@@ -34,7 +34,7 @@ export function formatReviewerSectionGuidance(
   - Present the concrete changes needed and let the user decide which to proceed with; do not make changes without confirmation
   - Use a checklist/todo list to keep track of work against this set of findings; we do not want to wing it here
   - Review Zeeq documentation for guidance on best practices
-  - Confirm decisions with the user and call triage_review_findings with the finding ref and reason for false positives or deferrals.
+  - Confirm decisions with the user and call triage_review_finding with reviewId and the finding ref and reason for false positives or deferrals.
   </instruction_for_agents>
   -->
   <review

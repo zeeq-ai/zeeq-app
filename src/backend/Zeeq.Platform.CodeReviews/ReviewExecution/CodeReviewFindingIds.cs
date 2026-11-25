@@ -76,7 +76,12 @@ public static class CodeReviewFindingIds
     {
         static string[] Tokens(string value) =>
             Regex
-                .Split(value.ToLowerInvariant(), "[^a-z0-9]+")
+                .Split(
+                    new string(
+                        value.Select(c => c is >= 'A' and <= 'Z' ? (char)(c + 32) : c).ToArray()
+                    ),
+                    "[^a-z0-9]+"
+                )
                 .Where(token => token.Length > 0)
                 .ToArray();
         var tokens = Tokens(source).ToList();

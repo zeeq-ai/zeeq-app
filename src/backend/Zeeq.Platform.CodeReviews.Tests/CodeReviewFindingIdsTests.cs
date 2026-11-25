@@ -9,6 +9,7 @@ public class CodeReviewFindingIdsTests
     [Arguments("Null", "src/Handler.cs", "Security", "null-handler-security")]
     [Arguments("Missing null check", "src/Handler.cs", "Security", "missing-null-check-handler")]
     [Arguments("漢字", "", "Security", "security-finding-1")]
+    [Arguments("\u212A", "", "Security", "security-finding-1")]
     [Arguments("123Unsafe input", "src/Handler.cs", "Security", "unsafe-input-handler")]
     [Arguments("", "", "", "review-finding-1")]
     public async Task Assign_LegacyGoldenVectors(

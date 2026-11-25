@@ -46,7 +46,7 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
                 IsolationLevel.ReadCommitted,
                 cancellationToken
             );
-            var s = write.Snapshot;
+            var s = write.Snapshot.Clone();
             var row = await db
                 .CodeReviewFindingTriages.FromSqlInterpolated(
                     $"SELECT * FROM zeeq.code_review_finding_triages WHERE organization_id = {s.OrganizationId} AND source_review_id = {s.SourceReviewId} AND occurrence_key = {s.OccurrenceKey} FOR UPDATE"

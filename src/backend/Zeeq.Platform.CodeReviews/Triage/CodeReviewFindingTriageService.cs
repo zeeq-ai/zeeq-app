@@ -12,10 +12,6 @@ public closed record FindingTriageTarget
     public sealed record ByReview(string ReviewId, DateTimeOffset? CreatedAtUtc = null)
         : FindingTriageTarget;
 
-    /// <summary>An agent review group within a repository.</summary>
-    public sealed record ByReviewGroup(string ReviewGroupId, string OwnerQualifiedRepoName)
-        : FindingTriageTarget;
-
     /// <summary>One mapped pull request.</summary>
     public sealed record ByPullRequest(string RepositoryId, int PullRequestNumber)
         : FindingTriageTarget;
@@ -161,6 +157,22 @@ internal sealed partial class CodeReviewFindingTriageService(
             "^[a-fA-F0-9]{5,}\\.F[1-9][0-9]*$",
             RegexOptions.CultureInvariant
         );
+        var isBareReference = Regex.IsMatch(
+            findingReference,
+            "^F[1-9][0-9]*$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
+        );
+        if (
+            isReference
+            && request.Target is FindingTriageTarget.ByReview byReview
+            && !string.Equals(
+                CodeReviewFindingIds.FormatShortReference(byReview.ReviewId, "F1").Split('.')[0],
+                findingReference.Split('.')[0],
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+            return new FindingTriageOutcome.Invalid(["findingRef belongs to a different review."]);
+        var candidates = new List<FindingTriageCandidate>();
         // A short reference identifies the review tail before any artifact is loaded.
         var selectedReviews = isReference
             ? history.Where(x =>
@@ -195,19 +207,29 @@ internal sealed partial class CodeReviewFindingTriageService(
                     review.Id,
                     finding.OccurrenceKey
                 );
+                if (candidates.Count < 10)
+                    candidates.Add(
+                        new(review.Id, reference, finding.SemanticId, finding.Finding.Summary)
+                    );
                 if (
                     !(
-                        isReference
+                        isBareReference
+                            ? string.Equals(
+                                finding.OccurrenceKey,
+                                findingReference,
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                        : isReference
                             ? string.Equals(
                                 reference,
                                 request.FindingReference,
                                 StringComparison.OrdinalIgnoreCase
                             )
-                            : string.Equals(
-                                finding.SemanticId,
-                                request.FindingReference,
-                                StringComparison.Ordinal
-                            )
+                        : string.Equals(
+                            finding.SemanticId,
+                            request.FindingReference,
+                            StringComparison.Ordinal
+                        )
                     )
                 )
                     continue;
@@ -221,7 +243,7 @@ internal sealed partial class CodeReviewFindingTriageService(
             }
         }
         if (matches.Count == 0)
-            return new FindingTriageOutcome.NotFound([]);
+            return new FindingTriageOutcome.NotFound(candidates);
         if (matches.Count > 1)
             return new FindingTriageOutcome.Ambiguous(matches.Select(x => x.Candidate).ToArray());
         var (source, indexed, _) = matches[0];

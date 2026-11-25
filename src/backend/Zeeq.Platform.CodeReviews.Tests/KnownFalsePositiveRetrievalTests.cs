@@ -154,8 +154,8 @@ public class KnownFalsePositiveRetrievalTests
                 OccurrenceKey = "F1",
                 SemanticId = "test-finding-id",
                 Facet = "security",
-                FindingSummary = "<script>",
-                CurrentReason = "do & check",
+                FindingSummary = "<script>" + new string('a', 391) + "😀tail",
+                CurrentReason = "do & check" + new string('a', 389) + "😀tail",
                 FilePath = path,
             };
         store

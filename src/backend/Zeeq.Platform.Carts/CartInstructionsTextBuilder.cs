@@ -138,7 +138,7 @@ public static class CartInstructionsTextBuilder
                     <review_steps>
                     1. Review each finding from expert reviewers
                     2. Evaluate veracity and validity of each finding against the broader context of the codebase, feature, and work
-                    3. Confirm decisions with the user and call triage_review_findings with a reason for false positives or deferred findings. Add a // NOTE: only when the code needs an explanation.
+                    3. Confirm decisions with the user and call triage_review_finding with reviewId, the finding ref, and a reason for false positives or deferred findings. Add a // NOTE: only when the code needs an explanation.
                     </review_steps>
                     <process>
                     1. Findings and feedback are high level; plan out specific code changes needed finding-by-finding; ground in actual code

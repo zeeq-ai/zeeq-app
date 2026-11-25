@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using OpenIddict.Abstractions;
@@ -259,6 +260,26 @@ public sealed class CodeReviewEvaluationDispatchTests
             .AdmitAsync(Arg.Any<CodeReviewEvaluationRunAdmission>(), Arg.Any<CancellationToken>());
     }
 
+    [Test]
+    public async Task FailOpenTriageContextRejectsAdmission()
+    {
+        var fixture = new Fixture();
+        var result = await fixture.Handler.CreateAsync(
+            "org",
+            "repo",
+            fixture.Request with
+            {
+                IncludeTriageContext = true,
+            },
+            fixture.User,
+            CancellationToken.None
+        );
+        await Assert.That(((IStatusCodeHttpResult)result).StatusCode).IsEqualTo(503);
+        await fixture
+            .Runs.DidNotReceive()
+            .AdmitAsync(Arg.Any<CodeReviewEvaluationRunAdmission>(), Arg.Any<CancellationToken>());
+    }
+
     private sealed class Fixture
     {
         public readonly ICodeReviewEvaluationRunStore Runs =
@@ -364,6 +385,71 @@ public sealed class CodeReviewEvaluationDispatchTests
                 new LlmSettings(),
                 NullLogger<CodeReviewLlmTierResolver>.Instance
             );
+            var datasets = Substitute.For<ICodeReviewEvaluationDatasetStore>();
+            var artifacts = Substitute.For<ICodeReviewEvaluationArtifactStore>();
+            var now = DateTimeOffset.UtcNow;
+            var snapshot = new CodeReviewEvaluationSnapshot(
+                CodeReviewEvaluationSnapshot.CurrentSchemaVersion,
+                "org",
+                "repo",
+                "owner/repo",
+                1,
+                "title",
+                "body",
+                "base",
+                "head",
+                "alice",
+                "url",
+                false,
+                PullRequestState.Open,
+                now,
+                1,
+                []
+            );
+            var item = new CodeReviewEvaluationCase
+            {
+                Id = "case",
+                OrganizationId = "org",
+                RepositoryId = "repo",
+                DatasetId = "dataset",
+                PullRequestNumber = 1,
+                PullRequestTitle = "title",
+                SnapshotStorageUri = "uri",
+                SnapshotSha256 = new string('a', 64),
+                BaseSha = "base",
+                HeadSha = "head",
+                CapturedAtUtc = now,
+            };
+            datasets
+                .FindAsync("org", "dataset", false, Arg.Any<CancellationToken>())
+                .Returns(
+                    new CodeReviewEvaluationDataset
+                    {
+                        Id = "dataset",
+                        OrganizationId = "org",
+                        RepositoryId = "repo",
+                        Name = "dataset",
+                        CreateRequestKey = "key",
+                        Version = 1,
+                    }
+                );
+            datasets
+                .ListCasesAsync("org", "dataset", false, Arg.Any<CancellationToken>())
+                .Returns([item]);
+            artifacts
+                .ReadSnapshotAsync(
+                    "org",
+                    "repo",
+                    Arg.Any<CodeReviewEvaluationArtifact>(),
+                    Arg.Any<CancellationToken>()
+                )
+                .Returns(snapshot);
+            var retrieval = new KnownFalsePositiveRetrievalService(
+                Substitute.For<ICodeReviewFindingTriageStore>(),
+                new ServiceCollection().BuildServiceProvider(),
+                new LlmEmbeddingSettings { Enabled = false },
+                NullLogger<KnownFalsePositiveRetrievalService>.Instance
+            );
             Handler = new(
                 new(memberships),
                 repositories,
@@ -371,10 +457,12 @@ public sealed class CodeReviewEvaluationDispatchTests
                 Substitute.For<ICodeReviewerAgentRevisionStore>(),
                 Runs,
                 Substitute.For<ICodeReviewEvaluationCaseResultStore>(),
-                Substitute.For<ICodeReviewEvaluationArtifactStore>(),
+                artifacts,
                 resolver,
                 Publisher,
-                new CodeReviewSettings { EvaluationsEnabled = true }
+                new CodeReviewSettings { EvaluationsEnabled = true },
+                datasets,
+                retrieval
             );
         }
     }

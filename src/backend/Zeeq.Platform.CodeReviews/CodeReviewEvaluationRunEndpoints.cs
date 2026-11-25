@@ -507,6 +507,8 @@ public sealed class EvaluationRunHandler(
                     item.CapturedAtUtc,
                     ct
                 );
+                if (triageContexts[item.Id].FailOpen)
+                    return TypedResults.StatusCode(StatusCodes.Status503ServiceUnavailable);
             }
         }
         var admitted = await runs.AdmitAsync(

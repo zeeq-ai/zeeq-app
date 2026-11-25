@@ -14,7 +14,7 @@ namespace Zeeq.Mcp.CodeReviews.Tests;
 public sealed class CodeReviewMcpToolsTests
 {
     [Test]
-    public async Task TriageReviewFindings_ProposesWithMcpTrustAndReturnsConfirmationLink()
+    public async Task TriageReviewFinding_ProposesWithMcpTrustAndReturnsConfirmationLink()
     {
         var service = Substitute.For<ICodeReviewFindingTriageService>();
         var row = new CodeReviewFindingTriage
@@ -38,12 +38,14 @@ public sealed class CodeReviewMcpToolsTests
             opts,
             new CodeReviewRequestTokenProtector(opts.Value.CodeReview)
         );
-        var response = await CodeReviewMcpTools.TriageReviewFindings(
+        var response = await CodeReviewMcpTools.TriageReviewFinding(
             service,
             links,
             TestUser(),
-            [new("abcde.F1", "false_positive", "validated elsewhere")],
-            reviewId: "cr_123"
+            "cr_123",
+            "abcde.F1",
+            "false_positive",
+            "validated elsewhere"
         );
         await Assert.That(response).Contains("/code-reviews/triages/org_123/cft_123");
         await service
@@ -60,15 +62,16 @@ public sealed class CodeReviewMcpToolsTests
     }
 
     [Test]
-    public async Task TriageReviewFindings_RejectsConfirmVerbWithoutCallingService()
+    public async Task TriageReviewFinding_RejectsConfirmVerbWithoutCallingService()
     {
         var service = Substitute.For<ICodeReviewFindingTriageService>();
-        var response = await CodeReviewMcpTools.TriageReviewFindings(
+        var response = await CodeReviewMcpTools.TriageReviewFinding(
             service,
             null!,
             TestUser(),
-            [new("abcde.F1", "confirm", null)],
-            reviewId: "cr_123"
+            "cr_123",
+            "abcde.F1",
+            "confirm"
         );
         await Assert.That(response).Contains("Invalid");
         await service

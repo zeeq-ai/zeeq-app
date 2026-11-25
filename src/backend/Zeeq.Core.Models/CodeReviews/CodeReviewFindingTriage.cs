@@ -41,6 +41,9 @@ public enum CodeReviewFindingTriageChannel
 /// <summary>Durable snapshot and current disposition of a review finding.</summary>
 public sealed class CodeReviewFindingTriage : MutableDomainEntityBase, IOrganizationScopedEntity
 {
+    /// <summary>Copy a snapshot before applying a write.</summary>
+    public CodeReviewFindingTriage Clone() => (CodeReviewFindingTriage)MemberwiseClone();
+
     /// <summary>Gets or sets OrganizationId.</summary>
     public required string OrganizationId { get; init; }
 
