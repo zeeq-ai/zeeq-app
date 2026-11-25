@@ -80,7 +80,9 @@ internal static class CodeReviewEvaluationEndpointMapping
             finding.Line,
             finding.Origin,
             finding.SourceRunId,
-            finding.SourceFindingId
+            finding.SourceFindingId,
+            finding.Disposition,
+            string.IsNullOrWhiteSpace(finding.Rationale) ? null : finding.Rationale.Trim()
         );
 
     /// <summary>Maps a submitted reference set, stamping the acting user and time.</summary>
@@ -104,7 +106,9 @@ internal static class CodeReviewEvaluationEndpointMapping
                     finding.SourceRunId,
                     finding.SourceFindingId,
                     approvedByUserId,
-                    approvedAtUtc
+                    approvedAtUtc,
+                    finding.Disposition,
+                    string.IsNullOrWhiteSpace(finding.Rationale) ? null : finding.Rationale.Trim()
                 )),
             ]
         );

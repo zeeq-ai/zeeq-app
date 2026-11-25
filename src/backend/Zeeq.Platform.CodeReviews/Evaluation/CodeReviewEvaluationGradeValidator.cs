@@ -160,6 +160,11 @@ public static class CodeReviewEvaluationGradeValidator
         );
     }
 
-    private static string Normalize(string file) =>
-        file.Trim().Replace('\\', '/').TrimStart('.', '/');
+    private static string Normalize(string file)
+    {
+        var path = file.Trim().Replace('\\', '/');
+        while (path.StartsWith('/') || path.StartsWith("./", StringComparison.Ordinal))
+            path = path.StartsWith('/') ? path[1..] : path[2..];
+        return path;
+    }
 }

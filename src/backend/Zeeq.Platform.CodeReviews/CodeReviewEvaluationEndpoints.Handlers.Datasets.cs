@@ -48,8 +48,33 @@ internal static class CodeReviewEvaluationHandlerSupport
                 );
             }
 
+            if (
+                set.State != CodeReviewEvaluationReferenceState.Expected
+                && set.Findings.Any(f =>
+                    f.Disposition == CodeReviewEvaluationReferenceDisposition.Expected
+                )
+            )
+                return new(
+                    "reference_state_conflict",
+                    "Only an Expected set can contain expected findings."
+                );
+
             foreach (var finding in set.Findings)
             {
+                if (!Enum.IsDefined(finding.Disposition))
+                    return new(
+                        "reference_disposition_invalid",
+                        "The reference disposition is not supported."
+                    );
+                if (
+                    finding.Rationale?.Trim().Length
+                    > CodeReviewEvaluationLimits.MaxReferenceRationaleLength
+                )
+                    return new(
+                        "reference_rationale_too_long",
+                        "The reference rationale is too long."
+                    );
+
                 if (!Enum.IsDefined(finding.Severity) || !Enum.IsDefined(finding.Origin))
                 {
                     return new(

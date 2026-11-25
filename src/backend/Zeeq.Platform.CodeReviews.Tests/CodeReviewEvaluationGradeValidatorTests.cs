@@ -129,4 +129,31 @@ public sealed class CodeReviewEvaluationGradeValidatorTests
         await Assert.That(result.Grade.AvoidedRejectedReferenceIds.Single()).IsEqualTo("r");
         await Assert.That(result.InputTokens).IsNull();
     }
+
+    [Test]
+    public async Task RejectedDotfilePaths_DoNotCollapseIntoNonDotfiles()
+    {
+        var refs = new[]
+        {
+            new CodeReviewEvaluationReferenceTarget(
+                "r",
+                CodeReviewEvaluationReferenceDisposition.Rejected,
+                ".github/ci.yml"
+            ),
+        };
+        const string json =
+            """{"matches":[{"referenceId":"r","candidateId":"c","reason":"same"}]}""";
+        var same = CodeReviewEvaluationGradeValidator.Validate(
+            json,
+            refs,
+            [new("c", "./.github/ci.yml")]
+        );
+        var different = CodeReviewEvaluationGradeValidator.Validate(
+            json,
+            refs,
+            [new("c", "github/ci.yml")]
+        );
+        await Assert.That(same.RepeatedRejectedReferenceIds.Single()).IsEqualTo("r");
+        await Assert.That(different.CrossFileRejectedMatchesFiltered).IsEqualTo(1);
+    }
 }

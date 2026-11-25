@@ -208,6 +208,8 @@ function runCase(
     reviewerProvenanceJson: null,
     judgeProvenanceJson: null,
     errorCode: null,
+    repeatedFalsePositiveCount: 0,
+    trackedFalsePositiveCount: 0,
     ...overrides,
   };
 }

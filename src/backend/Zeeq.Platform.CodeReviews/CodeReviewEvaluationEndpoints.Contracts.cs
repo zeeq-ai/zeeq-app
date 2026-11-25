@@ -113,7 +113,7 @@ public sealed record CodeReviewEvaluationCaseDto(
 /// <summary>One reviewer's reference expectations for one case.</summary>
 /// <param name="ReviewerAgentId">Stable reviewer agent id.</param>
 /// <param name="State">Unlabelled, Expected or ReviewedClean.</param>
-/// <param name="Findings">Expected findings. Empty is valid for ReviewedClean.</param>
+/// <param name="Findings">Expected and rejected findings. Rejected findings are allowed in every state.</param>
 public sealed record CodeReviewEvaluationReferenceSetDto(
     string ReviewerAgentId,
     CodeReviewEvaluationReferenceState State,
@@ -130,6 +130,8 @@ public sealed record CodeReviewEvaluationReferenceSetDto(
 /// <param name="Origin">How the finding entered the dataset.</param>
 /// <param name="SourceRunId">Evaluation run it was adopted from, when applicable.</param>
 /// <param name="SourceFindingId">Candidate finding id inside the source run, when applicable.</param>
+/// <param name="Disposition">Expected finding or known false positive.</param>
+/// <param name="Rationale">Optional explanation of the reference.</param>
 public sealed record CodeReviewEvaluationReferenceFindingDto(
     string Id,
     [property: Required, MaxLength(300)] string Title,
@@ -139,7 +141,10 @@ public sealed record CodeReviewEvaluationReferenceFindingDto(
     int? Line,
     CodeReviewEvaluationReferenceOrigin Origin,
     string? SourceRunId,
-    string? SourceFindingId
+    string? SourceFindingId,
+    CodeReviewEvaluationReferenceDisposition Disposition =
+        CodeReviewEvaluationReferenceDisposition.Expected,
+    [property: MaxLength(1000)] string? Rationale = null
 );
 
 /// <summary>Creates one named dataset. Idempotent on the request key.</summary>
