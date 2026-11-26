@@ -81,10 +81,10 @@ test('pairs a completed task result when its running row was not observed', () =
   assert.equal(events.length, 1); assert.equal(events[0]['gen_ai.tool.name'], 'run'); assert.equal(events[0]['gen_ai.tool.call.success'], true); assert.equal(state.calls.length, 0);
 });
 
-test('pairs an unmatched system completion by transcript order', () => {
+test('leaves calls queued for unmatched system completions', () => {
   const rows = [{ type: 'PLANNER_RESPONSE', step_index: 0, created_at: '2026-01-01T00:00:00Z', tool_calls: [{ name: 'run', args: {} }] }, { type: 'SYSTEM_MESSAGE', step_index: 1, created_at: '2026-01-01T00:00:01Z', content: 'Task id "task-1" finished with result: Command exited with code 0.' }];
   const state = {}; const events = mapTranscript('c', rows, { state });
-  assert.equal(events.length, 1); assert.equal(events[0]['gen_ai.tool.name'], 'run'); assert.equal(state.calls.length, 0);
+  assert.equal(events.length, 0); assert.equal(state.calls.length, 1);
 });
 
 test('ignores a repeated running marker until completion', () => {

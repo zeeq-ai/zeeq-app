@@ -48,7 +48,6 @@ export function mapTranscript(conversation, rows, options = {}) {
       const content = String(row.content ?? '');
       const task = /task id[:\s]+[\"]?([^\s\"]+)/i.exec(content)?.[1];
       if (task && pending.has(task)) { result(pending.get(task), content); pending.delete(task); expired.add(task); }
-      else if (task && !expired.has(task) && calls.length && /finished with result/i.test(content)) { result(calls.shift(), content); expired.add(task); }
     }
   }
   for (const [task, call] of pending) {

@@ -62,9 +62,6 @@ function mapTranscript(conversation, rows, options = {}) {
         result(pending.get(task), content);
         pending.delete(task);
         expired.add(task);
-      } else if (task && !expired.has(task) && calls.length && /finished with result/i.test(content)) {
-        result(calls.shift(), content);
-        expired.add(task);
       }
     }
   }
@@ -185,6 +182,10 @@ async function deliver(id, credential) {
     }
     const mapper = structuredClone(state.mapper || {});
     const events = mapTranscript(id, rows, { state: mapper, allowExpiry: lastEnd + 1 === content.length, model: state.model, omitPrompt: truthy(process.env.ZEEQ_OTEL_OMIT_PROMPT), truncatePrompt: Number(process.env.ZEEQ_OTEL_TRUNCATE_PROMPT) || void 0 });
+    if (!events.length) {
+      save(path, { byteOffset: lastEnd + 1, firstLine, mapper });
+      return;
+    }
     const endpoint = process.env.ANTIGRAVITY_TELEMETRY_ENDPOINT || `${(process.env.ZEEQ_BASE_URL || "https://app.zeeq.ai").replace(/\/$/, "")}/api/v1/telemetry/import`;
     const pluginVersion = "0.1.0";
     const rejectionKey = `${firstLine}:${offset}`;
