@@ -6,9 +6,9 @@ using Zeeq.Data.Postgres;
 
 namespace Zeeq.Data.Postgres.Migrations.Migrations;
 
+/// <summary>Adds agent-reported triage provenance.</summary>
 [DbContext(typeof(PostgresDbContext))]
 [Migration("20261126000000_AddAgentAttestedTriage")]
-/// <summary>Adds agent-reported triage provenance.</summary>
 public partial class AddAgentAttestedTriage : Migration
 {
     /// <inheritdoc />
