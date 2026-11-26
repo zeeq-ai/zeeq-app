@@ -63,7 +63,7 @@ function mapTranscript(conversation, rows, options = {}) {
     }
   }
   for (const [task, call] of pending) {
-    if ((options.now ?? Date.now()) - Date.parse(call.row.created_at) > 24 * 60 * 60 * 1e3) {
+    if (options.allowExpiry !== false && (options.now ?? Date.now()) - Date.parse(call.row.created_at) > 24 * 60 * 60 * 1e3) {
       result(call, "[no completion observed]");
       pending.delete(task);
       expired.add(task);
@@ -171,7 +171,7 @@ async function deliver(id, credential) {
     const delta = content.subarray(offset, lastEnd + 1).toString("utf8");
     const rows = delta.split("\n").filter(Boolean).map((line) => JSON.parse(line));
     const mapper = structuredClone(state.mapper || {});
-    const events = mapTranscript(id, rows, { state: mapper, model: state.model, omitPrompt: truthy(process.env.ZEEQ_OTEL_OMIT_PROMPT), truncatePrompt: Number(process.env.ZEEQ_OTEL_TRUNCATE_PROMPT) || void 0 });
+    const events = mapTranscript(id, rows, { state: mapper, allowExpiry: lastEnd + 1 === content.length, model: state.model, omitPrompt: truthy(process.env.ZEEQ_OTEL_OMIT_PROMPT), truncatePrompt: Number(process.env.ZEEQ_OTEL_TRUNCATE_PROMPT) || void 0 });
     const endpoint = process.env.ANTIGRAVITY_TELEMETRY_ENDPOINT || `${(process.env.ZEEQ_BASE_URL || "https://app.zeeq.ai").replace(/\/$/, "")}/api/v1/telemetry/import`;
     async function post(batch) {
       if (!batch.length) return;
@@ -224,6 +224,27 @@ async function main() {
     child.unref();
   };
   if (action === "SessionStart") {
+    for (const file of readdirSync(join(data, "state")).filter((file2) => file2.endsWith(".json"))) {
+      const metaPath = join(data, "state", file), deliveryPath = metaPath + ".delivery", lock = deliveryPath + ".lock";
+      try {
+        const meta = load(metaPath);
+        if (!meta.lastSeen || Date.now() - meta.lastSeen < 30 * 864e5) continue;
+        mkdirSync(lock);
+        writeFileSync(join(lock, "owner"), String(process.pid));
+        try {
+          const latest = load(metaPath), delivery = load(deliveryPath), transcript = readFileSync(latest.transcriptPath);
+          const firstEnd = transcript.indexOf(10);
+          const firstLine = firstEnd < 0 ? null : createHash("sha256").update(transcript.subarray(0, firstEnd)).digest("hex");
+          if (latest.lastSeen === meta.lastSeen && statSync(latest.transcriptPath).mtimeMs <= latest.lastSeen && delivery.byteOffset === transcript.length && firstLine === delivery.firstLine && !Object.keys(delivery.mapper?.pending || {}).length && !(delivery.mapper?.calls || []).length) {
+            rmSync(deliveryPath, { force: true });
+            rmSync(metaPath, { force: true });
+          }
+        } finally {
+          rmSync(lock, { recursive: true, force: true });
+        }
+      } catch {
+      }
+    }
     const credentialHash = createHash("sha256").update(credential).digest("hex");
     const recoverable = readdirSync(join(data, "state")).filter((file) => file.endsWith(".json")).map((file) => ({ file, state: load(join(data, "state", file)), delivery: load(join(data, "state", file + ".delivery")) })).filter(({ state: state2, delivery }) => {
       if (Date.now() - state2.lastSeen <= 6e4 || delivery.failedCredentialHash === credentialHash && Date.now() - (delivery.authFailedAt || 0) < 36e5) return false;
@@ -232,7 +253,7 @@ async function main() {
         const firstEnd = transcript.indexOf(10);
         const changed = firstEnd >= 0 && delivery.firstLine && createHash("sha256").update(transcript.subarray(0, firstEnd)).digest("hex") !== delivery.firstLine;
         const completeBytes = transcript.lastIndexOf(10) + 1;
-        const expiredPending = Object.values(delivery.mapper?.pending || {}).some((call) => Date.now() - Date.parse(call.row.created_at) > 864e5);
+        const expiredPending = completeBytes === transcript.length && Object.values(delivery.mapper?.pending || {}).some((call) => Date.now() - Date.parse(call.row.created_at) > 864e5);
         return changed || completeBytes !== (delivery.byteOffset || 0) || expiredPending;
       } catch {
         return false;

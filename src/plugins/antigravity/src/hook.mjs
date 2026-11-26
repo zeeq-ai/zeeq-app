@@ -48,7 +48,7 @@ async function deliver(id, credential) {
     const delta = content.subarray(offset, lastEnd + 1).toString('utf8');
     const rows = delta.split('\n').filter(Boolean).map(line => JSON.parse(line));
     const mapper = structuredClone(state.mapper || {});
-    const events = mapTranscript(id, rows, { state: mapper, model: state.model, omitPrompt: truthy(process.env.ZEEQ_OTEL_OMIT_PROMPT), truncatePrompt: Number(process.env.ZEEQ_OTEL_TRUNCATE_PROMPT) || undefined });
+    const events = mapTranscript(id, rows, { state: mapper, allowExpiry: lastEnd + 1 === content.length, model: state.model, omitPrompt: truthy(process.env.ZEEQ_OTEL_OMIT_PROMPT), truncatePrompt: Number(process.env.ZEEQ_OTEL_TRUNCATE_PROMPT) || undefined });
     const endpoint = process.env.ANTIGRAVITY_TELEMETRY_ENDPOINT || `${(process.env.ZEEQ_BASE_URL || 'https://app.zeeq.ai').replace(/\/$/, '')}/api/v1/telemetry/import`;
     async function post(batch) {
       if (!batch.length) return;
@@ -79,10 +79,26 @@ async function main() {
   save(path, state);
   const launch = other => { const child = spawn(process.execPath, [process.argv[1], 'worker', other], { detached: true, stdio: 'ignore', env: process.env }); child.unref(); };
   if (action === 'SessionStart') {
+    // Prune only checkpointed, complete transcripts; unsent or pending state stays.
+    for (const file of readdirSync(join(data, 'state')).filter(file => file.endsWith('.json'))) {
+      const metaPath = join(data, 'state', file), deliveryPath = metaPath + '.delivery', lock = deliveryPath + '.lock';
+      try {
+        const meta = load(metaPath); if (!meta.lastSeen || Date.now() - meta.lastSeen < 30 * 86400000) continue;
+        mkdirSync(lock); writeFileSync(join(lock, 'owner'), String(process.pid));
+        try {
+          const latest = load(metaPath), delivery = load(deliveryPath), transcript = readFileSync(latest.transcriptPath);
+          const firstEnd = transcript.indexOf(10);
+          const firstLine = firstEnd < 0 ? null : createHash('sha256').update(transcript.subarray(0, firstEnd)).digest('hex');
+          if (latest.lastSeen === meta.lastSeen && statSync(latest.transcriptPath).mtimeMs <= latest.lastSeen && delivery.byteOffset === transcript.length && firstLine === delivery.firstLine && !Object.keys(delivery.mapper?.pending || {}).length && !(delivery.mapper?.calls || []).length) {
+            rmSync(deliveryPath, { force: true }); rmSync(metaPath, { force: true });
+          }
+        } finally { rmSync(lock, { recursive: true, force: true }); }
+      } catch { /* Keep state when it cannot be verified as fully delivered. */ }
+    }
     const credentialHash = createHash('sha256').update(credential).digest('hex');
     const recoverable = readdirSync(join(data, 'state')).filter(file => file.endsWith('.json')).map(file => ({ file, state: load(join(data, 'state', file)), delivery: load(join(data, 'state', file + '.delivery')) })).filter(({ state, delivery }) => {
       if (Date.now() - state.lastSeen <= 60000 || (delivery.failedCredentialHash === credentialHash && Date.now() - (delivery.authFailedAt || 0) < 3600000)) return false;
-      try { const transcript = readFileSync(state.transcriptPath); const firstEnd = transcript.indexOf(10); const changed = firstEnd >= 0 && delivery.firstLine && createHash('sha256').update(transcript.subarray(0, firstEnd)).digest('hex') !== delivery.firstLine; const completeBytes = transcript.lastIndexOf(10) + 1; const expiredPending = Object.values(delivery.mapper?.pending || {}).some(call => Date.now() - Date.parse(call.row.created_at) > 86400000); return changed || completeBytes !== (delivery.byteOffset || 0) || expiredPending; } catch { return false; }
+      try { const transcript = readFileSync(state.transcriptPath); const firstEnd = transcript.indexOf(10); const changed = firstEnd >= 0 && delivery.firstLine && createHash('sha256').update(transcript.subarray(0, firstEnd)).digest('hex') !== delivery.firstLine; const completeBytes = transcript.lastIndexOf(10) + 1; const expiredPending = completeBytes === transcript.length && Object.values(delivery.mapper?.pending || {}).some(call => Date.now() - Date.parse(call.row.created_at) > 86400000); return changed || completeBytes !== (delivery.byteOffset || 0) || expiredPending; } catch { return false; }
     }).sort((a, b) => (a.state.lastSeen || 0) - (b.state.lastSeen || 0)).slice(0, 10);
     for (const { file } of recoverable) launch(file.slice(0, -5));
   }

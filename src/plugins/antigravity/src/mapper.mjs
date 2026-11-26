@@ -51,7 +51,7 @@ export function mapTranscript(conversation, rows, options = {}) {
     }
   }
   for (const [task, call] of pending) {
-    if ((options.now ?? Date.now()) - Date.parse(call.row.created_at) > 24 * 60 * 60 * 1000) { result(call, '[no completion observed]'); pending.delete(task); expired.add(task); }
+    if (options.allowExpiry !== false && (options.now ?? Date.now()) - Date.parse(call.row.created_at) > 24 * 60 * 60 * 1000) { result(call, '[no completion observed]'); pending.delete(task); expired.add(task); }
   }
   if (options.state) { options.state.calls = calls; options.state.pending = Object.fromEntries(pending); options.state.expired = [...expired]; }
   return events;
