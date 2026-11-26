@@ -79,9 +79,14 @@ public static class SetupMcpExtensions
                     </document_authoring>
 
                     <code_review_usage>
-                    When code changes are ready, use `expert_code_review` to get expert review grounded in docs
-                    The tool is context efficient; dump git diffs and upload to a signed URL then trigger a review job
-                    Reduce mistakes and blind spots by relying on external reviewers
+                    <agent_review>
+                    - `expert_code_review`: review a diff and follow up on fixes;
+                    - `triage_review_finding`: after a review, propose or clear a finding's disposition (e.g. false positive or deferred).
+                    </agent_review>
+                    <pr_findings>
+                    - `get_review_findings`: retrieve the latest findings for a PR or branch;
+                    - `get_cart_findings`: retrieve a human reviewer's saved findings when asked.
+                    </pr_findings>
                     </code_review_usage>
 
                     Pay attention to tool trigger conditions <tool_name.triggers> and <tool_name.flow> to know when and how to use the tool effectively.
