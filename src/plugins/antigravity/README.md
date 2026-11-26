@@ -25,3 +25,5 @@ Set `ANTIGRAVITY_TELEMETRY_DISABLED=1` to disable export. Set `ANTIGRAVITY_TELEM
 Antigravity's transcript format is not a documented stable API. IDE and interactive launch behavior may differ from CLI operation.
 
 Tool results are paired by transcript order because Antigravity does not provide tool-call IDs. Background results are matched by task ID. An unresolved background task is reported as having no observed completion after 24 hours; a later result cannot replace it. The plugin recognizes the captured CLI tool-result format, which may change with Antigravity versions.
+
+When a batch is rejected, the plugin retains its checkpoint. After three rejected attempts at the same cursor, it checks up to 200 events individually per run. If some events are accepted, rejected events are dropped with a diagnostic. If every event is rejected, the plugin retains the batch and suspends delivery for 24 hours or until the plugin version changes. Malformed complete transcript rows are skipped with a diagnostic.

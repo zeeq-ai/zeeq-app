@@ -169,30 +169,67 @@ async function deliver(id, credential) {
       state.mapper = {};
     }
     const delta = content.subarray(offset, lastEnd + 1).toString("utf8");
-    const rows = delta.split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    const rows = [];
+    for (const line of delta.split("\n").filter(Boolean)) {
+      try {
+        rows.push(JSON.parse(line));
+      } catch {
+        error("Skipped malformed transcript row");
+      }
+    }
     const mapper = structuredClone(state.mapper || {});
     const events = mapTranscript(id, rows, { state: mapper, allowExpiry: lastEnd + 1 === content.length, model: state.model, omitPrompt: truthy(process.env.ZEEQ_OTEL_OMIT_PROMPT), truncatePrompt: Number(process.env.ZEEQ_OTEL_TRUNCATE_PROMPT) || void 0 });
     const endpoint = process.env.ANTIGRAVITY_TELEMETRY_ENDPOINT || `${(process.env.ZEEQ_BASE_URL || "https://app.zeeq.ai").replace(/\/$/, "")}/api/v1/telemetry/import`;
+    const pluginVersion = "0.1.0";
+    const rejectionKey = `${firstLine}:${offset}`;
+    const previous = load(path);
+    if (previous.suspendedUntil > Date.now() && previous.suspendedVersion === pluginVersion) return;
     async function post(batch) {
-      if (!batch.length) return;
       const response = await fetch(endpoint, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${credential}` }, body: JSON.stringify({ conversation_id: id, harness_name: "antigravity", harness_version: state.agyVersion, repository_remote_url: state.repositoryRemoteUrl, head_branch: state.headBranch, head_sha: state.headSha, events: batch }), signal: AbortSignal.timeout(Number(process.env.ANTIGRAVITY_TELEMETRY_TIMEOUT_MS) || 3e3) });
-      if (response.ok) return;
-      if ([400, 413, 422].includes(response.status)) {
-        if (batch.length === 1) {
-          error(`Dropped invalid telemetry event (${response.status})`);
-          return;
-        }
-        const middle = Math.floor(batch.length / 2);
-        await post(batch.slice(0, middle));
-        await post(batch.slice(middle));
-        return;
-      }
-      if (response.status === 401 || response.status === 403) {
-        save(path, { ...load(path), lastAuthError: response.status, authFailedAt: Date.now(), failedCredentialHash: createHash("sha256").update(credential).digest("hex") });
-      }
+      if (response.ok) return response.status;
+      if ([400, 413, 422].includes(response.status)) return response.status;
+      if (response.status === 401 || response.status === 403) save(path, { ...load(path), lastAuthError: response.status, authFailedAt: Date.now(), failedCredentialHash: createHash("sha256").update(credential).digest("hex") });
       throw Error(`Telemetry request failed: ${response.status}`);
     }
-    for (let i = 0; i < events.length; i += 500) await post(events.slice(i, i + 500));
+    let attempts = previous.rejectionKey === rejectionKey ? previous.rejectionAttempts || 0 : 0;
+    let scan = previous.rejectionKey === rejectionKey ? previous.rejectionScan : void 0;
+    if (attempts < 3) {
+      let rejectedStatus;
+      for (let i = 0; i < events.length; i += 500) {
+        const status = await post(events.slice(i, i + 500));
+        if (status >= 400) {
+          rejectedStatus = status;
+          break;
+        }
+      }
+      if (rejectedStatus) {
+        attempts++;
+        save(path, { ...previous, rejectionKey, rejectionAttempts: attempts });
+        error(`Telemetry batch rejected (${rejectedStatus}); checkpoint retained (attempt ${attempts})`);
+        if (attempts < 3) return;
+      }
+    }
+    if (attempts >= 3) {
+      scan ||= { accepted: [], rejected: [] };
+      const seen = /* @__PURE__ */ new Set([...scan.accepted, ...scan.rejected.map((item) => item.id)]);
+      let count = 0;
+      for (const event of events) {
+        const eventId = event["event.id"];
+        if (seen.has(eventId)) continue;
+        if (count++ >= 200) break;
+        const status = await post([event]);
+        if (status < 400) scan.accepted.push(eventId);
+        else scan.rejected.push({ id: eventId, status });
+        save(path, { ...load(path), rejectionKey, rejectionAttempts: attempts, rejectionScan: scan });
+      }
+      if (scan.accepted.length + scan.rejected.length < events.length) return;
+      if (scan.rejected.length && !scan.accepted.length) {
+        save(path, { ...load(path), rejectionKey, rejectionAttempts: 0, rejectionScan: void 0, suspendedUntil: Date.now() + 864e5, suspendedVersion: pluginVersion });
+        error("All isolated telemetry events rejected; delivery suspended for 24 hours");
+        return;
+      }
+      for (const item of scan.rejected) error(`Dropped invalid telemetry event ${item.id} (${item.status})`);
+    }
     save(path, { byteOffset: lastEnd + 1, firstLine, mapper });
   } finally {
     rmSync(lock, { recursive: true, force: true });
@@ -211,14 +248,47 @@ async function main() {
   const payload = JSON.parse(readFileSync(0, "utf8"));
   const id = payload.conversationId;
   if (!id) return;
-  const path = statePath(id), state = load(path), workspace = payload.workspacePaths?.[0];
-  Object.assign(state, { transcriptPath: payload.transcriptPath || state.transcriptPath, model: payload.modelName || state.model, lastSeen: Date.now() });
-  if (action === "SessionStart" && !state.agyVersion) {
-    const version = spawnSync("agy", ["--version"], { encoding: "utf8", timeout: 1e3 });
-    state.agyVersion = version.stdout?.trim().slice(0, 100);
+  const path = statePath(id), metaLock = `${path}.meta.lock`, workspace = payload.workspacePaths?.[0];
+  let locked = false;
+  for (let i = 0; i < 100 && !locked; i++) {
+    try {
+      mkdirSync(metaLock);
+      writeFileSync(join(metaLock, "owner"), String(process.pid));
+      locked = true;
+    } catch {
+      try {
+        if (Date.now() - statSync(metaLock).mtimeMs > 2e3) {
+          const owner = Number(readFileSync(join(metaLock, "owner"), "utf8"));
+          try {
+            process.kill(owner, 0);
+          } catch (e) {
+            if (e.code === "ESRCH") rmSync(metaLock, { recursive: true, force: true });
+          }
+        }
+      } catch (e) {
+        if (e.code === "ENOENT") {
+          try {
+            if (Date.now() - statSync(metaLock).mtimeMs > 2e3) rmSync(metaLock, { recursive: true, force: true });
+          } catch {
+          }
+        }
+      }
+      if (!locked) await new Promise((resolve) => setTimeout(resolve, 10));
+    }
   }
-  if (workspace && action === "SessionStart") Object.assign(state, { repositoryRemoteUrl: git(workspace, "remote", "get-url", "origin")?.replace(/(\w+:\/\/)[^/@]+@/, "$1"), headBranch: git(workspace, "branch", "--show-current"), headSha: git(workspace, "rev-parse", "HEAD") });
-  save(path, state);
+  if (!locked) throw Error("Telemetry metadata lock timed out");
+  try {
+    const state = load(path);
+    Object.assign(state, { transcriptPath: payload.transcriptPath || state.transcriptPath, model: payload.modelName || state.model, lastSeen: Date.now() });
+    if (action === "SessionStart" && !state.agyVersion) {
+      const version = spawnSync("agy", ["--version"], { encoding: "utf8", timeout: 1e3 });
+      state.agyVersion = version.stdout?.trim().slice(0, 100);
+    }
+    if (workspace && action === "SessionStart") Object.assign(state, { repositoryRemoteUrl: git(workspace, "remote", "get-url", "origin")?.replace(/(\w+:\/\/)[^/@]+@/, "$1"), headBranch: git(workspace, "branch", "--show-current"), headSha: git(workspace, "rev-parse", "HEAD") });
+    save(path, state);
+  } finally {
+    rmSync(metaLock, { recursive: true, force: true });
+  }
   const launch = (other) => {
     const child = spawn(process.execPath, [process.argv[1], "worker", other], { detached: true, stdio: "ignore", env: process.env });
     child.unref();
@@ -232,12 +302,23 @@ async function main() {
         mkdirSync(lock);
         writeFileSync(join(lock, "owner"), String(process.pid));
         try {
-          const latest = load(metaPath), delivery = load(deliveryPath), transcript = readFileSync(latest.transcriptPath);
-          const firstEnd = transcript.indexOf(10);
-          const firstLine = firstEnd < 0 ? null : createHash("sha256").update(transcript.subarray(0, firstEnd)).digest("hex");
-          if (latest.lastSeen === meta.lastSeen && statSync(latest.transcriptPath).mtimeMs <= latest.lastSeen && delivery.byteOffset === transcript.length && firstLine === delivery.firstLine && !Object.keys(delivery.mapper?.pending || {}).length && !(delivery.mapper?.calls || []).length) {
-            rmSync(deliveryPath, { force: true });
-            rmSync(metaPath, { force: true });
+          const metaLock2 = metaPath + ".meta.lock";
+          try {
+            mkdirSync(metaLock2);
+            writeFileSync(join(metaLock2, "owner"), String(process.pid));
+          } catch {
+            continue;
+          }
+          try {
+            const latest = load(metaPath), delivery = load(deliveryPath), transcript = readFileSync(latest.transcriptPath);
+            const firstEnd = transcript.indexOf(10);
+            const firstLine = firstEnd < 0 ? null : createHash("sha256").update(transcript.subarray(0, firstEnd)).digest("hex");
+            if (latest.lastSeen === meta.lastSeen && statSync(latest.transcriptPath).mtimeMs <= latest.lastSeen && delivery.byteOffset === transcript.length && firstLine === delivery.firstLine && !Object.keys(delivery.mapper?.pending || {}).length && !(delivery.mapper?.calls || []).length) {
+              rmSync(deliveryPath, { force: true });
+              rmSync(metaPath, { force: true });
+            }
+          } finally {
+            rmSync(metaLock2, { recursive: true, force: true });
           }
         } finally {
           rmSync(lock, { recursive: true, force: true });
@@ -246,10 +327,10 @@ async function main() {
       }
     }
     const credentialHash = createHash("sha256").update(credential).digest("hex");
-    const recoverable = readdirSync(join(data, "state")).filter((file) => file.endsWith(".json")).map((file) => ({ file, state: load(join(data, "state", file)), delivery: load(join(data, "state", file + ".delivery")) })).filter(({ state: state2, delivery }) => {
-      if (Date.now() - state2.lastSeen <= 6e4 || delivery.failedCredentialHash === credentialHash && Date.now() - (delivery.authFailedAt || 0) < 36e5) return false;
+    const recoverable = readdirSync(join(data, "state")).filter((file) => file.endsWith(".json")).map((file) => ({ file, state: load(join(data, "state", file)), delivery: load(join(data, "state", file + ".delivery")) })).filter(({ state, delivery }) => {
+      if (delivery.suspendedUntil > Date.now() && delivery.suspendedVersion === "0.1.0" || Date.now() - state.lastSeen <= 6e4 || delivery.failedCredentialHash === credentialHash && Date.now() - (delivery.authFailedAt || 0) < 36e5) return false;
       try {
-        const transcript = readFileSync(state2.transcriptPath);
+        const transcript = readFileSync(state.transcriptPath);
         const firstEnd = transcript.indexOf(10);
         const changed = firstEnd >= 0 && delivery.firstLine && createHash("sha256").update(transcript.subarray(0, firstEnd)).digest("hex") !== delivery.firstLine;
         const completeBytes = transcript.lastIndexOf(10) + 1;

@@ -27,7 +27,7 @@ test('retries failed delivery, isolates poison, and checkpoints complete lines',
   try {
     await invoke(env, 'Stop', payload);
     assert.equal(received.length, 1);
-    mode = 'ok'; await invoke(env, 'Stop', payload);
+    mode = 'ok'; await invoke(env, 'Stop', payload); await invoke(env, 'Stop', payload); await invoke(env, 'Stop', payload);
     assert.ok(received.some(events => events.length === 1 && events[0].prompt_text === 'poison'));
     const count = received.length; await invoke(env, 'Stop', payload); assert.equal(received.length, count);
     const state = JSON.parse(readFileSync(join(dir, 'state/test.json.delivery'), 'utf8'));
@@ -135,5 +135,70 @@ test('does not expire a pending task while its next row is incomplete', async ()
     await invoke(env, 'Stop', payload); assert.equal(received.length, 0);
     writeFileSync(transcript, rows.map(JSON.stringify).join('\n') + '\n' + completion + '\n');
     await invoke(env, 'Stop', payload); assert.equal(received.length, 1); assert.equal(received[0]['gen_ai.tool.call.success'], true);
+  } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('retains the cursor when every event is rejected', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zeeq-rejected-'));
+  const transcript = join(dir, 'transcript');
+  writeFileSync(transcript, [0, 1].map(step_index => JSON.stringify({ type: 'USER_INPUT', step_index, created_at: '2026-01-01T00:00:00Z', content: 'test' })).join('\n') + '\n');
+  const server = createServer((req, res) => { req.resume(); res.statusCode = 400; res.end(); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  try {
+    await invoke({ PLUGIN_DATA: dir, ZEEQ_ACCESS_TOKEN: 'test', ANTIGRAVITY_TELEMETRY_INLINE: '1', ANTIGRAVITY_TELEMETRY_ENDPOINT: `http://127.0.0.1:${server.address().port}` }, 'Stop', { conversationId: 'rejected', transcriptPath: transcript });
+    const { existsSync } = await import('node:fs');
+    assert.equal(existsSync(join(dir, 'state/rejected.json.delivery')), true);
+    assert.equal(JSON.parse(readFileSync(join(dir, 'state/rejected.json.delivery'), 'utf8')).byteOffset, undefined);
+  } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('skips a malformed complete row and sends later valid rows', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zeeq-malformed-'));
+  const transcript = join(dir, 'transcript');
+  writeFileSync(transcript, '{bad json}\n' + JSON.stringify({ type: 'USER_INPUT', step_index: 1, created_at: '2026-01-01T00:00:00Z', content: 'valid' }) + '\n');
+  const received = [];
+  const server = createServer(async (req, res) => { let body = ''; for await (const c of req) body += c; received.push(...JSON.parse(body).events); res.statusCode = 202; res.end(); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  try {
+    await invoke({ PLUGIN_DATA: dir, ZEEQ_ACCESS_TOKEN: 'test', ANTIGRAVITY_TELEMETRY_INLINE: '1', ANTIGRAVITY_TELEMETRY_ENDPOINT: `http://127.0.0.1:${server.address().port}` }, 'Stop', { conversationId: 'malformed', transcriptPath: transcript });
+    assert.equal(received.length, 1); assert.equal(received[0].prompt_text, 'valid');
+  } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('suspends an all-rejected singleton and resumes on version change', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zeeq-cap-'));
+  const transcript = join(dir, 'transcript');
+  const row = JSON.stringify({ type: 'USER_INPUT', step_index: 0, created_at: '2026-01-01T00:00:00Z', content: 'test' });
+  writeFileSync(transcript, row + '\n'); let status = 400; let requests = 0;
+  const server = createServer((req, res) => { requests++; req.resume(); res.statusCode = status; res.end(); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const env = { PLUGIN_DATA: dir, ZEEQ_ACCESS_TOKEN: 'test', ANTIGRAVITY_TELEMETRY_INLINE: '1', ANTIGRAVITY_TELEMETRY_ENDPOINT: `http://127.0.0.1:${server.address().port}` };
+  const payload = { conversationId: 'cap', transcriptPath: transcript }, path = join(dir, 'state/cap.json.delivery');
+  try {
+    await invoke(env, 'Stop', payload); await invoke(env, 'Stop', payload); await invoke(env, 'Stop', payload);
+    const state = JSON.parse(readFileSync(path, 'utf8')); assert.ok(state.suspendedUntil > Date.now()); assert.equal(state.byteOffset, undefined);
+    const count = requests; await invoke(env, 'Stop', payload); assert.equal(requests, count);
+    state.suspendedUntil = Date.now() - 1; writeFileSync(path, JSON.stringify(state)); status = 202;
+    await invoke(env, 'Stop', payload); assert.equal(JSON.parse(readFileSync(path, 'utf8')).byteOffset, Buffer.byteLength(row + '\n'));
+    state.suspendedUntil = Date.now() + 86400000; state.suspendedVersion = 'old'; writeFileSync(path, JSON.stringify(state));
+    await invoke(env, 'Stop', payload); assert.equal(JSON.parse(readFileSync(path, 'utf8')).byteOffset, Buffer.byteLength(row + '\n'));
+  } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('isolates a growing batch in runs of at most 200 singleton posts', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zeeq-bound-'));
+  const transcript = join(dir, 'transcript');
+  const row = i => JSON.stringify({ type: 'USER_INPUT', step_index: i, created_at: '2026-01-01T00:00:00Z', content: i === 0 ? 'poison' : `valid-${i}` });
+  writeFileSync(transcript, row(0) + '\n'); let singles = 0;
+  const server = createServer(async (req, res) => { let body = ''; for await (const c of req) body += c; const events = JSON.parse(body).events; if (events.length === 1) singles++; res.statusCode = events.some(e => e.prompt_text === 'poison') ? 400 : 202; res.end(); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const env = { PLUGIN_DATA: dir, ZEEQ_ACCESS_TOKEN: 'test', ANTIGRAVITY_TELEMETRY_INLINE: '1', ANTIGRAVITY_TELEMETRY_ENDPOINT: `http://127.0.0.1:${server.address().port}` }, payload = { conversationId: 'bound', transcriptPath: transcript };
+  try {
+    await invoke(env, 'Stop', payload); await invoke(env, 'Stop', payload);
+    writeFileSync(transcript, Array.from({ length: 201 }, (_, i) => row(i)).join('\n') + '\n');
+    singles = 0; await invoke(env, 'Stop', payload); assert.equal(singles, 200);
+    const state = JSON.parse(readFileSync(join(dir, 'state/bound.json.delivery'), 'utf8')); assert.equal(state.byteOffset, undefined);
+    singles = 0; await invoke(env, 'Stop', payload); assert.equal(singles, 1);
+    assert.ok(JSON.parse(readFileSync(join(dir, 'state/bound.json.delivery'), 'utf8')).byteOffset > 0);
   } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
