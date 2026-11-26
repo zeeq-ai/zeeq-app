@@ -41,6 +41,12 @@ export function mapTranscript(conversation, rows, options = {}) {
       if (task && pending.has(task) && row.status === 'RUNNING') continue;
       if (task && pending.has(task)) { result(pending.get(task), content); pending.delete(task); expired.add(task); continue; }
       if (!calls.length) continue;
+      if (task) {
+        const candidate = calls[0];
+        const values = Object.values(candidate.args ?? {}).filter(value => typeof value === 'string' && value.length >= 3);
+        const direct = row.step_index === candidate.row.step_index + candidate.index + 1;
+        if (!direct || !values.some(value => content.includes(value))) continue;
+      }
       const call = calls.shift();
       if (row.status === 'RUNNING' && task) pending.set(task, call);
       else { result(call, content); if (task) expired.add(task); }
@@ -52,6 +58,11 @@ export function mapTranscript(conversation, rows, options = {}) {
   }
   for (const [task, call] of pending) {
     if (options.allowExpiry !== false && (options.now ?? Date.now()) - Date.parse(call.row.created_at) > 24 * 60 * 60 * 1000) { result(call, '[no completion observed]'); pending.delete(task); expired.add(task); }
+  }
+  if (options.allowExpiry !== false) {
+    for (let i = calls.length - 1; i >= 0; i--) {
+      if ((options.now ?? Date.now()) - Date.parse(calls[i].row.created_at) > 24 * 60 * 60 * 1000) { result(calls[i], '[no completion observed]'); calls.splice(i, 1); }
+    }
   }
   if (options.state) { options.state.calls = calls; options.state.pending = Object.fromEntries(pending); options.state.expired = [...expired]; }
   return events;

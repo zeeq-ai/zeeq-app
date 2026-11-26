@@ -49,6 +49,12 @@ function mapTranscript(conversation, rows, options = {}) {
         continue;
       }
       if (!calls.length) continue;
+      if (task) {
+        const candidate = calls[0];
+        const values = Object.values(candidate.args ?? {}).filter((value) => typeof value === "string" && value.length >= 3);
+        const direct = row.step_index === candidate.row.step_index + candidate.index + 1;
+        if (!direct || !values.some((value) => content.includes(value))) continue;
+      }
       const call = calls.shift();
       if (row.status === "RUNNING" && task) pending.set(task, call);
       else {
@@ -70,6 +76,14 @@ function mapTranscript(conversation, rows, options = {}) {
       result(call, "[no completion observed]");
       pending.delete(task);
       expired.add(task);
+    }
+  }
+  if (options.allowExpiry !== false) {
+    for (let i = calls.length - 1; i >= 0; i--) {
+      if ((options.now ?? Date.now()) - Date.parse(calls[i].row.created_at) > 24 * 60 * 60 * 1e3) {
+        result(calls[i], "[no completion observed]");
+        calls.splice(i, 1);
+      }
     }
   }
   if (options.state) {
@@ -162,7 +176,7 @@ async function deliver(id, credential) {
     if (firstEnd < 0) return;
     const firstLine = createHash("sha256").update(content.subarray(0, firstEnd)).digest("hex");
     let offset = state.byteOffset || 0;
-    if (offset > content.length || state.firstLine && state.firstLine !== firstLine) {
+    if (offset > content.length || state.firstLine && state.firstLine !== firstLine || state.prefixHash && createHash("sha256").update(content.subarray(0, offset)).digest("hex") !== state.prefixHash) {
       offset = 0;
       state.mapper = {};
     }
@@ -184,8 +198,8 @@ async function deliver(id, credential) {
     const events = mapTranscript(id, rows, { state: mapper, allowExpiry: lastEnd + 1 === content.length, model: state.model, omitPrompt: truthy(process.env.ZEEQ_OTEL_OMIT_PROMPT), truncatePrompt: Number(process.env.ZEEQ_OTEL_TRUNCATE_PROMPT) || void 0 });
     if (!events.length) {
       const previous2 = load(path);
-      if (previous2.rejectionKey === `${firstLine}:${offset}` && previous2.rejectionAttempts) return;
-      save(path, { byteOffset: lastEnd + 1, firstLine, mapper });
+      if (previous2.rejectionKey === `${firstLine}:${offset}` && previous2.rejectionAttempts && previous2.rejectionEnd <= content.length && previous2.rejectionHash === createHash("sha256").update(content.subarray(offset, previous2.rejectionEnd)).digest("hex")) return;
+      save(path, { byteOffset: lastEnd + 1, firstLine, prefixHash: createHash("sha256").update(content.subarray(0, lastEnd + 1)).digest("hex"), mapper });
       return;
     }
     const endpoint = process.env.ANTIGRAVITY_TELEMETRY_ENDPOINT || `${(process.env.ZEEQ_BASE_URL || "https://app.zeeq.ai").replace(/\/$/, "")}/api/v1/telemetry/import`;
@@ -200,8 +214,11 @@ async function deliver(id, credential) {
       if (response.status === 401 || response.status === 403) save(path, { ...load(path), lastAuthError: response.status, authFailedAt: Date.now(), failedCredentialHash: createHash("sha256").update(credential).digest("hex") });
       throw Error(`Telemetry request failed: ${response.status}`);
     }
-    let attempts = previous.rejectionKey === rejectionKey ? previous.rejectionAttempts || 0 : 0;
-    let scan = previous.rejectionKey === rejectionKey ? previous.rejectionScan : void 0;
+    const sameRejected = previous.rejectionKey === rejectionKey && previous.rejectionEnd <= content.length && previous.rejectionHash === createHash("sha256").update(content.subarray(offset, previous.rejectionEnd)).digest("hex");
+    let attempts = sameRejected ? previous.rejectionAttempts || 0 : 0;
+    let scan = sameRejected ? previous.rejectionScan : void 0;
+    const rejectionEnd = sameRejected ? previous.rejectionEnd : lastEnd + 1;
+    const rejectionHash = createHash("sha256").update(content.subarray(offset, rejectionEnd)).digest("hex");
     if (attempts < 3) {
       let rejectedStatus;
       for (let i = 0; i < events.length; i += 500) {
@@ -213,7 +230,7 @@ async function deliver(id, credential) {
       }
       if (rejectedStatus) {
         attempts++;
-        save(path, { ...previous, rejectionKey, rejectionAttempts: attempts });
+        save(path, { ...previous, rejectionKey, rejectionEnd, rejectionHash, rejectionAttempts: attempts });
         error(`Telemetry batch rejected (${rejectedStatus}); checkpoint retained (attempt ${attempts})`);
         if (attempts < 3) return;
       }
@@ -229,7 +246,7 @@ async function deliver(id, credential) {
         const status = await post([event]);
         if (status < 400) scan.accepted.push(eventId);
         else scan.rejected.push({ id: eventId, status });
-        save(path, { ...load(path), rejectionKey, rejectionAttempts: attempts, rejectionScan: scan });
+        save(path, { ...load(path), rejectionKey, rejectionEnd, rejectionHash, rejectionAttempts: attempts, rejectionScan: scan });
       }
       if (scan.accepted.length + scan.rejected.length < events.length) return;
       if (scan.rejected.length && !scan.accepted.length) {
@@ -239,7 +256,7 @@ async function deliver(id, credential) {
       }
       for (const item of scan.rejected) error(`Dropped invalid telemetry event ${item.id} (${item.status})`);
     }
-    save(path, { byteOffset: lastEnd + 1, firstLine, mapper });
+    save(path, { byteOffset: lastEnd + 1, firstLine, prefixHash: createHash("sha256").update(content.subarray(0, lastEnd + 1)).digest("hex"), mapper });
   } finally {
     rmSync(lock, { recursive: true, force: true });
   }
@@ -322,7 +339,7 @@ async function main() {
             const latest = load(metaPath), delivery = load(deliveryPath), transcript = readFileSync(latest.transcriptPath);
             const firstEnd = transcript.indexOf(10);
             const firstLine = firstEnd < 0 ? null : createHash("sha256").update(transcript.subarray(0, firstEnd)).digest("hex");
-            if (latest.lastSeen === meta.lastSeen && statSync(latest.transcriptPath).mtimeMs <= latest.lastSeen && delivery.byteOffset === transcript.length && firstLine === delivery.firstLine && !Object.keys(delivery.mapper?.pending || {}).length && !(delivery.mapper?.calls || []).length) {
+            if (latest.lastSeen === meta.lastSeen && statSync(latest.transcriptPath).mtimeMs <= latest.lastSeen && delivery.byteOffset === transcript.length && firstLine === delivery.firstLine && (!delivery.prefixHash || delivery.prefixHash === createHash("sha256").update(transcript).digest("hex")) && !Object.keys(delivery.mapper?.pending || {}).length && !(delivery.mapper?.calls || []).length) {
               rmSync(deliveryPath, { force: true });
               rmSync(metaPath, { force: true });
             }
@@ -343,8 +360,9 @@ async function main() {
         const firstEnd = transcript.indexOf(10);
         const changed = firstEnd >= 0 && delivery.firstLine && createHash("sha256").update(transcript.subarray(0, firstEnd)).digest("hex") !== delivery.firstLine;
         const completeBytes = transcript.lastIndexOf(10) + 1;
-        const expiredPending = completeBytes === transcript.length && Object.values(delivery.mapper?.pending || {}).some((call) => Date.now() - Date.parse(call.row.created_at) > 864e5);
-        return changed || completeBytes !== (delivery.byteOffset || 0) || expiredPending;
+        const prefixChanged = delivery.prefixHash && createHash("sha256").update(transcript.subarray(0, delivery.byteOffset || 0)).digest("hex") !== delivery.prefixHash;
+        const expiredPending = completeBytes === transcript.length && [...Object.values(delivery.mapper?.pending || {}), ...delivery.mapper?.calls || []].some((call) => Date.now() - Date.parse(call.row.created_at) > 864e5);
+        return changed || prefixChanged || completeBytes !== (delivery.byteOffset || 0) || expiredPending;
       } catch {
         return false;
       }

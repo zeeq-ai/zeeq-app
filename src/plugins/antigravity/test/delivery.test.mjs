@@ -123,7 +123,7 @@ test('recovers first complete row without a checkpoint and a replaced transcript
 test('does not expire a pending task while its next row is incomplete', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'zeeq-partial-'));
   const transcript = join(dir, 'transcript');
-  const rows = [{ type: 'PLANNER_RESPONSE', step_index: 0, created_at: '2020-01-01T00:00:00Z', tool_calls: [{ name: 'run', args: {} }] }, { type: 'GENERIC', source: 'MODEL', status: 'RUNNING', step_index: 1, created_at: '2020-01-01T00:00:01Z', content: 'Created At: now\ntask id: task-1' }];
+  const rows = [{ type: 'PLANNER_RESPONSE', step_index: 0, created_at: '2020-01-01T00:00:00Z', tool_calls: [{ name: 'run', args: { command: 'echo test' } }] }, { type: 'GENERIC', source: 'MODEL', status: 'RUNNING', step_index: 1, created_at: '2020-01-01T00:00:01Z', content: 'Created At: now\ntask id: task-1\necho test' }];
   const completion = JSON.stringify({ type: 'SYSTEM_MESSAGE', step_index: 2, created_at: '2020-01-01T00:00:02Z', content: 'Task id "task-1" finished: Command exited with code 0' });
   writeFileSync(transcript, rows.map(JSON.stringify).join('\n') + '\n' + completion.slice(0, 30));
   const received = [];
@@ -210,9 +210,24 @@ test('preserves unresolved isolation state when rows map to no events', async ()
   const transcript = join(dir, 'transcript'); const line = JSON.stringify({ type: 'UNKNOWN', step_index: 0, created_at: '2026-01-01T00:00:00Z' });
   writeFileSync(transcript, line + '\n'); const firstLine = createHash('sha256').update(line).digest('hex');
   const deliveryPath = join(stateDir, 'empty.json.delivery');
-  writeFileSync(deliveryPath, JSON.stringify({ rejectionKey: `${firstLine}:0`, rejectionAttempts: 3, rejectionScan: { accepted: ['prior'], rejected: [] } }));
+  writeFileSync(deliveryPath, JSON.stringify({ rejectionKey: `${firstLine}:0`, rejectionEnd: Buffer.byteLength(line + '\n'), rejectionHash: createHash('sha256').update(line + '\n').digest('hex'), rejectionAttempts: 3, rejectionScan: { accepted: ['prior'], rejected: [] } }));
   try {
     await invoke({ PLUGIN_DATA: dir, ZEEQ_ACCESS_TOKEN: 'test', ANTIGRAVITY_TELEMETRY_INLINE: '1' }, 'Stop', { conversationId: 'empty', transcriptPath: transcript });
     const state = JSON.parse(readFileSync(deliveryPath, 'utf8')); assert.equal(state.rejectionAttempts, 3); assert.deepEqual(state.rejectionScan.accepted, ['prior']); assert.equal(state.byteOffset, undefined);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('reprocesses a same-size rewrite with the same first row', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zeeq-prefix-'));
+  const transcript = join(dir, 'transcript');
+  const row = (i, text) => JSON.stringify({ type: 'USER_INPUT', step_index: i, created_at: '2026-01-01T00:00:00Z', content: text });
+  const first = row(0, 'same'), old = row(1, 'old!'), updated = row(1, 'new!');
+  writeFileSync(transcript, first + '\n' + old + '\n'); const received = [];
+  const server = createServer(async (req, res) => { let body = ''; for await (const c of req) body += c; received.push(...JSON.parse(body).events); res.statusCode = 202; res.end(); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const env = { PLUGIN_DATA: dir, ZEEQ_ACCESS_TOKEN: 'test', ANTIGRAVITY_TELEMETRY_INLINE: '1', ANTIGRAVITY_TELEMETRY_ENDPOINT: `http://127.0.0.1:${server.address().port}` }, payload = { conversationId: 'prefix', transcriptPath: transcript };
+  try {
+    await invoke(env, 'Stop', payload); writeFileSync(transcript, first + '\n' + updated + '\n');
+    await invoke(env, 'Stop', payload); assert.ok(received.some(event => event.prompt_text === 'new!'));
+  } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
