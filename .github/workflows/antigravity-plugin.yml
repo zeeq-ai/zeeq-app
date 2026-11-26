@@ -1,0 +1,85 @@
+name: Antigravity Plugin Checks
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/antigravity-plugin.yml"
+      - "package.json"
+      - "yarn.lock"
+      - "src/plugins/antigravity/**"
+  push:
+    paths:
+      - ".github/workflows/antigravity-plugin.yml"
+      - "package.json"
+      - "yarn.lock"
+      - "src/plugins/antigravity/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-plugin:
+    name: Verify Antigravity plugin bundle and fixtures
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: |
+          corepack enable
+          yarn install --immutable
+
+      - name: Run Antigravity tests
+        working-directory: src/plugins/antigravity
+        run: npm test
+
+      - name: Prepare committed bundle for rebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="src/plugins/antigravity/scripts/hook.mjs"
+          git ls-files --error-unmatch "$bundle" >/dev/null
+          rm -- "$bundle"
+
+      - name: Rebuild committed hook bundle
+        working-directory: src/plugins/antigravity
+        run: npm run build
+
+      - name: Check rebuilt bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="src/plugins/antigravity/scripts/hook.mjs"
+          test -f "$bundle"
+          git diff --exit-code HEAD -- "$bundle"
+
+      - name: Check fixtures for local paths and email addresses
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixtures="src/plugins/antigravity/test/fixtures"
+          if [[ ! -d "$fixtures" ]]; then
+            echo "No transcript fixtures found; skipping the fixture privacy scan."
+            exit 0
+          fi
+
+          if grep -RlaE \
+            '/Users/|[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}' \
+            "$fixtures" >/dev/null; then
+            echo "Fixture privacy check failed: found a local /Users/ path or an email address." >&2
+            exit 1
+          else
+            status=$?
+            if [[ "$status" -ne 1 ]]; then
+              echo "Fixture privacy check could not scan the fixture directory (grep exit $status)." >&2
+              exit "$status"
+            fi
+          fi
