@@ -58,7 +58,7 @@ async function deliver(id, credential) {
         if (batch.length === 1) { error(`Dropped invalid telemetry event (${response.status})`); return; }
         const middle = Math.floor(batch.length / 2); await post(batch.slice(0, middle)); await post(batch.slice(middle)); return;
       }
-      if (response.status === 401 || response.status === 403) { save(path, { ...load(path), lastAuthError: response.status, failedCredentialHash: createHash('sha256').update(credential).digest('hex') }); }
+      if (response.status === 401 || response.status === 403) { save(path, { ...load(path), lastAuthError: response.status, authFailedAt: Date.now(), failedCredentialHash: createHash('sha256').update(credential).digest('hex') }); }
       throw Error(`Telemetry request failed: ${response.status}`);
     }
     for (let i = 0; i < events.length; i += 500) await post(events.slice(i, i + 500));
@@ -81,9 +81,9 @@ async function main() {
   if (action === 'SessionStart') {
     const credentialHash = createHash('sha256').update(credential).digest('hex');
     const recoverable = readdirSync(join(data, 'state')).filter(file => file.endsWith('.json')).map(file => ({ file, state: load(join(data, 'state', file)), delivery: load(join(data, 'state', file + '.delivery')) })).filter(({ state, delivery }) => {
-      if (Date.now() - state.lastSeen <= 60000 || delivery.failedCredentialHash === credentialHash) return false;
-      try { const transcript = readFileSync(state.transcriptPath); const firstEnd = transcript.indexOf(10); const changed = firstEnd >= 0 && delivery.firstLine && createHash('sha256').update(transcript.subarray(0, firstEnd)).digest('hex') !== delivery.firstLine; return changed || transcript.length !== (delivery.byteOffset || 0) || Object.keys(delivery.mapper?.pending || {}).length > 0; } catch { return false; }
-    }).sort ( (a, b) => (b.state.lastSeen || 0) - (a.state.lastSeen || 0)).slice(0, 10);
+      if (Date.now() - state.lastSeen <= 60000 || (delivery.failedCredentialHash === credentialHash && Date.now() - (delivery.authFailedAt || 0) < 3600000)) return false;
+      try { const transcript = readFileSync(state.transcriptPath); const firstEnd = transcript.indexOf(10); const changed = firstEnd >= 0 && delivery.firstLine && createHash('sha256').update(transcript.subarray(0, firstEnd)).digest('hex') !== delivery.firstLine; const completeBytes = transcript.lastIndexOf(10) + 1; const expiredPending = Object.values(delivery.mapper?.pending || {}).some(call => Date.now() - Date.parse(call.row.created_at) > 86400000); return changed || completeBytes !== (delivery.byteOffset || 0) || expiredPending; } catch { return false; }
+    }).sort((a, b) => (a.state.lastSeen || 0) - (b.state.lastSeen || 0)).slice(0, 10);
     for (const { file } of recoverable) launch(file.slice(0, -5));
   }
   if (action === 'Stop') { if (truthy(process.env.ANTIGRAVITY_TELEMETRY_INLINE)) await deliver(id, credential); else launch(id); }

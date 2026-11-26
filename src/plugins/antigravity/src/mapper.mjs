@@ -8,6 +8,7 @@ export function mapTranscript(conversation, rows, options = {}) {
   const events = [];
   const calls = structuredClone(options.state?.calls ?? []);
   const pending = new Map(Object.entries(structuredClone(options.state?.pending ?? {})));
+  const expired = new Set(options.state?.expired ?? []);
   const result = (call, content) => {
     const exit = /(?:Command exited with code|exit code)\s+(\d+)/i.exec(content);
     const created = /Created At:\s*([^\n]+)/i.exec(content);
@@ -36,7 +37,8 @@ export function mapTranscript(conversation, rows, options = {}) {
       // consume queued calls for unrelated generic messages.
       if (row.source !== 'MODEL' || !/^Created At:/m.test(content)) continue;
       const task = /task id[:\s]+[\"]?([^\s\"]+)/i.exec(content)?.[1];
-      if (task && pending.has(task)) { result(pending.get(task), content); pending.delete(task); continue; }
+      if (task && expired.has(task)) continue;
+      if (task && pending.has(task)) { result(pending.get(task), content); pending.delete(task); expired.add(task); continue; }
       if (task && row.status !== 'RUNNING') continue;
       if (!calls.length) continue;
       const call = calls.shift();
@@ -44,12 +46,13 @@ export function mapTranscript(conversation, rows, options = {}) {
       else result(call, content);
     } else if (row.type === 'SYSTEM_MESSAGE') {
       const content = String(row.content ?? '');
-      for (const [task, call] of pending) if (content.includes(task)) { result(call, content); pending.delete(task); }
+      const task = /task id[:\s]+[\"]?([^\s\"]+)/i.exec(content)?.[1];
+      if (task && pending.has(task)) { result(pending.get(task), content); pending.delete(task); expired.add(task); }
     }
   }
   for (const [task, call] of pending) {
-    if ((options.now ?? Date.now()) - Date.parse(call.row.created_at) > 24 * 60 * 60 * 1000) { result(call, '[no completion observed]'); pending.delete(task); }
+    if ((options.now ?? Date.now()) - Date.parse(call.row.created_at) > 24 * 60 * 60 * 1000) { result(call, '[no completion observed]'); pending.delete(task); expired.add(task); }
   }
-  if (options.state) { options.state.calls = calls; options.state.pending = Object.fromEntries(pending); }
+  if (options.state) { options.state.calls = calls; options.state.pending = Object.fromEntries(pending); options.state.expired = [...expired]; }
   return events;
 }

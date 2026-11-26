@@ -12,7 +12,7 @@ test('maps prompts and usage deterministically', () => {
 });
 
 test('pairs a background result with its original call', () => {
-  const rows = [{ step_index: 0, created_at: '2026-01-01T00:00:00Z', type: 'PLANNER_RESPONSE', tool_calls: [{ name: 'run', args: {} }] }, { step_index: 1, created_at: '2026-01-01T00:00:01Z', type: 'GENERIC', source: 'MODEL', status: 'RUNNING', content: 'Created At: now\ntask id: task-1' }, { step_index: 2, created_at: '2026-01-01T00:00:02Z', type: 'SYSTEM_MESSAGE', content: 'task-1 exit code 0' }];
+  const rows = [{ step_index: 0, created_at: '2026-01-01T00:00:00Z', type: 'PLANNER_RESPONSE', tool_calls: [{ name: 'run', args: {} }] }, { step_index: 1, created_at: '2026-01-01T00:00:01Z', type: 'GENERIC', source: 'MODEL', status: 'RUNNING', content: 'Created At: now\ntask id: task-1' }, { step_index: 2, created_at: '2026-01-01T00:00:02Z', type: 'SYSTEM_MESSAGE', content: 'Task id \"task-1\" exit code 0' }];
   assert.equal(mapTranscript('c', rows)[0]['event.id'], 'c:0:0:ToolResult');
   assert.equal(mapTranscript('c', rows)[0]['gen_ai.tool.call.success'], true);
 });
@@ -22,7 +22,7 @@ test('keeps background calls across incremental reads', () => {
   const call = { step_index: 1, created_at: '2026-01-01T00:00:00Z', type: 'PLANNER_RESPONSE', tool_calls: [{ name: 'run', args: {} }] };
   const running = { step_index: 2, created_at: '2026-01-01T00:00:01Z', type: 'GENERIC', source: 'MODEL', status: 'RUNNING', content: 'Created At: now\ntask id: task-1' };
   assert.equal(mapTranscript('c', [call, running], { state, now: Date.parse('2026-01-01T00:00:03Z') }).length, 0);
-  const result = { step_index: 3, created_at: '2026-01-01T00:00:02Z', type: 'SYSTEM_MESSAGE', content: 'task-1 Command exited with code 0' };
+  const result = { step_index: 3, created_at: '2026-01-01T00:00:02Z', type: 'SYSTEM_MESSAGE', content: 'Task id \"task-1\" Command exited with code 0' };
   assert.equal(mapTranscript('c', [result], { state, now: Date.parse('2026-01-01T00:00:03Z') })[0]['event.timestamp'], call.created_at);
   assert.equal(mapTranscript('c', [result], { state, now: Date.parse('2026-01-01T00:00:03Z') }).length, 0);
 });
@@ -50,7 +50,27 @@ test('maps sanitized captured transcripts', async () => {
     const events = mapTranscript('fixture', rows);
     assert.ok(events.some(event => event.kind === 'Prompt'));
     assert.ok(events.some(event => event.kind === 'Completion'));
-    if (name !== 'plain') assert.ok(events.some(event => event.kind === 'ToolResult'));
+    if (name !== 'plain') assert.ok(events.some(event => event.kind === 'ToolResult' && event['gen_ai.tool.call.success'] === true));
     assert.deepEqual(events, mapTranscript('fixture', rows));
   }
+});
+
+test('matches the complete background task ID', () => {
+  const state = { calls: [], pending: {
+    'task-1': { name: 'first', args: {}, row: { step_index: 1, created_at: '2026-01-01T00:00:00Z' }, index: 0 },
+    'task-10': { name: 'second', args: {}, row: { step_index: 2, created_at: '2026-01-01T00:00:00Z' }, index: 0 },
+  } };
+  const events = mapTranscript('c', [{ step_index: 3, created_at: '2026-01-01T00:00:03Z', type: 'SYSTEM_MESSAGE', content: 'Task id "task-10" finished with result: Command exited with code 0.' }], { state, now: Date.parse('2026-01-01T00:00:03Z') });
+  assert.equal(events[0]['gen_ai.tool.name'], 'second');
+  assert.ok(state.pending['task-1']);
+});
+
+test('does not assign a late expired task to another call', () => {
+  const state = { pending: { 'task-1': { name: 'old', args: {}, row: { step_index: 0, created_at: '2026-01-01T00:00:00Z' }, index: 0 } }, calls: [] };
+  const now = Date.parse('2026-01-03T00:00:00Z');
+  assert.equal(mapTranscript('c', [], { state, now })[0]['gen_ai.tool.call.result'], '[no completion observed]');
+  state.calls.push({ name: 'new', args: {}, row: { step_index: 2, created_at: '2026-01-03T00:00:00Z' }, index: 0 });
+  const late = { type: 'GENERIC', source: 'MODEL', status: 'RUNNING', step_index: 3, created_at: '2026-01-03T00:00:00Z', content: 'Created At: now\ntask id: task-1' };
+  assert.equal(mapTranscript('c', [late], { state, now }).length, 0);
+  assert.equal(state.calls[0].name, 'new');
 });

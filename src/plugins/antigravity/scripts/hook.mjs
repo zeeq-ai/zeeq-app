@@ -13,6 +13,7 @@ function mapTranscript(conversation, rows, options = {}) {
   const events = [];
   const calls = structuredClone(options.state?.calls ?? []);
   const pending = new Map(Object.entries(structuredClone(options.state?.pending ?? {})));
+  const expired = new Set(options.state?.expired ?? []);
   const result = (call, content) => {
     const exit = /(?:Command exited with code|exit code)\s+(\d+)/i.exec(content);
     const created = /Created At:\s*([^\n]+)/i.exec(content);
@@ -39,9 +40,11 @@ function mapTranscript(conversation, rows, options = {}) {
       const content = String(row.content ?? "");
       if (row.source !== "MODEL" || !/^Created At:/m.test(content)) continue;
       const task = /task id[:\s]+[\"]?([^\s\"]+)/i.exec(content)?.[1];
+      if (task && expired.has(task)) continue;
       if (task && pending.has(task)) {
         result(pending.get(task), content);
         pending.delete(task);
+        expired.add(task);
         continue;
       }
       if (task && row.status !== "RUNNING") continue;
@@ -51,9 +54,11 @@ function mapTranscript(conversation, rows, options = {}) {
       else result(call, content);
     } else if (row.type === "SYSTEM_MESSAGE") {
       const content = String(row.content ?? "");
-      for (const [task, call] of pending) if (content.includes(task)) {
-        result(call, content);
+      const task = /task id[:\s]+[\"]?([^\s\"]+)/i.exec(content)?.[1];
+      if (task && pending.has(task)) {
+        result(pending.get(task), content);
         pending.delete(task);
+        expired.add(task);
       }
     }
   }
@@ -61,11 +66,13 @@ function mapTranscript(conversation, rows, options = {}) {
     if ((options.now ?? Date.now()) - Date.parse(call.row.created_at) > 24 * 60 * 60 * 1e3) {
       result(call, "[no completion observed]");
       pending.delete(task);
+      expired.add(task);
     }
   }
   if (options.state) {
     options.state.calls = calls;
     options.state.pending = Object.fromEntries(pending);
+    options.state.expired = [...expired];
   }
   return events;
 }
@@ -181,7 +188,7 @@ async function deliver(id, credential) {
         return;
       }
       if (response.status === 401 || response.status === 403) {
-        save(path, { ...load(path), lastAuthError: response.status, failedCredentialHash: createHash("sha256").update(credential).digest("hex") });
+        save(path, { ...load(path), lastAuthError: response.status, authFailedAt: Date.now(), failedCredentialHash: createHash("sha256").update(credential).digest("hex") });
       }
       throw Error(`Telemetry request failed: ${response.status}`);
     }
@@ -219,16 +226,18 @@ async function main() {
   if (action === "SessionStart") {
     const credentialHash = createHash("sha256").update(credential).digest("hex");
     const recoverable = readdirSync(join(data, "state")).filter((file) => file.endsWith(".json")).map((file) => ({ file, state: load(join(data, "state", file)), delivery: load(join(data, "state", file + ".delivery")) })).filter(({ state: state2, delivery }) => {
-      if (Date.now() - state2.lastSeen <= 6e4 || delivery.failedCredentialHash === credentialHash) return false;
+      if (Date.now() - state2.lastSeen <= 6e4 || delivery.failedCredentialHash === credentialHash && Date.now() - (delivery.authFailedAt || 0) < 36e5) return false;
       try {
         const transcript = readFileSync(state2.transcriptPath);
         const firstEnd = transcript.indexOf(10);
         const changed = firstEnd >= 0 && delivery.firstLine && createHash("sha256").update(transcript.subarray(0, firstEnd)).digest("hex") !== delivery.firstLine;
-        return changed || transcript.length !== (delivery.byteOffset || 0) || Object.keys(delivery.mapper?.pending || {}).length > 0;
+        const completeBytes = transcript.lastIndexOf(10) + 1;
+        const expiredPending = Object.values(delivery.mapper?.pending || {}).some((call) => Date.now() - Date.parse(call.row.created_at) > 864e5);
+        return changed || completeBytes !== (delivery.byteOffset || 0) || expiredPending;
       } catch {
         return false;
       }
-    }).sort((a, b) => (b.state.lastSeen || 0) - (a.state.lastSeen || 0)).slice(0, 10);
+    }).sort((a, b) => (a.state.lastSeen || 0) - (b.state.lastSeen || 0)).slice(0, 10);
     for (const { file } of recoverable) launch(file.slice(0, -5));
   }
   if (action === "Stop") {

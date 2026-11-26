@@ -57,7 +57,7 @@ test('records authentication failure and preserves cursor for retry', async () =
 test('recovers inactive conversations beyond recent sessions after credentials change', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'zeeq-recovery-'));
   const stateDir = join(dir, 'state');
-  const { mkdirSync } = await import('node:fs');
+  const { mkdirSync, existsSync } = await import('node:fs');
   const { createHash } = await import('node:crypto');
   mkdirSync(stateDir);
   const transcript = join(dir, 'transcript');
@@ -73,5 +73,7 @@ test('recovers inactive conversations beyond recent sessions after credentials c
     await invoke(env, 'SessionStart', { conversationId: 'current', transcriptPath: transcript });
     for (let i = 0; i < 50 && !received; i++) await new Promise(resolve => setTimeout(resolve, 20));
     assert.equal(received, 1);
+    for (let i = 0; i < 100 && existsSync(join(stateDir, 'old.json.delivery.lock')); i++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(existsSync(join(stateDir, 'old.json.delivery.lock')), false);
   } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
