@@ -48,7 +48,8 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
     CodeReviewRequestLinkFactory linkFactory,
     IGitHubCommentWriter writer,
     GitHubCommentWriteOptions options,
-    ILogger<GitHubCommentWriteRequestedHandler> logger
+    ILogger<GitHubCommentWriteRequestedHandler> logger,
+    ICodeReviewFindingTriageStore triages
 ) : ZeeqMessageHandler<GitHubCommentWriteRequested>(deadLetterWriter)
 {
     /// <summary>
@@ -562,6 +563,11 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
                 );
             }
 
+            var overlay = await triages.ListForReviewAsync(
+                review.OrganizationId,
+                review.Id,
+                cancellationToken
+            );
             return new(
                 Review: review,
                 FindingsXml: findingsXml,
@@ -570,7 +576,10 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
                 ActionLinks: actionLinks,
                 RenderedAtUtc: renderedAtUtc,
                 ShowNoice: showNoice,
-                SourceTelemetry: sourceTelemetry
+                SourceTelemetry: sourceTelemetry,
+                Triages: overlay
+                    .Where(x => x.SourceReviewCreatedAtUtc == review.CreatedAtUtc)
+                    .ToDictionary(x => x.OccurrenceKey)
             );
         }
         catch (Exception ex)
@@ -689,6 +698,22 @@ public sealed partial class GitHubCommentWriteRequestedHandler(
         CancellationToken cancellationToken
     )
     {
+        if (message.RenderLatestForPullRequest)
+        {
+            var history = await codeReviews.ListForTriageAsync(
+                message.OrganizationId,
+                new FindingTriageTarget.ByPullRequest(
+                    message.RepositoryId,
+                    message.PullRequestNumber
+                ),
+                cancellationToken
+            );
+            return history
+                .Where(x => x.Status == CodeReviewStatus.Completed)
+                .OrderByDescending(x => x.CreatedAtUtc)
+                .ThenByDescending(x => x.Id)
+                .FirstOrDefault();
+        }
         if (message.CodeReviewRecordId is null && message.CodeReviewCreatedAtUtc is null)
         {
             return null;

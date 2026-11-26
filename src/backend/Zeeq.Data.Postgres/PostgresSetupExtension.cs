@@ -76,6 +76,7 @@ public static class PostgresSetupExtension
 
             // Register Postgres-specific implementations of identity stores.
             services.AddScoped<IZeeqIdentityStore, PostgresZeeqIdentityStore>();
+            services.AddScoped<IActiveGitHubAliasStore, PostgresZeeqIdentityStore>();
             services.AddScoped<IZeeqAuthStateStore, PostgresZeeqAuthStateStore>();
             services.AddScoped<
                 ISystemOrganizationManagementStore,
@@ -103,6 +104,10 @@ public static class PostgresSetupExtension
             services.AddScoped<ILlmSettingsStore, PostgresLlmSettingsStore>();
             services.AddScoped<IEncryptedValueStore, PostgresEncryptedValueStore>();
             services.AddScoped<IGitHubInstallationStore, PostgresGitHubInstallationStore>();
+            services.AddScoped<
+                ICodeReviewFindingTriageStore,
+                PostgresCodeReviewFindingTriageStore
+            >();
             services.AddScoped<ICodeRepositoryStore, PostgresCodeRepositoryStore>();
             services.AddScoped<
                 ICodeRepositoryPromptConfigurationStore,

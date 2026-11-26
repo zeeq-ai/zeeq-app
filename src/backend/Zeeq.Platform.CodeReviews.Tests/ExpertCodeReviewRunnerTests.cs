@@ -130,6 +130,7 @@ public sealed class ExpertCodeReviewRunnerTests
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<string>(),
+                Arg.Any<string>(),
                 Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             )
@@ -756,6 +757,7 @@ public sealed class ExpertCodeReviewRunnerTests
                     Arg.Any<string?>(),
                     Arg.Any<string?>(),
                     Arg.Any<string>(),
+                    Arg.Any<string>(),
                     Arg.Any<int>(),
                     Arg.Any<CancellationToken>()
                 )
@@ -813,7 +815,8 @@ public sealed class ExpertCodeReviewRunnerTests
                     artifactStore,
                     previousReviewStore,
                     linkFactory,
-                    NullLogger<ExpertCodeReviewRunner>.Instance
+                    NullLogger<ExpertCodeReviewRunner>.Instance,
+                    Substitute.For<ICodeReviewFindingTriageStore>()
                 ),
             };
 

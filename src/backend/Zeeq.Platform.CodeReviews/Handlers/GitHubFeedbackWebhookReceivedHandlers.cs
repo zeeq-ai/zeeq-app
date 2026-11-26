@@ -1,7 +1,7 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Zeeq.Core.Common;
 using Zeeq.Platform.Messaging;
-using Microsoft.Extensions.Logging;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -30,7 +30,8 @@ public sealed partial class GitHubIssueCommentWebhookReceivedHandler(
     IDeadLetterWriter deadLetterWriter,
     IZeeqMessagePublisher publisher,
     CodeReviewSettings settings,
-    ILogger<GitHubIssueCommentWebhookReceivedHandler> logger
+    ILogger<GitHubIssueCommentWebhookReceivedHandler> logger,
+    IGitHubFindingTriageHandler triageHandler
 ) : ZeeqMessageHandler<GitHubIssueCommentWebhookReceived>(deadLetterWriter)
 {
     /// <summary>
@@ -50,6 +51,27 @@ public sealed partial class GitHubIssueCommentWebhookReceivedHandler(
             message.PullRequestNumber
         );
 
+        if (
+            await triageHandler.HandleAsync(
+                message.OrganizationId,
+                message.TeamId,
+                message.RepositoryId,
+                message.OwnerQualifiedRepoName,
+                message.PullRequestNumber,
+                message.CommentId,
+                message.CommentBody,
+                message.CommentAuthorLogin,
+                message.AuthorAssociation,
+                message.CommentCreatedAtUtc,
+                message.CommentHtmlUrl,
+                message.GitHubAction,
+                message.GitHubDeliveryId,
+                message.TraceContext,
+                GitHubCommentReactionTargetKind.IssueComment,
+                cancellationToken
+            )
+        )
+            return message;
         if (!GitHubFeedbackReactionHandlerSupport.ShouldPublishReaction(message, settings))
         {
             LogIssueCommentIgnored(
@@ -134,7 +156,8 @@ public sealed partial class GitHubPullRequestReviewCommentWebhookReceivedHandler
     IDeadLetterWriter deadLetterWriter,
     IZeeqMessagePublisher publisher,
     CodeReviewSettings settings,
-    ILogger<GitHubPullRequestReviewCommentWebhookReceivedHandler> logger
+    ILogger<GitHubPullRequestReviewCommentWebhookReceivedHandler> logger,
+    IGitHubFindingTriageHandler triageHandler
 ) : ZeeqMessageHandler<GitHubPullRequestReviewCommentWebhookReceived>(deadLetterWriter)
 {
     /// <summary>
@@ -154,6 +177,27 @@ public sealed partial class GitHubPullRequestReviewCommentWebhookReceivedHandler
             message.PullRequestNumber
         );
 
+        if (
+            await triageHandler.HandleAsync(
+                message.OrganizationId,
+                message.TeamId,
+                message.RepositoryId,
+                message.OwnerQualifiedRepoName,
+                message.PullRequestNumber,
+                message.CommentId,
+                message.CommentBody,
+                message.CommentAuthorLogin,
+                message.AuthorAssociation,
+                message.CommentCreatedAtUtc,
+                message.CommentHtmlUrl,
+                message.GitHubAction,
+                message.GitHubDeliveryId,
+                message.TraceContext,
+                GitHubCommentReactionTargetKind.PullRequestReviewComment,
+                cancellationToken
+            )
+        )
+            return message;
         if (!GitHubFeedbackReactionHandlerSupport.ShouldPublishReaction(message, settings))
         {
             LogReviewCommentIgnored(
@@ -253,7 +297,7 @@ file static class GitHubFeedbackReactionHandlerSupport
     ) =>
         IsCreatedAction(message.GitHubAction)
         && IsUsableComment(message.CommentId, message.CommentBody)
-        && GitHubFeedbackCommandPolicy.IsSupportedFeedbackCommand(message.CommentBody)
+        && IsAcknowledgement(message.CommentBody)
         && IsUserAuthored(message.CommentAuthorLogin, settings);
 
     public static bool ShouldPublishReaction(
@@ -262,11 +306,15 @@ file static class GitHubFeedbackReactionHandlerSupport
     ) =>
         IsCreatedAction(message.GitHubAction)
         && IsUsableComment(message.CommentId, message.CommentBody)
-        && GitHubFeedbackCommandPolicy.IsSupportedFeedbackCommand(message.CommentBody)
+        && IsAcknowledgement(message.CommentBody)
         && IsUserAuthored(message.CommentAuthorLogin, settings);
 
     private static bool IsCreatedAction(string action) =>
         string.Equals(action, "created", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsAcknowledgement(string? body) =>
+        GitHubFeedbackCommandPolicy.TryParseCommand(body, out var command)
+        && command is GitHubFeedbackCommand.Acknowledge or GitHubFeedbackCommand.BypassCheck;
 
     private static bool IsUsableComment(long commentId, string? commentBody) =>
         commentId > 0 && !string.IsNullOrWhiteSpace(commentBody);

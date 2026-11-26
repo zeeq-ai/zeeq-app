@@ -60,6 +60,8 @@ public sealed partial class CodeReviewMcpTools
         ICodeReviewRecordStore reviews,
         ICodeReviewArtifactStore artifacts,
         CodeReviewXmlOutputValidator xmlValidator,
+        ICodeReviewFindingTriageStore triages,
+        CodeReviewRequestLinkFactory links,
         ClaimsPrincipal? user,
         [Description("Required; owner/repo repository identifier, for example zeeq-ai/zeeq.")]
             string ownerQualifiedRepoName,
@@ -73,6 +75,10 @@ public sealed partial class CodeReviewMcpTools
             "Optional; minimum finding level: CRITICAL, MAJOR, MINOR, SUGGESTION, COMMENT. Empty means all."
         )]
             string? minimumLevel = null,
+        [Description(
+            "Optional; exclude human-confirmed triages while keeping open and unconfirmed proposed findings actionable."
+        )]
+            bool actionableOnly = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -193,15 +199,28 @@ public sealed partial class CodeReviewMcpTools
             );
         }
 
-        var snapshots = validation
-            .Output.Reviews.SelectMany(reviewer =>
-                reviewer
-                    .Findings.Where(finding => MeetsMinimumLevel(finding.Level, parsedMinimumLevel))
-                    .Select(finding => ToCartFindingSnapshot(review, reviewer, finding))
+        var snapshots = CodeReviewFindingIds
+            .Assign(validation.Output)
+            .Where(indexed => MeetsMinimumLevel(indexed.Finding.Level, parsedMinimumLevel))
+            .Select(indexed =>
+                ToCartFindingSnapshot(review, indexed.Facet, indexed.Finding) with
+                {
+                    SourceReviewId = review.Id,
+                    OccurrenceKey = indexed.OccurrenceKey,
+                    SemanticId = indexed.SemanticId,
+                }
             )
             .ToArray();
 
-        return RecordGetReviewFindingsCall("success", snapshots.ToAgentInstructions());
+        var response = await CartInstructionsTextBuilder.ToAgentInstructionsAsync(
+            snapshots,
+            organizationId,
+            triages,
+            links,
+            actionableOnly,
+            cancellationToken
+        );
+        return RecordGetReviewFindingsCall("success", response);
     }
 
     private static async Task<CodeReviewRecord?> FindNewestCompletedForPullRequestAsync(

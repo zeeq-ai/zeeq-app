@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 using OpenIddict.Abstractions;
 using Zeeq.Core.Common;
 using Zeeq.Core.Identity;
@@ -12,6 +13,72 @@ namespace Zeeq.Mcp.CodeReviews.Tests;
 
 public sealed class CodeReviewMcpToolsTests
 {
+    [Test]
+    public async Task TriageReviewFinding_ProposesWithMcpTrustAndReturnsConfirmationLink()
+    {
+        var service = Substitute.For<ICodeReviewFindingTriageService>();
+        var row = new CodeReviewFindingTriage
+        {
+            Id = "cft_123",
+            OrganizationId = "org_123",
+            OwnerQualifiedRepoName = "owner/repo",
+            SourceReviewId = "cr_123",
+            SourceReviewCreatedAtUtc = DateTimeOffset.UtcNow,
+            OccurrenceKey = "F1",
+            SemanticId = "example-finding-name",
+            Facet = "Security",
+            FindingSummary = "summary",
+            ApprovalState = CodeReviewFindingApprovalState.Proposed,
+        };
+        service
+            .TriageAsync(Arg.Any<FindingTriageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<FindingTriageOutcome>(new FindingTriageOutcome.Applied(row)));
+        var opts = Options();
+        var links = new CodeReviewRequestLinkFactory(
+            opts,
+            new CodeReviewRequestTokenProtector(opts.Value.CodeReview)
+        );
+        var response = await CodeReviewMcpTools.TriageReviewFinding(
+            service,
+            links,
+            TestUser(),
+            "cr_123",
+            "abcde.F1",
+            "false_positive",
+            "validated elsewhere"
+        );
+        await Assert.That(response).Contains("/code-reviews/triages/org_123/cft_123");
+        await service
+            .Received(1)
+            .TriageAsync(
+                Arg.Is<FindingTriageRequest>(x =>
+                    x.OrganizationId == "org_123"
+                    && x.Channel == CodeReviewFindingTriageChannel.Mcp
+                    && x.Operation == FindingTriageOperation.Set
+                    && x.Disposition == CodeReviewFindingDisposition.FalsePositive
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Test]
+    public async Task TriageReviewFinding_RejectsConfirmVerbWithoutCallingService()
+    {
+        var service = Substitute.For<ICodeReviewFindingTriageService>();
+        var response = await CodeReviewMcpTools.TriageReviewFinding(
+            service,
+            null!,
+            TestUser(),
+            "cr_123",
+            "abcde.F1",
+            "confirm"
+        );
+        await Assert.That(response).Contains("Invalid");
+        await service
+            .DidNotReceive()
+            .TriageAsync(Arg.Any<FindingTriageRequest>(), Arg.Any<CancellationToken>());
+    }
+
     [Test]
     public async Task RunReview_CreateUploadUrl_ReturnsRenderedInstructions()
     {
@@ -247,6 +314,66 @@ public sealed class CodeReviewMcpToolsTests
     }
 
     [Test]
+    public async Task GetReviewFindings_UsesRawOrdinalsAndFiltersConfirmedTriage()
+    {
+        var fixture = ReviewFindingsFixture.Create();
+        var triages = Substitute.For<ICodeReviewFindingTriageStore>();
+        var row = new CodeReviewFindingTriage
+        {
+            Id = "cft_1",
+            OrganizationId = "org_123",
+            OwnerQualifiedRepoName = "zeeq-ai/zeeq",
+            SourceReviewId = "cr_123",
+            SourceReviewCreatedAtUtc = DateTimeOffset.UtcNow,
+            OccurrenceKey = "F2",
+            SemanticId = "major-issue-data",
+            Facet = "Security",
+            FindingSummary = "Major issue",
+            Disposition = CodeReviewFindingDisposition.Deferred,
+            ApprovalState = CodeReviewFindingApprovalState.Confirmed,
+        };
+        triages
+            .ListForReviewAsync("org_123", "cr_123", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<CodeReviewFindingTriage>>([row]));
+        var opts = Options();
+        var links = new CodeReviewRequestLinkFactory(
+            opts,
+            new CodeReviewRequestTokenProtector(opts.Value.CodeReview)
+        );
+        var all = await CodeReviewMcpTools.GetReviewFindings(
+            fixture.Repositories,
+            fixture.PullRequestLookups,
+            fixture.Reviews,
+            fixture.Artifacts,
+            new CodeReviewXmlOutputValidator(),
+            triages,
+            links,
+            TestUser(),
+            "zeeq-ai/zeeq",
+            pullRequestNumber: 42,
+            minimumLevel: "MAJOR"
+        );
+        await Assert.That(all).Contains("ref=\"r_123.F2\"");
+        await Assert.That(all).Contains("approval=\"Confirmed\"");
+        var actionable = await CodeReviewMcpTools.GetReviewFindings(
+            fixture.Repositories,
+            fixture.PullRequestLookups,
+            fixture.Reviews,
+            fixture.Artifacts,
+            new CodeReviewXmlOutputValidator(),
+            triages,
+            links,
+            TestUser(),
+            "zeeq-ai/zeeq",
+            pullRequestNumber: 42,
+            minimumLevel: "MAJOR",
+            actionableOnly: true
+        );
+        await Assert.That(actionable).DoesNotContain("Major issue");
+        await Assert.That(actionable).Contains("Critical issue");
+    }
+
+    [Test]
     public async Task GetReviewFindings_WithPullRequestAndMinimumMajor_ReturnsCriticalAndMajorFindings()
     {
         var fixture = ReviewFindingsFixture.Create();
@@ -257,6 +384,11 @@ public sealed class CodeReviewMcpToolsTests
             fixture.Reviews,
             fixture.Artifacts,
             new CodeReviewXmlOutputValidator(),
+            Substitute.For<ICodeReviewFindingTriageStore>(),
+            new CodeReviewRequestLinkFactory(
+                Options(),
+                new CodeReviewRequestTokenProtector(Options().Value.CodeReview)
+            ),
             TestUser(),
             "zeeq-ai/zeeq",
             pullRequestNumber: 42,
@@ -282,6 +414,11 @@ public sealed class CodeReviewMcpToolsTests
             fixture.Reviews,
             fixture.Artifacts,
             new CodeReviewXmlOutputValidator(),
+            Substitute.For<ICodeReviewFindingTriageStore>(),
+            new CodeReviewRequestLinkFactory(
+                Options(),
+                new CodeReviewRequestTokenProtector(Options().Value.CodeReview)
+            ),
             TestUser(),
             "zeeq-ai/zeeq",
             branch: "feature/review-findings"
@@ -303,6 +440,11 @@ public sealed class CodeReviewMcpToolsTests
             fixture.Reviews,
             fixture.Artifacts,
             new CodeReviewXmlOutputValidator(),
+            Substitute.For<ICodeReviewFindingTriageStore>(),
+            new CodeReviewRequestLinkFactory(
+                Options(),
+                new CodeReviewRequestTokenProtector(Options().Value.CodeReview)
+            ),
             TestUser(),
             "zeeq-ai/zeeq",
             pullRequestNumber: 42,
@@ -326,6 +468,11 @@ public sealed class CodeReviewMcpToolsTests
             fixture.Reviews,
             fixture.Artifacts,
             new CodeReviewXmlOutputValidator(),
+            Substitute.For<ICodeReviewFindingTriageStore>(),
+            new CodeReviewRequestLinkFactory(
+                Options(),
+                new CodeReviewRequestTokenProtector(Options().Value.CodeReview)
+            ),
             TestUser(),
             "zeeq-ai/zeeq",
             pullRequestNumber: 42,
@@ -351,6 +498,11 @@ public sealed class CodeReviewMcpToolsTests
             fixture.Reviews,
             fixture.Artifacts,
             new CodeReviewXmlOutputValidator(),
+            Substitute.For<ICodeReviewFindingTriageStore>(),
+            new CodeReviewRequestLinkFactory(
+                Options(),
+                new CodeReviewRequestTokenProtector(Options().Value.CodeReview)
+            ),
             TestUser(),
             "zeeq-ai/zeeq",
             branch: "feature/review-findings",
@@ -376,6 +528,11 @@ public sealed class CodeReviewMcpToolsTests
             fixture.Reviews,
             fixture.Artifacts,
             new CodeReviewXmlOutputValidator(),
+            Substitute.For<ICodeReviewFindingTriageStore>(),
+            new CodeReviewRequestLinkFactory(
+                Options(),
+                new CodeReviewRequestTokenProtector(Options().Value.CodeReview)
+            ),
             TestUser(),
             "zeeq-ai/zeeq",
             pullRequestNumber: 42
@@ -628,6 +785,12 @@ public sealed class CodeReviewMcpToolsTests
 
     private sealed class TestCodeReviewRecordStore : ICodeReviewRecordStore
     {
+        public Task<IReadOnlyList<CodeReviewRecord>> ListForTriageAsync(
+            string organizationId,
+            FindingTriageTarget target,
+            CancellationToken cancellationToken
+        ) => Task.FromResult<IReadOnlyList<CodeReviewRecord>>([]);
+
         public string? LastPullRequestRecordId { get; private set; }
 
         public string? LastBranch { get; private set; }

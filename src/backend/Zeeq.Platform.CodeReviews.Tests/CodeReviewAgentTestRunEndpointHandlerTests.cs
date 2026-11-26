@@ -444,7 +444,8 @@ public sealed class CodeReviewAgentTestRunEndpointHandlerTests
                 new(),
                 libraries,
                 new TestHybridCache(),
-                NullLogger<CodeReviewExecutionEngine>.Instance
+                NullLogger<CodeReviewExecutionEngine>.Instance,
+                Substitute.For<ICodeReviewFindingTriageStore>()
             );
         }
     }

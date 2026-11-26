@@ -118,6 +118,9 @@ public sealed class GitHubCommentWriteRequested : Event, ITenantMessage
     /// <summary>Optional code review partition key paired with <see cref="CodeReviewRecordId" />.</summary>
     public DateTimeOffset? CodeReviewCreatedAtUtc { get; init; }
 
+    /// <summary>Resolve the latest completed PR review after acquiring the comment lease.</summary>
+    public bool RenderLatestForPullRequest { get; init; }
+
     /// <summary>GitHub delivery id or run signal that caused this durable write request.</summary>
     public required string SignalId { get; init; }
 

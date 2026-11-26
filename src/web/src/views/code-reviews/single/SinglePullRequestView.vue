@@ -135,6 +135,9 @@
             :review-raw-xml-by-review-key
             :loading-review-raw-xml-by-review-key
             :review-raw-xml-errors-by-review-key
+            :triage-busy-keys="triageBusyKeys"
+            :triage-success-versions="triageSuccessVersions"
+            @triage="handleTriage"
             :cart-content-hashes
             @load-review-findings="handleLoadReviewFindings"
             @load-raw-xml="handleLoadRawXml"
@@ -159,6 +162,9 @@
 </template>
 
 <script setup lang="ts">
+import { useFindingTriage } from "@/views/code-reviews/pull-requests/useFindingTriage";
+const { triageBusyKeys, triageSuccessVersions, handleTriage } =
+  useFindingTriage();
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { CodeReviews } from "@/api/generated";
@@ -330,11 +336,14 @@ async function handleToggleCart(
         side: finding.side,
         summary: finding.summary,
         body: finding.body,
+        occurrenceKey: finding.occurrenceKey,
+        semanticId: finding.semanticId,
       },
       reviewer,
       {
         ownerQualifiedRepoName: review.ownerQualifiedRepoName,
         pullRequestNumber: +review.pullRequestNumber,
+        id: review.id,
       },
       annotation,
     );

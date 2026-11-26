@@ -104,6 +104,34 @@ public sealed class GitHubFeedbackReactionHandlerTests
     }
 
     [Test]
+    [Arguments("/zeeq fp abcde.F2 validated elsewhere", GitHubFeedbackCommand.Triage)]
+    [Arguments("+zeeq defer some-semantic-finding deliberate", GitHubFeedbackCommand.Triage)]
+    [Arguments("/zeeq clear abcde.F2", GitHubFeedbackCommand.Triage)]
+    [Arguments("/zeeq fp abcde.F2", GitHubFeedbackCommand.TriageParseError)]
+    [Arguments("/zeeq typo abcde.F2 reason", GitHubFeedbackCommand.TriageParseError)]
+    [Arguments("/zeeq please review", GitHubFeedbackCommand.Acknowledge)]
+    public async Task FeedbackCommandPolicy_ClassifiesTriageBeforeAcknowledgement(
+        string body,
+        GitHubFeedbackCommand expected
+    )
+    {
+        var parsed = GitHubFeedbackCommandPolicy.TryParseCommand(body, out var command);
+        await Assert.That(parsed).IsTrue();
+        await Assert.That(command).IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task TriageCommand_DoesNotPublishPrematureAcknowledgement()
+    {
+        var fixture = FeedbackFixture.Create();
+        await fixture.ReviewHandler.HandleAsync(
+            ReviewCommentMessage(commentBody: "/zeeq fp abcde.F2 reason"),
+            CancellationToken.None
+        );
+        await Assert.That(fixture.Published).IsEmpty();
+    }
+
+    [Test]
     [Arguments("/zeeq please review this")]
     [Arguments("   +zeeq")]
     public async Task FeedbackCommandPolicy_WithSupportedCommandToken_ReturnsTrue(
@@ -292,13 +320,15 @@ public sealed class GitHubFeedbackReactionHandlerTests
                 deadLetters,
                 publisher,
                 settings,
-                NullLogger<GitHubIssueCommentWebhookReceivedHandler>.Instance
+                NullLogger<GitHubIssueCommentWebhookReceivedHandler>.Instance,
+                Substitute.For<IGitHubFindingTriageHandler>()
             );
             fixture.ReviewHandler = new GitHubPullRequestReviewCommentWebhookReceivedHandler(
                 deadLetters,
                 publisher,
                 settings,
-                NullLogger<GitHubPullRequestReviewCommentWebhookReceivedHandler>.Instance
+                NullLogger<GitHubPullRequestReviewCommentWebhookReceivedHandler>.Instance,
+                Substitute.For<IGitHubFindingTriageHandler>()
             );
 
             return fixture;

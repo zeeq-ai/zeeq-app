@@ -187,6 +187,30 @@ public sealed class CodeReviewWorkflowExecutorTests
     }
 
     [Test]
+    public async Task AggregateSerialization_StampsUniqueIdsInDocumentOrder()
+    {
+        var executor = CreateExecutor();
+        var aggregate = """
+            <review facet="Security" agent="reviewer"><summary>Review</summary><details>Details</details><findings>
+              <finding level="MAJOR" file="src/Handler.cs"><summary>Missing null check</summary><details>First</details></finding>
+              <finding level="MINOR" file="src/Handler.cs"><summary>Missing null check</summary><details>Second</details></finding>
+            </findings></review>
+            """;
+        var xml = executor.ValidateAndSerializeAggregateBlocks(
+            aggregate,
+            CodeReviewExecutionOptions.Durable
+        );
+        var parsed = _xmlValidator.Validate(xml);
+        await Assert.That(parsed.IsValid).IsTrue();
+        var findings = parsed.Output!.Reviews.Single().Findings;
+        await Assert.That(findings[0].Id).IsEqualTo("missing-null-check-handler");
+        await Assert.That(findings[1].Id).IsEqualTo("missing-null-check-handler-2");
+        var indexed = CodeReviewFindingIds.Assign(parsed.Output);
+        await Assert.That(indexed[1].OccurrenceKey).IsEqualTo("F2");
+        await Assert.That(indexed[1].SemanticId).IsEqualTo(findings[1].Id);
+    }
+
+    [Test]
     public async Task AgentExecutorValidateAndSerializeAggregateBlocks_WithEmptyAggregate_ThrowsClearInvariant()
     {
         var executor = CreateExecutor();

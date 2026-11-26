@@ -22,6 +22,9 @@ export type DraftCartItem = {
   agent: string;
   annotation: string | null;
   addedAtUtc: string;
+  sourceReviewId?: string | null;
+  occurrenceKey?: string | null;
+  semanticId?: string | null;
 };
 
 /** A cart that has not yet been saved — lives only in browser storage. */
@@ -143,9 +146,15 @@ export const useCartStore = defineStore("cart", () => {
       side?: string | null;
       summary: string;
       body: string;
+      occurrenceKey?: string;
+      semanticId?: string;
     },
     reviewer: { facet: string; agent: string },
-    review: { ownerQualifiedRepoName: string; pullRequestNumber: number },
+    review: {
+      ownerQualifiedRepoName: string;
+      pullRequestNumber: number;
+      id?: string;
+    },
     annotation: string | null,
   ): Promise<{ added: boolean; cartName: string }> {
     const active = activeDraftCart.value ?? createDraftCart();
@@ -184,6 +193,9 @@ export const useCartStore = defineStore("cart", () => {
       agent: reviewer.agent,
       annotation: annotationNormalized,
       addedAtUtc: new Date().toISOString(),
+      sourceReviewId: review.id,
+      occurrenceKey: finding.occurrenceKey,
+      semanticId: finding.semanticId,
     };
     draftCarts.value = draftCarts.value.map((cart) =>
       cart.id === active.id
@@ -238,6 +250,9 @@ export const useCartStore = defineStore("cart", () => {
         agent: item.agent,
         annotation: item.annotation,
         addedAtUtc: new Date(item.addedAtUtc),
+        sourceReviewId: item.sourceReviewId,
+        occurrenceKey: item.occurrenceKey,
+        semanticId: item.semanticId,
       }));
 
       const saved = await Carts.saveCart(orgId.value, {
@@ -286,6 +301,9 @@ export const useCartStore = defineStore("cart", () => {
         facet: item.facet,
         agent: item.agent,
         annotation: item.annotation ?? null,
+        sourceReviewId: item.sourceReviewId,
+        occurrenceKey: item.occurrenceKey,
+        semanticId: item.semanticId,
         addedAtUtc:
           typeof item.addedAtUtc === "string"
             ? item.addedAtUtc

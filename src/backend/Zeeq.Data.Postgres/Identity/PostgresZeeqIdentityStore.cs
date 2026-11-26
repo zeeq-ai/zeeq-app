@@ -9,8 +9,33 @@ namespace Zeeq.Data.Postgres.Identity;
 
 /// <inheritdoc cref="IZeeqIdentityStore" />
 public sealed class PostgresZeeqIdentityStore(PostgresDbContext db, AppSettings appSettings)
-    : IZeeqIdentityStore
+    : IZeeqIdentityStore,
+        IActiveGitHubAliasStore
 {
+    /// <inheritdoc />
+    public Task<UserAlias?> FindActiveGitHubAliasAsync(
+        string organizationId,
+        string normalizedLogin,
+        CancellationToken cancellationToken
+    ) =>
+        (
+            from alias in db.UserAliases
+            join member in db.OrganizationMemberships
+                on new { alias.OrganizationId, alias.UserId } equals new
+                {
+                    member.OrganizationId,
+                    member.UserId,
+                }
+            where
+                alias.OrganizationId == organizationId
+                && alias.Kind == UserAliasKind.GitHub
+                && alias.NormalizedValue == normalizedLogin
+                && alias.DisabledAtUtc == null
+                && member.Status == MembershipStatus.Active
+                && member.DisabledAtUtc == null
+            select alias
+        ).SingleOrDefaultAsync(cancellationToken);
+
     private const string SameDomainAutoInviteIndexName =
         "ix_core_organization_memberships_same_domain_auto_invite";
     private const string UserAliasUniqueIndexName =

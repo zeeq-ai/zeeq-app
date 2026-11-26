@@ -17,6 +17,40 @@ namespace Zeeq.Platform.CodeReviews.Tests;
 public sealed class CodeReviewFindingsEndpointHandlerTests
 {
     [Test]
+    public async Task GetFindings_DoesNotOverlayDifferentReviewPartition()
+    {
+        var fixture = Fixture.Create();
+        var review = fixture.CodeReviews.Record;
+        review.CriticalFindings = 1;
+        review.FindingsStorageUri = fixture.Artifacts.StorageUri;
+        fixture.Artifacts.StoredXml = ReviewXml();
+        var row = new CodeReviewFindingTriage
+        {
+            Id = "triage",
+            OrganizationId = "org_123",
+            OwnerQualifiedRepoName = "zeeq-ai/zeeq",
+            SourceReviewId = review.Id,
+            SourceReviewCreatedAtUtc = review.CreatedAtUtc.AddDays(-1),
+            OccurrenceKey = "F1",
+            SemanticId = "some-valid-finding",
+            Facet = "Security",
+            FindingSummary = "Finding",
+        };
+        fixture
+            .Triages.ListForReviewAsync("org_123", review.Id, Arg.Any<CancellationToken>())
+            .Returns([row]);
+        var result = await fixture.Handler.HandleAsync(
+            "org_123",
+            review.Id,
+            review.CreatedAtUtc,
+            TestUser(),
+            CancellationToken.None
+        );
+        var ok = (Ok<CodeReviewFindingsResponse>)result.Result;
+        await Assert.That(ok.Value!.Reviews.Single().Findings.Single().Triage).IsNull();
+    }
+
+    [Test]
     public async Task GetCodeReviewFindings_WithStoredFindings_ReturnsParsedReviewerFindings()
     {
         var fixture = Fixture.Create();
@@ -48,6 +82,9 @@ public sealed class CodeReviewFindingsEndpointHandlerTests
         await Assert.That(finding.Line).IsEqualTo(42);
         await Assert.That(finding.Side).IsEqualTo("RIGHT");
         await Assert.That(finding.Summary).IsEqualTo("Critical issue");
+        await Assert.That(finding.OccurrenceKey).IsEqualTo("F1");
+        await Assert.That(finding.FindingRef).IsEqualTo("r_123.F1");
+        await Assert.That(finding.SemanticId).IsNotEmpty();
         await Assert.That(finding.Body).IsEqualTo("Critical body");
         await Assert.That(fixture.Artifacts.OpenCount).IsEqualTo(1);
     }
@@ -304,6 +341,9 @@ public sealed class CodeReviewFindingsEndpointHandlerTests
 
         public TestCodeReviewArtifactStore Artifacts { get; } = new();
 
+        public ICodeReviewFindingTriageStore Triages { get; } =
+            Substitute.For<ICodeReviewFindingTriageStore>();
+
         public GetCodeReviewFindingsHandler Handler { get; private set; } = null!;
 
         public static Fixture Create()
@@ -330,7 +370,8 @@ public sealed class CodeReviewFindingsEndpointHandlerTests
                 new CodeReviewAuthorization(memberships),
                 fixture.CodeReviews,
                 fixture.Artifacts,
-                new CodeReviewXmlOutputValidator()
+                new CodeReviewXmlOutputValidator(),
+                fixture.Triages
             );
 
             return fixture;

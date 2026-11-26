@@ -4,7 +4,9 @@ using System.Text.RegularExpressions;
 using ModelContextProtocol.Server;
 using Zeeq.Core.Carts;
 using Zeeq.Core.Identity;
+using Zeeq.Core.Models;
 using Zeeq.Platform.Carts;
+using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Mcp.Carts;
 
@@ -43,6 +45,8 @@ public sealed partial class CartMcpTools
     )]
     public static async Task<string> GetCartFindings(
         ICartStore store,
+        ICodeReviewFindingTriageStore triages,
+        CodeReviewRequestLinkFactory links,
         ClaimsPrincipal? user,
         [Description("The cart id from the copied instructions.")] string cartId,
         CancellationToken cancellationToken = default
@@ -85,7 +89,13 @@ public sealed partial class CartMcpTools
             );
         }
 
-        var text = cart.ItemsPayload.ToAgentInstructions();
+        var text = await CartInstructionsTextBuilder.ToAgentInstructionsAsync(
+            cart.ItemsPayload,
+            organizationId,
+            triages,
+            links,
+            cancellationToken: cancellationToken
+        );
 
         return RecordToolCall(GetCartFindingsCounter, user, "success", cartId, text);
     }

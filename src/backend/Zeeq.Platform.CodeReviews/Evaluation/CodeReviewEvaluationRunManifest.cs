@@ -40,6 +40,7 @@ namespace Zeeq.Platform.CodeReviews;
 /// </param>
 /// <param name="AdmittedAtUtc">UTC time the manifest was frozen.</param>
 /// <param name="ParentRunId">Parent run for a failed-case retry, when any.</param>
+/// <param name="IncludeTriageContext">Whether the run uses frozen triage advisories.</param>
 /// <param name="Cases">Frozen case list. The manifest is authoritative for results.</param>
 public sealed record CodeReviewEvaluationRunManifest(
     int SchemaVersion,
@@ -65,7 +66,8 @@ public sealed record CodeReviewEvaluationRunManifest(
     string RequestFingerprint,
     DateTimeOffset AdmittedAtUtc,
     string? ParentRunId,
-    IReadOnlyList<CodeReviewEvaluationManifestCase> Cases
+    IReadOnlyList<CodeReviewEvaluationManifestCase> Cases,
+    bool IncludeTriageContext = false
 )
 {
     /// <summary>Current manifest schema version.</summary>
@@ -84,6 +86,7 @@ public sealed record CodeReviewEvaluationRunManifest(
 /// <param name="CapturedAtUtc">Capture time recorded on the dataset case.</param>
 /// <param name="ChangedFileCount">Changed files visible to the reviewer at capture.</param>
 /// <param name="OmittedFileCount">Changed files omitted from the snapshot at capture.</param>
+/// <param name="TriageContext">Frozen advisory selection and payload, when enabled.</param>
 /// <param name="References">This reviewer's frozen reference set for the case.</param>
 public sealed record CodeReviewEvaluationManifestCase(
     string CaseId,
@@ -95,7 +98,8 @@ public sealed record CodeReviewEvaluationManifestCase(
     DateTimeOffset CapturedAtUtc,
     int ChangedFileCount,
     int OmittedFileCount,
-    CodeReviewEvaluationReferenceSet References
+    CodeReviewEvaluationReferenceSet References,
+    KnownFalsePositiveSnapshot? TriageContext = null
 );
 
 /// <summary>

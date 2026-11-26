@@ -1,6 +1,6 @@
 using System.Net;
-using Zeeq.Platform.CodeReviews;
 using Octokit;
+using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Integrations.GitHub;
 
@@ -67,6 +67,7 @@ internal sealed class OctokitGitHubCommentReactionClient(GitHubClient client)
         reactionContent switch
         {
             GitHubCommentReactionContent.PlusOne => ReactionType.Plus1,
+            GitHubCommentReactionContent.Confused => ReactionType.Confused,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(reactionContent),
                 reactionContent,

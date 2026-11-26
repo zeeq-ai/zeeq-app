@@ -88,6 +88,7 @@ internal static class CodeReviewSystemPrompt
           "details": "(MAX 3-6 sentences with more detailed overview of the review findings; simple, direct language explaining the findings and implications that extends the summary without getting into the low-level details. No fenced code blocks here; just prose.)",
           "findings": [
             {
+              "name": "unsanitized-import-payload",
               "level": "CRITICAL",
               "file": "src/backend/Api/Commands/ImportCommand.cs",
               "line": 42,
@@ -107,7 +108,8 @@ internal static class CodeReviewSystemPrompt
         5. Each finding requires non-empty `level`, `file`, `summary`, and `details`
         6. `level` must be one of: CRITICAL, MAJOR, MINOR, SUGGESTION, COMMENT
         7. `line` (integer) is optional; omit it or use null when the finding is not line-scoped
-        8. `side` is optional; use "LEFT" or "RIGHT" when present
+        8. `name` is optional; use a specific 3–6 word kebab-case identifier when supplied.
+        9. `side` is optional; use "LEFT" or "RIGHT" when present
         9. Put all code snippets and Markdown inside the `details` string values
         10. Do NOT include a `facet` or `agent` field; those are assigned automatically
         </critical_json_output_rules>

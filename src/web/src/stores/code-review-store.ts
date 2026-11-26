@@ -11,6 +11,9 @@ import {
   type CodeReviewAgentTestRunResponse,
   type CodeReviewAgentTestTargetListResponse,
   type CodeReviewFindingsResponse,
+  type CodeReviewFindingTriageDto,
+  type SaveFindingTriageRequest,
+  type ConfirmFindingTriageRequest,
   type CodeReviewInboxUpdateDto,
   type CodeReviewPullRequestDto,
   type CodeReviewRecordDto,
@@ -35,6 +38,68 @@ import {
   type GitHubConfiguredRepository,
 } from "@/stores/github-settings-store";
 import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
+
+/** Retain sub-millisecond precision from the API's ISO timestamp when available. */
+function triageTimestamp(value: Date): bigint {
+  const milliseconds = new Date(value).getTime();
+  const fraction =
+    typeof value === "string" ? (/\.(\d+)/.exec(value)?.[1] ?? "") : "";
+  return (
+    BigInt(milliseconds) * 10000n +
+    BigInt(fraction.padEnd(7, "0").slice(3, 7) || "0")
+  );
+}
+
+/** Applies a triage response to the matching cached review occurrence only. */
+export function patchFindingTriage(
+  cache: Record<string, CodeReviewFindingsResponse>,
+  triage: CodeReviewFindingTriageDto,
+  versions: Map<string, bigint> = new Map(),
+  snapshots: Map<string, CodeReviewFindingTriageDto> = new Map(),
+) {
+  const key = `${triage.sourceReviewId}:${triage.occurrenceKey}`;
+  const findings = Object.values(cache)
+    .filter((response) => response.codeReviewRecordId === triage.sourceReviewId)
+    .flatMap((response) =>
+      response.reviews.flatMap((reviewer) => reviewer.findings),
+    )
+    .filter((finding) => finding.occurrenceKey === triage.occurrenceKey);
+  const candidates = [
+    snapshots.get(key),
+    triage,
+    ...findings.map((finding) => finding.triage),
+  ].filter((candidate): candidate is CodeReviewFindingTriageDto => !!candidate);
+  const newest = candidates.reduce((best, candidate) =>
+    triageTimestamp(candidate.updatedAtUtc) > triageTimestamp(best.updatedAtUtc)
+      ? candidate
+      : best,
+  );
+  const timestamp = triageTimestamp(newest.updatedAtUtc);
+  const known = versions.get(key);
+  if (known !== undefined && timestamp < known) return;
+  versions.set(key, timestamp);
+  snapshots.set(key, newest);
+  for (const finding of findings) {
+    finding.triage = newest.approvalState === "Open" ? null : newest;
+  }
+}
+
+/** Reconcile loaded triages, including Open tombstones, with local writes. */
+export function reconcileLoadedFindingTriages(
+  cache: Record<string, CodeReviewFindingsResponse>,
+  response: CodeReviewFindingsResponse,
+  versions: Map<string, bigint>,
+  snapshots: Map<string, CodeReviewFindingTriageDto>,
+) {
+  const loaded = response.reviews
+    .flatMap((reviewer) => reviewer.findings.map((finding) => finding.triage))
+    .filter((triage): triage is CodeReviewFindingTriageDto => triage !== null);
+  const retained = [...snapshots.values()].filter(
+    (triage) => triage.sourceReviewId === response.codeReviewRecordId,
+  );
+  for (const triage of [...loaded, ...retained])
+    patchFindingTriage(cache, triage, versions, snapshots);
+}
 
 export const defaultReviewFacet = "";
 export const defaultAgentPrompt =
@@ -142,6 +207,9 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
   const selectedPullRequestReviews = ref<CodeReviewRecordDto[]>([]);
   const selectedPullRequestReviewsNextCursor =
     ref<CodeReviewStreamCursorDto | null>(null);
+  // Preserve cleared tombstone timestamps to reject late responses.
+  const triageVersions = new Map<string, bigint>();
+  const triageSnapshots = new Map<string, CodeReviewFindingTriageDto>();
   const reviewFindingsByReviewKey = ref<
     Record<string, CodeReviewFindingsResponse>
   >({});
@@ -596,6 +664,13 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
         [key]: response,
       };
 
+      // Preserve tombstone versions and reconcile writes that raced this load.
+      reconcileLoadedFindingTriages(
+        reviewFindingsByReviewKey.value,
+        response,
+        triageVersions,
+        triageSnapshots,
+      );
       return response;
     } catch (err: unknown) {
       const message = errorMessage(err, "Could not load review findings.");
@@ -604,6 +679,59 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     } finally {
       setReviewFindingsLoading(key, false);
     }
+  }
+
+  async function saveFindingTriage(
+    review: CodeReviewRecordDto,
+    request: SaveFindingTriageRequest,
+  ) {
+    const triage = await CodeReviews.saveFindingTriage(
+      requireOrganizationId(),
+      review.id,
+      request,
+      { createdAtUtc: review.createdAtUtc },
+    );
+    patchFindingTriage(
+      reviewFindingsByReviewKey.value,
+      triage,
+      triageVersions,
+      triageSnapshots,
+    );
+    return triage;
+  }
+
+  async function clearFindingTriage(
+    review: CodeReviewRecordDto,
+    findingReference: string,
+  ) {
+    return saveFindingTriage(review, {
+      findingReference,
+      disposition: null,
+      reason: null,
+      clear: true,
+    });
+  }
+
+  async function confirmFindingTriage(
+    triageId: string,
+    request: ConfirmFindingTriageRequest,
+  ) {
+    const triage = await CodeReviews.confirmFindingTriage(
+      requireOrganizationId(),
+      triageId,
+      request,
+    );
+    patchFindingTriage(
+      reviewFindingsByReviewKey.value,
+      triage,
+      triageVersions,
+      triageSnapshots,
+    );
+    return triage;
+  }
+
+  async function loadFindingTriage(triageId: string) {
+    return CodeReviews.getFindingTriage(requireOrganizationId(), triageId);
   }
 
   /** Loads the raw, unparsed findings XML artifact for one review on demand. */
@@ -1548,6 +1676,10 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     selectPullRequest,
     requestReview,
     loadReviewFindings,
+    saveFindingTriage,
+    clearFindingTriage,
+    confirmFindingTriage,
+    loadFindingTriage,
     loadReviewRawXml,
     pollPullRequestUpdates,
     pollInboxUpdates,

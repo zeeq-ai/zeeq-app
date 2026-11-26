@@ -15,6 +15,13 @@ public static class SetupCodeReviews
 {
     extension(IServiceCollection services)
     {
+        /// <summary>Registers the triage embedding sweep on worker hosts.</summary>
+        public IServiceCollection AddZeeqFindingTriageEmbedding()
+        {
+            services.AddHostedService<FindingTriageEmbeddingHostedService>();
+            return services;
+        }
+
         /// <summary>
         /// Adds code-review workflow services.
         /// </summary>
@@ -37,6 +44,8 @@ public static class SetupCodeReviews
             );
             services.AddScoped<CodeReviewAuthorization>();
             services.AddScoped<CodeReviewRequestService>();
+            services.AddScoped<ICodeReviewFindingTriageService, CodeReviewFindingTriageService>();
+            services.AddScoped<IGitHubFindingTriageHandler, GitHubFindingTriageHandler>();
             services.AddScoped<ICheckRunService, CheckRunService>();
             services.AddScoped<IGitHubCommentDomRenderer, GitHubCommentDomRenderer>();
             services.AddScoped<IGitHubCommentSectionRenderer, PullRequestHeaderSectionRenderer>();
@@ -48,6 +57,7 @@ public static class SetupCodeReviews
             services.AddScoped<IGitHubCommentSectionRenderer, PullRequestFooterSectionRenderer>();
             services.AddScoped<CodeReviewerAgentResolver>();
             services.AddScoped<CodeReviewExecutionEngine>();
+            services.AddScoped<KnownFalsePositiveRetrievalService>();
             services.AddScoped<CodeReviewLlmTierResolver>();
             services.AddScoped<
                 ICodeReviewEvaluationCaseExecutor,

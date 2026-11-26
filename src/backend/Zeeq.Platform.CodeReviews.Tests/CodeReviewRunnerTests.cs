@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Zeeq.Core.Common;
 using Zeeq.Core.Documents;
 using Zeeq.Core.Models;
@@ -319,11 +320,74 @@ public sealed class CodeReviewRunnerTests
         await Assert.That(result.Counts.Critical).IsEqualTo(1);
         await Assert.That(fixture.Artifacts.WriteCount).IsEqualTo(0);
         await Assert.That(fixture.PreviousReviews.LoadCount).IsEqualTo(0);
+        await fixture
+            .Triages.DidNotReceive()
+            .ListForScopeAsync(
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<string>(),
+                Arg.Any<int?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
         await Assert.That(fixture.AgentExecutor.Options).IsEqualTo(CodeReviewExecutionOptions.Test);
         await Assert
             .That(fixture.AgentExecutor.ActiveReviewers.Single().Id)
             .IsEqualTo("draft-agent");
         await Assert.That(fixture.AgentExecutor.PreviousReviews).IsEmpty();
+    }
+
+    [Test]
+    public async Task ExecutionEngine_DurablePrLoadsTriagesWithoutReviewGroup()
+    {
+        var fixture = RunnerFixture.Create();
+        fixture.Review.ReviewGroupId = null;
+        var triage = new CodeReviewFindingTriage
+        {
+            Id = "triage",
+            OrganizationId = "org_123",
+            OwnerQualifiedRepoName = "owner/repo",
+            SourceReviewId = "cr_abcde",
+            SourceReviewCreatedAtUtc = DateTimeOffset.UtcNow,
+            OccurrenceKey = "F1",
+            SemanticId = "sample-unsafe-input",
+            Facet = "Security",
+            FindingSummary = "finding",
+            Disposition = CodeReviewFindingDisposition.FalsePositive,
+        };
+        fixture
+            .Triages.ListForScopeAsync(
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<string>(),
+                Arg.Any<int?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns([triage]);
+        await fixture.ExecutionEngine.RunAsync(
+            fixture.Message,
+            fixture.Review,
+            CodeReviewExecutionOptions.Durable,
+            null,
+            CancellationToken.None
+        );
+        await fixture
+            .Triages.Received(1)
+            .ListForScopeAsync(
+                "org_123",
+                "repo_123",
+                "owner/repo",
+                42,
+                null,
+                fixture.Review.Id,
+                Arg.Any<CancellationToken>()
+            );
+        await Assert
+            .That(fixture.AgentExecutor.Options!.PriorContext!.BuildTriagedFindingsSection())
+            .Contains("sample-unsafe-input");
     }
 
     [Test]
@@ -432,6 +496,8 @@ public sealed class CodeReviewRunnerTests
         public TestCodeReviewerAgentStore AgentStore { get; } = new();
         public TestCodeReviewAgentExecutor AgentExecutor { get; } = new();
         public TestCodeReviewPreviousReviewStore PreviousReviews { get; } = new();
+        public ICodeReviewFindingTriageStore Triages { get; } =
+            Substitute.For<ICodeReviewFindingTriageStore>();
         public TestCodeReviewArtifactStore Artifacts { get; } = new();
         public CodeReviewExecutionEngine ExecutionEngine { get; private set; } = null!;
         public CodeReviewRunner Runner { get; private set; } = null!;
@@ -485,7 +551,8 @@ public sealed class CodeReviewRunnerTests
                 new(),
                 fixture.Libraries,
                 new TestHybridCache(),
-                NullLogger<CodeReviewExecutionEngine>.Instance
+                NullLogger<CodeReviewExecutionEngine>.Instance,
+                fixture.Triages
             );
             fixture.Runner = new(
                 fixture.ExecutionEngine,
@@ -807,6 +874,7 @@ public sealed class CodeReviewRunnerTests
             string? agentSessionId,
             string? reviewGroupId,
             string excludeReviewId,
+            string ownerQualifiedRepoName,
             int maxRecords = 3,
             CancellationToken cancellationToken = default
         ) => throw new NotImplementedException();

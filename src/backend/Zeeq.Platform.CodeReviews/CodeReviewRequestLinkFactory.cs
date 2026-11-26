@@ -1,6 +1,6 @@
+using Microsoft.Extensions.Options;
 using Zeeq.Core.Common;
 using Zeeq.Core.Models;
-using Microsoft.Extensions.Options;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -106,6 +106,10 @@ public sealed class CodeReviewRequestLinkFactory(
 
         return $"{baseUri}/code-reviews/reviews/{reviewId}?c={token}";
     }
+
+    /// <summary>Builds a link to confirm or inspect a finding triage.</summary>
+    public string BuildTriageLink(string organizationId, string triageId) =>
+        $"{appSettingsOptions.Value.Http.FrontendBaseUri.TrimEnd('/')}/code-reviews/triages/{Uri.EscapeDataString(organizationId)}/{Uri.EscapeDataString(triageId)}";
 
     /// <summary>
     /// Builds an absolute frontend URL to the single pull-request view, which renders a PR's full

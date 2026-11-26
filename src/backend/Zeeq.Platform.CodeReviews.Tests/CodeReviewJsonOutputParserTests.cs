@@ -16,6 +16,36 @@ public sealed class CodeReviewJsonOutputParserTests
     );
 
     [Test]
+    public async Task TryParse_ThreeTokenName_PreservesHint()
+    {
+        var json = """
+            {"summary":"review", "details":"details", "findings":[
+              {"name":"unsanitized-import-payload", "level":"MAJOR", "file":"A.cs", "summary":"summary", "details":"details"}
+            ]}
+            """;
+        var ok = CodeReviewJsonOutputParser.TryParse(json, Agent, out var facet, out _);
+        await Assert.That(ok).IsTrue();
+        await Assert.That(facet!.Findings.Single().Id).IsEqualTo("unsanitized-import-payload");
+    }
+
+    [Test]
+    [Arguments("123")]
+    [Arguments("{}")]
+    [Arguments("[1,2]")]
+    [Arguments("true")]
+    public async Task TryParse_MalformedOptionalName_DoesNotRejectFinding(string nameJson)
+    {
+        var json = $$"""
+            {"summary":"review", "details":"details", "findings":[
+              {"name":{{nameJson}}, "level":"MAJOR", "file":"A.cs", "summary":"summary", "details":"details"}
+            ]}
+            """;
+        var ok = CodeReviewJsonOutputParser.TryParse(json, Agent, out var facet, out _);
+        await Assert.That(ok).IsTrue();
+        await Assert.That(facet!.Findings.Single().Id).IsNull();
+    }
+
+    [Test]
     public async Task TryParse_WithValidJson_MapsModelAndStampsIdentity()
     {
         var json = """

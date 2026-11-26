@@ -67,7 +67,10 @@ internal static class CartEndpointMapping
                 request.Facet,
                 request.Agent,
                 NormalizeAnnotation(request.Annotation),
-                request.AddedAtUtc
+                request.AddedAtUtc,
+                request.SourceReviewId,
+                request.OccurrenceKey,
+                request.SemanticId
             );
     }
 

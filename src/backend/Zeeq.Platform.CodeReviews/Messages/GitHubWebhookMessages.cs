@@ -175,6 +175,12 @@ public sealed class GitHubIssueCommentWebhookReceived : Event, IGitHubWebhookTen
 
     /// <summary>Browser URL for the comment.</summary>
     public string? CommentHtmlUrl { get; init; }
+
+    /// <summary>GitHub event time used to order triage writes.</summary>
+    public DateTimeOffset? CommentCreatedAtUtc { get; init; }
+
+    /// <summary>GitHub's relationship of the author to the repository.</summary>
+    public string? AuthorAssociation { get; init; }
 }
 
 /// <summary>
@@ -242,6 +248,12 @@ public sealed class GitHubPullRequestReviewCommentWebhookReceived
 
     /// <summary>Browser URL for the review comment.</summary>
     public string? CommentHtmlUrl { get; init; }
+
+    /// <summary>GitHub event time used to order triage writes.</summary>
+    public DateTimeOffset? CommentCreatedAtUtc { get; init; }
+
+    /// <summary>GitHub's relationship of the author to the repository.</summary>
+    public string? AuthorAssociation { get; init; }
 
     /// <summary>Repository path targeted by the diff comment.</summary>
     public string? Path { get; init; }

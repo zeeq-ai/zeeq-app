@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews;
 
@@ -41,6 +43,8 @@ internal interface ICodeReviewFacet
 /// </summary>
 internal interface ICodeReviewFinding
 {
+    string? Name { get; }
+
     /// <summary>Finding severity.</summary>
     CodeReviewFindingLevel Level { get; }
 
@@ -88,6 +92,10 @@ internal sealed class CodeReviewFacetJson : ICodeReviewFacet
 /// </summary>
 internal sealed class CodeReviewFindingJson : ICodeReviewFinding
 {
+    [JsonPropertyName("name")]
+    [JsonConverter(typeof(OptionalFindingNameConverter))]
+    public string? Name { get; init; }
+
     [JsonPropertyName("level")]
     public string RawLevel { get; init; } = string.Empty;
 
@@ -144,8 +152,37 @@ internal static class CodeReviewFacetMapping
                     Line = finding.Line ?? 0,
                     Side = finding.Side,
                     Summary = finding.Summary,
+                    Id = CodeReviewFindingIds.NormalizeHint(
+                        finding.Name,
+                        finding.File,
+                        agent.ReviewFacet
+                    ),
                     Details = finding.Details,
                 }),
             ],
         };
+}
+
+/// <summary>Ignores malformed optional name hints without rejecting a review.</summary>
+internal sealed class OptionalFindingNameConverter : JsonConverter<string?>
+{
+    public override string? Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options
+    )
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            return reader.GetString();
+        }
+        using var ignored = JsonDocument.ParseValue(ref reader);
+        return null;
+    }
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        string? value,
+        JsonSerializerOptions options
+    ) => writer.WriteStringValue(value);
 }

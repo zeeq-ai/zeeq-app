@@ -18,7 +18,8 @@ public sealed record CreateEvaluationRunRequest(
     string AgentId,
     string? SavedRevisionId,
     CodeReviewerAgentRevisionConfiguration? Draft,
-    string RequestKey
+    string RequestKey,
+    bool IncludeTriageContext = false
 );
 
 /// <summary>Idempotency key for a failed-case retry.</summary>
@@ -63,7 +64,8 @@ public sealed record EvaluationRunCaseDto(
 /// <summary>Run details with immutable case results.</summary>
 public sealed record EvaluationRunDetailDto(
     EvaluationRunDto Run,
-    IReadOnlyList<EvaluationRunCaseDto> Cases
+    IReadOnlyList<EvaluationRunCaseDto> Cases,
+    bool IncludeTriageContext = false
 );
 
 /// <summary>Page of evaluation runs.</summary>
@@ -199,6 +201,24 @@ public sealed class CodeReviewEvaluationRunEndpoints : IEndpoint
             .Produces(503);
         group
             .MapGet(
+                "/{runId}/compare/{baselineRunId}",
+                (
+                    string orgId,
+                    string repoId,
+                    string runId,
+                    string baselineRunId,
+                    ClaimsPrincipal user,
+                    EvaluationRunHandler handler,
+                    CancellationToken ct
+                ) => handler.CompareAsync(orgId, repoId, runId, baselineRunId, user, ct)
+            )
+            .WithName("CompareCodeReviewEvaluationRuns")
+            .Produces<CodeReviewEvaluationComparison>()
+            .Produces(400)
+            .Produces(403)
+            .Produces(404);
+        group
+            .MapGet(
                 "/{runId}/cases/{caseId}/snapshot",
                 (
                     string orgId,
@@ -245,7 +265,9 @@ public sealed class EvaluationRunHandler(
     ICodeReviewEvaluationArtifactStore artifacts,
     CodeReviewLlmTierResolver resolver,
     IZeeqMessagePublisher publisher,
-    CodeReviewSettings settings
+    CodeReviewSettings settings,
+    ICodeReviewEvaluationDatasetStore? datasets = null,
+    KnownFalsePositiveRetrievalService? knownFalsePositives = null
 ) : IEndpointHandler
 {
     private const int MaxRequestKeyLength = 128;
@@ -269,16 +291,28 @@ public sealed class EvaluationRunHandler(
         );
 
     private static string CreateFingerprint(CreateEvaluationRunRequest request) =>
-        Fingerprint(
-            new
-            {
-                request.DatasetId,
-                request.ExpectedVersion,
-                request.AgentId,
-                request.SavedRevisionId,
-                request.Draft,
-            }
-        );
+        request.IncludeTriageContext
+            ? Fingerprint(
+                new
+                {
+                    request.DatasetId,
+                    request.ExpectedVersion,
+                    request.AgentId,
+                    request.SavedRevisionId,
+                    request.Draft,
+                    request.IncludeTriageContext,
+                }
+            )
+            : Fingerprint(
+                new
+                {
+                    request.DatasetId,
+                    request.ExpectedVersion,
+                    request.AgentId,
+                    request.SavedRevisionId,
+                    request.Draft,
+                }
+            );
 
     private static string RetryFingerprint(string runId) =>
         Fingerprint(new { ParentRunId = runId });
@@ -410,6 +444,73 @@ public sealed class EvaluationRunHandler(
             return TypedResults.BadRequest(activationError);
         var reviewerModel = await resolver.CaptureAsync(org, config.ModelTier, ct);
         var judgeModel = await resolver.CaptureAsync(org, CodeReviewModelTier.High, ct);
+        Dictionary<string, KnownFalsePositiveSnapshot>? triageContexts = null;
+        if (request.IncludeTriageContext)
+        {
+            if (datasets is null || knownFalsePositives is null)
+                throw new InvalidOperationException(
+                    "Evaluation triage retrieval is not registered."
+                );
+            var dataset = await datasets.FindAsync(
+                org,
+                request.DatasetId,
+                includeArchived: false,
+                ct
+            );
+            if (dataset is null || dataset.RepositoryId != repo)
+                return TypedResults.NotFound();
+            if (dataset.Version != request.ExpectedVersion)
+                return TypedResults.Conflict(
+                    new EvaluationRunConflictDto("dataset_version_conflict", null)
+                );
+            var cases = await datasets.ListCasesAsync(
+                org,
+                request.DatasetId,
+                includeRemoved: false,
+                ct
+            );
+            triageContexts = new(StringComparer.Ordinal);
+            foreach (
+                var item in cases.Where(x => x.DisabledAtUtc is null && x.RemovedAtUtc is null)
+            )
+            {
+                var snapshot = await artifacts.ReadSnapshotAsync(
+                    org,
+                    repo,
+                    new(item.SnapshotStorageUri, item.SnapshotSha256, item.SnapshotByteCount),
+                    ct
+                );
+                if (
+                    snapshot.OrganizationId != org
+                    || snapshot.RepositoryId != repo
+                    || snapshot.PullRequestNumber != item.PullRequestNumber
+                    || snapshot.BaseSha != item.BaseSha
+                    || snapshot.HeadSha != item.HeadSha
+                )
+                    throw new InvalidOperationException(
+                        "Snapshot identity does not match the dataset case."
+                    );
+                var files = CodeReviewFileFilterEvaluator
+                    .Apply(
+                        snapshot.ToPullRequestSnapshot().Files,
+                        repository.ReviewConfiguration.FileFilter
+                    )
+                    .InScopeFiles;
+                triageContexts[item.Id] = await knownFalsePositives.RetrieveSnapshotAsync(
+                    org,
+                    repo,
+                    snapshot.OwnerQualifiedRepoName,
+                    files,
+                    item.PullRequestNumber,
+                    null,
+                    null,
+                    item.CapturedAtUtc,
+                    ct
+                );
+                if (triageContexts[item.Id].FailOpen)
+                    return TypedResults.StatusCode(StatusCodes.Status503ServiceUnavailable);
+            }
+        }
         var admitted = await runs.AdmitAsync(
             new(
                 org,
@@ -430,7 +531,9 @@ public sealed class EvaluationRunHandler(
                 PromptHash,
                 access!.UserId,
                 request.RequestKey,
-                CreateFingerprint(request)
+                CreateFingerprint(request),
+                request.IncludeTriageContext,
+                triageContexts
             ),
             ct
         );
@@ -536,7 +639,9 @@ public sealed class EvaluationRunHandler(
                 );
             })
             .ToArray();
-        return TypedResults.Ok(new EvaluationRunDetailDto(Map(detail.Run), cases));
+        return TypedResults.Ok(
+            new EvaluationRunDetailDto(Map(detail.Run), cases, detail.Manifest.IncludeTriageContext)
+        );
     }
 
     private static IReadOnlyList<T> DeserializeList<T>(string? json) =>
@@ -564,6 +669,75 @@ public sealed class EvaluationRunHandler(
         && existing.Run.ParentRunId is null
         && existing.Run.SavedRevisionId == request.SavedRevisionId
         && existing.Manifest.RequestFingerprint == CreateFingerprint(request);
+
+    /// <summary>Compares paired graded cases from compatible baseline and experiment runs.</summary>
+    public async Task<IResult> CompareAsync(
+        string org,
+        string repo,
+        string runId,
+        string baselineRunId,
+        ClaimsPrincipal user,
+        CancellationToken ct
+    )
+    {
+        var (_, error) = await AccessAsync(org, repo, user, ct);
+        if (error is not null)
+            return error;
+        var experiment = await FindAsync(org, repo, runId, ct);
+        var baseline = await FindAsync(org, repo, baselineRunId, ct);
+        if (experiment is null || baseline is null)
+            return TypedResults.NotFound();
+        var e = experiment.Manifest;
+        var b = baseline.Manifest;
+        var baselineCases = b.Cases.ToDictionary(x => x.CaseId, StringComparer.Ordinal);
+        if (
+            !e.IncludeTriageContext
+            || b.IncludeTriageContext
+            || e.DatasetId != b.DatasetId
+            || e.DatasetVersion != b.DatasetVersion
+            || e.AgentId != b.AgentId
+            || experiment.Run.State
+                is not (
+                    CodeReviewEvaluationRunState.Completed
+                    or CodeReviewEvaluationRunState.Incomplete
+                )
+            || baseline.Run.State
+                is not (
+                    CodeReviewEvaluationRunState.Completed
+                    or CodeReviewEvaluationRunState.Incomplete
+                )
+            || e.Cases.Any(x => x.TriageContext is null || x.TriageContext.FailOpen)
+            || e.AdmittedBuildVersion != b.AdmittedBuildVersion
+            || !e.LibraryIds.SequenceEqual(b.LibraryIds, StringComparer.Ordinal)
+            || e.Cases.Count != b.Cases.Count
+            || e.Cases.Any(x =>
+                !baselineCases.TryGetValue(x.CaseId, out var y)
+                || y.Snapshot.Sha256 != x.Snapshot.Sha256
+                || y.CapturedAtUtc != x.CapturedAtUtc
+                || JsonSerializer.Serialize(y.References, JsonOptions)
+                    != JsonSerializer.Serialize(x.References, JsonOptions)
+            )
+            || JsonSerializer.Serialize(e.ReviewerConfiguration, JsonOptions)
+                != JsonSerializer.Serialize(b.ReviewerConfiguration, JsonOptions)
+            || e.RepositoryConfigurationJson != b.RepositoryConfigurationJson
+            || e.SharedSystemPromptHash != b.SharedSystemPromptHash
+            || e.ReviewerSelection != b.ReviewerSelection
+            || e.JudgeSelection != b.JudgeSelection
+            || e.JudgeRubricVersion != b.JudgeRubricVersion
+        )
+            return TypedResults.BadRequest(
+                new CodeReviewEndpointError(
+                    "incompatible_runs",
+                    "Compare runs with matching inputs and opposite triage settings."
+                )
+            );
+        return TypedResults.Ok(
+            CodeReviewEvaluationComparisons.Compare(
+                await results.ListForRunAsync(org, baselineRunId, ct),
+                await results.ListForRunAsync(org, runId, ct)
+            )
+        );
+    }
 
     /// <summary>Applies cancellation, explicit abandonment or failed-case retry.</summary>
     public async Task<IResult> MutateAsync(

@@ -9,6 +9,9 @@ public sealed record AddCodeReviewEvaluationCaseRequest(
     long ExpectedVersion
 );
 
+/// <summary>Target reviewer and dataset version for a confirmed false-positive promotion.</summary>
+public sealed record PromoteFindingTriageRequest(string ReviewerAgentId, long ExpectedVersion);
+
 /// <summary>Result of adding or finding an existing pull request membership.</summary>
 public sealed record AddCodeReviewEvaluationCaseResponse(
     bool Added,

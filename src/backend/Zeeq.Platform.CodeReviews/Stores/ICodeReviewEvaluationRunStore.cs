@@ -148,6 +148,8 @@ public interface ICodeReviewEvaluationRunStore
 /// Canonical hash of the request content excluding the idempotency key. A duplicate key with a
 /// different fingerprint is a replay of a changed request, not an idempotent retry.
 /// </param>
+/// <param name="IncludeTriageContext">Whether triage context is enabled.</param>
+/// <param name="TriageContexts">Frozen advisory context keyed by case ID.</param>
 public sealed record CodeReviewEvaluationRunAdmission(
     string OrganizationId,
     string RepositoryId,
@@ -167,7 +169,9 @@ public sealed record CodeReviewEvaluationRunAdmission(
     string SystemPromptVersion,
     string RequestedByUserId,
     string RequestKey,
-    string RequestFingerprint
+    string RequestFingerprint,
+    bool IncludeTriageContext = false,
+    IReadOnlyDictionary<string, KnownFalsePositiveSnapshot>? TriageContexts = null
 );
 
 /// <summary>

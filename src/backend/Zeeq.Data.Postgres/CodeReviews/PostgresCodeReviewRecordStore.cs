@@ -45,8 +45,7 @@ internal sealed class PostgresCodeReviewRecordStore(PostgresDbContext db) : ICod
         CancellationToken cancellationToken
     )
     {
-        var existing =
-            await FindAsync(review.Id, review.CreatedAtUtc, cancellationToken)
+        var existing = await FindAsync(review.Id, review.CreatedAtUtc, cancellationToken)
             ?? throw new InvalidOperationException(
                 $"Code review record {review.Id} was not found."
             );
@@ -276,8 +275,8 @@ internal sealed class PostgresCodeReviewRecordStore(PostgresDbContext db) : ICod
     {
         ValidateUpdateCursorFilterShape(query);
 
-        var lowerBound =
-            query.Cursor?.ReviewCreatedAtLowerBoundUtc ?? query.ReviewCreatedAtLowerBoundUtc;
+        var lowerBound = query.Cursor?.ReviewCreatedAtLowerBoundUtc
+            ?? query.ReviewCreatedAtLowerBoundUtc;
         if (lowerBound is null)
         {
             return new([], null, null);
@@ -496,5 +495,36 @@ internal sealed class PostgresCodeReviewRecordStore(PostgresDbContext db) : ICod
         target.FindingsStorageUri = source.FindingsStorageUri;
         target.FailureMessage = source.FailureMessage;
         target.UpdatedAtUtc = source.UpdatedAtUtc;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CodeReviewRecord>> ListForTriageAsync(
+        string organizationId,
+        FindingTriageTarget target,
+        CancellationToken cancellationToken
+    )
+    {
+        var query = db
+            .CodeReviewRecords.AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId && x.Status == CodeReviewStatus.Completed
+            );
+        query = target switch
+        {
+            FindingTriageTarget.ByReview t => query.Where(x =>
+                x.Id == t.ReviewId && (t.CreatedAtUtc == null || x.CreatedAtUtc == t.CreatedAtUtc)
+            ),
+            FindingTriageTarget.ByPullRequest t => query.Where(x =>
+                x.RepositoryId == t.RepositoryId && x.PullRequestNumber == t.PullRequestNumber
+            ),
+            FindingTriageTarget.ByTriageId => throw new ArgumentException(
+                "Triage ID must be resolved by the triage store.",
+                nameof(target)
+            ),
+        };
+        return await query
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenByDescending(x => x.Id)
+            .ToListAsync(cancellationToken);
     }
 }

@@ -1,5 +1,7 @@
 using System.Xml.Linq;
 using Zeeq.Core.Carts;
+using Zeeq.Core.Models;
+using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Platform.Carts;
 
@@ -22,6 +24,96 @@ namespace Zeeq.Platform.Carts;
 /// </remarks>
 public static class CartInstructionsTextBuilder
 {
+    /// <summary>Loads current triage state and renders findings with live annotations.</summary>
+    public static async Task<string> ToAgentInstructionsAsync(
+        IReadOnlyList<CartFindingSnapshot> items,
+        string organizationId,
+        ICodeReviewFindingTriageStore triages,
+        CodeReviewRequestLinkFactory links,
+        bool actionableOnly = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var reviewIds = items
+            .Select(x => x.SourceReviewId)
+            .Where(x => !string.IsNullOrEmpty(x))
+            .Distinct()
+            .ToArray();
+        var loaded = await Task.WhenAll(
+            reviewIds.Select(id =>
+                triages.ListForReviewAsync(organizationId, id!, cancellationToken)
+            )
+        );
+        var rows = loaded.SelectMany(x => x).ToDictionary(x => (x.SourceReviewId, x.OccurrenceKey));
+        var actionable = new List<XElement>();
+        var triaged = new List<XElement>();
+        var pending = 0;
+        var confirmedCount = 0;
+        var open = 0;
+        foreach (var item in items)
+        {
+            CodeReviewFindingTriage? row = null;
+            if (item.SourceReviewId is not null && item.OccurrenceKey is not null)
+                rows.TryGetValue((item.SourceReviewId, item.OccurrenceKey), out row);
+            var confirmed =
+                row?.ApprovalState == CodeReviewFindingApprovalState.Confirmed
+                && row.Disposition is not null;
+            // Only a human-confirmed decision removes a finding from actionable exports.
+            var isTriaged = confirmed;
+            if (
+                row?.ApprovalState == CodeReviewFindingApprovalState.Proposed
+                && row.Disposition is not null
+            )
+                pending++;
+            else if (confirmed)
+                confirmedCount++;
+            else
+                open++;
+            if (actionableOnly && isTriaged)
+                continue;
+            var element = XElement.Parse(item.FormatFinding());
+            if (item.SourceReviewId is not null)
+                element.SetAttributeValue("reviewId", item.SourceReviewId);
+            if (item.SourceReviewId is not null && item.OccurrenceKey is not null)
+                element.SetAttributeValue(
+                    "ref",
+                    CodeReviewFindingIds.FormatShortReference(
+                        item.SourceReviewId,
+                        item.OccurrenceKey
+                    )
+                );
+            if (item.SemanticId is not null)
+                element.SetAttributeValue("semanticId", item.SemanticId);
+            if (row?.Disposition is not null)
+            {
+                element.SetAttributeValue("disposition", row.Disposition.ToString());
+                element.SetAttributeValue("approval", row.ApprovalState.ToString());
+                element.SetAttributeValue(
+                    "confirmationUrl",
+                    links.BuildTriageLink(organizationId, row.Id)
+                );
+                element.Add(new XElement("triage_reason", row.CurrentReason));
+            }
+            (isTriaged ? triaged : actionable).Add(element);
+        }
+        var document = XDocument.Parse(items.ToAgentInstructions());
+        document.Root!.ReplaceWith(
+            new XElement(
+                "review",
+                new XAttribute("open", open),
+                new XAttribute("pending", pending),
+                new XAttribute("triaged", confirmedCount),
+                new XElement(
+                    "triage_summary",
+                    $"{open} open · {pending} pending confirmation · {confirmedCount} triaged"
+                ),
+                new XElement("findings", actionable),
+                new XElement("triaged_findings", triaged)
+            )
+        );
+        return document.ToString();
+    }
+
     extension(IReadOnlyList<CartFindingSnapshot> items)
     {
         /// <summary>
@@ -46,8 +138,7 @@ public static class CartInstructionsTextBuilder
                     <review_steps>
                     1. Review each finding from expert reviewers
                     2. Evaluate veracity and validity of each finding against the broader context of the codebase, feature, and work
-                    3. For expected behaviors, suggest leaving a comment in the code to explain the rationale to future travelers (agents)
-                        a. "NOTE: (Reason to defer or ignore a finding goes here)" to document any rationale for deferring or ignoring a finding
+                    3. Confirm decisions with the user and call triage_review_finding with reviewId, the finding ref, and a reason for false positives or deferred findings. Add a // NOTE: only when the code needs an explanation.
                     </review_steps>
                     <process>
                     1. Findings and feedback are high level; plan out specific code changes needed finding-by-finding; ground in actual code

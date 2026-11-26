@@ -606,6 +606,84 @@ public sealed class CodeReviewEvaluationStoreIntegrationTests : PgTransactionalT
     }
 
     [Test]
+    public async Task RunStore_FreezesTriageContextAndRejectsMissingCaseSnapshot()
+    {
+        var (repository, agent) = await SeedRepositoryAsync();
+        var dataset = await SeedDatasetWithCaseAsync(repository, agent, "triage-context-key");
+        var cases = await Datasets.ListCasesAsync(
+            repository.OrganizationId,
+            dataset.Id,
+            false,
+            CancellationToken.None
+        );
+        var payload = new KnownFalsePositiveSnapshot(
+            "<known_false_positives />",
+            "model@768",
+            1,
+            [new("triage", 0.2, 0.1)]
+        );
+        var missing = await Runs.AdmitAsync(
+            NewAdmission(dataset, agent, "missing-context") with
+            {
+                IncludeTriageContext = true,
+                TriageContexts = new Dictionary<string, KnownFalsePositiveSnapshot>(),
+            },
+            CancellationToken.None
+        );
+        await Assert
+            .That(missing.Outcome)
+            .IsEqualTo(CodeReviewEvaluationRunAdmissionOutcome.DatasetVersionConflict);
+        var admitted = await Runs.AdmitAsync(
+            NewAdmission(dataset, agent, "with-context") with
+            {
+                IncludeTriageContext = true,
+                TriageContexts = new Dictionary<string, KnownFalsePositiveSnapshot>
+                {
+                    [cases.Single().Id] = payload,
+                },
+            },
+            CancellationToken.None
+        );
+        var detail = await Runs.FindAsync(
+            repository.OrganizationId,
+            admitted.Run!.Id,
+            CancellationToken.None
+        );
+        await Assert.That(detail!.Manifest.IncludeTriageContext).IsTrue();
+        await Assert.That(detail.Manifest.Cases.Single().TriageContext!.Xml).IsEqualTo(payload.Xml);
+        await Assert
+            .That(detail.Manifest.Cases.Single().TriageContext!.Selections.Single().TriageId)
+            .IsEqualTo("triage");
+        await Runs.AbandonAsync(
+            repository.OrganizationId,
+            admitted.Run.Id,
+            "test",
+            CancellationToken.None
+        );
+        var retry = await Runs.AdmitRetryAsync(
+            new(
+                repository.OrganizationId,
+                admitted.Run.Id,
+                "retry-context",
+                "usr_1",
+                "build",
+                "prompt",
+                "fingerprint"
+            ),
+            CancellationToken.None
+        );
+        var retryDetail = await Runs.FindAsync(
+            repository.OrganizationId,
+            retry.Run!.Id,
+            CancellationToken.None
+        );
+        await Assert.That(retryDetail!.Manifest.IncludeTriageContext).IsTrue();
+        await Assert
+            .That(retryDetail.Manifest.Cases.Single().TriageContext!.Xml)
+            .IsEqualTo(payload.Xml);
+    }
+
+    [Test]
     public async Task RunStore_FencedWritesRejectStaleTokensAndFinalizeComputesCounts()
     {
         var (repository, agent) = await SeedRepositoryAsync();

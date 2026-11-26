@@ -9,7 +9,8 @@ public sealed class GetCodeReviewFindingsHandler(
     CodeReviewAuthorization authorization,
     ICodeReviewRecordStore reviews,
     ICodeReviewArtifactStore artifacts,
-    CodeReviewXmlOutputValidator xmlValidator
+    CodeReviewXmlOutputValidator xmlValidator,
+    ICodeReviewFindingTriageStore triages
 ) : IEndpointHandler
 {
     /// <summary>
@@ -102,8 +103,18 @@ public sealed class GetCodeReviewFindingsHandler(
             );
         }
 
+        var overlay = await triages.ListForReviewAsync(
+            organizationId,
+            review.Id,
+            cancellationToken
+        );
         return TypedResults.Ok(
-            CodeReviewEndpointMapping.ToFindingsDto(review, validation.Output, sourceTelemetry)
+            CodeReviewEndpointMapping.ToFindingsDto(
+                review,
+                validation.Output,
+                sourceTelemetry,
+                overlay.Where(x => x.SourceReviewCreatedAtUtc == review.CreatedAtUtc).ToArray()
+            )
         );
     }
 

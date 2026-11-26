@@ -27,6 +27,28 @@ public sealed class CodeReviewEvaluationEndpoints : IEndpoint
             )
             .RequireRouteOrganizationMatchesCookie();
 
+        repositories.MapPost(
+            "/evaluation-datasets/{datasetId}/promote-triage/{triageId}",
+            static (
+                string orgId,
+                string repositoryId,
+                string datasetId,
+                string triageId,
+                [FromBody] PromoteFindingTriageRequest request,
+                ClaimsPrincipal user,
+                [FromServices] PromoteFindingTriageHandler handler,
+                CancellationToken ct
+            ) => handler.HandleAsync(orgId, repositoryId, datasetId, triageId, request, user, ct)
+        )
+            .RequireActiveOrganization()
+            .WithName("PromoteFindingTriageToEvaluationDataset")
+            .Produces<CodeReviewEvaluationDatasetResponse>()
+            .Produces<CodeReviewEndpointError>(StatusCodes.Status400BadRequest)
+            .Produces<CodeReviewEndpointError>(StatusCodes.Status409Conflict)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("Promote a confirmed false positive into a dataset.");
+
         // GET /api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/evaluation-datasets
         repositories
             .MapGet(

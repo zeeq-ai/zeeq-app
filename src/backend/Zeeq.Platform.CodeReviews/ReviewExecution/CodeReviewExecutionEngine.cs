@@ -27,7 +27,9 @@ public sealed partial class CodeReviewExecutionEngine(
     CodeReviewXmlOutputValidator xmlValidator,
     ILibraryDocumentStore libraries,
     HybridCache cache,
-    ILogger<CodeReviewExecutionEngine> logger
+    ILogger<CodeReviewExecutionEngine> logger,
+    ICodeReviewFindingTriageStore triageStore,
+    KnownFalsePositiveRetrievalService? knownFalsePositives = null
 )
 {
     /// <summary>
@@ -60,6 +62,17 @@ public sealed partial class CodeReviewExecutionEngine(
                 "Evaluation execution requires frozen input and model, without previous reviews."
             );
         }
+
+        if (
+            options.Mode == CodeReviewExecutionMode.Evaluation
+            && (
+                options.IncludeTriageContext != (options.FrozenTriageContext is not null)
+                || options.PriorContext is not null
+            )
+        )
+            throw new ArgumentException(
+                "Evaluation triage context must be explicitly enabled and frozen."
+            );
 
         // Draft test runs intentionally share this engine but suppress code-controlled
         // Activity spans/events. The LLM/provider layer can still emit its own telemetry; this
@@ -207,6 +220,44 @@ public sealed partial class CodeReviewExecutionEngine(
                     )
                     : [];
 
+            var triages =
+                options.IncludePreviousReviews && options.Mode == CodeReviewExecutionMode.Durable
+                    ? await triageStore.ListForScopeAsync(
+                        message.OrganizationId,
+                        message.RepositoryId,
+                        message.OwnerQualifiedRepoName.ToLowerInvariant(),
+                        message.PullRequestNumber,
+                        review.ReviewGroupId,
+                        review.Id,
+                        cancellationToken
+                    )
+                    : [];
+            var known =
+                options.IncludePreviousReviews
+                && options.Mode == CodeReviewExecutionMode.Durable
+                && knownFalsePositives is not null
+                    ? await knownFalsePositives.RetrieveAsync(
+                        message.OrganizationId,
+                        message.RepositoryId,
+                        message.OwnerQualifiedRepoName,
+                        fileScope.InScopeFiles,
+                        message.PullRequestNumber,
+                        review.ReviewGroupId,
+                        review.Id,
+                        cancellationToken
+                    )
+                    : string.Empty;
+            if (options.Mode == CodeReviewExecutionMode.Evaluation && options.IncludeTriageContext)
+                known = options.FrozenTriageContext!.Xml;
+            var priorContext = new CodeReviewPriorContext(
+                previousReviews,
+                triages,
+                message.PullRequestNumber > 0 ? "pull_request"
+                    : review.ReviewGroupId is not null ? "review_group"
+                    : "review",
+                known
+            );
+
             // Synthetic automation identity for the async webhook path and draft test path:
             // no real end-user principal exists once execution reaches this provider-neutral core.
             var callerIdentity = CodeReviewAutomationIdentity.Create(
@@ -222,7 +273,10 @@ public sealed partial class CodeReviewExecutionEngine(
                 previousReviews,
                 callerIdentity,
                 telemetry,
-                options,
+                options with
+                {
+                    PriorContext = triages.Count == 0 && known.Length == 0 ? null : priorContext,
+                },
                 cancellationToken
             );
 

@@ -129,6 +129,7 @@ if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddCors();
     builder.Services.AddZeeqSnippetIndexing();
+    builder.Services.AddZeeqFindingTriageEmbedding();
     builder.Services.AddZeeqStalledIngestSyncCleanup();
 }
 

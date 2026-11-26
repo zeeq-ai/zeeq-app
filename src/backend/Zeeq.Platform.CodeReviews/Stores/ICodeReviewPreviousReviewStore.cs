@@ -31,6 +31,7 @@ public interface ICodeReviewPreviousReviewStore
         string? agentSessionId,
         string? reviewGroupId,
         string excludeReviewId,
+        string ownerQualifiedRepoName,
         int maxRecords = 3,
         CancellationToken cancellationToken = default
     );

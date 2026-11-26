@@ -1,3 +1,4 @@
+using Zeeq.Core.Models;
 using System.Xml;
 using System.Xml.Linq;
 using System.Xml.Serialization;

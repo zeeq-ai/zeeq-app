@@ -48,7 +48,7 @@
   />
 
   <!-- Shows a celebration banner when the review completed successfully with findings. -->
-  <div v-else>
+  <div v-else ref="reviewRoot">
     <div
       v-if="
         review.status === codeReviewStatusEnum.Completed &&
@@ -61,7 +61,7 @@
 
     <UTabs
       :items="items"
-      :default-value="defaultTabValue"
+      v-model="activeTab"
       variant="link"
       color="neutral"
       :ui="{ label: 'overflow-visible', content: 'pt-4' }"
@@ -149,7 +149,33 @@
                 variant="outline"
                 class="rounded-full"
               /> -->
-              <UTooltip text="Copy XML guidance" class="ml-auto">
+              <span
+                v-if="section.findings.some((f) => f.triage)"
+                class="text-xs text-muted"
+                >{{ section.findings.filter((f) => !f.triage).length }} open ·
+                {{
+                  section.findings.filter(
+                    (f) => f.triage?.approvalState === "Proposed",
+                  ).length
+                }}
+                pending ·
+                {{
+                  section.findings.filter(
+                    (f) => f.triage?.approvalState === "Confirmed",
+                  ).length
+                }}
+                triaged</span
+              >
+              <UTooltip
+                :text="
+                  section.findings.every(
+                    (f) => f.triage?.approvalState === 'Confirmed',
+                  )
+                    ? 'All findings triaged'
+                    : `Copy XML guidance (${section.findings.filter((f) => f.triage?.approvalState === 'Confirmed').length} triaged excluded)`
+                "
+                class="ml-auto"
+              >
                 <UButton
                   :icon="
                     isReviewerSectionCopied(item.level, section, sectionIndex)
@@ -160,6 +186,11 @@
                   variant="ghost"
                   size="sm"
                   square
+                  :disabled="
+                    section.findings.every(
+                      (f) => f.triage?.approvalState === 'Confirmed',
+                    )
+                  "
                   :aria-label="`Copy ${section.reviewer.facet} guidance XML`"
                   @click.stop="
                     copyReviewerSectionGuidance(
@@ -218,10 +249,67 @@
                   <div class="grid gap-3">
                     <article
                       v-for="finding in section.findings"
-                      :key="`${finding.file}:${finding.line ?? 'no-line'}:${finding.summary}`"
+                      :key="finding.occurrenceKey"
+                      :data-occurrence-key="finding.occurrenceKey"
+                      tabindex="-1"
                       class="grid gap-2 rounded-md bg-default/60 pt-4"
                     >
-                      <div class="flex justify-end gap-2">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <UTooltip :text="`Copy ref ${finding.findingRef}`"
+                          ><UButton
+                            :label="`${finding.findingRef} · ${finding.semanticId}`"
+                            color="neutral"
+                            variant="ghost"
+                            size="xs"
+                            class="font-mono"
+                            @click="copy(finding.findingRef)"
+                        /></UTooltip>
+                        <span class="ml-auto" />
+                        <FindingTriageControl
+                          :finding="finding"
+                          :can-promote-confirmed-false-positive="canPromoteFalsePositives"
+                          :highlight="
+                            route.query.finding === finding.occurrenceKey
+                          "
+                          :success-version="
+                            triageSuccessVersions[
+                              `${review.id}:${finding.occurrenceKey}`
+                            ] ?? ''
+                          "
+                          :busy="
+                            triageBusyKeys.includes(
+                              `${review.id}:${finding.occurrenceKey}`,
+                            )
+                          "
+                          @save="
+                            (disposition, reason, requestId) =>
+                              emits('triage', {
+                                review,
+                                finding,
+                                action: 'save',
+                                disposition,
+                                reason,
+                                requestId,
+                              })
+                          "
+                          @clear="
+                            (requestId) =>
+                              emits('triage', {
+                                review,
+                                finding,
+                                action: 'clear',
+                                requestId,
+                              })
+                          "
+                          @confirm="
+                            emits('triage', {
+                              review,
+                              finding,
+                              action: 'confirm',
+                            })
+                          "
+                          @promote="emits('promote', { review: props.review, finding })"
+                        />
                         <UBadge
                           :label="finding.level"
                           :color="item.color"
@@ -242,7 +330,12 @@
 
                       <!-- Shows the finding summary, severity badge, and cart button on one row. -->
                       <p
-                        class="min-w-0 flex-1 break-words text-sm font-medium text-highlighted"
+                        class="min-w-0 flex-1 break-words text-sm font-medium"
+                        :class="
+                          finding.triage?.approvalState === 'Confirmed'
+                            ? 'text-muted'
+                            : 'text-highlighted'
+                        "
                       >
                         {{ finding.summary }}
                       </p>
@@ -253,7 +346,31 @@
                       </p>
 
                       <!-- Renders the reviewer-provided markdown body, including code fences. -->
+                      <p
+                        v-if="finding.triage"
+                        :id="`triage-context-${finding.findingRef}`"
+                        class="text-xs text-muted"
+                      >
+                        {{
+                          finding.triage.approvalState === "Proposed"
+                            ? `Proposed ${finding.triage.disposition === "FalsePositive" ? "false positive" : "deferral"}: `
+                            : "Reason: "
+                        }}{{ finding.triage.currentReason }}
+                      </p>
+                      <details
+                        v-if="finding.triage?.approvalState === 'Confirmed'"
+                      >
+                        <summary class="cursor-pointer text-sm">
+                          Show details
+                        </summary>
+                        <Comark
+                          :markdown="finding.body"
+                          :plugins="markdownPlugins"
+                          class="code-review-markdown-body text-sm text-default"
+                        />
+                      </details>
                       <Comark
+                        v-else
                         :markdown="finding.body"
                         :plugins="markdownPlugins"
                         class="code-review-markdown-body text-sm text-default"
@@ -395,6 +512,11 @@ type ReviewerFindingSection = {
  * Receives the review row, optional hydrated findings artifact, and load state
  * from the pull request review accordion.
  */
+import FindingTriageControl from "./FindingTriageControl.vue";
+import { formatReviewerSectionGuidance } from "./findingGuidance";
+import { focusFinding } from "./focusFinding";
+import type { TriageAction } from "./useFindingTriage";
+
 const props = defineProps<{
   review: CodeReviewRecordDto;
   findings: CodeReviewFindingsResponse | null;
@@ -402,12 +524,17 @@ const props = defineProps<{
   loading: boolean;
   error: string | null;
   cartContentHashes: Set<string>;
+  triageBusyKeys: string[];
+  triageSuccessVersions: Record<string, string>;
+  canPromoteFalsePositives?: boolean;
   rawXml: string | null;
   loadingRawXml: boolean;
   rawXmlError: string | null;
 }>();
 
 const emits = defineEmits<{
+  triage: [payload: TriageAction];
+  promote: [payload: { review: CodeReviewRecordDto; finding: CodeReviewFindingDto }];
   toggleCart: [
     finding: CodeReviewFindingDto,
     reviewer: CodeReviewReviewerFindingsDto,
@@ -482,7 +609,7 @@ function isFindingInCart(finding: CodeReviewFindingDto): boolean {
 
 /** Stable key for a finding, used for :key bindings and hash lookups. */
 function findingKey(finding: CodeReviewFindingDto): string {
-  return `${finding.file}:${finding.line ?? "no-line"}:${finding.summary}`;
+  return finding.occurrenceKey;
 }
 
 /**
@@ -656,6 +783,41 @@ const severityLevels: CodeReviewFindingLevel[] = [
   codeReviewFindingLevelEnum.Comment,
 ];
 
+const reviewRoot = ref<HTMLElement | null>(null);
+const activeTab = ref(defaultTabValue.value);
+watch(
+  () => props.findings,
+  (findings) => {
+    if (findings && !route.query.finding)
+      activeTab.value = defaultTabValue.value;
+  },
+  {},
+);
+const route = useRoute();
+watch(
+  [() => props.findings, () => route.query.finding, () => props.loading],
+  async ([findings, target, loading]) => {
+    if (typeof target !== "string" || !findings || loading) return;
+    const reviewer = findings.reviews.find((r) =>
+      r.findings.some((f) => f.occurrenceKey === target),
+    );
+    const finding = reviewer?.findings.find((f) => f.occurrenceKey === target);
+    if (!finding) return;
+    activeTab.value =
+      items.value.find((item) => item.level === finding.level)?.value ??
+      defaultTabValue.value;
+    const sections = reviewerSectionsByLevel.value[finding.level];
+    const index = sections.findIndex(
+      (section) => section.reviewer === reviewer,
+    );
+    if (index >= 0)
+      setReviewerSectionOpen(finding.level, sections[index]!, index, true);
+    await nextTick();
+    focusFinding(reviewRoot.value, target);
+  },
+  { immediate: true, flush: "post" },
+);
+
 /**
  * Seeds each severity tab so its first reviewer section starts open and any
  * additional reviewer sections start collapsed without overwriting user toggles.
@@ -828,7 +990,7 @@ async function copyReviewerSectionGuidance(
 ): Promise<void> {
   const key = reviewerSectionKey(level, section, sectionIndex);
 
-  await copy(formatReviewerSectionGuidance(section));
+  await copy(formatReviewerSectionGuidance(section, props.review));
   copiedReviewerSectionKey.value = key;
 }
 
@@ -843,82 +1005,6 @@ function isReviewerSectionCopied(
   const key = reviewerSectionKey(level, section, sectionIndex);
 
   return copied.value && copiedReviewerSectionKey.value === key;
-}
-
-/**
- * Recreates the reviewer guidance as XML from the parsed DTO fields.
- */
-function formatReviewerSectionGuidance(
-  section: ReviewerFindingSection,
-): string {
-  const findingXml = section.findings
-    .map((finding) => formatFindingGuidanceXml(finding, 6))
-    .join("\n");
-
-  return `<code_review_finding>
-  <!--
-  <instruction_for_agents>
-  The following XML is the raw output from expert code reviewers analyzing the PR.
-  - Review each finding in the feedback from the expert reviewers
-  - Evaluate the change in the broader context of the codebase; the reviewer only saw the PR contents and not the broader codebase; determine the veracity of each finding
-  - If a behavior is expected, suggest leaving a comment in the code to explain the rationale to future travelers (agents)
-  - The change proposals are high level; plan out specific code changes needed to implement the feedback, finding by finding
-  - ALWAYS get confirmation and acceptance of the proposed fix for each finding before writing code
-  - ALWAYS ensure there is enough clarity to make the best fix if there is ambiguity or insufficient feedback to confidently implement the change
-  - Call out any tradeoffs or shortcomings in the proposed changes if any (especially in the broader context of the codebase)
-  - Present the concrete changes needed and let the user decide which to proceed with; do not make changes without confirmation
-  - Use a checklist/todo list to keep track of work against this set of findings; we do not want to wing it here
-  - Review Zeeq documentation for guidance on best practices
-  - Add code comment: "NOTE: (Reason to defer or ignore a finding goes here)" to document any rationale for deferring or ignoring a finding
-  </instruction_for_agents>
-  -->
-  <review
-    facet="${escapeXmlAttribute(section.reviewer.facet)}"
-    agent="${escapeXmlAttribute(section.reviewer.agent)}">
-    <findings>
-${findingXml}
-    </findings>
-  </review>
-</code_review_finding>`;
-}
-
-/**
- * Formats one finding DTO as the canonical finding XML shape.
- */
-function formatFindingGuidanceXml(
-  finding: CodeReviewFindingDto,
-  indentSize: number,
-): string {
-  const indent = " ".repeat(indentSize);
-  const attributes = [
-    `level="${escapeXmlAttribute(finding.level)}"`,
-    `summary="${escapeXmlAttribute(finding.summary)}"`,
-    `file="${escapeXmlAttribute(finding.file)}"`,
-    finding.line ? `line="${escapeXmlAttribute(String(finding.line))}"` : null,
-    finding.side ? `side="${escapeXmlAttribute(finding.side)}"` : null,
-  ]
-    .filter((attribute) => attribute !== null)
-    .join(" ");
-
-  return `${indent}<finding ${attributes}><![CDATA[${escapeCdata(finding.body)}]]></finding>`;
-}
-
-/**
- * Escapes XML attribute values reconstructed from DTO strings.
- */
-function escapeXmlAttribute(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
-/**
- * Prevents copied finding bodies from terminating the CDATA section early.
- */
-function escapeCdata(value: string): string {
-  return value.replaceAll("]]>", "]]]]><![CDATA[>");
 }
 
 /**

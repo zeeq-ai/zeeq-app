@@ -1,7 +1,7 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Zeeq.Core.Carts;
 using Zeeq.Core.Identity;
-using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Zeeq.Platform.Carts.Tests;
 
@@ -159,13 +159,13 @@ public sealed class CartEndpointHandlerTests
     }
 
     [Test]
-    public async Task GetCartText_WithSavedCart_ReturnsMcpInstruction()
+    public async Task GetCartText_WithSavedCart_ReturnsFindings()
     {
         var store = new TestCartStore
         {
             StoredCart = TestDomainCart(annotation: "Review this carefully"),
         };
-        var handler = new GetCartTextHandler(store);
+        var handler = new GetCartTextHandler(store, null!, null!);
 
         var result = await handler.HandleAsync(
             "org_123",
@@ -177,8 +177,8 @@ public sealed class CartEndpointHandlerTests
         var ok = result.Result as Ok<CartTextResponse>;
 
         await Assert.That(ok).IsNotNull();
-        await Assert.That(ok!.Value!.Text).Contains("get_cart_findings");
-        await Assert.That(ok.Value.Text).Contains("cart_1");
+        await Assert.That(ok!.Value!.Text).Contains("<findings>");
+        await Assert.That(ok.Value.Text).Contains("Review this carefully");
     }
 
     [Test]

@@ -21,6 +21,7 @@ internal sealed class CodeReviewPreviousReviewStore(
         string? agentSessionId,
         string? reviewGroupId,
         string excludeReviewId,
+        string ownerQualifiedRepoName,
         int maxRecords = 3,
         CancellationToken cancellationToken = default
     )
@@ -41,11 +42,13 @@ internal sealed class CodeReviewPreviousReviewStore(
                 && r.Id != excludeReviewId
             );
 
-        // Sessions span unrelated work; only an explicit group opts into a chain.
-        // Chained MCP reviews missed major findings more often than fresh reviews.
-        // Groups deliberately remain organization-wide for now (18 of 3,911 span repos).
-        // Follow up by scoping both history and PreviousReviewId to the repository.
-        query = query.Where(r => r.ReviewGroupId == reviewGroupId);
+        // Review groups can span repositories; never import another repository's history.
+        if (string.IsNullOrWhiteSpace(ownerQualifiedRepoName))
+            return [];
+        query = query.Where(r =>
+            r.ReviewGroupId == reviewGroupId
+            && r.OwnerQualifiedRepoName.ToLower() == ownerQualifiedRepoName.ToLower()
+        );
 
         var records = await query
             .OrderByDescending(r => r.CreatedAtUtc)

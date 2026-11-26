@@ -128,6 +128,25 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
             return new(CodeReviewEvaluationRunAdmissionOutcome.NoRunnableCases, null, null);
         }
 
+        if (request.IncludeTriageContext)
+        {
+            if (
+                request.TriageContexts is null
+                || cases.Any(item => !request.TriageContexts.ContainsKey(item.CaseId))
+            )
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new(
+                    CodeReviewEvaluationRunAdmissionOutcome.DatasetVersionConflict,
+                    null,
+                    null
+                );
+            }
+            cases = cases
+                .Select(item => item with { TriageContext = request.TriageContexts[item.CaseId] })
+                .ToArray();
+        }
+
         var now = timeProvider.GetUtcNow();
         var manifest = new CodeReviewEvaluationRunManifest(
             CodeReviewEvaluationRunManifest.CurrentSchemaVersion,
@@ -153,7 +172,8 @@ internal sealed class PostgresCodeReviewEvaluationRunStore(
             request.RequestFingerprint,
             now,
             null,
-            cases
+            cases,
+            request.IncludeTriageContext
         );
 
         var run = CreateRun(request, dataset, manifest, now);

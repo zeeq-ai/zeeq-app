@@ -2502,6 +2502,180 @@
         }
       }
     },
+    "/api/v1/orgs/{orgId}/code-reviews/reviews/{codeReviewRecordId}/triages": {
+      "post": {
+        "tags": [
+          "Code Reviews"
+        ],
+        "summary": "Set or clear a finding triage.",
+        "operationId": "SaveFindingTriage",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "codeReviewRecordId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "createdAtUtc",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveFindingTriageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewFindingTriageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/triages/{triageId}": {
+      "get": {
+        "tags": [
+          "Code Reviews"
+        ],
+        "summary": "Get a finding triage.",
+        "operationId": "GetFindingTriage",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "triageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingTriageResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/triages/{triageId}/confirm": {
+      "post": {
+        "tags": [
+          "Code Reviews"
+        ],
+        "summary": "Confirm a finding triage proposal.",
+        "operationId": "ConfirmFindingTriage",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "triageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmFindingTriageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewFindingTriageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
+      }
+    },
     "/api/v1/orgs/{orgId}/code-reviews/reviews/{codeReviewRecordId}/raw": {
       "get": {
         "tags": [
@@ -3778,6 +3952,97 @@
           },
           "404": {
             "description": "Not Found"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repositoryId}/evaluation-datasets/{datasetId}/promote-triage/{triageId}": {
+      "post": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "summary": "Promote a confirmed false positive into a dataset.",
+        "operationId": "PromoteFindingTriageToEvaluationDataset",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repositoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "datasetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "triageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteFindingTriageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEvaluationDatasetResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
           }
         }
       }
@@ -5093,6 +5358,69 @@
           },
           "503": {
             "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/orgs/{orgId}/code-reviews/repositories/{repoId}/evaluation-runs/{runId}/compare/{baselineRunId}": {
+      "get": {
+        "tags": [
+          "Code Review Evaluations"
+        ],
+        "operationId": "CompareCodeReviewEvaluationRuns",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repoId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "baselineRunId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEvaluationComparison"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Not Found"
           }
         }
       }
@@ -12017,6 +12345,101 @@
         },
         "description": "Saved capture for one dataset case."
       },
+      "CodeReviewEvaluationComparison": {
+        "required": [
+          "pairedCaseCount",
+          "baselineRecall",
+          "experimentRecall",
+          "recallDelta",
+          "baselineKnownPrecision",
+          "experimentKnownPrecision",
+          "knownPrecisionDelta",
+          "baselineRepeatedFalsePositives",
+          "experimentRepeatedFalsePositives"
+        ],
+        "type": "object",
+        "properties": {
+          "pairedCaseCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "baselineRecall": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "experimentRecall": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "recallDelta": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "baselineKnownPrecision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "experimentKnownPrecision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "knownPrecisionDelta": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "baselineRepeatedFalsePositives": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "experimentRepeatedFalsePositives": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        },
+        "description": "Paired evaluation metrics. Precision counts only labelled expected and rejected matches."
+      },
       "CodeReviewEvaluationDatasetCaseChangeDto": {
         "required": [
           "caseId",
@@ -13085,6 +13508,21 @@
         ],
         "description": "Match operation used by a code-review file filter criterion."
       },
+      "CodeReviewFindingApprovalState": {
+        "enum": [
+          "Open",
+          "Proposed",
+          "Confirmed"
+        ],
+        "description": "Supported approvalstate values."
+      },
+      "CodeReviewFindingDisposition": {
+        "enum": [
+          "FalsePositive",
+          "Deferred",
+          null
+        ]
+      },
       "CodeReviewFindingDto": {
         "required": [
           "level",
@@ -13092,7 +13530,11 @@
           "line",
           "side",
           "summary",
-          "body"
+          "body",
+          "occurrenceKey",
+          "findingRef",
+          "semanticId",
+          "triage"
         ],
         "type": "object",
         "properties": {
@@ -13128,6 +13570,29 @@
           "body": {
             "type": "string",
             "description": "Full finding explanation."
+          },
+          "occurrenceKey": {
+            "type": "string",
+            "description": "Position within the review."
+          },
+          "findingRef": {
+            "type": "string",
+            "description": "Review-specific short reference."
+          },
+          "semanticId": {
+            "type": "string",
+            "description": "Stable descriptive finding label."
+          },
+          "triage": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "Current triage state, if one exists.",
+                "$ref": "#/components/schemas/CodeReviewFindingTriageDto"
+              }
+            ]
           }
         },
         "description": "One actionable finding parsed from a review artifact."
@@ -13185,6 +13650,140 @@
           }
         },
         "description": "Detailed findings for one completed code-review record."
+      },
+      "CodeReviewFindingTriageChannel": {
+        "enum": [
+          "Ui",
+          "GitHub",
+          "Mcp"
+        ],
+        "description": "Supported triagechannel values."
+      },
+      "CodeReviewFindingTriageDto": {
+        "required": [
+          "id",
+          "sourceReviewId",
+          "sourceReviewCreatedAtUtc",
+          "occurrenceKey",
+          "semanticId",
+          "facet",
+          "severity",
+          "filePath",
+          "lineNumber",
+          "findingSummary",
+          "disposition",
+          "approvalState",
+          "currentReason",
+          "channel",
+          "sourceUrl",
+          "proposedByUserId",
+          "proposedAtUtc",
+          "confirmedByUserId",
+          "confirmedAtUtc",
+          "updatedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sourceReviewId": {
+            "type": "string"
+          },
+          "sourceReviewCreatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "occurrenceKey": {
+            "type": "string"
+          },
+          "semanticId": {
+            "type": "string"
+          },
+          "facet": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/CodeReviewFindingLevel"
+          },
+          "filePath": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lineNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "findingSummary": {
+            "type": "string"
+          },
+          "disposition": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CodeReviewFindingDisposition"
+              }
+            ]
+          },
+          "approvalState": {
+            "$ref": "#/components/schemas/CodeReviewFindingApprovalState"
+          },
+          "currentReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "channel": {
+            "$ref": "#/components/schemas/CodeReviewFindingTriageChannel"
+          },
+          "sourceUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "proposedByUserId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "proposedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "confirmedByUserId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "confirmedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "updatedAtUtc": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "Current triage state and its finding snapshot."
       },
       "CodeReviewInboxScope": {
         "enum": [
@@ -14479,6 +15078,33 @@
         },
         "description": "DTO cursor for inbox review update polling."
       },
+      "ConfirmFindingTriageRequest": {
+        "required": [
+          "expectedDisposition",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedDisposition": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CodeReviewFindingDisposition"
+              }
+            ]
+          },
+          "reason": {
+            "maxLength": 1000,
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "description": "Optional confirmation safeguards and replacement reason."
+      },
       "CreateCodeReviewerAgentRequest": {
         "required": [
           "displayName",
@@ -14600,6 +15226,10 @@
           },
           "requestKey": {
             "type": "string"
+          },
+          "includeTriageContext": {
+            "type": "boolean",
+            "default": false
           }
         },
         "description": "Request to evaluate one reviewer configuration against a dataset."
@@ -15382,6 +16012,10 @@
             "items": {
               "$ref": "#/components/schemas/EvaluationRunCaseDto"
             }
+          },
+          "includeTriageContext": {
+            "type": "boolean",
+            "default": false
           }
         },
         "description": "Run details with immutable case results."
@@ -15591,6 +16225,29 @@
           "Major"
         ],
         "description": "Severity dimension for the findings drill-down list (the Critical/Major stat-card slideover)."
+      },
+      "FindingTriageResponse": {
+        "required": [
+          "triage",
+          "singleReviewUrl",
+          "sourceReviewExpired"
+        ],
+        "type": "object",
+        "properties": {
+          "triage": {
+            "$ref": "#/components/schemas/CodeReviewFindingTriageDto"
+          },
+          "singleReviewUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "sourceReviewExpired": {
+            "type": "boolean"
+          }
+        },
+        "description": "Triage snapshot and link to its source, if retained."
       },
       "GitHubConfiguredRepositoryResponse": {
         "required": [
@@ -17747,6 +18404,27 @@
         },
         "description": "A machine-readable format for specifying errors in HTTP API responses based on <see href=\"https://tools.ietf.org/html/rfc9110\" />."
       },
+      "PromoteFindingTriageRequest": {
+        "required": [
+          "reviewerAgentId",
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "reviewerAgentId": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        },
+        "description": "Target reviewer and dataset version for a confirmed false-positive promotion."
+      },
       "PullRequestClaimStatus": {
         "enum": [
           "Unclaimed",
@@ -18460,6 +19138,30 @@
             "type": "string",
             "description": "Timestamp when this finding was added to the (then-draft) cart.",
             "format": "date-time"
+          },
+          "sourceReviewId": {
+            "maxLength": 128,
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Source review identity, when available."
+          },
+          "occurrenceKey": {
+            "maxLength": 32,
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Finding ordinal within the source review."
+          },
+          "semanticId": {
+            "maxLength": 128,
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "Stable semantic finding label."
           }
         },
         "description": "One full finding snapshot inside an initial save or copy-source payload."
@@ -18575,6 +19277,42 @@
           }
         },
         "description": "Request for saving repository-level review configuration."
+      },
+      "SaveFindingTriageRequest": {
+        "required": [
+          "findingReference",
+          "disposition",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "findingReference": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "disposition": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CodeReviewFindingDisposition"
+              }
+            ]
+          },
+          "reason": {
+            "maxLength": 1000,
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "clear": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "description": "Request to set or clear one review finding."
       },
       "SaveLlmSettingsRequest": {
         "required": [

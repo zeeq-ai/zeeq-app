@@ -1,6 +1,11 @@
 using System.Security.Claims;
+using Microsoft.Extensions.Options;
+using NSubstitute;
 using Zeeq.Core.Carts;
+using Zeeq.Core.Common;
 using Zeeq.Core.Identity;
+using Zeeq.Core.Models;
+using Zeeq.Platform.CodeReviews;
 
 namespace Zeeq.Mcp.Carts.Tests;
 
@@ -18,6 +23,8 @@ public sealed class CartMcpToolsTests
 
         var response = await CartMcpTools.GetCartFindings(
             store,
+            null!,
+            null!,
             anonymous,
             "snappy-lake-a1b2c3d4e5"
         );
@@ -32,6 +39,8 @@ public sealed class CartMcpToolsTests
 
         var response = await CartMcpTools.GetCartFindings(
             store,
+            null!,
+            null!,
             TestUser(),
             "gentle-star-b1c2d3e4f5"
         );
@@ -47,11 +56,73 @@ public sealed class CartMcpToolsTests
 
         var response = await CartMcpTools.GetCartFindings(
             store,
+            null!,
+            null!,
             TestUser(orgId: "org_123"),
             "snappy-lake-a1b2c3d4e5"
         );
 
         await Assert.That(response).Contains("not found");
+    }
+
+    [Test]
+    public async Task GetCartFindings_HydratesLiveTriageAndKeepsPendingMajorActionable()
+    {
+        var cart = TestCart();
+        cart.ItemsPayload =
+        [
+            cart.ItemsPayload[0] with
+            {
+                SourceReviewId = "cr_abcde",
+                OccurrenceKey = "F1",
+                SemanticId = "test-finding-name",
+            },
+        ];
+        var store = new TestCartStore { StoredCart = cart };
+        var triages = Substitute.For<ICodeReviewFindingTriageStore>();
+        var row = new CodeReviewFindingTriage
+        {
+            Id = "tri_1",
+            OrganizationId = "org_123",
+            OwnerQualifiedRepoName = "owner/repo",
+            SourceReviewId = "cr_abcde",
+            SourceReviewCreatedAtUtc = DateTimeOffset.UtcNow,
+            OccurrenceKey = "F1",
+            SemanticId = "test-finding-name",
+            Facet = "Security",
+            FindingSummary = "summary",
+            Disposition = CodeReviewFindingDisposition.FalsePositive,
+            ApprovalState = CodeReviewFindingApprovalState.Proposed,
+            CurrentReason = "<safe>",
+        };
+        triages
+            .ListForReviewAsync("org_123", "cr_abcde", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<CodeReviewFindingTriage>>([row]));
+        var settings = Options.Create(new AppSettings());
+        var links = new CodeReviewRequestLinkFactory(
+            settings,
+            new CodeReviewRequestTokenProtector(settings.Value.CodeReview)
+        );
+        var pending = await CartMcpTools.GetCartFindings(
+            store,
+            triages,
+            links,
+            TestUser(),
+            cart.Id
+        );
+        await Assert.That(pending).Contains("ref=\"abcde.F1\"");
+        await Assert.That(pending).Contains("&lt;safe&gt;");
+        await Assert.That(pending).Contains("confirmationUrl=");
+        row.ApprovalState = CodeReviewFindingApprovalState.Confirmed;
+        var confirmed = await CartMcpTools.GetCartFindings(
+            store,
+            triages,
+            links,
+            TestUser(),
+            cart.Id
+        );
+        await Assert.That(confirmed).Contains("<triaged_findings>");
+        await Assert.That(confirmed).Contains("approval=\"Confirmed\"");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

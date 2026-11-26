@@ -156,4 +156,11 @@ public interface ICodeReviewRecordStore
         int maxRecords,
         CancellationToken cancellationToken
     );
+
+    /// <summary>Lists completed records for an exact tenant-scoped triage target, newest first.</summary>
+    Task<IReadOnlyList<CodeReviewRecord>> ListForTriageAsync(
+        string organizationId,
+        FindingTriageTarget target,
+        CancellationToken cancellationToken
+    ) => throw new NotSupportedException("Triage lookup is not supported by this store.");
 }

@@ -67,6 +67,11 @@
         :requesting-review-id
         v-model:open-review-id="openReviewId"
         v-model:bypassing="bypassing"
+        :triage-busy-keys="triageBusyKeys"
+        :triage-success-versions="triageSuccessVersions"
+        :can-promote-false-positives="canManageOrganization"
+        @triage="handleTriage"
+        @promote="openPromotionPicker"
         :cart-content-hashes="cartContentHashes"
         :can-add-to-dataset="canAddToDataset"
         class="hidden lg:flex"
@@ -101,6 +106,11 @@
             :requesting-review-id
             v-model:open-review-id="openReviewId"
             v-model:bypassing="bypassing"
+            :triage-busy-keys="triageBusyKeys"
+            :triage-success-versions="triageSuccessVersions"
+            :can-promote-false-positives="canManageOrganization"
+            @triage="handleTriage"
+            @promote="openPromotionPicker"
             :cart-content-hashes="cartContentHashes"
             :can-add-to-dataset="canAddToDataset"
             show-close
@@ -126,6 +136,54 @@
           />
         </template>
       </USlideover>
+      <UModal v-model:open="promotionOpen" title="Promote false positive">
+        <template #body>
+          <div v-if="selectedPullRequest" class="grid gap-3">
+            <InboxAddDatasetPickerContent
+              :pull-request="selectedPullRequest"
+              :embedded="false"
+              :datasets="promotionDatasets"
+              :selected-dataset-id="promotionDatasetId || null"
+              :search="promotionSearch"
+              :loading-datasets="loadingPromotionOptions"
+              :loading-selected-dataset="loadingPromotionDataset"
+              :creating-new="false"
+              :creating-dataset="false"
+              :adding="promoting"
+              :new-dataset-name="''"
+              :error="promotionError || null"
+              :error-code="null"
+              :can-add="!!promotionDatasetId && promotionContainsPullRequest"
+              :can-open-editor="false"
+              :already-present="false"
+              :reviewer-ids="promotionReviewerIds"
+              add-label="Promote finding"
+              :max-cases="maxEvaluationCases"
+              :selected-dataset="promotionDatasetDetail"
+              :version-for="(dataset) => dataset.version"
+              @select="selectPromotionDataset"
+              @update:search="promotionSearch = $event"
+              @cancel="promotionOpen = false"
+              @submit="confirmPromotion"
+              @reload-version="selectPromotionDataset(promotionDatasetId)"
+            />
+            <USelect
+              v-model="promotionReviewerId"
+              :items="promotionReviewerOptions"
+              value-key="value"
+              label-key="label"
+              placeholder="Choose reviewer"
+            />
+            <UButton
+              v-if="promotionError && !promotionReviewerIds.length"
+              label="Retry loading options"
+              color="neutral"
+              variant="outline"
+              @click="loadPromotionOptions"
+            />
+          </div>
+        </template>
+      </UModal>
     </div>
 
     <AddPullRequestToDataset
@@ -141,12 +199,16 @@
 </template>
 
 <script setup lang="ts">
+import { useFindingTriage } from "@/views/code-reviews/pull-requests/useFindingTriage";
+const { triageBusyKeys, triageSuccessVersions, handleTriage } =
+  useFindingTriage();
 import { computed, onBeforeUnmount, onMounted, ref, toRef, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useRoute } from "vue-router";
 import { breakpointsTailwind, useBreakpoints } from "@vueuse/core";
 import {
   CodeReviews,
+  CodeReviewEvaluations,
   codeReviewInboxScopeEnum,
   codeReviewStatusEnum,
   type CodeReviewInboxScope,
@@ -159,6 +221,8 @@ import { useCartStore } from "@/stores/cart-store";
 import { useAppStore } from "@/stores/app-store";
 import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
 import { useCodeReviewEvaluationStore } from "@/stores/code-review-evaluation-store";
+import InboxAddDatasetPickerContent from "./InboxAddDatasetPickerContent.vue";
+import { datasetContainsPullRequest, runPromotion } from "./promotion-flow";
 import type {
   CodeReviewFindingDto,
   CodeReviewReviewerFindingsDto,
@@ -197,6 +261,34 @@ const organizationSettingsStore = useOrganizationSettingsStore();
 const evaluationStore = useCodeReviewEvaluationStore();
 const { canManageOrganization } = storeToRefs(organizationSettingsStore);
 const { availability: evaluationAvailability } = storeToRefs(evaluationStore);
+const {
+  datasets: promotionDatasets,
+  selectedDataset: promotionDatasetDetail,
+  loadingDataset: loadingPromotionDataset,
+} = storeToRefs(evaluationStore);
+const promotionOpen = ref(false);
+const promotionDatasetId = ref("");
+const promotionSearch = ref("");
+const promotionContainsPullRequest = computed(
+  () =>
+    promotionDatasetDetail.value?.id === promotionDatasetId.value &&
+    datasetContainsPullRequest(
+      promotionDatasetDetail.value.cases,
+      selectedPullRequest.value?.pullRequestNumber ?? -1,
+    ),
+);
+const promotionReviewerId = ref("");
+const promotionReviewerIds = ref<string[]>([]);
+const promotionReviewerOptions = computed(() =>
+  promotionReviewerIds.value.map((id) => ({ value: id, label: id })),
+);
+const promotionSource = ref<{
+  review: CodeReviewRecordDto;
+  finding: CodeReviewFindingDto;
+} | null>(null);
+const promoting = ref(false);
+const promotionError = ref("");
+const loadingPromotionOptions = ref(false);
 const { cartContentHashes } = storeToRefs(cartStore);
 const {
   pullRequests,
@@ -464,6 +556,117 @@ function openInboxDatasetPicker() {
   if (!canAddToDataset.value) return;
   if (isMobile.value) mobileDatasetPickerOpen.value = true;
   else desktopDatasetPickerOpen.value = true;
+}
+
+async function openPromotionPicker(payload: {
+  review: CodeReviewRecordDto;
+  finding: CodeReviewFindingDto;
+}) {
+  if (
+    !canManageOrganization.value ||
+    !selectedPullRequest.value ||
+    !payload.finding.triage
+  )
+    return;
+  promotionSource.value = payload;
+  promotionError.value = "";
+  promotionOpen.value = true;
+  await loadPromotionOptions();
+}
+
+async function loadPromotionOptions() {
+  const pullRequest = selectedPullRequest.value;
+  if (!pullRequest) return;
+  promotionError.value = "";
+  loadingPromotionOptions.value = true;
+  const organizationId = activeOrganizationId.value;
+  if (!organizationId) {
+    promotionError.value = "Select an organization, then try again.";
+    loadingPromotionOptions.value = false;
+    return;
+  }
+  try {
+    const configuredReviewers =
+      await CodeReviews.listRepositoryCodeReviewerAgents(
+        pullRequest.repositoryId,
+        organizationId,
+      );
+    promotionReviewerIds.value = configuredReviewers.items.map(
+      (item) => item.id,
+    );
+  } catch (error) {
+    promotionReviewerIds.value = [];
+    promotionError.value =
+      error instanceof Error
+        ? error.message
+        : "Could not load reviewer agents. Try again.";
+    loadingPromotionOptions.value = false;
+    return;
+  }
+  if (promotionReviewerIds.value.length === 0) {
+    promotionError.value =
+      "No reviewer agents are configured. Configure one for this repository, then retry.";
+    loadingPromotionOptions.value = false;
+    return;
+  }
+  await evaluationStore.loadDatasets(pullRequest.repositoryId);
+  promotionDatasetId.value = "";
+  promotionReviewerId.value = promotionReviewerIds.value.includes(
+    selectedManagementItemId.value ?? "",
+  )
+    ? selectedManagementItemId.value!
+    : promotionReviewerIds.value[0];
+  promotionOpen.value = true;
+  promotionSearch.value = "";
+  loadingPromotionOptions.value = false;
+}
+
+async function selectPromotionDataset(datasetId: string) {
+  const pr = selectedPullRequest.value;
+  if (!pr) return;
+  promotionDatasetId.value = datasetId;
+  promotionError.value = "";
+  const loaded = await evaluationStore.loadDataset(pr.repositoryId, datasetId);
+  if (!loaded)
+    promotionError.value =
+      "Could not load this dataset. Retry loading its version.";
+  else if (!datasetContainsPullRequest(loaded.cases, pr.pullRequestNumber)) {
+    promotionError.value = `Dataset does not contain pull request #${pr.pullRequestNumber}. Choose a dataset marked as containing this pull request.`;
+  }
+}
+
+async function confirmPromotion() {
+  const pr = selectedPullRequest.value;
+  const source = promotionSource.value;
+  const triage = source?.finding.triage;
+  const orgId = activeOrganizationId.value;
+  const dataset = promotionDatasetDetail.value;
+  if (!pr || !source || !triage || !dataset || dataset.id !== promotionDatasetId.value || !promotionContainsPullRequest.value || !promotionReviewerId.value || !orgId || promoting.value)
+    return;
+  promoting.value = true;
+  await runPromotion(
+    () =>
+      CodeReviewEvaluations.promoteFindingTriageToEvaluationDataset(
+        orgId,
+        pr.repositoryId,
+        dataset.id,
+        triage.id,
+        {
+          reviewerAgentId: promotionReviewerId.value,
+          expectedVersion: dataset.version,
+        },
+      ),
+    () => {
+      toast.add({ title: "False positive added to dataset", color: "success" });
+      promotionOpen.value = false;
+      void evaluationStore.loadDatasets(pr.repositoryId);
+    },
+    (message) => {
+      promotionError.value = message;
+    },
+  ).finally(() => {
+    promoting.value = false;
+  });
 }
 
 async function openEvaluationDatasetEditor(
@@ -741,11 +944,14 @@ async function handleToggleCart(
         side: finding.side,
         summary: finding.summary,
         body: finding.body,
+        occurrenceKey: finding.occurrenceKey,
+        semanticId: finding.semanticId,
       },
       reviewer,
       {
         ownerQualifiedRepoName: review.ownerQualifiedRepoName,
         pullRequestNumber: +review.pullRequestNumber,
+        id: review.id,
       },
       annotation,
     );
