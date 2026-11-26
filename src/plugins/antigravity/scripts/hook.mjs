@@ -199,6 +199,7 @@ async function deliver(id, credential) {
     if (!events.length) {
       const previous2 = load(path);
       if (previous2.rejectionKey === `${firstLine}:${offset}` && previous2.rejectionAttempts && previous2.rejectionEnd <= content.length && previous2.rejectionHash === createHash("sha256").update(content.subarray(offset, previous2.rejectionEnd)).digest("hex")) return;
+      if (previous2.rejectionAttempts) error("Transcript changed before rejected events could be delivered");
       save(path, { byteOffset: lastEnd + 1, firstLine, prefixHash: createHash("sha256").update(content.subarray(0, lastEnd + 1)).digest("hex"), mapper });
       return;
     }
@@ -215,6 +216,7 @@ async function deliver(id, credential) {
       throw Error(`Telemetry request failed: ${response.status}`);
     }
     const sameRejected = previous.rejectionKey === rejectionKey && previous.rejectionEnd <= content.length && previous.rejectionHash === createHash("sha256").update(content.subarray(offset, previous.rejectionEnd)).digest("hex");
+    if (previous.rejectionAttempts && !sameRejected) error("Transcript changed before rejected events could be delivered");
     let attempts = sameRejected ? previous.rejectionAttempts || 0 : 0;
     let scan = sameRejected ? previous.rejectionScan : void 0;
     const rejectionEnd = sameRejected ? previous.rejectionEnd : lastEnd + 1;
@@ -345,6 +347,7 @@ async function main() {
             const firstLine = firstEnd < 0 ? null : createHash("sha256").update(transcript.subarray(0, firstEnd)).digest("hex");
             if (latest.lastSeen === meta.lastSeen && statSync(latest.transcriptPath).mtimeMs <= latest.lastSeen && delivery.byteOffset === transcript.length && firstLine === delivery.firstLine && (!delivery.prefixHash || delivery.prefixHash === createHash("sha256").update(transcript).digest("hex")) && !Object.keys(delivery.mapper?.pending || {}).length && !(delivery.mapper?.calls || []).length) {
               rmSync(deliveryPath, { force: true });
+              rmSync(metaPath + ".recovery", { force: true });
               rmSync(metaPath, { force: true });
             }
           } finally {
@@ -357,7 +360,7 @@ async function main() {
       }
     }
     const credentialHash = createHash("sha256").update(credential).digest("hex");
-    const recoverable = readdirSync(join(data, "state")).filter((file) => file.endsWith(".json")).map((file) => ({ file, state: load(join(data, "state", file)), delivery: load(join(data, "state", file + ".delivery")) })).filter(({ state, delivery }) => {
+    const recoverable = readdirSync(join(data, "state")).filter((file) => file.endsWith(".json")).map((file) => ({ file, state: load(join(data, "state", file)), delivery: load(join(data, "state", file + ".delivery")), recoveryAt: Number(load(join(data, "state", file + ".recovery")).at) || 0 })).filter(({ state, delivery }) => {
       if (delivery.suspendedUntil > Date.now() && delivery.suspendedVersion === "0.1.0" || Date.now() - state.lastSeen <= 6e4 || delivery.failedCredentialHash === credentialHash && Date.now() - (delivery.authFailedAt || 0) < 36e5) return false;
       try {
         const transcript = readFileSync(state.transcriptPath);
@@ -370,8 +373,11 @@ async function main() {
       } catch {
         return false;
       }
-    }).sort((a, b) => (a.state.lastSeen || 0) - (b.state.lastSeen || 0)).slice(0, 10);
-    for (const { file } of recoverable) launch(file.slice(0, -5));
+    }).sort((a, b) => a.recoveryAt - b.recoveryAt || (a.state.lastSeen || 0) - (b.state.lastSeen || 0)).slice(0, 10);
+    for (const { file } of recoverable) {
+      save(join(data, "state", file + ".recovery"), { at: Date.now() });
+      launch(file.slice(0, -5));
+    }
   }
   if (action === "Stop") {
     if (truthy(process.env.ANTIGRAVITY_TELEMETRY_INLINE)) await deliver(id, credential);

@@ -53,6 +53,7 @@ async function deliver(id, credential) {
     if (!events.length) {
       const previous = load(path);
       if (previous.rejectionKey === `${firstLine}:${offset}` && previous.rejectionAttempts && previous.rejectionEnd <= content.length && previous.rejectionHash === createHash('sha256').update(content.subarray(offset, previous.rejectionEnd)).digest('hex')) return;
+      if (previous.rejectionAttempts) error('Transcript changed before rejected events could be delivered');
       save(path, { byteOffset: lastEnd + 1, firstLine, prefixHash: createHash('sha256').update(content.subarray(0, lastEnd + 1)).digest('hex'), mapper }); return;
     }
     const endpoint = process.env.ANTIGRAVITY_TELEMETRY_ENDPOINT || `${(process.env.ZEEQ_BASE_URL || 'https://app.zeeq.ai').replace(/\/$/, '')}/api/v1/telemetry/import`;
@@ -68,6 +69,7 @@ async function deliver(id, credential) {
       throw Error(`Telemetry request failed: ${response.status}`);
     }
     const sameRejected = previous.rejectionKey === rejectionKey && previous.rejectionEnd <= content.length && previous.rejectionHash === createHash('sha256').update(content.subarray(offset, previous.rejectionEnd)).digest('hex');
+    if (previous.rejectionAttempts && !sameRejected) error('Transcript changed before rejected events could be delivered');
     let attempts = sameRejected ? (previous.rejectionAttempts || 0) : 0;
     let scan = sameRejected ? previous.rejectionScan : undefined;
     const rejectionEnd = sameRejected ? previous.rejectionEnd : lastEnd + 1;
@@ -152,18 +154,18 @@ async function main() {
           const firstEnd = transcript.indexOf(10);
           const firstLine = firstEnd < 0 ? null : createHash('sha256').update(transcript.subarray(0, firstEnd)).digest('hex');
           if (latest.lastSeen === meta.lastSeen && statSync(latest.transcriptPath).mtimeMs <= latest.lastSeen && delivery.byteOffset === transcript.length && firstLine === delivery.firstLine && (!delivery.prefixHash || delivery.prefixHash === createHash('sha256').update(transcript).digest('hex')) && !Object.keys(delivery.mapper?.pending || {}).length && !(delivery.mapper?.calls || []).length) {
-            rmSync(deliveryPath, { force: true }); rmSync(metaPath, { force: true });
+            rmSync(deliveryPath, { force: true }); rmSync(metaPath + '.recovery', { force: true }); rmSync(metaPath, { force: true });
           }
           } finally { rmSync(metaLock, { recursive: true, force: true }); }
         } finally { rmSync(lock, { recursive: true, force: true }); }
       } catch { /* Keep state when it cannot be verified as fully delivered. */ }
     }
     const credentialHash = createHash('sha256').update(credential).digest('hex');
-    const recoverable = readdirSync(join(data, 'state')).filter(file => file.endsWith('.json')).map(file => ({ file, state: load(join(data, 'state', file)), delivery: load(join(data, 'state', file + '.delivery')) })).filter(({ state, delivery }) => {
+    const recoverable = readdirSync(join(data, 'state')).filter(file => file.endsWith('.json')).map(file => ({ file, state: load(join(data, 'state', file)), delivery: load(join(data, 'state', file + '.delivery')), recoveryAt: Number(load(join(data, 'state', file + '.recovery')).at) || 0 })).filter(({ state, delivery }) => {
       if ((delivery.suspendedUntil > Date.now() && delivery.suspendedVersion === '0.1.0') || Date.now() - state.lastSeen <= 60000 || (delivery.failedCredentialHash === credentialHash && Date.now() - (delivery.authFailedAt || 0) < 3600000)) return false;
       try { const transcript = readFileSync(state.transcriptPath); const firstEnd = transcript.indexOf(10); const changed = firstEnd >= 0 && delivery.firstLine && createHash('sha256').update(transcript.subarray(0, firstEnd)).digest('hex') !== delivery.firstLine; const completeBytes = transcript.lastIndexOf(10) + 1; const prefixChanged = delivery.prefixHash && createHash('sha256').update(transcript.subarray(0, delivery.byteOffset || 0)).digest('hex') !== delivery.prefixHash; const expiredPending = completeBytes === transcript.length && [...Object.values(delivery.mapper?.pending || {}), ...(delivery.mapper?.calls || [])].some(call => Date.now() - Date.parse(call.row.created_at) > 86400000); return changed || prefixChanged || completeBytes !== (delivery.byteOffset || 0) || expiredPending; } catch { return false; }
-    }).sort((a, b) => (a.state.lastSeen || 0) - (b.state.lastSeen || 0)).slice(0, 10);
-    for (const { file } of recoverable) launch(file.slice(0, -5));
+    }).sort((a, b) => a.recoveryAt - b.recoveryAt || (a.state.lastSeen || 0) - (b.state.lastSeen || 0)).slice(0, 10);
+    for (const { file } of recoverable) { save(join(data, 'state', file + '.recovery'), { at: Date.now() }); launch(file.slice(0, -5)); }
   }
   if (action === 'Stop') { if (truthy(process.env.ANTIGRAVITY_TELEMETRY_INLINE)) await deliver(id, credential); else launch(id); }
 }
