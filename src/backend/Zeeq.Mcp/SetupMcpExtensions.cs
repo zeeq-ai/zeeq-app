@@ -81,12 +81,12 @@ public static class SetupMcpExtensions
                     <code_review_usage>
                     <agent_review>
                     - `expert_code_review`: review a diff and follow up on fixes;
-                    - `triage_review_finding`: after a review, propose or clear a finding's disposition (e.g. false positive or deferred).
                     </agent_review>
                     <pr_findings>
                     - `get_review_findings`: retrieve the latest findings for a PR or branch;
                     - `get_cart_findings`: retrieve a human reviewer's saved findings when asked.
                     </pr_findings>
+                    After either flow, use `triage_review_finding` to propose or clear a finding's disposition (e.g. false positive or deferred).
                     </code_review_usage>
 
                     Pay attention to tool trigger conditions <tool_name.triggers> and <tool_name.flow> to know when and how to use the tool effectively.
