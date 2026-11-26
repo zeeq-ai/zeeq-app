@@ -247,3 +247,23 @@ test('rescans changed event content during isolation', async () => {
     await invoke(env, 'Stop', payload); assert.ok(received.includes('changed'));
   } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('recovers an inactive transcript shorter than its checkpoint', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zeeq-shrink-'));
+  const { mkdirSync, existsSync } = await import('node:fs');
+  const { createHash } = await import('node:crypto');
+  const stateDir = join(dir, 'state'); mkdirSync(stateDir);
+  const line = JSON.stringify({ type: 'USER_INPUT', step_index: 0, created_at: '2026-01-01T00:00:00Z', content: 'replacement' });
+  const transcript = join(dir, 'transcript'); writeFileSync(transcript, line + '\n');
+  writeFileSync(join(stateDir, 'shrink.json'), JSON.stringify({ transcriptPath: transcript, lastSeen: Date.now() - 120000 }));
+  writeFileSync(join(stateDir, 'shrink.json.delivery'), JSON.stringify({ byteOffset: Buffer.byteLength(line + '\n') + 100, firstLine: createHash('sha256').update(line).digest('hex') }));
+  const received = [];
+  const server = createServer(async (req, res) => { let body = ''; for await (const c of req) body += c; received.push(...JSON.parse(body).events); res.statusCode = 202; res.end(); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  try {
+    await invoke({ PLUGIN_DATA: dir, ZEEQ_ACCESS_TOKEN: 'test', ANTIGRAVITY_TELEMETRY_ENDPOINT: `http://127.0.0.1:${server.address().port}` }, 'SessionStart', { conversationId: 'current' });
+    for (let i = 0; i < 100 && (!received.length || existsSync(join(stateDir, 'shrink.json.delivery.lock'))); i++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(received[0]?.prompt_text, 'replacement');
+    assert.equal(JSON.parse(readFileSync(join(stateDir, 'shrink.json.delivery'), 'utf8')).byteOffset, Buffer.byteLength(line + '\n'));
+  } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
+});
