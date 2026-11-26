@@ -26,7 +26,10 @@ public sealed record FindingTriageWrite(
     DateTimeOffset? SourceEventAtUtc = null,
     CodeReviewFindingDisposition? ExpectedDisposition = null,
     string? AgentSessionId = null,
-    string? SourceUrl = null
+    string? SourceUrl = null,
+    string? ConfirmationQuote = null,
+    string? AuthMode = null,
+    string? ClientId = null
 );
 
 /// <summary>Result of a guarded storage transition.</summary>

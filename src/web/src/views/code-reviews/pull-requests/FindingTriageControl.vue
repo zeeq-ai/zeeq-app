@@ -22,6 +22,17 @@
             {{ new Date(triage.updatedAtUtc).toLocaleString() }} ·
             {{ finding.findingRef }}
           </p>
+          <p
+            v-if="triage.channel === 'AgentAttested'"
+            class="text-xs text-muted whitespace-pre-wrap"
+          >
+            Quote supplied by agent (not independently verified): “{{
+              triage.confirmationQuote || "Unavailable"
+            }}”
+            <span v-if="triage.agentSessionId">
+              · Session {{ triage.agentSessionId }}</span
+            >
+          </p>
           <a
             v-if="triage.sourceUrl"
             :href="triage.sourceUrl"
@@ -38,7 +49,7 @@
               @click="editing = true"
             />
             <UButton
-              label="Clear"
+              label="Reopen finding"
               :disabled="busy"
               size="xs"
               color="neutral"
@@ -58,6 +69,12 @@
           />
         </template>
         <template v-if="editing">
+          <p
+            v-if="triage?.channel === 'AgentAttested'"
+            class="text-xs text-muted"
+          >
+            Saving confirms this decision on the web.
+          </p>
           <fieldset class="grid gap-2">
             <legend class="text-sm font-medium">Decision</legend>
             <URadioGroup v-model="disposition" :items="options" />
@@ -99,8 +116,15 @@
     </template>
   </UPopover>
   <UButton
-    v-if="triage?.approvalState === 'Proposed'"
-    label="Confirm Proposal"
+    v-if="
+      triage?.approvalState === 'Proposed' ||
+      triage?.channel === 'AgentAttested'
+    "
+    :label="
+      triage?.channel === 'AgentAttested'
+        ? 'Confirm on web'
+        : 'Confirm Proposal'
+    "
     data-proposal-confirm
     :aria-describedby="proposalContextId"
     color="primary"
@@ -147,23 +171,28 @@ const showPromotionAction = computed(
   () =>
     props.canPromoteConfirmedFalsePositive === true &&
     triage.value?.approvalState === "Confirmed" &&
+    triage.value.channel !== "AgentAttested" &&
     triage.value.disposition === "FalsePositive",
 );
 const channelLabel = computed(() =>
-  triage.value?.channel === "Mcp"
-    ? "Agent proposal"
-    : triage.value?.channel === "GitHub"
-      ? "GitHub"
-      : "Web",
+  triage.value?.channel === "AgentAttested"
+    ? "Agent-reported session confirmation"
+    : triage.value?.channel === "Mcp"
+      ? "Agent proposal"
+      : triage.value?.channel === "GitHub"
+        ? "GitHub"
+        : "Web",
 );
 const label = computed(() =>
   !triage.value
     ? "Triage"
-    : triage.value.approvalState === "Proposed"
-      ? "Proposed — awaiting human confirmation"
-      : triage.value.disposition === "Deferred"
-        ? "Defer / won't fix (this PR)"
-        : "Confirmed False Positive",
+    : triage.value.channel === "AgentAttested"
+      ? `Agent-reported — ${triage.value.disposition === "Deferred" ? "Deferred" : "False Positive"}`
+      : triage.value.approvalState === "Proposed"
+        ? "Proposed — awaiting human confirmation"
+        : triage.value.disposition === "Deferred"
+          ? "Defer / won't fix (this PR)"
+          : "Confirmed False Positive",
 );
 const reasonInputId = computed(
   () => `triage-reason-${props.finding.findingRef}`,

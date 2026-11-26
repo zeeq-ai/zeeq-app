@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Security.Claims;
 using System.Text.Json;
 using ModelContextProtocol.Server;
+using OpenIddict.Abstractions;
 using Zeeq.Core.Identity;
 using Zeeq.Core.Models;
 using Zeeq.Platform.CodeReviews;
@@ -34,13 +35,16 @@ public sealed partial class CodeReviewMcpTools
             <triage_review_finding.flow>
             1. Verify the finding and prepare a factual reason.
             2. Pass reviewId, findingRef, disposition and reason.
-            3. Surface the confirmationUrl for human confirmation.
+            3. For a proposal, surface the confirmationUrl for human confirmation.
+            4. Only after the user explicitly confirms this specific finding and disposition in the session, optionally pass confirmed=true and their exact words as confirmationQuote. Never invent or infer confirmation.
+            5. If a finding was reopened after an agent attestation, use web confirmation for any later decision.
             </triage_review_finding.flow>
             """
     )]
     public static async Task<string> TriageReviewFinding(
         ICodeReviewFindingTriageService service,
         CodeReviewRequestLinkFactory links,
+        CodeReviewAuthorization authorization,
         ClaimsPrincipal? user,
         [Description("Required; review ID containing the finding (`reviewId` in review output).")]
             string reviewId,
@@ -53,6 +57,14 @@ public sealed partial class CodeReviewMcpTools
             string? reason = null,
         [Description("Optional; stable agent session ID for attribution.")]
             string? agentSessionId = null,
+        [Description(
+            "Set true only after the user explicitly confirms this specific finding and disposition in this session."
+        )]
+            bool confirmed = false,
+        [Description(
+            "Required with confirmed=true: exact user confirmation, 1-500 characters; agent-reported and not independently verified."
+        )]
+            string? confirmationQuote = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -75,6 +87,49 @@ public sealed partial class CodeReviewMcpTools
                     error = "Provide reviewId, findingRef and false_positive, deferred, or clear.",
                 }
             );
+        if (confirmed)
+        {
+            if (
+                disposition == "clear"
+                || string.IsNullOrWhiteSpace(confirmationQuote)
+                || confirmationQuote.Length > 500
+                || confirmationQuote.Contains('\0')
+                || reason?.Contains('\0') == true
+                || agentSessionId?.Contains('\0') == true
+            )
+                return JsonSerializer.Serialize(
+                    new
+                    {
+                        findingRef,
+                        status = "Invalid",
+                        error = "Confirmed triage requires a nonblank exact confirmationQuote of at most 500 characters, valid text, and a disposition.",
+                    }
+                );
+            if (agentSessionId?.Length > 128)
+                return JsonSerializer.Serialize(
+                    new
+                    {
+                        findingRef,
+                        status = "Invalid",
+                        error = "agentSessionId exceeds 128 characters.",
+                    }
+                );
+            if (
+                user.Identity?.IsAuthenticated != true
+                || user.FindFirst(AuthClaims.AuthMode)?.Value
+                    == OpenIddictConstants.GrantTypes.ClientCredentials
+                || string.IsNullOrWhiteSpace(actorId)
+                || await authorization.ResolveAsync(orgId, user, cancellationToken) is null
+            )
+                return JsonSerializer.Serialize(
+                    new
+                    {
+                        findingRef,
+                        status = "Forbidden",
+                        error = "An authenticated organization member is required for agent-attested triage.",
+                    }
+                );
+        }
         var operation =
             disposition == "clear" ? FindingTriageOperation.Clear : FindingTriageOperation.Set;
         CodeReviewFindingDisposition? value = disposition switch
@@ -91,9 +146,14 @@ public sealed partial class CodeReviewMcpTools
                 operation,
                 value,
                 reason,
-                CodeReviewFindingTriageChannel.Mcp,
+                confirmed
+                    ? CodeReviewFindingTriageChannel.AgentAttested
+                    : CodeReviewFindingTriageChannel.Mcp,
                 actorId,
-                AgentSessionId: agentSessionId
+                AgentSessionId: agentSessionId,
+                ConfirmationQuote: confirmed ? confirmationQuote : null,
+                AuthMode: confirmed ? user.FindFirst(AuthClaims.AuthMode)?.Value : null,
+                ClientId: confirmed ? user.FindFirst("azp")?.Value : null
             ),
             cancellationToken
         );

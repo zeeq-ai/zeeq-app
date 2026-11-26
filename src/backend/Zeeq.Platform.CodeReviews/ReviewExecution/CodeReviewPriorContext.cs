@@ -18,7 +18,7 @@ public sealed record CodeReviewPriorContext(
             .OrderByDescending(x => x.UpdatedAtUtc)
             .GroupBy(x => (x.SemanticId, x.FilePath ?? ""))
             .Select(x => x.First())
-            .Where(x => x.Disposition != null)
+            .Where(x => x.Channel != CodeReviewFindingTriageChannel.AgentAttested && x.Disposition != null)
             .Take(20)
             .ToArray();
         if (triages.Length == 0)
@@ -42,6 +42,7 @@ public sealed record CodeReviewPriorContext(
                 new XAttribute(
                     "approval",
                     x.ApprovalState == CodeReviewFindingApprovalState.Confirmed
+                    && x.Channel != CodeReviewFindingTriageChannel.AgentAttested
                         ? "confirmed"
                         : "proposed"
                 ),

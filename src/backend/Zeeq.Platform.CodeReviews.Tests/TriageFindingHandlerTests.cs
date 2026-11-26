@@ -231,4 +231,53 @@ public sealed class TriageFindingHandlerTests
                 Arg.Any<CancellationToken>()
             );
     }
+
+    [Test]
+    public async Task ClearById_RequiresMembershipAndDoesNotLoadSourceReview()
+    {
+        var memberships = Substitute.For<IZeeqMembershipStore>();
+        var service = Substitute.For<ICodeReviewFindingTriageService>();
+        var reviews = Substitute.For<ICodeReviewRecordStore>();
+        var handler = new TriageFindingHandler(
+            new(memberships),
+            reviews,
+            Substitute.For<ICodeReviewFindingTriageStore>(),
+            service,
+            null!
+        );
+        var denied = await handler.ClearAsync("org", "triage", User(), CancellationToken.None);
+        await Assert.That(denied.Result is NotFound).IsTrue();
+        await service
+            .DidNotReceive()
+            .TriageAsync(Arg.Any<FindingTriageRequest>(), Arg.Any<CancellationToken>());
+        memberships
+            .ListActiveMembershipsForUserAsync("user", Arg.Any<CancellationToken>())
+            .Returns([
+                new OrganizationMembership
+                {
+                    Id = "mem",
+                    OrganizationId = "org",
+                    UserId = "user",
+                    Role = "member",
+                    Status = MembershipStatus.Active,
+                    CreatedByUserId = "user",
+                },
+            ]);
+        service
+            .TriageAsync(Arg.Any<FindingTriageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new FindingTriageOutcome.Invalid(["test"]));
+        await handler.ClearAsync("org", "triage", User(), CancellationToken.None);
+        await service
+            .Received(1)
+            .TriageAsync(
+                Arg.Is<FindingTriageRequest>(x =>
+                    x.OrganizationId == "org"
+                    && x.ActorUserId == "user"
+                    && x.Operation == FindingTriageOperation.Clear
+                    && x.Target is FindingTriageTarget.ByTriageId
+                ),
+                Arg.Any<CancellationToken>()
+            );
+        await reviews.DidNotReceiveWithAnyArgs().FindAsync(default!, default, default);
+    }
 }

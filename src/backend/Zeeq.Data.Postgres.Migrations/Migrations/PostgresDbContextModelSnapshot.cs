@@ -2730,6 +2730,11 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("cleared_by_user_id");
 
+                    b.Property<string>("ConfirmationQuote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("confirmation_quote");
+
                     b.Property<DateTimeOffset?>("ConfirmedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("confirmed_at_utc");
@@ -2894,7 +2899,7 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                         {
                             t.HasCheckConstraint("ck_cr_triages_approval_state", "approval_state IN ('Open', 'Proposed', 'Confirmed')");
 
-                            t.HasCheckConstraint("ck_cr_triages_channel", "channel IN ('Ui', 'GitHub', 'Mcp')");
+                            t.HasCheckConstraint("ck_cr_triages_channel", "channel IN ('Ui', 'GitHub', 'Mcp', 'AgentAttested')");
 
                             t.HasCheckConstraint("ck_cr_triages_confirmed_timestamp", "(approval_state = 'Confirmed') = (confirmed_at_utc IS NOT NULL)");
 
@@ -3844,6 +3849,8 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
 
                     b.ComplexProperty(typeof(Dictionary<string, object>), "CodeReviewConfiguration", "Zeeq.Core.Models.Organization.CodeReviewConfiguration#CodeReviewOrganizationSettings", b1 =>
                         {
+                            b1.Property<bool?>("AllowAgentAttestedTriage");
+
                             b1.Property<TimeSpan>("ExecutionLeaseDuration");
 
                             b1.Property<int>("MaxConcurrentReviews");

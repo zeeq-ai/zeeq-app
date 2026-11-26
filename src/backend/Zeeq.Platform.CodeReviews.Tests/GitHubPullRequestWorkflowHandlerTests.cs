@@ -1253,9 +1253,18 @@ public sealed class GitHubPullRequestWorkflowHandlerTests
 
         public Task<CodeReviewOrganizationSettings> SaveAsync(
             string organizationId,
-            CodeReviewOrganizationSettings settings,
+            int? maxConcurrentReviews,
+            bool? allowAgentAttestedTriage,
             CancellationToken cancellationToken
-        ) => Task.FromResult(settings);
+        ) =>
+            Task.FromResult(
+                Settings with
+                {
+                    MaxConcurrentReviews = maxConcurrentReviews ?? Settings.MaxConcurrentReviews,
+                    AllowAgentAttestedTriage = allowAgentAttestedTriage
+                        ?? Settings.AllowAgentAttestedTriage,
+                }
+            );
     }
 
     private sealed class TestCodeReviewExecutionLeaseStore : ICodeReviewExecutionLeaseStore

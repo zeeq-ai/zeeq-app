@@ -2612,6 +2612,56 @@
             "description": "Not Found"
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "Code Reviews"
+        ],
+        "summary": "Reopen a finding by triage ID.",
+        "operationId": "ClearFindingTriage",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "triageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewFindingTriageDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeReviewEndpointError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found"
+          }
+        }
       }
     },
     "/api/v1/orgs/{orgId}/code-reviews/triages/{triageId}/confirm": {
@@ -13655,7 +13705,8 @@
         "enum": [
           "Ui",
           "GitHub",
-          "Mcp"
+          "Mcp",
+          "AgentAttested"
         ],
         "description": "Supported triagechannel values."
       },
@@ -13781,6 +13832,18 @@
           "updatedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "confirmationQuote": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "agentSessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         },
         "description": "Current triage state and its finding snapshot."
@@ -14003,7 +14066,8 @@
         "required": [
           "organizationId",
           "maxConcurrentReviews",
-          "executionLeaseDurationMinutes"
+          "executionLeaseDurationMinutes",
+          "allowAgentAttestedTriage"
         ],
         "type": "object",
         "properties": {
@@ -14028,6 +14092,10 @@
             ],
             "description": "Execution lease duration in whole minutes.",
             "format": "int32"
+          },
+          "allowAgentAttestedTriage": {
+            "type": "boolean",
+            "description": "Whether new session attestations are allowed."
           }
         },
         "description": "Organization-level code-review execution settings."
@@ -19246,9 +19314,6 @@
         "description": "Saves one complete dataset draft under an expected version."
       },
       "SaveCodeReviewOrganizationSettingsRequest": {
-        "required": [
-          "maxConcurrentReviews"
-        ],
         "type": "object",
         "properties": {
           "maxConcurrentReviews": {
@@ -19256,11 +19321,19 @@
             "minimum": 1,
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "type": [
+              "null",
               "integer",
               "string"
             ],
             "description": "Maximum number of code reviews that may run concurrently for the organization.",
             "format": "int32"
+          },
+          "allowAgentAttestedTriage": {
+            "type": [
+              "null",
+              "boolean"
+            ],
+            "description": "Whether new session attestations are allowed; null preserves the current setting."
           }
         },
         "description": "Request for saving organization-level code-review execution limits."

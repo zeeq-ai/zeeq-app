@@ -1,7 +1,9 @@
 using System.Security.Claims;
 using System.Text;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ModelContextProtocol.Server;
 using NSubstitute;
 using OpenIddict.Abstractions;
 using Zeeq.Core.Common;
@@ -41,6 +43,7 @@ public sealed class CodeReviewMcpToolsTests
         var response = await CodeReviewMcpTools.TriageReviewFinding(
             service,
             links,
+            null!,
             TestUser(),
             "cr_123",
             "abcde.F1",
@@ -68,6 +71,7 @@ public sealed class CodeReviewMcpToolsTests
         var response = await CodeReviewMcpTools.TriageReviewFinding(
             service,
             null!,
+            null!,
             TestUser(),
             "cr_123",
             "abcde.F1",
@@ -77,6 +81,158 @@ public sealed class CodeReviewMcpToolsTests
         await service
             .DidNotReceive()
             .TriageAsync(Arg.Any<FindingTriageRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Attestation_RequiresActiveMemberAndForwardsExactQuote()
+    {
+        var service = Substitute.For<ICodeReviewFindingTriageService>();
+        var memberships = Substitute.For<IZeeqMembershipStore>();
+        memberships
+            .ListActiveMembershipsForUserAsync("usr_123", Arg.Any<CancellationToken>())
+            .Returns([
+                new OrganizationMembership
+                {
+                    Id = "membership",
+                    OrganizationId = "org_123",
+                    UserId = "usr_123",
+                    Role = "member",
+                    Status = MembershipStatus.Active,
+                    CreatedByUserId = "usr_123",
+                },
+            ]);
+        var auth = new CodeReviewAuthorization(memberships);
+        service
+            .TriageAsync(Arg.Any<FindingTriageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new FindingTriageOutcome.Invalid(["test"]));
+        const string quote = " Yes, defer this. ";
+        await CodeReviewMcpTools.TriageReviewFinding(
+            service,
+            null!,
+            auth,
+            TestUser(),
+            "cr_123",
+            "F1",
+            "deferred",
+            "reason",
+            confirmed: true,
+            confirmationQuote: quote
+        );
+        await service
+            .Received(1)
+            .TriageAsync(
+                Arg.Is<FindingTriageRequest>(x =>
+                    x.Channel == CodeReviewFindingTriageChannel.AgentAttested
+                    && x.ActorUserId == "usr_123"
+                    && x.ConfirmationQuote == quote
+                ),
+                Arg.Any<CancellationToken>()
+            );
+        memberships
+            .ListActiveMembershipsForUserAsync("usr_123", Arg.Any<CancellationToken>())
+            .Returns([]);
+        var response = await CodeReviewMcpTools.TriageReviewFinding(
+            service,
+            null!,
+            auth,
+            TestUser(),
+            "cr_123",
+            "F1",
+            "deferred",
+            "reason",
+            confirmed: true,
+            confirmationQuote: quote
+        );
+        await Assert.That(response).Contains("Forbidden");
+        await service
+            .Received(1)
+            .TriageAsync(Arg.Any<FindingTriageRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    [Arguments("")]
+    [Arguments(" ")]
+    [Arguments("yes\0no")]
+    public async Task Attestation_RejectsInvalidQuote(string quote)
+    {
+        var service = Substitute.For<ICodeReviewFindingTriageService>();
+        var response = await CodeReviewMcpTools.TriageReviewFinding(
+            service,
+            null!,
+            null!,
+            TestUser(),
+            "cr_123",
+            "F1",
+            "deferred",
+            "reason",
+            confirmed: true,
+            confirmationQuote: quote
+        );
+        await Assert.That(response).Contains("Invalid");
+        await service
+            .DidNotReceive()
+            .TriageAsync(Arg.Any<FindingTriageRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task Attestation_RejectsClientCredentialsAndOversizedQuote()
+    {
+        var service = Substitute.For<ICodeReviewFindingTriageService>();
+        var identity = (ClaimsIdentity)TestUser().Identity!;
+        identity.AddClaim(
+            new Claim(AuthClaims.AuthMode, OpenIddictConstants.GrantTypes.ClientCredentials)
+        );
+        var response = await CodeReviewMcpTools.TriageReviewFinding(
+            service,
+            null!,
+            null!,
+            new ClaimsPrincipal(identity),
+            "cr_123",
+            "F1",
+            "deferred",
+            "reason",
+            confirmed: true,
+            confirmationQuote: "yes"
+        );
+        await Assert.That(response).Contains("Forbidden");
+        response = await CodeReviewMcpTools.TriageReviewFinding(
+            service,
+            null!,
+            null!,
+            TestUser(),
+            "cr_123",
+            "F1",
+            "deferred",
+            "reason",
+            confirmed: true,
+            confirmationQuote: new string('x', 501)
+        );
+        await Assert.That(response).Contains("Invalid");
+        await service
+            .DidNotReceive()
+            .TriageAsync(Arg.Any<FindingTriageRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Test]
+    public async Task AttestationSchema_InjectsAuthorizationInsteadOfExposingIt()
+    {
+        var services = new ServiceCollection()
+            .AddSingleton(Substitute.For<ICodeReviewFindingTriageService>())
+            .AddSingleton(new CodeReviewAuthorization(Substitute.For<IZeeqMembershipStore>()))
+            .AddSingleton(
+                new CodeReviewRequestLinkFactory(
+                    Options(),
+                    new CodeReviewRequestTokenProtector(Options().Value.CodeReview)
+                )
+            )
+            .BuildServiceProvider();
+        var tool = McpServerTool.Create(
+            typeof(CodeReviewMcpTools).GetMethod(nameof(CodeReviewMcpTools.TriageReviewFinding))!,
+            options: new McpServerToolCreateOptions { Services = services }
+        );
+        var schema = tool.ProtocolTool.InputSchema.ToString();
+        await Assert.That(schema).DoesNotContain("authorization");
+        await Assert.That(schema).Contains("confirmationQuote");
     }
 
     [Test]

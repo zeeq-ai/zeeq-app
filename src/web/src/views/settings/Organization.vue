@@ -66,6 +66,28 @@
       @update="saveSameDomainOnboarding"
     />
 
+    <UPageCard
+      v-if="canManageOrganization"
+      class="mt-4"
+      variant="subtle"
+      title="Agent-reported confirmations"
+      description="Allow agents to report that a user confirmed a finding in their session. Agents can still propose decisions when disabled. Existing decisions remain until changed or cleared."
+    >
+      <USwitch
+        v-if="agentTriageLoaded"
+        :model-value="allowAgentTriage"
+        :disabled="agentTriageBusy || !agentTriageLoaded"
+        aria-label="Allow agent-reported confirmations"
+        @update:model-value="saveAgentTriage"
+      />
+      <p v-if="!agentTriageLoaded" class="text-sm text-muted">
+        Setting unavailable or loading.
+      </p>
+      <p v-if="agentTriageError" class="text-sm text-error">
+        {{ agentTriageError }}
+      </p>
+    </UPageCard>
+
     <USlideover
       v-model:open="newOrganizationOpen"
       title="New organization"
@@ -142,7 +164,7 @@ import SameDomainOnboardingSettings from "./components/SameDomainOnboardingSetti
 import { useOrganizationSettingsStore } from "@/stores/organization-settings-store";
 import { useAuditHistoryStore } from "@/stores/audit-history-store";
 import AuditHistoryFeed from "@/components/audit/AuditHistoryFeed.vue";
-import { Libraries } from "@/api/generated";
+import { CodeReviews, Libraries } from "@/api/generated";
 import type { CreateOrganizationRequest } from "@/api/generated/types/CreateOrganizationRequest";
 import type { SameDomainOnboardingRole } from "@/stores/organization-settings-store";
 
@@ -150,6 +172,51 @@ const toast = useToast();
 const settingsStore = useOrganizationSettingsStore();
 const { organization, saving, canManageOrganization } =
   storeToRefs(settingsStore);
+const allowAgentTriage = ref(true);
+const agentTriageBusy = ref(false);
+const agentTriageLoaded = ref(false);
+const agentTriageError = ref("");
+let agentTriageGeneration = 0;
+watch(
+  () =>
+    [settingsStore.currentOrganizationId, canManageOrganization.value] as const,
+  async ([id, canManage]) => {
+    const generation = ++agentTriageGeneration;
+    agentTriageLoaded.value = false;
+    agentTriageError.value = "";
+    if (!id || !canManage) return;
+    try {
+      const result = await CodeReviews.getCodeReviewOrganizationSettings(id);
+      if (generation !== agentTriageGeneration) return;
+      allowAgentTriage.value = result.allowAgentAttestedTriage;
+      agentTriageLoaded.value = true;
+    } catch {
+      if (generation === agentTriageGeneration)
+        agentTriageError.value = "Could not load agent triage settings.";
+    }
+  },
+  { immediate: true },
+);
+async function saveAgentTriage(value: boolean) {
+  const id = settingsStore.currentOrganizationId;
+  const generation = agentTriageGeneration;
+  if (!id || agentTriageBusy.value) return;
+  agentTriageBusy.value = true;
+  agentTriageError.value = "";
+  try {
+    const saved = await CodeReviews.saveCodeReviewOrganizationSettings(id, {
+      allowAgentAttestedTriage: value,
+    });
+    if (generation === agentTriageGeneration)
+      allowAgentTriage.value = saved.allowAgentAttestedTriage;
+  } catch {
+    if (generation === agentTriageGeneration)
+      agentTriageError.value = "Could not save agent triage settings.";
+  } finally {
+    agentTriageBusy.value = false;
+  }
+}
+
 const auditHistoryStore = useAuditHistoryStore();
 const {
   range: historyRange,

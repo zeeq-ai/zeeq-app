@@ -25,7 +25,11 @@
             class="rounded-full"
           />
           <UBadge
-            :label="result.triage.approvalState"
+            :label="
+              result.triage.channel === 'AgentAttested'
+                ? 'Agent-reported'
+                : result.triage.approvalState
+            "
             :color="
               result.triage.approvalState === 'Proposed' ? 'info' : 'neutral'
             "
@@ -51,6 +55,17 @@
             {{ result.triage.currentReason }}
           </p>
         </div>
+        <p
+          v-if="result.triage.channel === 'AgentAttested'"
+          class="text-sm whitespace-pre-wrap"
+        >
+          Quote supplied by agent (not independently verified): “{{
+            result.triage.confirmationQuote || "Unavailable"
+          }}”
+          <span v-if="result.triage.agentSessionId">
+            · Session {{ result.triage.agentSessionId }}</span
+          >
+        </p>
         <UAlert
           v-if="confirmError"
           icon="i-hugeicons-alert-02"
@@ -58,9 +73,31 @@
           variant="subtle"
           :title="confirmError"
         />
-        <div v-if="result.triage.approvalState === 'Proposed'" class="flex">
-          <UButton label="Confirm Proposal" :loading="busy" @click="confirm" />
+        <div
+          v-if="
+            result.triage.approvalState === 'Proposed' ||
+            result.triage.channel === 'AgentAttested'
+          "
+          class="flex"
+        >
+          <UButton
+            :label="
+              result.triage.channel === 'AgentAttested'
+                ? 'Confirm on web'
+                : 'Confirm Proposal'
+            "
+            :loading="busy"
+            @click="confirm"
+          />
         </div>
+        <UButton
+          v-if="result.triage.approvalState !== 'Open'"
+          label="Reopen finding"
+          color="neutral"
+          variant="outline"
+          :loading="busy"
+          @click="reopen"
+        />
       </div>
     </div>
     <div v-else class="grid gap-3 p-4 sm:px-6">
@@ -123,6 +160,22 @@ watch(
 onUnmounted(() => {
   generation++;
 });
+async function reopen() {
+  if (!result.value || busy.value) return;
+  const current = generation;
+  busy.value = true;
+  confirmError.value = "";
+  try {
+    const updated = await store.reopenFindingTriage(result.value.triage.id);
+    if (current === generation && result.value) result.value.triage = updated;
+  } catch (e) {
+    if (current === generation)
+      confirmError.value =
+        e instanceof Error ? e.message : "Could not reopen finding.";
+  } finally {
+    if (current === generation) busy.value = false;
+  }
+}
 async function confirm() {
   if (!result.value || busy.value) return;
   const current = generation;

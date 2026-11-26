@@ -146,6 +146,30 @@ public sealed class TriageFindingHandler(
         return Map(result);
     }
 
+    /// <summary>Reopens a finding, including when the source review has expired.</summary>
+    public async Task<
+        Results<NotFound, BadRequest<CodeReviewEndpointError>, Ok<CodeReviewFindingTriageDto>>
+    > ClearAsync(string orgId, string triageId, ClaimsPrincipal user, CancellationToken ct)
+    {
+        var access = await authorization.ResolveAsync(orgId, user, ct);
+        if (access is null)
+            return TypedResults.NotFound();
+        var result = await service.TriageAsync(
+            new(
+                orgId,
+                new FindingTriageTarget.ByTriageId(triageId),
+                "",
+                FindingTriageOperation.Clear,
+                null,
+                null,
+                CodeReviewFindingTriageChannel.Ui,
+                access.UserId
+            ),
+            ct
+        );
+        return Map(result);
+    }
+
     private static Results<
         NotFound,
         BadRequest<CodeReviewEndpointError>,

@@ -39,6 +39,24 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
                 null,
                 "A nonblank reason of at most 1000 characters is required."
             );
+        if (
+            write.Channel == CodeReviewFindingTriageChannel.AgentAttested
+            && (
+                write.Operation != FindingTriageOperation.Set
+                || string.IsNullOrWhiteSpace(write.ActorUserId)
+                || string.IsNullOrWhiteSpace(write.ConfirmationQuote)
+                || write.ConfirmationQuote.Length > 500
+                || write.ConfirmationQuote.Contains('\0')
+                || write.Reason?.Contains('\0') == true
+                || write.AgentSessionId?.Contains('\0') == true
+                || write.AgentSessionId?.Length > 128
+            )
+        )
+            return new(
+                FindingTriageWriteStatus.Invalid,
+                null,
+                "An authenticated actor and confirmation quote are required."
+            );
         for (var attempt = 0; ; attempt++)
         {
             await using var db = await factory.CreateDbContextAsync(cancellationToken);
@@ -46,6 +64,31 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
                 IsolationLevel.ReadCommitted,
                 cancellationToken
             );
+            if (write.Channel == CodeReviewFindingTriageChannel.AgentAttested)
+            {
+                var enabled = await db
+                    .Database.SqlQuery<bool>(
+                        $"SELECT COALESCE(COALESCE((code_review_configuration->>'AllowAgentAttestedTriage')::boolean, (code_review_configuration->>'allow_agent_attested_triage')::boolean), true) AS \"Value\" FROM zeeq.core_organizations WHERE id = {write.Snapshot.OrganizationId} AND disabled_at_utc IS NULL AND activated_at_utc IS NOT NULL FOR SHARE"
+                    )
+                    .SingleOrDefaultAsync(cancellationToken);
+                if (!enabled)
+                    return new(
+                        FindingTriageWriteStatus.Forbidden,
+                        null,
+                        "Agent-attested triage is disabled for this organization."
+                    );
+                var member = await db
+                    .Database.SqlQuery<string>(
+                        $"SELECT id AS \"Value\" FROM zeeq.core_organization_memberships WHERE organization_id = {write.Snapshot.OrganizationId} AND user_id = {write.ActorUserId} AND status = 'Active' AND disabled_at_utc IS NULL FOR SHARE"
+                    )
+                    .SingleOrDefaultAsync(cancellationToken);
+                if (member is null)
+                    return new(
+                        FindingTriageWriteStatus.Forbidden,
+                        null,
+                        "An active organization member is required."
+                    );
+            }
             var s = write.Snapshot.Clone();
             // NOTE: Review IDs are globally unique UUIDv7 values; this key identifies a finding
             // across partitions. Source review creation time is only used for partition pruning.
@@ -55,13 +98,54 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
                 )
                 .SingleOrDefaultAsync(cancellationToken);
             if (
-                write.Channel == CodeReviewFindingTriageChannel.Mcp
+                write.Channel == CodeReviewFindingTriageChannel.AgentAttested
+                && (row is null || row.ApprovalState != CodeReviewFindingApprovalState.Confirmed)
+            )
+            {
+                var hasPriorAttestation = await db
+                    .Database.SqlQuery<bool>(
+                        $"SELECT EXISTS (SELECT 1 FROM zeeq.code_review_finding_attestations WHERE organization_id = {s.OrganizationId} AND source_review_id = {s.SourceReviewId} AND occurrence_key = {s.OccurrenceKey}) AS \"Value\""
+                    )
+                    .SingleAsync(cancellationToken);
+                if (hasPriorAttestation)
+                    return new(
+                        FindingTriageWriteStatus.Forbidden,
+                        row,
+                        "This finding was reopened after an agent attestation. Confirm it on the web."
+                    );
+            }
+            if (
+                write.Channel == CodeReviewFindingTriageChannel.AgentAttested
+                && row?.ApprovalState == CodeReviewFindingApprovalState.Confirmed
+                && row.Channel == write.Channel
+                && row.ConfirmedByUserId == write.ActorUserId
+                && row.Disposition == write.Disposition
+                && row.CurrentReason == reason
+                && row.ConfirmationQuote == write.ConfirmationQuote
+                && row.AgentSessionId == write.AgentSessionId
+            )
+                return new(FindingTriageWriteStatus.Applied, row);
+            if (
+                (
+                    write.Channel == CodeReviewFindingTriageChannel.Mcp
+                    || write.Channel == CodeReviewFindingTriageChannel.AgentAttested
+                )
                 && row?.ApprovalState == CodeReviewFindingApprovalState.Confirmed
             )
                 return new(
                     FindingTriageWriteStatus.Forbidden,
                     row,
                     "Confirmed decisions require a human."
+                );
+            if (
+                row?.ApprovalState == CodeReviewFindingApprovalState.Confirmed
+                && row.Channel == CodeReviewFindingTriageChannel.AgentAttested
+                && write.Channel != CodeReviewFindingTriageChannel.Ui
+            )
+                return new(
+                    FindingTriageWriteStatus.Forbidden,
+                    row,
+                    "Confirm or reopen this decision on the web."
                 );
             // NOTE: GitHub timestamps have one-second granularity; allow same-second transitions.
             // Identical redeliveries are handled as idempotent no-ops below.
@@ -110,6 +194,7 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
                 && row.Disposition == disposition
                 && row.ApprovalState == state
                 && row.CurrentReason == newReason
+                && row.Channel == write.Channel
             )
             {
                 if (
@@ -146,6 +231,10 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
             row.CurrentReason = newReason;
             row.Channel = write.Channel;
             row.AgentSessionId = write.AgentSessionId;
+            row.ConfirmationQuote =
+                write.Channel == CodeReviewFindingTriageChannel.AgentAttested
+                    ? write.ConfirmationQuote
+                    : null;
             row.SourceUrl = write.SourceUrl;
             row.UpdatedAtUtc = now;
             row.LastSourceEventAtUtc =
@@ -172,6 +261,11 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
             }
             else
             {
+                if (write.Channel == CodeReviewFindingTriageChannel.AgentAttested)
+                {
+                    row.ProposedByUserId = null;
+                    row.ProposedAtUtc = null;
+                }
                 row.ConfirmedByUserId = write.ActorUserId;
                 row.ConfirmedAtUtc = now;
                 row.ClearedByUserId = null;
@@ -189,6 +283,11 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
             try
             {
                 await db.SaveChangesAsync(cancellationToken);
+                if (write.Channel == CodeReviewFindingTriageChannel.AgentAttested)
+                    await db.Database.ExecuteSqlInterpolatedAsync(
+                        $"INSERT INTO zeeq.code_review_finding_attestations (organization_id, triage_id, actor_user_id, source_review_id, occurrence_key, reason, auth_mode, client_id, confirmation_quote, agent_session_id, confirmed_at_utc, disposition) VALUES ({s.OrganizationId}, {row.Id}, {write.ActorUserId}, {s.SourceReviewId}, {s.OccurrenceKey}, {reason}, {write.AuthMode}, {write.ClientId}, {write.ConfirmationQuote}, {write.AgentSessionId}, {now}, {disposition.ToString()})",
+                        cancellationToken
+                    );
                 await tx.CommitAsync(cancellationToken);
                 return new(
                     FindingTriageWriteStatus.Applied,
@@ -291,7 +390,7 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
                 $"""
                 WITH pending AS (
                     SELECT organization_id, id FROM zeeq.code_review_finding_triages
-                    WHERE disposition = 'FalsePositive' AND approval_state = 'Confirmed'
+                    WHERE disposition = 'FalsePositive' AND approval_state = 'Confirmed' AND channel <> 'AgentAttested'
                       AND (embedding IS NULL OR embedding_model IS DISTINCT FROM {targetModel})
                       AND (embedding_started_at IS NULL OR embedding_started_at < clock_timestamp() - {leaseDuration})
                     ORDER BY updated_at_utc, organization_id, id LIMIT {batchSize} FOR UPDATE SKIP LOCKED
@@ -364,6 +463,7 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
             && x.EmbeddingStartedAt == startedAtUtc
             && x.Disposition == CodeReviewFindingDisposition.FalsePositive
             && x.ApprovalState == CodeReviewFindingApprovalState.Confirmed
+            && x.Channel != CodeReviewFindingTriageChannel.AgentAttested
         );
 
     public async Task<IReadOnlyList<FindingTriageMatch>> SearchConfirmedFalsePositivesAsync(
@@ -409,6 +509,7 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
                 x.OrganizationId == organizationId
                 && x.Disposition == CodeReviewFindingDisposition.FalsePositive
                 && x.ApprovalState == CodeReviewFindingApprovalState.Confirmed
+                && x.Channel != CodeReviewFindingTriageChannel.AgentAttested
                 && x.Embedding != null
                 && x.EmbeddingModel == model
                 && (

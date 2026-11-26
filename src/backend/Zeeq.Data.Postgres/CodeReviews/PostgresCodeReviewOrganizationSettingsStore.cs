@@ -1,6 +1,6 @@
+using Microsoft.EntityFrameworkCore;
 using Zeeq.Core.Models;
 using Zeeq.Platform.CodeReviews;
-using Microsoft.EntityFrameworkCore;
 
 namespace Zeeq.Data.Postgres.CodeReviews;
 
@@ -16,10 +16,10 @@ internal sealed class PostgresCodeReviewOrganizationSettingsStore(PostgresDbCont
         CancellationToken cancellationToken
     )
     {
-        var organization =
-            await db
-                .Organizations.TagWithOperationCallSite("code_review_organization_settings.get")
-                .FirstOrDefaultAsync(row => row.Id == organizationId, cancellationToken)
+        var organization = await db
+            .Organizations.AsNoTracking()
+            .TagWithOperationCallSite("code_review_organization_settings.get")
+            .FirstOrDefaultAsync(row => row.Id == organizationId, cancellationToken)
             ?? throw new InvalidOperationException($"Organization {organizationId} was not found.");
 
         return organization.CodeReviewConfiguration ?? CodeReviewOrganizationSettings.Default;
@@ -28,21 +28,31 @@ internal sealed class PostgresCodeReviewOrganizationSettingsStore(PostgresDbCont
     /// <inheritdoc />
     public async Task<CodeReviewOrganizationSettings> SaveAsync(
         string organizationId,
-        CodeReviewOrganizationSettings settings,
+        int? maxConcurrentReviews,
+        bool? allowAgentAttestedTriage,
         CancellationToken cancellationToken
     )
     {
-        var existing =
-            await db
-                .Organizations.TagWithOperationCallSite("code_review_organization_settings.save")
-                .FirstOrDefaultAsync(row => row.Id == organizationId, cancellationToken)
-            ?? throw new InvalidOperationException($"Organization {organizationId} was not found.");
-
-        existing.CodeReviewConfiguration = settings;
-        existing.UpdatedAtUtc = DateTimeOffset.UtcNow;
-
-        await db.SaveChangesAsync(cancellationToken);
-
-        return settings;
+        var settingsDefaults = CodeReviewOrganizationSettings.Default;
+        var defaults = System.Text.Json.JsonSerializer.Serialize(settingsDefaults);
+        var defaultMax = settingsDefaults.MaxConcurrentReviews;
+        var rows = await db.Database.ExecuteSqlInterpolatedAsync(
+            $$"""
+            UPDATE zeeq.core_organizations
+            SET code_review_configuration =
+                jsonb_set(
+                    jsonb_set(({{defaults}}::jsonb || COALESCE(code_review_configuration, '{}'::jsonb)) - 'max_concurrent_reviews' - 'allow_agent_attested_triage',
+                        '{MaxConcurrentReviews}',
+                        CASE WHEN {{maxConcurrentReviews}}::integer IS NULL THEN COALESCE(code_review_configuration->'MaxConcurrentReviews', code_review_configuration->'max_concurrent_reviews', to_jsonb({{defaultMax}}::integer)) ELSE to_jsonb({{maxConcurrentReviews}}::integer) END),
+                    '{AllowAgentAttestedTriage}',
+                    CASE WHEN {{allowAgentAttestedTriage}}::boolean IS NULL THEN COALESCE(code_review_configuration->'AllowAgentAttestedTriage', code_review_configuration->'allow_agent_attested_triage', 'null'::jsonb) ELSE to_jsonb({{allowAgentAttestedTriage}}::boolean) END),
+                updated_at_utc = now()
+            WHERE id = {{organizationId}}
+            """,
+            cancellationToken
+        );
+        if (rows != 1)
+            throw new InvalidOperationException($"Organization {organizationId} was not found.");
+        return await GetAsync(organizationId, cancellationToken);
     }
 }

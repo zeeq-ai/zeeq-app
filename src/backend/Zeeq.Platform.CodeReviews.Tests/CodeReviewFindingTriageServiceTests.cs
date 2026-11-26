@@ -285,4 +285,27 @@ public sealed class CodeReviewFindingTriageServiceTests
         );
         await Assert.That(context.BuildTriagedFindingsSection()).IsEqualTo(string.Empty);
     }
+
+    [Test]
+    public async Task AgentAttestation_IsExcludedFromReviewContext()
+    {
+        var row = new CodeReviewFindingTriage
+        {
+            Id = "id",
+            OrganizationId = "org",
+            OwnerQualifiedRepoName = "owner/repo",
+            SourceReviewId = "review",
+            SourceReviewCreatedAtUtc = DateTimeOffset.UtcNow,
+            OccurrenceKey = "F1",
+            SemanticId = "finding",
+            Facet = "Security",
+            FindingSummary = "summary",
+            Disposition = CodeReviewFindingDisposition.FalsePositive,
+            ApprovalState = CodeReviewFindingApprovalState.Confirmed,
+            Channel = CodeReviewFindingTriageChannel.AgentAttested,
+            CurrentReason = "agent claim",
+        };
+        var context = new CodeReviewPriorContext([], [row], "review_group");
+        await Assert.That(context.BuildTriagedFindingsSection()).IsEqualTo(string.Empty);
+    }
 }
