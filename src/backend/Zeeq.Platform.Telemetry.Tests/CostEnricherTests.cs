@@ -15,6 +15,28 @@ public sealed class CostEnricherTests
     private readonly IAgentTelemetryCostEnricher _enricher = new AgentTelemetryCostEnricher();
 
     [Test]
+    public async Task GeminiArgon_UsesEventTimeAcrossUtcCutover()
+    {
+        var before = new AgentSessionEventRecord(AgentSessionEventType.Completion, Model: "gemini-4-argon", InputTokens: 1_000_000, OccurredAtUtc: new DateTimeOffset(2026, 11, 30, 23, 59, 59, TimeSpan.Zero));
+        var atCutover = before with { OccurredAtUtc = new DateTimeOffset(2026, 12, 1, 0, 0, 0, TimeSpan.Zero) };
+        var after = before with { OccurredAtUtc = new DateTimeOffset(2026, 12, 1, 0, 0, 1, TimeSpan.Zero) };
+
+        await Assert.That(_enricher.Enrich(before, "zeeq-agent").CostUsd).IsEqualTo(2m);
+        await Assert.That(_enricher.Enrich(atCutover, "zeeq-agent").CostUsd).IsEqualTo(4m);
+        await Assert.That(_enricher.Enrich(after, "zeeq-agent").CostUsd).IsEqualTo(4m);
+    }
+
+    [Test]
+    public async Task GeminiFlash_UsesEventTimeAtUtcCutover()
+    {
+        var before = new AgentSessionEventRecord(AgentSessionEventType.Completion, Model: "gemini-3.8-flash", InputTokens: 1_000_000, OccurredAtUtc: new DateTimeOffset(2026, 12, 31, 23, 59, 59, TimeSpan.Zero));
+        var atCutover = before with { OccurredAtUtc = new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero) };
+
+        await Assert.That(_enricher.Enrich(before, "zeeq-agent").CostUsd).IsEqualTo(0.75m);
+        await Assert.That(_enricher.Enrich(atCutover, "zeeq-agent").CostUsd).IsEqualTo(1.5m);
+    }
+
+    [Test]
     [Arguments("gpt-6.1-sol", "2.00", "0.10", "10.00")]
     [Arguments("gpt-6-astra", "10.00", "1.00", "50.00")]
     [Arguments("gpt-6-sol", "2.00", "0.20", "10.00")]

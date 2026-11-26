@@ -21,7 +21,7 @@ public static class PricingCatalog
     /// <summary>
     /// Catalog version for traceability. Bump when rates are updated.
     /// </summary>
-    public const int Version = 6;
+    public const int Version = 7;
 
     /// <summary>
     /// Copilot nano-AIU → USD conversion rate.
@@ -63,6 +63,13 @@ public static class PricingCatalog
         ["gpt-5.4-nano"] = TokenRates.FromPerMillion(0.20m, 0.02m, 1.25m),
         ["gpt-5.4-pro"] = TokenRates.FromPerMillion(30.00m, 30.00m, 180.00m),
         ["gpt-5.3-codex"] = TokenRates.FromPerMillion(1.75m, 0.175m, 14.00m),
+
+        // --- Gemini models (standard tier, USD per 1M tokens) ---
+        ["gemini-4-hydrogen"] = TokenRates.FromPerMillion(1.50m, 0.075m, 7.50m),
+        ["gemini-4-neon"] = TokenRates.FromPerMillion(3.00m, 0.15m, 15.00m),
+        ["gemini-4-argon"] = TokenRates.FromPerMillion(2.00m, 0.10m, 10.00m),
+        ["gemini-4-carbon"] = TokenRates.FromPerMillion(2.00m, 0.10m, 10.00m),
+        ["gemini-3.8-flash"] = TokenRates.FromPerMillion(0.75m, 0.075m, 3.75m),
 
         // --- Anthropic models (pricing as of September 29, 2026) ---
         // Source: https://platform.claude.com/docs/en/about-claude/pricing (API, standard tier)
@@ -107,12 +114,20 @@ public static class PricingCatalog
         ["claude-sonnet-4-5"] = "claude-sonnet-4.5",
     };
 
+    private static readonly Dictionary<string, (DateTimeOffset EffectiveFromUtc, decimal Multiplier)> _rateSteps = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["gemini-4-argon"] = (new DateTimeOffset(2026, 12, 1, 0, 0, 0, TimeSpan.Zero), 2m),
+        ["gemini-4-carbon"] = (new DateTimeOffset(2026, 12, 1, 0, 0, 0, TimeSpan.Zero), 2m),
+        ["gemini-3.8-flash"] = (new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero), 2m),
+    };
+
     /// <summary>
     /// Looks up token rates for a model name. Returns the <c>default</c>
     /// entry for unknown models.
     /// </summary>
     /// <param name="modelName">The model name from the telemetry record.</param>
-    public static TokenRates Lookup(string? modelName)
+    /// <param name="at">The event time used for effective rates, or null to use the current UTC time.</param>
+    public static TokenRates Lookup(string? modelName, DateTimeOffset? at = null)
     {
         if (modelName is null)
         {
@@ -121,7 +136,17 @@ public static class PricingCatalog
 
         var canonicalName = _modelAliases.GetValueOrDefault(modelName, modelName);
 
-        return _rates.TryGetValue(canonicalName, out var rates) ? rates : _rates["default"];
+        if (!_rates.TryGetValue(canonicalName, out var rates))
+        {
+            return _rates["default"];
+        }
+
+        if (_rateSteps.TryGetValue(canonicalName, out var step) && (at ?? DateTimeOffset.UtcNow) >= step.EffectiveFromUtc)
+        {
+            return new TokenRates(rates.InputPerToken * step.Multiplier, rates.CachedPerToken * step.Multiplier, rates.OutputPerToken * step.Multiplier);
+        }
+
+        return rates;
     }
 
     /// <summary>

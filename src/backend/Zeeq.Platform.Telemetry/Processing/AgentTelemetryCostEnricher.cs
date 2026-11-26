@@ -89,7 +89,7 @@ public sealed class AgentTelemetryCostEnricher : IAgentTelemetryCostEnricher
             return evt;
         }
 
-        var rates = PricingCatalog.Lookup(evt.Model);
+        var rates = PricingCatalog.Lookup(evt.Model, evt.OccurredAtUtc);
 
         var input = evt.InputTokens ?? 0;
         var cached = evt.CachedTokens ?? 0;
