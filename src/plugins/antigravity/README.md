@@ -22,7 +22,7 @@ Prompts and tool arguments and results can contain sensitive information. They a
 
 Set `ANTIGRAVITY_TELEMETRY_DISABLED=1` to disable export. Set `ANTIGRAVITY_TELEMETRY_LOG_ERRORS=1` for error logging. The plugin writes its latest delivery error to `lastError` in its Antigravity plugin data directory. `ANTIGRAVITY_TELEMETRY_TIMEOUT_MS` changes the request timeout (default 3000). A later session retries unsent data from inactive conversations. A final interrupted session may remain unsent until another session starts.
 
-Antigravity's transcript format is not a documented stable API. IDE and interactive launch behavior may differ from CLI operation.
+Antigravity's transcript format is not a documented stable API. IDE launches are not supported or tested. Interactive CLI mode is supported.
 
 Tool results are paired by transcript order because Antigravity does not provide tool-call IDs. Background results are matched by task ID. An unresolved background task is reported as having no observed completion after 24 hours; a later result cannot replace it. The plugin recognizes the captured CLI tool-result format, which may change with Antigravity versions.
 
