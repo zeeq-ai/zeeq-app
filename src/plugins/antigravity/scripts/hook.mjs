@@ -35,7 +35,9 @@ function mapTranscript(conversation, rows, options = {}) {
       const cached = Number(row.cache_read_tokens) || 0;
       const fresh = Number(row.input_tokens) || 0;
       const output = Number(row.output_tokens) || 0;
-      if (fresh || cached || output) events.push({ ...identity(conversation, row, 0, "Completion"), "gen_ai.request.model": modelName(row.model), "gen_ai.usage.input_tokens": Number(row.prompt_tokens ?? row.total_input_tokens ?? fresh + cached), "gen_ai.usage.cached_tokens": cached, "gen_ai.usage.output_tokens": output });
+      const reported = [row.prompt_tokens, row.total_input_tokens].find((value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0);
+      const input = reported ?? fresh + cached;
+      if (input || cached || output) events.push({ ...identity(conversation, row, 0, "Completion"), "gen_ai.request.model": modelName(row.model), "gen_ai.usage.input_tokens": input, "gen_ai.usage.cached_tokens": cached, "gen_ai.usage.output_tokens": output });
     } else if (row.type === "GENERIC") {
       const content = String(row.content ?? "");
       if (row.source !== "MODEL" || !/^Created At:/m.test(content)) continue;

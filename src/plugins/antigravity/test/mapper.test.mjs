@@ -102,3 +102,10 @@ test('keeps unrelated task result unpaired and eventually expires the call', () 
   const events = mapTranscript('c', [], { state, now: t + 86400000 });
   assert.equal(events[0]['gen_ai.tool.call.result'], '[no completion observed]'); assert.equal(events[0]['gen_ai.tool.call.success'], null);
 });
+
+test('uses a valid reported input total or falls back to component counts', () => {
+  const base = { type: 'PLANNER_RESPONSE', step_index: 0, created_at: '2026-01-01T00:00:00Z', input_tokens: 2, cache_read_tokens: 3, output_tokens: 1 };
+  assert.equal(mapTranscript('c', [{ ...base, prompt_tokens: 'invalid' }])[0]['gen_ai.usage.input_tokens'], 5);
+  assert.equal(mapTranscript('c', [{ ...base, prompt_tokens: 'invalid', total_input_tokens: 8 }])[0]['gen_ai.usage.input_tokens'], 8);
+  assert.equal(mapTranscript('c', [{ ...base, input_tokens: 0, cache_read_tokens: 0, output_tokens: 0, prompt_tokens: 8 }])[0]['gen_ai.usage.input_tokens'], 8);
+});
