@@ -256,6 +256,20 @@ public sealed class CodeReviewEndpoints : IEndpoint
             .WithName("ConfirmFindingTriage")
             .WithSummary("Confirm a finding triage proposal.");
 
+        group
+            .MapDelete(
+                "/triages/{triageId}",
+                static (
+                    string orgId,
+                    string triageId,
+                    ClaimsPrincipal user,
+                    [FromServices] TriageFindingHandler handler,
+                    CancellationToken ct
+                ) => handler.ClearAsync(orgId, triageId, user, ct)
+            )
+            .WithName("ClearFindingTriage")
+            .WithSummary("Reopen a finding by triage ID.");
+
         // GET /api/v1/orgs/{orgId}/code-reviews/reviews/{codeReviewRecordId}/raw
         group
             .MapGet(

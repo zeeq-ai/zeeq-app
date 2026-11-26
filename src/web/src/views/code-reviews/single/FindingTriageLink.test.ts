@@ -5,6 +5,7 @@ import FindingTriageLink from "./FindingTriageLink.vue";
 const mocks = vi.hoisted(() => ({
   load: vi.fn(),
   confirm: vi.fn(),
+  reopen: vi.fn(),
   switchOrg: vi.fn(),
 }));
 vi.mock("@/stores/app-store", () => ({
@@ -17,6 +18,7 @@ vi.mock("@/stores/code-review-store", () => ({
   useCodeReviewStore: () => ({
     loadFindingTriage: mocks.load,
     confirmFindingTriage: mocks.confirm,
+    reopenFindingTriage: mocks.reopen,
   }),
 }));
 const snapshot = (id: string) => ({
@@ -104,6 +106,17 @@ describe("expired finding triage link", () => {
       expectedDisposition: "FalsePositive",
       reason: null,
     });
+    mocks.reopen.mockResolvedValue({
+      ...snapshot("second").triage,
+      approvalState: "Open",
+      disposition: null,
+    });
+    [...root.querySelectorAll("button")]
+      .find((button) => button.textContent?.includes("Reopen finding"))!
+      .click();
+    await tick();
+    expect(mocks.reopen).toHaveBeenCalledWith("second");
+    expect(root.textContent).toContain("Open");
     mocks.load.mockReturnValue(new Promise(() => {}));
     await router.push("/triages/org/third");
     await tick();

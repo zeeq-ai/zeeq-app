@@ -32,7 +32,10 @@ internal sealed class CodeReviewFindingTriageConfiguration
                 "ck_cr_triages_approval_state",
                 "approval_state IN ('Open', 'Proposed', 'Confirmed')"
             );
-            table.HasCheckConstraint("ck_cr_triages_channel", "channel IN ('Ui', 'GitHub', 'Mcp')");
+            table.HasCheckConstraint(
+                "ck_cr_triages_channel",
+                "channel IN ('Ui', 'GitHub', 'Mcp', 'AgentAttested')"
+            );
             table.HasCheckConstraint(
                 "ck_cr_triages_reason_length",
                 "current_reason IS NULL OR char_length(current_reason) <= 1000"
@@ -62,6 +65,7 @@ internal sealed class CodeReviewFindingTriageConfiguration
         entity.Property(x => x.ApprovalState).HasConversion<string>().HasMaxLength(32);
         entity.Property(x => x.Channel).HasConversion<string>().HasMaxLength(32);
         entity.Property(x => x.AgentSessionId).HasMaxLength(128);
+        entity.Property(x => x.ConfirmationQuote).HasMaxLength(500);
         entity.Property(x => x.SourceUrl).HasMaxLength(2048);
         entity.Property(x => x.ProposedByUserId).HasMaxLength(128);
         entity.Property(x => x.ConfirmedByUserId).HasMaxLength(128);

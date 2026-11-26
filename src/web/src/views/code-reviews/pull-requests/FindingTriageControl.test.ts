@@ -68,6 +68,45 @@ describe("FindingTriageControl", () => {
     expect(confirm).toHaveBeenCalledOnce();
   });
 
+  it("labels agent-reported confirmation and renders the quote as text", async () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const app = createApp({
+      render: () =>
+        h(FindingTriageControl, {
+          finding: {
+            ...finding,
+            triage: {
+              ...triage,
+              approvalState: "Confirmed",
+              channel: "AgentAttested",
+              confirmationQuote: '<img src=x onerror="alert(1)">',
+            },
+          },
+          busy: false,
+          canPromoteConfirmedFalsePositive: true,
+        }),
+    });
+    app.mount(root);
+    cleanup = () => {
+      app.unmount();
+      root.remove();
+    };
+    await nextTick();
+    root.querySelector("button")!.click();
+    await nextTick();
+    expect(document.body.textContent).toContain(
+      "Agent-reported session confirmation",
+    );
+    expect(document.body.textContent).toContain(
+      '<img src=x onerror="alert(1)">',
+    );
+    expect(document.body.querySelector('img[src="x"]')).toBeNull();
+    expect(document.body.textContent).not.toContain(
+      "Add to eval dataset as rejected",
+    );
+  });
+
   it("shows promotion only when the confirmed false-positive action is enabled", async () => {
     const promote = vi.fn();
     const root = document.createElement("div");
@@ -104,18 +143,29 @@ describe("FindingTriageControl", () => {
     const root = document.createElement("div");
     document.body.append(root);
     const app = createApp({
-      render: () => h(FindingTriageControl, {
-        finding: { ...finding, triage: { ...triage, approvalState: "Confirmed" } },
-        busy: false,
-        canPromoteConfirmedFalsePositive: false,
-      }),
+      render: () =>
+        h(FindingTriageControl, {
+          finding: {
+            ...finding,
+            triage: { ...triage, approvalState: "Confirmed" },
+          },
+          busy: false,
+          canPromoteConfirmedFalsePositive: false,
+        }),
     });
     app.mount(root);
-    cleanup = () => { app.unmount(); root.remove(); };
+    cleanup = () => {
+      app.unmount();
+      root.remove();
+    };
     await nextTick();
     root.querySelector("button")!.click();
     await nextTick();
-    expect([...document.querySelectorAll("button")].some(button => button.textContent?.includes("Add to eval dataset as rejected"))).toBe(false);
+    expect(
+      [...document.querySelectorAll("button")].some((button) =>
+        button.textContent?.includes("Add to eval dataset as rejected"),
+      ),
+    ).toBe(false);
   });
 });
 
@@ -194,7 +244,7 @@ it("allows a confirmed finding to be cleared without offering proposal confirmat
   trigger!.click();
   await nextTick();
   const button = [...document.querySelectorAll("button")].find(
-    (button) => button.textContent?.trim() === "Clear",
+    (button) => button.textContent?.trim() === "Reopen finding",
   );
   expect(button).toBeDefined();
   button!.click();
@@ -265,7 +315,7 @@ it("keeps a failed save draft and resets after a successful clear", async () => 
   trigger().click();
   await nextTick();
   [...document.querySelectorAll("button")]
-    .find((button) => button.textContent?.trim() === "Clear")!
+    .find((button) => button.textContent?.trim() === "Reopen finding")!
     .click();
   await nextTick();
   state.value = { ...finding, triage: null };

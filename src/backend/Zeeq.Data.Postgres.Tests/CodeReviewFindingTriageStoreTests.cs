@@ -93,6 +93,118 @@ public sealed class CodeReviewFindingTriageStoreTests(PgDatabaseFixture postgres
         );
 
     [Test]
+    public async Task AgentAttestation_PolicyIdempotencyAndWebRevocation()
+    {
+        var org = await SeedAsync();
+        try
+        {
+            await using (var db = postgres.CreateContext())
+            {
+                var organization = await db.Organizations.SingleAsync(x => x.Id == org);
+                organization.ActivatedAtUtc = DateTimeOffset.UtcNow;
+                db.Users.Add(new User { Id = "user", DisplayName = "user" });
+                db.OrganizationMemberships.Add(
+                    new OrganizationMembership
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        OrganizationId = org,
+                        UserId = "user",
+                        CreatedByUserId = org,
+                        Role = "member",
+                        Status = MembershipStatus.Active,
+                    }
+                );
+                await db.SaveChangesAsync();
+            }
+            var store = new PostgresCodeReviewFindingTriageStore(new Factory(postgres));
+            var snapshot = Snapshot(org);
+            var write = Set(snapshot, CodeReviewFindingTriageChannel.AgentAttested, "reason") with
+            {
+                ConfirmationQuote = " Yes, defer. ",
+                AgentSessionId = "session",
+            };
+            var applied = await store.UpsertLwwAsync(write);
+            await Assert.That(applied.Status).IsEqualTo(FindingTriageWriteStatus.Applied);
+            await Assert.That(applied.Row!.ConfirmationQuote).IsEqualTo(" Yes, defer. ");
+            var repeated = await store.UpsertLwwAsync(write);
+            await Assert.That(repeated.Status).IsEqualTo(FindingTriageWriteStatus.Applied);
+            await Assert.That(repeated.Changed).IsFalse();
+            var confirmedOnWeb = await store.UpsertLwwAsync(
+                new(
+                    snapshot,
+                    FindingTriageOperation.Confirm,
+                    null,
+                    null,
+                    CodeReviewFindingTriageChannel.Ui,
+                    "human",
+                    ExpectedDisposition: CodeReviewFindingDisposition.FalsePositive
+                )
+            );
+            await Assert
+                .That(confirmedOnWeb.Row!.Channel)
+                .IsEqualTo(CodeReviewFindingTriageChannel.Ui);
+            await Assert.That(confirmedOnWeb.Row.ConfirmationQuote).IsNull();
+            var overwrite = await store.UpsertLwwAsync(write);
+            await Assert.That(overwrite.Status).IsEqualTo(FindingTriageWriteStatus.Forbidden);
+            var cleared = await store.UpsertLwwAsync(
+                new(
+                    snapshot,
+                    FindingTriageOperation.Clear,
+                    null,
+                    null,
+                    CodeReviewFindingTriageChannel.Ui,
+                    "human"
+                )
+            );
+            await Assert.That(cleared.Row!.ConfirmationQuote).IsNull();
+            var replay = await store.UpsertLwwAsync(write);
+            await Assert.That(replay.Status).IsEqualTo(FindingTriageWriteStatus.Forbidden);
+            await Assert.That(replay.Error!).Contains("web");
+            var proposal = await store.UpsertLwwAsync(
+                Set(snapshot, CodeReviewFindingTriageChannel.Mcp, "new proposal")
+            );
+            await Assert
+                .That(proposal.Row!.ApprovalState)
+                .IsEqualTo(CodeReviewFindingApprovalState.Proposed);
+            var replayAfterProposal = await store.UpsertLwwAsync(write);
+            await Assert
+                .That(replayAfterProposal.Status)
+                .IsEqualTo(FindingTriageWriteStatus.Forbidden);
+            await using (var db = postgres.CreateContext())
+            {
+                var count = await db
+                    .Database.SqlQuery<int>(
+                        $"SELECT count(*)::int AS \"Value\" FROM zeeq.code_review_finding_attestations WHERE organization_id = {org}"
+                    )
+                    .SingleAsync();
+                await Assert.That(count).IsEqualTo(1);
+                var organization = await db.Organizations.SingleAsync(x => x.Id == org);
+                organization.CodeReviewConfiguration = new CodeReviewOrganizationSettings
+                {
+                    AllowAgentAttestedTriage = false,
+                };
+                await db.SaveChangesAsync();
+            }
+            var denied = await store.UpsertLwwAsync(write);
+            await Assert.That(denied.Status).IsEqualTo(FindingTriageWriteStatus.Forbidden);
+        }
+        finally
+        {
+            await using (var db = postgres.CreateContext())
+            {
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"DELETE FROM zeeq.code_review_finding_attestations WHERE organization_id = {org}"
+                );
+                await db
+                    .OrganizationMemberships.Where(x => x.OrganizationId == org)
+                    .ExecuteDeleteAsync();
+                await db.Users.Where(x => x.Id == "user").ExecuteDeleteAsync();
+            }
+            await CleanupAsync(org);
+        }
+    }
+
+    [Test]
     public async Task ConcurrentInsertAndHumanDecision_CannotBeOverwrittenByMcp()
     {
         var org = await SeedAsync();

@@ -66,7 +66,10 @@ public sealed record FindingTriageRequest(
     CodeReviewFindingDisposition? ExpectedDisposition = null,
     string? AgentSessionId = null,
     string? SourceUrl = null,
-    string? GitHubAliasId = null
+    string? GitHubAliasId = null,
+    string? ConfirmationQuote = null,
+    string? AuthMode = null,
+    string? ClientId = null
 );
 
 /// <summary>Resolves review findings and performs guarded triage transitions.</summary>
@@ -286,10 +289,13 @@ internal sealed partial class CodeReviewFindingTriageService(
                 request.Reason,
                 request.Channel,
                 request.ActorUserId,
-                request.SourceEventAtUtc,
-                request.ExpectedDisposition,
-                request.AgentSessionId,
-                request.SourceUrl
+                SourceEventAtUtc: request.SourceEventAtUtc,
+                ExpectedDisposition: request.ExpectedDisposition,
+                AgentSessionId: request.AgentSessionId,
+                SourceUrl: request.SourceUrl,
+                ConfirmationQuote: request.ConfirmationQuote,
+                AuthMode: request.AuthMode,
+                ClientId: request.ClientId
             ),
             cancellationToken
         );

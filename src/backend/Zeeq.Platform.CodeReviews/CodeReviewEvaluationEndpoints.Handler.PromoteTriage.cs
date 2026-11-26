@@ -32,7 +32,7 @@ public sealed class PromoteFindingTriageHandler(
         var repository = await repositories.FindActiveForOrganizationAsync(organizationId, repositoryId, cancellationToken);
         var dataset = await datasets.FindAsync(organizationId, datasetId, includeArchived: false, cancellationToken);
         var triage = await triages.FindAsync(organizationId, triageId, cancellationToken);
-        if (repository is null || dataset is null || dataset.RepositoryId != repository.Id || triage is null || triage.RepositoryId != repository.Id || triage.PullRequestNumber is null || triage.ApprovalState != CodeReviewFindingApprovalState.Confirmed || triage.Disposition != CodeReviewFindingDisposition.FalsePositive)
+        if (repository is null || dataset is null || dataset.RepositoryId != repository.Id || triage is null || triage.RepositoryId != repository.Id || triage.PullRequestNumber is null || triage.ApprovalState != CodeReviewFindingApprovalState.Confirmed || triage.Channel == CodeReviewFindingTriageChannel.AgentAttested || triage.Disposition != CodeReviewFindingDisposition.FalsePositive)
         {
             return TypedResults.NotFound();
         }

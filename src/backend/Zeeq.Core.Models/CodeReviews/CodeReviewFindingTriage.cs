@@ -36,6 +36,9 @@ public enum CodeReviewFindingTriageChannel
 
     /// <summary>Mcp.</summary>
     Mcp = 2,
+
+    /// <summary>Confirmation reported by an agent in a user session.</summary>
+    AgentAttested = 3,
 }
 
 /// <summary>Durable snapshot and current disposition of a review finding.</summary>
@@ -107,6 +110,9 @@ public sealed class CodeReviewFindingTriage : MutableDomainEntityBase, IOrganiza
 
     /// <summary>Gets or sets AgentSessionId.</summary>
     public string? AgentSessionId { get; set; }
+
+    /// <summary>The agent-reported exact user confirmation.</summary>
+    public string? ConfirmationQuote { get; set; }
 
     /// <summary>Gets or sets SourceUrl.</summary>
     public string? SourceUrl { get; set; }

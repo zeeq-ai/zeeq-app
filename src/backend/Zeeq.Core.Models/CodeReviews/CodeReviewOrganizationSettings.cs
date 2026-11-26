@@ -19,6 +19,9 @@ public sealed record CodeReviewOrganizationSettings
     /// </summary>
     public int MaxConcurrentReviews { get; init; } = 4;
 
+    /// <summary>Allow agents to report user-confirmed triage decisions.</summary>
+    public bool? AllowAgentAttestedTriage { get; init; }
+
     /// <summary>
     /// Duration before an execution lease is considered abandoned.
     /// </summary>

@@ -58,7 +58,12 @@ public sealed class SaveCodeReviewOrganizationSettingsHandler(
         }
 
         var settings = await settingsStore.GetAsync(organizationId, cancellationToken);
-        var updated = settings with { MaxConcurrentReviews = request.MaxConcurrentReviews };
+        var updated = settings with
+        {
+            MaxConcurrentReviews = request.MaxConcurrentReviews,
+            AllowAgentAttestedTriage = request.AllowAgentAttestedTriage
+                ?? settings.AllowAgentAttestedTriage,
+        };
 
         var saved = await settingsStore.SaveAsync(organizationId, updated, cancellationToken);
 

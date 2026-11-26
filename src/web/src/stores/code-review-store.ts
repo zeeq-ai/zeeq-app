@@ -730,6 +730,20 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     return triage;
   }
 
+  async function reopenFindingTriage(triageId: string) {
+    const triage = await CodeReviews.clearFindingTriage(
+      requireOrganizationId(),
+      triageId,
+    );
+    patchFindingTriage(
+      reviewFindingsByReviewKey.value,
+      triage,
+      triageVersions,
+      triageSnapshots,
+    );
+    return triage;
+  }
+
   async function loadFindingTriage(triageId: string) {
     return CodeReviews.getFindingTriage(requireOrganizationId(), triageId);
   }
@@ -1679,6 +1693,7 @@ export const useCodeReviewStore = defineStore("code-review-store", () => {
     saveFindingTriage,
     clearFindingTriage,
     confirmFindingTriage,
+    reopenFindingTriage,
     loadFindingTriage,
     loadReviewRawXml,
     pollPullRequestUpdates,

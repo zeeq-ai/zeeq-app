@@ -238,7 +238,9 @@ public sealed record CodeReviewFindingTriageDto(
     DateTimeOffset? ProposedAtUtc,
     string? ConfirmedByUserId,
     DateTimeOffset? ConfirmedAtUtc,
-    DateTimeOffset UpdatedAtUtc
+    DateTimeOffset UpdatedAtUtc,
+    string? ConfirmationQuote = null,
+    string? AgentSessionId = null
 );
 
 /// <summary>
@@ -492,22 +494,26 @@ public sealed record CodeReviewAgentTestRunResponse(
 /// <param name="OrganizationId">Organization these settings apply to.</param>
 /// <param name="MaxConcurrentReviews">Maximum number of code reviews that may run concurrently for the organization.</param>
 /// <param name="ExecutionLeaseDurationMinutes">Execution lease duration in whole minutes.</param>
+/// <param name="AllowAgentAttestedTriage">Whether new session attestations are allowed.</param>
 public sealed record CodeReviewOrganizationSettingsResponse(
     string OrganizationId,
     int MaxConcurrentReviews,
-    int ExecutionLeaseDurationMinutes
+    int ExecutionLeaseDurationMinutes,
+    bool AllowAgentAttestedTriage
 );
 
 /// <summary>
 /// Request for saving organization-level code-review execution limits.
 /// </summary>
 /// <param name="MaxConcurrentReviews">Maximum number of code reviews that may run concurrently for the organization.</param>
+/// <param name="AllowAgentAttestedTriage">Whether new session attestations are allowed; null preserves the current setting.</param>
 public sealed record SaveCodeReviewOrganizationSettingsRequest(
     [property: Range(
         SaveCodeReviewOrganizationSettingsHandler.MinimumMaxConcurrentReviews,
         SaveCodeReviewOrganizationSettingsHandler.MaximumMaxConcurrentReviews
     )]
-        int MaxConcurrentReviews
+        int MaxConcurrentReviews,
+    bool? AllowAgentAttestedTriage = null
 );
 
 /// <summary>
@@ -879,7 +885,9 @@ internal static class CodeReviewEndpointMapping
             x.ProposedAtUtc,
             x.ConfirmedByUserId,
             x.ConfirmedAtUtc,
-            x.UpdatedAtUtc
+            x.UpdatedAtUtc,
+            x.ConfirmationQuote,
+            x.AgentSessionId
         );
 
     public static CodeReviewFindingsResponse ToEmptyFindingsDto(
@@ -989,7 +997,8 @@ internal static class CodeReviewEndpointMapping
         new(
             organizationId,
             settings.MaxConcurrentReviews,
-            (int)settings.ExecutionLeaseDuration.TotalMinutes
+            (int)settings.ExecutionLeaseDuration.TotalMinutes,
+            settings.AllowAgentAttestedTriage != false
         );
 
     public static CodeReviewerAgentDto ToDto(CodeReviewerAgent agent) =>
