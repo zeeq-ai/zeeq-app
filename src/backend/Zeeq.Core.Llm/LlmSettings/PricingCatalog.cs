@@ -51,11 +51,8 @@ public static class PricingCatalog
         ["gpt-6.2-sol"] = TokenRates.FromPerMillion(2.00m, 0.10m, 10.00m),
         ["gpt-6.2-astra"] = TokenRates.FromPerMillion(8.00m, 0.40m, 40.00m),
         ["gpt-6.2-astra-law"] = TokenRates.FromPerMillion(8.00m, 0.40m, 40.00m),
-        ["gpt-6.2-astra-healthcare"] = TokenRates.FromPerMillion(8.00m, 0.40m, 40.00m),
-        ["gpt-6.2-sol-healthcare"] = TokenRates.FromPerMillion(2.00m, 0.10m, 10.00m),
         // Source: https://developers.openai.com/api/docs/pricing (standard, short-context tier).
-        // Healthcare promotional pricing is listed through 2026-12-31; ultrafast and
-        // background discounts are not selected from the model name and are not modeled.
+        // Ultrafast and background discounts are not selected from the model name and are not modeled.
         ["gpt-6-astra"] = TokenRates.FromPerMillion(10.00m, 1.00m, 50.00m),
         ["gpt-6-sol"] = TokenRates.FromPerMillion(2.00m, 0.20m, 10.00m),
         ["gpt-6-luna"] = TokenRates.FromPerMillion(0.10m, 0.01m, 0.50m),
@@ -119,6 +116,7 @@ public static class PricingCatalog
         ["claude-opus-4-5"] = "claude-opus-4.5",
         ["claude-opus-4-1"] = "claude-opus-4.1",
         ["gpt-6-2-sol"] = "gpt-6.2-sol",
+        ["gpt-6-2-astra"] = "gpt-6.2-astra",
         ["gpt-6-2-astra"] = "gpt-6.2-astra",
         ["claude-sonnet-4-6"] = "claude-sonnet-4.6",
         ["claude-sonnet-4-5"] = "claude-sonnet-4.5",
