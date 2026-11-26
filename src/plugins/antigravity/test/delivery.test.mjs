@@ -202,3 +202,17 @@ test('isolates a growing batch in runs of at most 200 singleton posts', async ()
     assert.ok(JSON.parse(readFileSync(join(dir, 'state/bound.json.delivery'), 'utf8')).byteOffset > 0);
   } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('preserves unresolved isolation state when rows map to no events', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zeeq-empty-'));
+  const { mkdirSync } = await import('node:fs'); const { createHash } = await import('node:crypto');
+  const stateDir = join(dir, 'state'); mkdirSync(stateDir);
+  const transcript = join(dir, 'transcript'); const line = JSON.stringify({ type: 'UNKNOWN', step_index: 0, created_at: '2026-01-01T00:00:00Z' });
+  writeFileSync(transcript, line + '\n'); const firstLine = createHash('sha256').update(line).digest('hex');
+  const deliveryPath = join(stateDir, 'empty.json.delivery');
+  writeFileSync(deliveryPath, JSON.stringify({ rejectionKey: `${firstLine}:0`, rejectionAttempts: 3, rejectionScan: { accepted: ['prior'], rejected: [] } }));
+  try {
+    await invoke({ PLUGIN_DATA: dir, ZEEQ_ACCESS_TOKEN: 'test', ANTIGRAVITY_TELEMETRY_INLINE: '1' }, 'Stop', { conversationId: 'empty', transcriptPath: transcript });
+    const state = JSON.parse(readFileSync(deliveryPath, 'utf8')); assert.equal(state.rejectionAttempts, 3); assert.deepEqual(state.rejectionScan.accepted, ['prior']); assert.equal(state.byteOffset, undefined);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

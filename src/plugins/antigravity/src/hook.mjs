@@ -50,7 +50,11 @@ async function deliver(id, credential) {
     for (const line of delta.split('\n').filter(Boolean)) { try { rows.push(JSON.parse(line)); } catch { error('Skipped malformed transcript row'); } }
     const mapper = structuredClone(state.mapper || {});
     const events = mapTranscript(id, rows, { state: mapper, allowExpiry: lastEnd + 1 === content.length, model: state.model, omitPrompt: truthy(process.env.ZEEQ_OTEL_OMIT_PROMPT), truncatePrompt: Number(process.env.ZEEQ_OTEL_TRUNCATE_PROMPT) || undefined });
-    if (!events.length) { save(path, { byteOffset: lastEnd + 1, firstLine, mapper }); return; }
+    if (!events.length) {
+      const previous = load(path);
+      if (previous.rejectionKey === `${firstLine}:${offset}` && previous.rejectionAttempts) return;
+      save(path, { byteOffset: lastEnd + 1, firstLine, mapper }); return;
+    }
     const endpoint = process.env.ANTIGRAVITY_TELEMETRY_ENDPOINT || `${(process.env.ZEEQ_BASE_URL || 'https://app.zeeq.ai').replace(/\/$/, '')}/api/v1/telemetry/import`;
     const pluginVersion = '0.1.0';
     const rejectionKey = `${firstLine}:${offset}`;

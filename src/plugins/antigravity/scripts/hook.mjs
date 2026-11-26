@@ -183,6 +183,8 @@ async function deliver(id, credential) {
     const mapper = structuredClone(state.mapper || {});
     const events = mapTranscript(id, rows, { state: mapper, allowExpiry: lastEnd + 1 === content.length, model: state.model, omitPrompt: truthy(process.env.ZEEQ_OTEL_OMIT_PROMPT), truncatePrompt: Number(process.env.ZEEQ_OTEL_TRUNCATE_PROMPT) || void 0 });
     if (!events.length) {
+      const previous2 = load(path);
+      if (previous2.rejectionKey === `${firstLine}:${offset}` && previous2.rejectionAttempts) return;
       save(path, { byteOffset: lastEnd + 1, firstLine, mapper });
       return;
     }
