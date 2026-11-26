@@ -126,6 +126,13 @@ public sealed class CodeReviewFindingTriageStoreTests(PgDatabaseFixture postgres
             var applied = await store.UpsertLwwAsync(write);
             await Assert.That(applied.Status).IsEqualTo(FindingTriageWriteStatus.Applied);
             await Assert.That(applied.Row!.ConfirmationQuote).IsEqualTo(" Yes, defer. ");
+            var githubOverwrite = await store.UpsertLwwAsync(
+                Set(snapshot, CodeReviewFindingTriageChannel.GitHub, "reason") with
+                {
+                    SourceEventAtUtc = DateTimeOffset.UtcNow,
+                }
+            );
+            await Assert.That(githubOverwrite.Status).IsEqualTo(FindingTriageWriteStatus.Forbidden);
             var repeated = await store.UpsertLwwAsync(write);
             await Assert.That(repeated.Status).IsEqualTo(FindingTriageWriteStatus.Applied);
             await Assert.That(repeated.Changed).IsFalse();

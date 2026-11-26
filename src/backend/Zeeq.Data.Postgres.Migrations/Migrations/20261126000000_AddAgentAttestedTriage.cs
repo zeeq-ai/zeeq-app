@@ -34,7 +34,7 @@ public partial class AddAgentAttestedTriage : Migration
               confirmed_at_utc timestamptz NOT NULL,
               disposition varchar(32) NOT NULL
             );
-            CREATE INDEX ix_cr_attestations_triage ON zeeq.code_review_finding_attestations (organization_id, triage_id);
+            CREATE INDEX ix_cr_attestations_finding ON zeeq.code_review_finding_attestations (organization_id, source_review_id, occurrence_key);
             """);
     }
 

@@ -204,9 +204,7 @@ async function saveAgentTriage(value: boolean) {
   agentTriageBusy.value = true;
   agentTriageError.value = "";
   try {
-    const current = await CodeReviews.getCodeReviewOrganizationSettings(id);
     const saved = await CodeReviews.saveCodeReviewOrganizationSettings(id, {
-      maxConcurrentReviews: current.maxConcurrentReviews,
       allowAgentAttestedTriage: value,
     });
     if (generation === agentTriageGeneration)

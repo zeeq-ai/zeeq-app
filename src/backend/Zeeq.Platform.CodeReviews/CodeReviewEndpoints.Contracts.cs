@@ -512,7 +512,7 @@ public sealed record SaveCodeReviewOrganizationSettingsRequest(
         SaveCodeReviewOrganizationSettingsHandler.MinimumMaxConcurrentReviews,
         SaveCodeReviewOrganizationSettingsHandler.MaximumMaxConcurrentReviews
     )]
-        int MaxConcurrentReviews,
+        int? MaxConcurrentReviews = null,
     bool? AllowAgentAttestedTriage = null
 );
 

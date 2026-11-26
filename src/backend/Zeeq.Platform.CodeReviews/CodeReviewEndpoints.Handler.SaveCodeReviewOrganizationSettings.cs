@@ -57,15 +57,12 @@ public sealed class SaveCodeReviewOrganizationSettingsHandler(
             return TypedResults.BadRequest(validationError);
         }
 
-        var settings = await settingsStore.GetAsync(organizationId, cancellationToken);
-        var updated = settings with
-        {
-            MaxConcurrentReviews = request.MaxConcurrentReviews,
-            AllowAgentAttestedTriage = request.AllowAgentAttestedTriage
-                ?? settings.AllowAgentAttestedTriage,
-        };
-
-        var saved = await settingsStore.SaveAsync(organizationId, updated, cancellationToken);
+        var saved = await settingsStore.SaveAsync(
+            organizationId,
+            request.MaxConcurrentReviews,
+            request.AllowAgentAttestedTriage,
+            cancellationToken
+        );
 
         return TypedResults.Ok(CodeReviewEndpointMapping.ToDto(organizationId, saved));
     }

@@ -20,7 +20,8 @@ public interface ICodeReviewOrganizationSettingsStore
     /// </summary>
     Task<CodeReviewOrganizationSettings> SaveAsync(
         string organizationId,
-        CodeReviewOrganizationSettings settings,
+        int? maxConcurrentReviews,
+        bool? allowAgentAttestedTriage,
         CancellationToken cancellationToken
     );
 }

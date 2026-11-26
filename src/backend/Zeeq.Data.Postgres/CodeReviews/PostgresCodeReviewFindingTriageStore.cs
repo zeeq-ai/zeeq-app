@@ -99,13 +99,12 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
                 .SingleOrDefaultAsync(cancellationToken);
             if (
                 write.Channel == CodeReviewFindingTriageChannel.AgentAttested
-                && row is not null
-                && row.ApprovalState != CodeReviewFindingApprovalState.Confirmed
+                && (row is null || row.ApprovalState != CodeReviewFindingApprovalState.Confirmed)
             )
             {
                 var hasPriorAttestation = await db
                     .Database.SqlQuery<bool>(
-                        $"SELECT EXISTS (SELECT 1 FROM zeeq.code_review_finding_attestations WHERE organization_id = {s.OrganizationId} AND triage_id = {row.Id}) AS \"Value\""
+                        $"SELECT EXISTS (SELECT 1 FROM zeeq.code_review_finding_attestations WHERE organization_id = {s.OrganizationId} AND source_review_id = {s.SourceReviewId} AND occurrence_key = {s.OccurrenceKey}) AS \"Value\""
                     )
                     .SingleAsync(cancellationToken);
                 if (hasPriorAttestation)
@@ -137,6 +136,16 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
                     FindingTriageWriteStatus.Forbidden,
                     row,
                     "Confirmed decisions require a human."
+                );
+            if (
+                row?.ApprovalState == CodeReviewFindingApprovalState.Confirmed
+                && row.Channel == CodeReviewFindingTriageChannel.AgentAttested
+                && write.Channel != CodeReviewFindingTriageChannel.Ui
+            )
+                return new(
+                    FindingTriageWriteStatus.Forbidden,
+                    row,
+                    "Confirm or reopen this decision on the web."
                 );
             // NOTE: GitHub timestamps have one-second granularity; allow same-second transitions.
             // Identical redeliveries are handled as idempotent no-ops below.

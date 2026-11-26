@@ -845,7 +845,12 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
 
         await Assert.That(settings.MaxConcurrentReviews).IsEqualTo(4);
 
-        await store.SaveAsync(seed.Organization.Id, updated, CancellationToken.None);
+        await store.SaveAsync(
+            seed.Organization.Id,
+            updated.MaxConcurrentReviews,
+            updated.AllowAgentAttestedTriage,
+            CancellationToken.None
+        );
         _context.ChangeTracker.Clear();
         var found = await new PostgresCodeReviewOrganizationSettingsStore(_context).GetAsync(
             seed.Organization.Id,
@@ -854,6 +859,15 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
 
         await Assert.That(found.MaxConcurrentReviews).IsEqualTo(2);
         await Assert.That(found.ExecutionLeaseDuration).IsEqualTo(TimeSpan.FromMinutes(2));
+        await store.SaveAsync(seed.Organization.Id, null, false, CancellationToken.None);
+        await store.SaveAsync(seed.Organization.Id, 3, null, CancellationToken.None);
+        found = await store.GetAsync(seed.Organization.Id, CancellationToken.None);
+        await Assert.That(found.MaxConcurrentReviews).IsEqualTo(3);
+        await Assert.That(found.AllowAgentAttestedTriage).IsEqualTo(false);
+        await store.SaveAsync(seed.Organization.Id, null, true, CancellationToken.None);
+        found = await store.GetAsync(seed.Organization.Id, CancellationToken.None);
+        await Assert.That(found.MaxConcurrentReviews).IsEqualTo(3);
+        await Assert.That(found.AllowAgentAttestedTriage).IsEqualTo(true);
     }
 
     [Test]

@@ -1,9 +1,9 @@
 using System.Security.Claims;
-using Zeeq.Core.Identity;
-using Zeeq.Core.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using NSubstitute;
 using OpenIddict.Abstractions;
+using Zeeq.Core.Identity;
+using Zeeq.Core.Models;
 
 namespace Zeeq.Platform.CodeReviews.Tests;
 
@@ -172,14 +172,20 @@ public sealed class CodeReviewOrganizationSettingsEndpointHandlerTests
 
         public Task<CodeReviewOrganizationSettings> SaveAsync(
             string organizationId,
-            CodeReviewOrganizationSettings settings,
+            int? maxConcurrentReviews,
+            bool? allowAgentAttestedTriage,
             CancellationToken cancellationToken
         )
         {
             SaveCalls++;
-            Settings = settings;
+            Settings = Settings with
+            {
+                MaxConcurrentReviews = maxConcurrentReviews ?? Settings.MaxConcurrentReviews,
+                AllowAgentAttestedTriage = allowAgentAttestedTriage
+                    ?? Settings.AllowAgentAttestedTriage,
+            };
 
-            return Task.FromResult(settings);
+            return Task.FromResult(Settings);
         }
     }
 }

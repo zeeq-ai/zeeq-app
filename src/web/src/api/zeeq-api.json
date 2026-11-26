@@ -19314,9 +19314,6 @@
         "description": "Saves one complete dataset draft under an expected version."
       },
       "SaveCodeReviewOrganizationSettingsRequest": {
-        "required": [
-          "maxConcurrentReviews"
-        ],
         "type": "object",
         "properties": {
           "maxConcurrentReviews": {
@@ -19324,6 +19321,7 @@
             "minimum": 1,
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "type": [
+              "null",
               "integer",
               "string"
             ],
