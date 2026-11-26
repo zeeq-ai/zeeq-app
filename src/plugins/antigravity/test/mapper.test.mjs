@@ -45,7 +45,7 @@ test('does not consume queued calls for unrelated generic rows', () => {
 
 test('maps sanitized captured transcripts', async () => {
   const { readFileSync } = await import('node:fs');
-  for (const name of ['plain', 'tool', 'background']) {
+  for (const name of ['plain', 'tool', 'background', 'read-file', 'multi-tool']) {
     const rows = readFileSync(new URL(`./fixtures/${name}.jsonl`, import.meta.url), 'utf8').trim().split('\n').map(JSON.parse);
     const events = mapTranscript('fixture', rows);
     assert.ok(events.some(event => event.kind === 'Prompt'));
