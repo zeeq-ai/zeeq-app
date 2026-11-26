@@ -906,6 +906,13 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
             .SingleAsync();
         await Assert.That(normalized).DoesNotContain("max_concurrent_reviews");
         await Assert.That(normalized).DoesNotContain("allow_agent_attested_triage");
+        await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE zeeq.core_organizations SET code_review_configuration = {"{\"MaxConcurrentReviews\": 4}"}::jsonb WHERE id = {seed.Organization.Id}"
+        );
+        found = await store.SaveAsync(seed.Organization.Id, null, false, CancellationToken.None);
+        await Assert.That(found.ExecutionLeaseDuration).IsEqualTo(TimeSpan.FromMinutes(2));
+        await Assert.That(found.MaxConcurrentReviews).IsEqualTo(4);
+        await Assert.That(found.AllowAgentAttestedTriage == false).IsTrue();
     }
 
     [Test]

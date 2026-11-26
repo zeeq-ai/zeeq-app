@@ -41,7 +41,7 @@ internal sealed class PostgresCodeReviewOrganizationSettingsStore(PostgresDbCont
             UPDATE zeeq.core_organizations
             SET code_review_configuration =
                 jsonb_set(
-                    jsonb_set(COALESCE(code_review_configuration, {{defaults}}::jsonb) - 'max_concurrent_reviews' - 'allow_agent_attested_triage',
+                    jsonb_set(({{defaults}}::jsonb || COALESCE(code_review_configuration, '{}'::jsonb)) - 'max_concurrent_reviews' - 'allow_agent_attested_triage',
                         '{MaxConcurrentReviews}',
                         CASE WHEN {{maxConcurrentReviews}}::integer IS NULL THEN COALESCE(code_review_configuration->'MaxConcurrentReviews', code_review_configuration->'max_concurrent_reviews', to_jsonb({{defaultMax}}::integer)) ELSE to_jsonb({{maxConcurrentReviews}}::integer) END),
                     '{AllowAgentAttestedTriage}',
