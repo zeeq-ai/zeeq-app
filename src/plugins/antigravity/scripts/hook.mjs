@@ -41,23 +41,29 @@ function mapTranscript(conversation, rows, options = {}) {
       if (row.source !== "MODEL" || !/^Created At:/m.test(content)) continue;
       const task = /task id[:\s]+[\"]?([^\s\"]+)/i.exec(content)?.[1];
       if (task && expired.has(task)) continue;
+      if (task && pending.has(task) && row.status === "RUNNING") continue;
       if (task && pending.has(task)) {
         result(pending.get(task), content);
         pending.delete(task);
         expired.add(task);
         continue;
       }
-      if (task && row.status !== "RUNNING") continue;
       if (!calls.length) continue;
       const call = calls.shift();
       if (row.status === "RUNNING" && task) pending.set(task, call);
-      else result(call, content);
+      else {
+        result(call, content);
+        if (task) expired.add(task);
+      }
     } else if (row.type === "SYSTEM_MESSAGE") {
       const content = String(row.content ?? "");
       const task = /task id[:\s]+[\"]?([^\s\"]+)/i.exec(content)?.[1];
       if (task && pending.has(task)) {
         result(pending.get(task), content);
         pending.delete(task);
+        expired.add(task);
+      } else if (task && !expired.has(task) && calls.length && /finished with result/i.test(content)) {
+        result(calls.shift(), content);
         expired.add(task);
       }
     }
