@@ -109,3 +109,28 @@ test('uses a valid reported input total or falls back to component counts', () =
   assert.equal(mapTranscript('c', [{ ...base, prompt_tokens: 'invalid', total_input_tokens: 8 }])[0]['gen_ai.usage.input_tokens'], 8);
   assert.equal(mapTranscript('c', [{ ...base, input_tokens: 0, cache_read_tokens: 0, output_tokens: 0, prompt_tokens: 8 }])[0]['gen_ai.usage.input_tokens'], 8);
 });
+
+test('protects newer calls from late untagged results after expiry', () => {
+  const state = {}, now = Date.parse('2026-01-03T00:00:00Z');
+  const old = { type: 'PLANNER_RESPONSE', step_index: 0, created_at: '2026-01-01T00:00:00Z', tool_calls: [{ name: 'old', args: { command: 'old command' } }] };
+  assert.equal(mapTranscript('c', [old], { state, now })[0]['gen_ai.tool.name'], 'old');
+  const next = { type: 'PLANNER_RESPONSE', step_index: 2, created_at: '2026-01-03T00:00:00Z', tool_calls: [{ name: 'new', args: { command: 'new command' } }] };
+  const ambiguous = { type: 'GENERIC', source: 'MODEL', status: 'DONE', step_index: 3, created_at: '2026-01-03T00:00:01Z', content: 'Created At: now\nno command echo' };
+  assert.equal(mapTranscript('c', [next, ambiguous], { state, now }).length, 0); assert.equal(state.calls.length, 1);
+  const late = { ...ambiguous, step_index: 4, content: 'Created At: now\nold command' };
+  assert.equal(mapTranscript('c', [late], { state, now }).length, 0); assert.equal(state.calls.length, 1);
+});
+
+test('pairs a new adjacent untagged result with matching echo despite a tombstone', () => {
+  const now = Date.parse('2026-01-03T00:00:00Z');
+  const state = { tombstones: [{ until: now + 1000, call: { args: { command: 'old command' } } }] };
+  const rows = [{ type: 'PLANNER_RESPONSE', step_index: 0, created_at: '2026-01-03T00:00:00Z', tool_calls: [{ name: 'new', args: { command: 'new command' } }] }, { type: 'GENERIC', source: 'MODEL', status: 'DONE', step_index: 1, created_at: '2026-01-03T00:00:01Z', content: 'Created At: now\nnew command\nCommand exited with code 0' }];
+  assert.equal(mapTranscript('c', rows, { state, now })[0]['gen_ai.tool.name'], 'new');
+});
+
+test('bounds tombstones and expires them after 24 hours', () => {
+  const now = Date.parse('2026-01-03T00:00:00Z'); const state = {};
+  const rows = Array.from({ length: 25 }, (_, i) => ({ type: 'PLANNER_RESPONSE', step_index: i, created_at: '2026-01-01T00:00:00Z', tool_calls: [{ name: 'run', args: { command: `command-${i}` } }] }));
+  mapTranscript('c', rows, { state, now }); assert.equal(state.tombstones.length, 20);
+  mapTranscript('c', [], { state, now: now + 86400000 }); assert.equal(state.tombstones.length, 0);
+});

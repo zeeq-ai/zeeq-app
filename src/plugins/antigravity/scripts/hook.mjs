@@ -14,6 +14,8 @@ function mapTranscript(conversation, rows, options = {}) {
   const calls = structuredClone(options.state?.calls ?? []);
   const pending = new Map(Object.entries(structuredClone(options.state?.pending ?? {})));
   const expired = new Set(options.state?.expired ?? []);
+  const now = options.now ?? Date.now();
+  const tombstones = structuredClone(options.state?.tombstones ?? []).filter((item) => item.until > now);
   const result = (call, content) => {
     const exit = /(?:Command exited with code|exit code)\s+(\d+)/i.exec(content);
     const created = /Created At:\s*([^\n]+)/i.exec(content);
@@ -50,6 +52,16 @@ function mapTranscript(conversation, rows, options = {}) {
         expired.add(task);
         continue;
       }
+      if (!task && tombstones.length) {
+        const echoes = (call2) => Object.values(call2.args ?? {}).some((value) => typeof value === "string" && value.length >= 3 && content.includes(value));
+        const oldIndex = tombstones.findIndex((item) => echoes(item.call));
+        if (oldIndex >= 0) {
+          tombstones.splice(oldIndex, 1);
+          continue;
+        }
+        const candidate = calls[0];
+        if (!candidate || row.step_index !== candidate.row.step_index + candidate.index + 1 || !echoes(candidate)) continue;
+      }
       if (!calls.length) continue;
       if (task) {
         const candidate = calls[0];
@@ -84,6 +96,7 @@ function mapTranscript(conversation, rows, options = {}) {
     for (let i = calls.length - 1; i >= 0; i--) {
       if ((options.now ?? Date.now()) - Date.parse(calls[i].row.created_at) > 24 * 60 * 60 * 1e3) {
         result(calls[i], "[no completion observed]");
+        tombstones.push({ call: calls[i], until: now + 864e5 });
         calls.splice(i, 1);
       }
     }
@@ -92,6 +105,7 @@ function mapTranscript(conversation, rows, options = {}) {
     options.state.calls = calls;
     options.state.pending = Object.fromEntries(pending);
     options.state.expired = [...expired];
+    options.state.tombstones = tombstones.slice(-20);
   }
   return events;
 }

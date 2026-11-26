@@ -9,6 +9,8 @@ export function mapTranscript(conversation, rows, options = {}) {
   const calls = structuredClone(options.state?.calls ?? []);
   const pending = new Map(Object.entries(structuredClone(options.state?.pending ?? {})));
   const expired = new Set(options.state?.expired ?? []);
+  const now = options.now ?? Date.now();
+  const tombstones = structuredClone(options.state?.tombstones ?? []).filter(item => item.until > now);
   const result = (call, content) => {
     const exit = /(?:Command exited with code|exit code)\s+(\d+)/i.exec(content);
     const created = /Created At:\s*([^\n]+)/i.exec(content);
@@ -42,6 +44,13 @@ export function mapTranscript(conversation, rows, options = {}) {
       if (task && expired.has(task)) continue;
       if (task && pending.has(task) && row.status === 'RUNNING') continue;
       if (task && pending.has(task)) { result(pending.get(task), content); pending.delete(task); expired.add(task); continue; }
+      if (!task && tombstones.length) {
+        const echoes = call => Object.values(call.args ?? {}).some(value => typeof value === 'string' && value.length >= 3 && content.includes(value));
+        const oldIndex = tombstones.findIndex(item => echoes(item.call));
+        if (oldIndex >= 0) { tombstones.splice(oldIndex, 1); continue; }
+        const candidate = calls[0];
+        if (!candidate || row.step_index !== candidate.row.step_index + candidate.index + 1 || !echoes(candidate)) continue;
+      }
       if (!calls.length) continue;
       if (task) {
         const candidate = calls[0];
@@ -63,9 +72,9 @@ export function mapTranscript(conversation, rows, options = {}) {
   }
   if (options.allowExpiry !== false) {
     for (let i = calls.length - 1; i >= 0; i--) {
-      if ((options.now ?? Date.now()) - Date.parse(calls[i].row.created_at) > 24 * 60 * 60 * 1000) { result(calls[i], '[no completion observed]'); calls.splice(i, 1); }
+      if ((options.now ?? Date.now()) - Date.parse(calls[i].row.created_at) > 24 * 60 * 60 * 1000) { result(calls[i], '[no completion observed]'); tombstones.push({ call: calls[i], until: now + 86400000 }); calls.splice(i, 1); }
     }
   }
-  if (options.state) { options.state.calls = calls; options.state.pending = Object.fromEntries(pending); options.state.expired = [...expired]; }
+  if (options.state) { options.state.calls = calls; options.state.pending = Object.fromEntries(pending); options.state.expired = [...expired]; options.state.tombstones = tombstones.slice(-20); }
   return events;
 }
