@@ -86,7 +86,9 @@ async function deliver(id, credential) {
       }
     }
     if (attempts >= 3) {
-      scan ||= { accepted: [], rejected: [] };
+      scan ||= { accepted: [], rejected: [], fingerprints: {} };
+      const fingerprints = Object.fromEntries(events.map(event => [event['event.id'], createHash('sha256').update(JSON.stringify(event)).digest('hex')]));
+      if ([...scan.accepted, ...scan.rejected.map(item => item.id)].some(id => scan.fingerprints?.[id] !== fingerprints[id])) scan = { accepted: [], rejected: [], fingerprints: {} };
       const seen = new Set([...scan.accepted, ...scan.rejected.map(item => item.id)]);
       let count = 0;
       for (const event of events) {
@@ -95,9 +97,11 @@ async function deliver(id, credential) {
         if (count++ >= 200) break;
         const status = await post([event]);
         if (status < 400) scan.accepted.push(eventId); else scan.rejected.push({ id: eventId, status });
+        scan.fingerprints[eventId] = fingerprints[eventId];
         save(path, { ...load(path), rejectionKey, rejectionEnd, rejectionHash, rejectionAttempts: attempts, rejectionScan: scan });
       }
-      if (scan.accepted.length + scan.rejected.length < events.length) return;
+      const classified = new Set([...scan.accepted, ...scan.rejected.map(item => item.id)]);
+      if (events.some(event => !classified.has(event['event.id']))) return;
       if (scan.rejected.length && !scan.accepted.length) {
         save(path, { ...load(path), rejectionKey, rejectionAttempts: 0, rejectionScan: undefined, suspendedUntil: Date.now() + 86400000, suspendedVersion: pluginVersion });
         error('All isolated telemetry events rejected; delivery suspended for 24 hours');

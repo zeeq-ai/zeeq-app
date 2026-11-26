@@ -236,7 +236,9 @@ async function deliver(id, credential) {
       }
     }
     if (attempts >= 3) {
-      scan ||= { accepted: [], rejected: [] };
+      scan ||= { accepted: [], rejected: [], fingerprints: {} };
+      const fingerprints = Object.fromEntries(events.map((event) => [event["event.id"], createHash("sha256").update(JSON.stringify(event)).digest("hex")]));
+      if ([...scan.accepted, ...scan.rejected.map((item) => item.id)].some((id2) => scan.fingerprints?.[id2] !== fingerprints[id2])) scan = { accepted: [], rejected: [], fingerprints: {} };
       const seen = /* @__PURE__ */ new Set([...scan.accepted, ...scan.rejected.map((item) => item.id)]);
       let count = 0;
       for (const event of events) {
@@ -246,9 +248,11 @@ async function deliver(id, credential) {
         const status = await post([event]);
         if (status < 400) scan.accepted.push(eventId);
         else scan.rejected.push({ id: eventId, status });
+        scan.fingerprints[eventId] = fingerprints[eventId];
         save(path, { ...load(path), rejectionKey, rejectionEnd, rejectionHash, rejectionAttempts: attempts, rejectionScan: scan });
       }
-      if (scan.accepted.length + scan.rejected.length < events.length) return;
+      const classified = /* @__PURE__ */ new Set([...scan.accepted, ...scan.rejected.map((item) => item.id)]);
+      if (events.some((event) => !classified.has(event["event.id"]))) return;
       if (scan.rejected.length && !scan.accepted.length) {
         save(path, { ...load(path), rejectionKey, rejectionAttempts: 0, rejectionScan: void 0, suspendedUntil: Date.now() + 864e5, suspendedVersion: pluginVersion });
         error("All isolated telemetry events rejected; delivery suspended for 24 hours");

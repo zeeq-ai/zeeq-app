@@ -231,3 +231,19 @@ test('reprocesses a same-size rewrite with the same first row', async () => {
     await invoke(env, 'Stop', payload); assert.ok(received.some(event => event.prompt_text === 'new!'));
   } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('rescans changed event content during isolation', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zeeq-scan-change-')), transcript = join(dir, 'transcript');
+  const row = (i, text) => JSON.stringify({ type: 'USER_INPUT', step_index: i, created_at: '2026-01-01T00:00:00Z', content: text });
+  const rows = Array.from({ length: 201 }, (_, i) => row(i, i === 0 ? 'poison' : `row-${i}`));
+  writeFileSync(transcript, rows[0] + '\n'); const received = [];
+  const server = createServer(async (req, res) => { let body = ''; for await (const c of req) body += c; const events = JSON.parse(body).events; if (events.length === 1) received.push(events[0].prompt_text); res.statusCode = events.some(e => e.prompt_text === 'poison') ? 400 : 202; res.end(); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const env = { PLUGIN_DATA: dir, ZEEQ_ACCESS_TOKEN: 'test', ANTIGRAVITY_TELEMETRY_INLINE: '1', ANTIGRAVITY_TELEMETRY_ENDPOINT: `http://127.0.0.1:${server.address().port}` }, payload = { conversationId: 'change', transcriptPath: transcript };
+  try {
+    await invoke(env, 'Stop', payload); await invoke(env, 'Stop', payload);
+    writeFileSync(transcript, rows.join('\n') + '\n'); await invoke(env, 'Stop', payload);
+    rows[1] = row(1, 'changed'); writeFileSync(transcript, rows.join('\n') + '\n');
+    await invoke(env, 'Stop', payload); assert.ok(received.includes('changed'));
+  } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
+});
