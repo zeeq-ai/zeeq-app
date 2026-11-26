@@ -26,7 +26,7 @@ public sealed partial class CodeReviewMcpTools
     )]
     [Description(
         """
-            Propose finding triage for human confirmation or clear an unconfirmed proposal.
+            After a review, propose finding triage for human confirmation or clear an unconfirmed proposal.
             <triage_review_finding.triggers>
             - User or agent verifies a finding is a false positive or intentionally deferred.
             - Clear a previous proposal.
