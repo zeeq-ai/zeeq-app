@@ -10,7 +10,7 @@ agy plugin install https://github.com/zeeq-ai/zeeq-app/tree/main/src/plugins/ant
 
 For a local checkout, use `agy plugin install /path/to/zeeq-app/src/plugins/antigravity`. Pin the URL to a release tag when one is available. Node.js 20 or later is required.
 
-Set `ZEEQ_ACCESS_TOKEN` to a Zeeq user token in the environment that starts Antigravity. A user token associates the session with its owner. For IDE launches without shell environment variables, write the token as plain text to `~/.config/zeeq/credentials` and set its permissions to `0600`. Environment variables take precedence. `LOCAL_ZEEQ_ACCESS_TOKEN` is a fallback for local testing.
+Set `ZEEQ_ACCESS_TOKEN` to a Zeeq user token in the environment that starts Antigravity. A user token associates the session with its owner. For environments without shell variables, write the token as plain text to `~/.config/zeeq/credentials` and set its permissions to `0600`. Environment variables take precedence. `LOCAL_ZEEQ_ACCESS_TOKEN` is a fallback for local testing.
 
 `ZEEQ_BASE_URL` defaults to `https://app.zeeq.ai`. Set it when using another deployment. `ANTIGRAVITY_TELEMETRY_ENDPOINT` overrides the full import URL.
 
