@@ -1,0 +1,1 @@
+{"zeeq":{"SessionStart":[{"type":"command","command":"sh ./scripts/run.sh SessionStart","timeout":5}],"Stop":[{"type":"command","command":"sh ./scripts/run.sh Stop","timeout":5}]}}

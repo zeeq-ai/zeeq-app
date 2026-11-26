@@ -1,0 +1,12 @@
+{
+  "name": "@zeeq-ai/antigravity-telemetry",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/hook.mjs --bundle --platform=node --format=esm --target=node20 --legal-comments=none --outfile=scripts/hook.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  }
+}

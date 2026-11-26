@@ -1,0 +1,1 @@
+{"name":"zeeq-telemetry","displayName":"Zeeq Telemetry","description":"Send Antigravity session prompts, tool results, and model usage to Zeeq for visibility into agent activity and cost.","version":"0.1.0","author":{"name":"Zeeq"}}
