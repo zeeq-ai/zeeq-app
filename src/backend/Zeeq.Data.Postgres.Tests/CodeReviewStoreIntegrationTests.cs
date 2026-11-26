@@ -863,11 +863,11 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         await store.SaveAsync(seed.Organization.Id, 3, null, CancellationToken.None);
         found = await store.GetAsync(seed.Organization.Id, CancellationToken.None);
         await Assert.That(found.MaxConcurrentReviews).IsEqualTo(3);
-        await Assert.That(found.AllowAgentAttestedTriage).IsEqualTo(false);
+        await Assert.That(found.AllowAgentAttestedTriage == false).IsTrue();
         await store.SaveAsync(seed.Organization.Id, null, true, CancellationToken.None);
         found = await store.GetAsync(seed.Organization.Id, CancellationToken.None);
         await Assert.That(found.MaxConcurrentReviews).IsEqualTo(3);
-        await Assert.That(found.AllowAgentAttestedTriage).IsEqualTo(true);
+        await Assert.That(found.AllowAgentAttestedTriage == true).IsTrue();
     }
 
     [Test]
