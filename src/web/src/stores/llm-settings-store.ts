@@ -57,13 +57,6 @@ export const llmModelCatalog = {
     "gpt-5.4",
     "gpt-5.5",
   ],
-  Google: [
-    "gemini-4-hydrogen",
-    "gemini-4-neon",
-    "gemini-4-argon",
-    "gemini-4-carbon",
-    "gemini-3.8-flash",
-  ],
   Anthropic: [
     "claude-haiku-4-5",
     "claude-sonnet-5-5",
@@ -109,7 +102,7 @@ export const llmModelLabels: Record<string, string> &
   "gpt-5.6-sol": "GPT 5.6 Sol",
   "gpt-5.5-cyber": "GPT 5.5 Cyber",
   "gpt-5.6-cyber": "GPT 5.6 Cyber",
-  // Google
+  // Google telemetry models (Google is not a selectable chat provider).
   "gemini-4-hydrogen": "Gemini 4 Hydrogen",
   "gemini-4-neon": "Gemini 4 Neon",
   "gemini-4-argon": "Gemini 4 Argon",
