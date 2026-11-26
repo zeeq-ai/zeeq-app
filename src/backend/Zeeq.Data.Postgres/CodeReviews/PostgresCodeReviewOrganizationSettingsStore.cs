@@ -33,19 +33,19 @@ internal sealed class PostgresCodeReviewOrganizationSettingsStore(PostgresDbCont
         CancellationToken cancellationToken
     )
     {
-        var defaults = System.Text.Json.JsonSerializer.Serialize(
-            CodeReviewOrganizationSettings.Default
-        );
+        var settingsDefaults = CodeReviewOrganizationSettings.Default;
+        var defaults = System.Text.Json.JsonSerializer.Serialize(settingsDefaults);
+        var defaultMax = settingsDefaults.MaxConcurrentReviews;
         var rows = await db.Database.ExecuteSqlInterpolatedAsync(
             $$"""
             UPDATE zeeq.core_organizations
             SET code_review_configuration =
                 jsonb_set(
-                    jsonb_set(COALESCE(code_review_configuration, {{defaults}}::jsonb),
+                    jsonb_set(COALESCE(code_review_configuration, {{defaults}}::jsonb) - 'max_concurrent_reviews' - 'allow_agent_attested_triage',
                         '{MaxConcurrentReviews}',
-                        CASE WHEN {{maxConcurrentReviews}}::integer IS NULL THEN COALESCE(code_review_configuration->'MaxConcurrentReviews', '4'::jsonb) ELSE to_jsonb({{maxConcurrentReviews}}::integer) END),
+                        CASE WHEN {{maxConcurrentReviews}}::integer IS NULL THEN COALESCE(code_review_configuration->'MaxConcurrentReviews', code_review_configuration->'max_concurrent_reviews', to_jsonb({{defaultMax}}::integer)) ELSE to_jsonb({{maxConcurrentReviews}}::integer) END),
                     '{AllowAgentAttestedTriage}',
-                    CASE WHEN {{allowAgentAttestedTriage}}::boolean IS NULL THEN COALESCE(code_review_configuration->'AllowAgentAttestedTriage', 'null'::jsonb) ELSE to_jsonb({{allowAgentAttestedTriage}}::boolean) END),
+                    CASE WHEN {{allowAgentAttestedTriage}}::boolean IS NULL THEN COALESCE(code_review_configuration->'AllowAgentAttestedTriage', code_review_configuration->'allow_agent_attested_triage', 'null'::jsonb) ELSE to_jsonb({{allowAgentAttestedTriage}}::boolean) END),
                 updated_at_utc = now()
             WHERE id = {{organizationId}}
             """,

@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Zeeq.Biome;
@@ -844,6 +845,15 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         var updated = settings with { MaxConcurrentReviews = 2 };
 
         await Assert.That(settings.MaxConcurrentReviews).IsEqualTo(4);
+        var toggleOnly = await store.SaveAsync(
+            seed.Organization.Id,
+            null,
+            false,
+            CancellationToken.None
+        );
+        await Assert.That(toggleOnly.MaxConcurrentReviews).IsEqualTo(4);
+        await Assert.That(toggleOnly.ExecutionLeaseDuration).IsEqualTo(TimeSpan.FromMinutes(2));
+        await Assert.That(toggleOnly.AllowAgentAttestedTriage == false).IsTrue();
 
         await store.SaveAsync(
             seed.Organization.Id,
@@ -868,6 +878,34 @@ public sealed class CodeReviewStoreIntegrationTests : PgTransactionalTestBase
         found = await store.GetAsync(seed.Organization.Id, CancellationToken.None);
         await Assert.That(found.MaxConcurrentReviews).IsEqualTo(3);
         await Assert.That(found.AllowAgentAttestedTriage == true).IsTrue();
+
+        await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE zeeq.core_organizations SET code_review_configuration = {"{\"max_concurrent_reviews\": 7, \"allow_agent_attested_triage\": false, \"ExecutionLeaseDuration\": \"00:02:00\"}"}::jsonb WHERE id = {seed.Organization.Id}"
+        );
+        await store.SaveAsync(seed.Organization.Id, null, true, CancellationToken.None);
+        found = await store.GetAsync(seed.Organization.Id, CancellationToken.None);
+        await Assert.That(found.MaxConcurrentReviews).IsEqualTo(7);
+        await Assert.That(found.AllowAgentAttestedTriage == true).IsTrue();
+        await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE zeeq.core_organizations SET code_review_configuration = {"{\"MaxConcurrentReviews\": 5, \"allow_agent_attested_triage\": false, \"ExecutionLeaseDuration\": \"00:02:00\"}"}::jsonb WHERE id = {seed.Organization.Id}"
+        );
+        await store.SaveAsync(seed.Organization.Id, 6, null, CancellationToken.None);
+        found = await store.GetAsync(seed.Organization.Id, CancellationToken.None);
+        await Assert.That(found.MaxConcurrentReviews).IsEqualTo(6);
+        await Assert.That(found.AllowAgentAttestedTriage == false).IsTrue();
+        await _context.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE zeeq.core_organizations SET code_review_configuration = {"{\"MaxConcurrentReviews\": 5, \"max_concurrent_reviews\": 7, \"AllowAgentAttestedTriage\": false, \"allow_agent_attested_triage\": true, \"ExecutionLeaseDuration\": \"00:02:00\"}"}::jsonb WHERE id = {seed.Organization.Id}"
+        );
+        found = await store.SaveAsync(seed.Organization.Id, null, null, CancellationToken.None);
+        await Assert.That(found.MaxConcurrentReviews).IsEqualTo(5);
+        await Assert.That(found.AllowAgentAttestedTriage == false).IsTrue();
+        var normalized = await _context
+            .Database.SqlQuery<string>(
+                $"SELECT code_review_configuration::text AS \"Value\" FROM zeeq.core_organizations WHERE id = {seed.Organization.Id}"
+            )
+            .SingleAsync();
+        await Assert.That(normalized).DoesNotContain("max_concurrent_reviews");
+        await Assert.That(normalized).DoesNotContain("allow_agent_attested_triage");
     }
 
     [Test]

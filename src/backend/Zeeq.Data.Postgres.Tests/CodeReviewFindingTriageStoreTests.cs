@@ -212,6 +212,68 @@ public sealed class CodeReviewFindingTriageStoreTests(PgDatabaseFixture postgres
     }
 
     [Test]
+    public async Task AgentAttestation_WaitsForConcurrentDisableAndIsDenied()
+    {
+        var org = await SeedAsync();
+        var member = "user_" + Guid.NewGuid().ToString("N");
+        try
+        {
+            await using (var setup = postgres.CreateContext())
+            {
+                var organization = await setup.Organizations.SingleAsync(x => x.Id == org);
+                organization.ActivatedAtUtc = DateTimeOffset.UtcNow;
+                setup.Users.Add(new User { Id = member, DisplayName = member });
+                setup.OrganizationMemberships.Add(
+                    new OrganizationMembership
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        OrganizationId = org,
+                        UserId = member,
+                        CreatedByUserId = org,
+                        Role = "member",
+                        Status = MembershipStatus.Active,
+                    }
+                );
+                await setup.SaveChangesAsync();
+            }
+            await using var db = postgres.CreateContext();
+            await using var tx = await db.Database.BeginTransactionAsync();
+            var config =
+                "{\"MaxConcurrentReviews\":4,\"ExecutionLeaseDuration\":\"00:02:00\",\"AllowAgentAttestedTriage\":false}";
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE zeeq.core_organizations SET code_review_configuration = {config}::jsonb WHERE id = {org}"
+            );
+            var store = new PostgresCodeReviewFindingTriageStore(new Factory(postgres));
+            var write = Set(
+                Snapshot(org),
+                CodeReviewFindingTriageChannel.AgentAttested,
+                "reason"
+            ) with
+            {
+                ActorUserId = member,
+                ConfirmationQuote = "yes",
+            };
+            var pending = store.UpsertLwwAsync(write);
+            var first = await Task.WhenAny(pending, Task.Delay(300));
+            await Assert.That(first == pending).IsFalse();
+            await tx.CommitAsync();
+            var result = await pending;
+            await Assert.That(result.Status).IsEqualTo(FindingTriageWriteStatus.Forbidden);
+        }
+        finally
+        {
+            await using (var cleanup = postgres.CreateContext())
+            {
+                await cleanup
+                    .OrganizationMemberships.Where(x => x.OrganizationId == org)
+                    .ExecuteDeleteAsync();
+                await cleanup.Users.Where(x => x.Id == member).ExecuteDeleteAsync();
+            }
+            await CleanupAsync(org);
+        }
+    }
+
+    [Test]
     public async Task ConcurrentInsertAndHumanDecision_CannotBeOverwrittenByMcp()
     {
         var org = await SeedAsync();
