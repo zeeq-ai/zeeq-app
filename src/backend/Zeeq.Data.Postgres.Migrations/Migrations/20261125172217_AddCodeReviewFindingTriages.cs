@@ -82,6 +82,12 @@ namespace Zeeq.Data.Postgres.Migrations.Migrations
                 });
 
             migrationBuilder.Sql("ALTER TABLE zeeq.code_review_finding_triages ALTER COLUMN embedding SET STORAGE EXTERNAL;");
+            migrationBuilder.Sql("""
+                CREATE INDEX ix_cr_triages_embedding_hnsw
+                ON zeeq.code_review_finding_triages USING hnsw (embedding halfvec_cosine_ops)
+                WITH (m = 16, ef_construction = 64)
+                WHERE disposition = 'FalsePositive' AND approval_state = 'Confirmed' AND embedding IS NOT NULL;
+                """);
 
             migrationBuilder.CreateIndex(
                 name: "ix_cr_triages_embed_queue",

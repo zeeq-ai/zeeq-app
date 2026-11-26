@@ -297,15 +297,15 @@ internal sealed partial class CodeReviewFindingTriageService(
         {
             LogMutation(
                 logger,
-                request.OrganizationId,
-                row.Id,
-                row.SourceReviewId,
-                row.OccurrenceKey,
-                row.SemanticId,
+                SanitizeLogValue(request.OrganizationId)!,
+                SanitizeLogValue(row.Id)!,
+                SanitizeLogValue(row.SourceReviewId)!,
+                SanitizeLogValue(row.OccurrenceKey)!,
+                SanitizeLogValue(row.SemanticId)!,
                 request.Channel.ToString(),
-                request.ActorUserId,
-                request.GitHubAliasId,
-                request.AgentSessionId,
+                SanitizeLogValue(request.ActorUserId),
+                SanitizeLogValue(request.GitHubAliasId),
+                SanitizeLogValue(request.AgentSessionId),
                 result.PreviousDisposition?.ToString(),
                 result.PreviousApprovalState?.ToString(),
                 row.Disposition?.ToString(),
@@ -328,6 +328,11 @@ internal sealed partial class CodeReviewFindingTriageService(
             _ => throw new InvalidOperationException("Unknown triage result."),
         };
     }
+
+    private static string? SanitizeLogValue(string? value) =>
+        value
+            ?.Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Replace("\n", string.Empty, StringComparison.Ordinal);
 
     [LoggerMessage(
         Level = LogLevel.Information,

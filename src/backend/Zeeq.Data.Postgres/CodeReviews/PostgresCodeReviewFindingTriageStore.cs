@@ -47,6 +47,8 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
                 cancellationToken
             );
             var s = write.Snapshot.Clone();
+            // NOTE: Review IDs are globally unique UUIDv7 values; this key identifies a finding
+            // across partitions. Source review creation time is only used for partition pruning.
             var row = await db
                 .CodeReviewFindingTriages.FromSqlInterpolated(
                     $"SELECT * FROM zeeq.code_review_finding_triages WHERE organization_id = {s.OrganizationId} AND source_review_id = {s.SourceReviewId} AND occurrence_key = {s.OccurrenceKey} FOR UPDATE"
@@ -61,6 +63,8 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
                     row,
                     "Confirmed decisions require a human."
                 );
+            // NOTE: GitHub timestamps have one-second granularity; allow same-second transitions.
+            // Identical redeliveries are handled as idempotent no-ops below.
             if (
                 write.Channel == CodeReviewFindingTriageChannel.GitHub
                 && row is not null
@@ -391,6 +395,14 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
                 nameof(vector)
             );
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        var ownedTransaction = db.Database.CurrentTransaction is null
+            ? await db.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        await using var _ = ownedTransaction;
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"SET LOCAL hnsw.iterative_scan = 'strict_order'; SET LOCAL hnsw.ef_search = 100;",
+            cancellationToken
+        );
         var query = db
             .CodeReviewFindingTriages.AsNoTracking()
             .Where(x =>
@@ -422,12 +434,15 @@ internal sealed class PostgresCodeReviewFindingTriageStore(
             );
         if (asOfUtc is not null)
             query = query.Where(x => x.ConfirmedAtUtc < asOfUtc);
-        var matches = await query
-            .Select(x => new { Row = x, Distance = x.Embedding!.CosineDistance(vector) })
-            .Where(x => x.Distance <= 1 - threshold)
-            .OrderBy(x => x.Distance)
+        var candidates = await query
+            .OrderBy(x => x.Embedding!.CosineDistance(vector))
             .Take(limit)
+            .Select(x => new { Row = x, Distance = x.Embedding!.CosineDistance(vector) })
             .ToListAsync(cancellationToken);
-        return matches.Select(x => new FindingTriageMatch(x.Row, x.Distance)).ToList();
+        var maxDistance = 1 - threshold;
+        return candidates
+            .Where(x => x.Distance <= maxDistance)
+            .Select(x => new FindingTriageMatch(x.Row, x.Distance))
+            .ToList();
     }
 }

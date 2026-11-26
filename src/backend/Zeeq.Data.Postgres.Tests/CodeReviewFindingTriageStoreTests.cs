@@ -14,6 +14,18 @@ namespace Zeeq.Data.Postgres.Tests;
 [ClassDataSource<PgDatabaseFixture>(Shared = SharedType.PerTestSession)]
 public sealed class CodeReviewFindingTriageStoreTests(PgDatabaseFixture postgres)
 {
+    [Test]
+    public async Task Migration_CreatesPartialHnswIndex()
+    {
+        await using var db = postgres.CreateContext();
+        var count = await db
+            .Database.SqlQueryRaw<int>(
+                "SELECT count(*)::int AS \"Value\" FROM pg_indexes WHERE schemaname = 'zeeq' AND tablename = 'code_review_finding_triages' AND indexname = 'ix_cr_triages_embedding_hnsw'"
+            )
+            .SingleAsync();
+        await Assert.That(count).IsEqualTo(1);
+    }
+
     private sealed class Factory(PgDatabaseFixture fixture) : IDbContextFactory<PostgresDbContext>
     {
         public PostgresDbContext CreateDbContext() => fixture.CreateContext();
@@ -253,6 +265,19 @@ public sealed class CodeReviewFindingTriageStoreTests(PgDatabaseFixture postgres
                 10
             );
             await Assert.That(matches.Count).IsEqualTo(1);
+            var opposite = new HalfVector(
+                vector.ToArray().Select(x => (Half)(-(float)x)).ToArray()
+            );
+            var belowThreshold = await store.SearchConfirmedFalsePositivesAsync(
+                org,
+                null,
+                "owner/repo",
+                opposite,
+                "model",
+                0.99,
+                10
+            );
+            await Assert.That(belowThreshold.Count).IsEqualTo(0);
             var afterMapping = await store.SearchConfirmedFalsePositivesAsync(
                 org,
                 "new-repository-id",

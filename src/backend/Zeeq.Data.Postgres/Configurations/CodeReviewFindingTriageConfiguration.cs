@@ -109,6 +109,7 @@ internal sealed class CodeReviewFindingTriageConfiguration
             })
             .HasFilter("disposition = 'FalsePositive' AND approval_state = 'Confirmed'")
             .HasDatabaseName("ix_cr_triages_embed_queue");
+        // The partial HNSW embedding index is created with raw SQL in the migration.
         entity
             .HasOne<Organization>()
             .WithMany()

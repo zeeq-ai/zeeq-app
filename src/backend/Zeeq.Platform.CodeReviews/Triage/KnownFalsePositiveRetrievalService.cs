@@ -194,10 +194,13 @@ public sealed class KnownFalsePositiveRetrievalService(
         catch (Exception ex)
         {
             activity?.SetTag("fail_open", true);
+            var sanitizedOrganizationId = organizationId
+                .Replace("\r", string.Empty, StringComparison.Ordinal)
+                .Replace("\n", string.Empty, StringComparison.Ordinal);
             logger.LogWarning(
                 ex,
                 "Known false positive retrieval failed for organization {OrganizationId}",
-                organizationId
+                sanitizedOrganizationId
             );
             return Empty(failed: true);
         }
