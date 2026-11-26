@@ -2,7 +2,7 @@ namespace Zeeq.Core.Llm;
 
 /// <summary>
 /// Per-model token pricing rates sourced from provider API pricing pages as of
-/// September 29, 2026. Rates are per-token (not per-million). Cached token rates
+/// November 25, 2026. Rates are per-token (not per-million). Cached token rates
 /// use cache-read pricing; telemetry that combines cache reads and writes is approximate.
 /// </summary>
 /// <remarks>
@@ -13,7 +13,7 @@ namespace Zeeq.Core.Llm;
 /// </para>
 /// <para>
 /// Claude Sonnet 5 remains $2.00/$10.00 per MTok on the current pricing page.
-/// GPT-5.6 Sol promotional pricing is available at least through November 21, 2026.
+/// GPT-5.6 Sol promotional pricing is available through November 30, 2026.
 /// </para>
 /// </remarks>
 public static class PricingCatalog
@@ -45,9 +45,17 @@ public static class PricingCatalog
         StringComparer.OrdinalIgnoreCase
     )
     {
-        // --- OpenAI models (pricing as of September 29, 2026) ---
+        // --- OpenAI models (pricing as of November 25, 2026) ---
         // Source: https://developers.openai.com/api/docs/pricing (standard tier, short context)
         ["gpt-6.1-sol"] = TokenRates.FromPerMillion(2.00m, 0.10m, 10.00m),
+        ["gpt-6.2-sol"] = TokenRates.FromPerMillion(2.00m, 0.10m, 10.00m),
+        ["gpt-6.2-astra"] = TokenRates.FromPerMillion(8.00m, 0.40m, 40.00m),
+        ["gpt-6.2-astra-law"] = TokenRates.FromPerMillion(8.00m, 0.40m, 40.00m),
+        ["gpt-6.2-astra-healthcare"] = TokenRates.FromPerMillion(8.00m, 0.40m, 40.00m),
+        ["gpt-6.2-sol-healthcare"] = TokenRates.FromPerMillion(2.00m, 0.10m, 10.00m),
+        // Source: https://developers.openai.com/api/docs/pricing (standard, short-context tier).
+        // Healthcare promotional pricing is listed through 2026-12-31; ultrafast and
+        // background discounts are not selected from the model name and are not modeled.
         ["gpt-6-astra"] = TokenRates.FromPerMillion(10.00m, 1.00m, 50.00m),
         ["gpt-6-sol"] = TokenRates.FromPerMillion(2.00m, 0.20m, 10.00m),
         ["gpt-6-luna"] = TokenRates.FromPerMillion(0.10m, 0.01m, 0.50m),
@@ -110,6 +118,8 @@ public static class PricingCatalog
         ["claude-opus-4-6"] = "claude-opus-4.6",
         ["claude-opus-4-5"] = "claude-opus-4.5",
         ["claude-opus-4-1"] = "claude-opus-4.1",
+        ["gpt-6-2-sol"] = "gpt-6.2-sol",
+        ["gpt-6-2-astra"] = "gpt-6.2-astra",
         ["claude-sonnet-4-6"] = "claude-sonnet-4.6",
         ["claude-sonnet-4-5"] = "claude-sonnet-4.5",
     };

@@ -38,6 +38,12 @@ public sealed class CostEnricherTests
 
     [Test]
     [Arguments("gpt-6.1-sol", "2.00", "0.10", "10.00")]
+    [Arguments("gpt-6.2-sol", "2.00", "0.10", "10.00")]
+    [Arguments("gpt-6-2-sol", "2.00", "0.10", "10.00")]
+    [Arguments("gpt-6.2-astra", "8.00", "0.40", "40.00")]
+    [Arguments("gpt-6.2-astra-law", "8.00", "0.40", "40.00")]
+    [Arguments("gpt-6.2-astra-healthcare", "8.00", "0.40", "40.00")]
+    [Arguments("gpt-6.2-sol-healthcare", "2.00", "0.10", "10.00")]
     [Arguments("gpt-6-astra", "10.00", "1.00", "50.00")]
     [Arguments("gpt-6-sol", "2.00", "0.20", "10.00")]
     [Arguments("gpt-6-luna", "0.10", "0.01", "0.50")]
